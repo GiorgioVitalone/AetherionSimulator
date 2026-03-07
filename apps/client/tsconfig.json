@@ -1,0 +1,15 @@
+{
+  "extends": "@aetherion-sim/config/tsconfig.app",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite-env.d.ts"],
+  "references": [
+    { "path": "../../packages/engine" },
+    { "path": "../../packages/cards" },
+    { "path": "../../packages/ui" }
+  ]
+}

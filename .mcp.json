@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@upstash/context7-mcp@latest"]
+    },
+    "aetherion-db": {
+      "command": "cmd",
+      "args": ["/c", "node", "D:/Projects/CustomTCG/Documentation/mcp-server/dist/db-server.js"],
+      "env": {
+        "MCP_DB_HOST": "localhost",
+        "MCP_DB_PORT": "5432"
+      }
+    }
+  }
+}

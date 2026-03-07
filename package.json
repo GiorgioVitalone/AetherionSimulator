@@ -1,0 +1,21 @@
+{
+  "name": "aetherion-sim",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "generate:cards": "turbo run generate:cards",
+    "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.5.0",
+    "turbo": "^2.5.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}

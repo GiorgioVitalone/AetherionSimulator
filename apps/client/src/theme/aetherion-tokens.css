@@ -1,0 +1,247 @@
+/* ==========================================================================
+   AETHERION TCG — Design Tokens
+   Visual Identity: "Gilded Ink"
+   Version: 1.0.0 (Simulator subset — sections 1-10, no card frame tokens)
+   ========================================================================== */
+
+:root {
+
+  /* --------------------------------------------------------------------------
+     1. COLOR — Core Palette
+     -------------------------------------------------------------------------- */
+
+  /* Backgrounds */
+  --color-bg:                #0f0e0b;
+  --color-bg-rgb:            15, 14, 11;
+  --color-surface:           #191815;
+  --color-surface-rgb:       25, 24, 21;
+  --color-surface-alt:       #22211d;
+  --color-surface-alt-rgb:   34, 33, 29;
+  --color-surface-raised:    #2a2925;
+  --color-surface-overlay:   rgba(15, 14, 11, 0.85);
+
+  /* Borders */
+  --color-border:            #302d27;
+  --color-border-strong:     #44403a;
+  --color-border-subtle:     #252320;
+
+  /* Text */
+  --color-text:              #dedad0;
+  --color-text-rgb:          222, 218, 208;
+  --color-text-secondary:    #b0ab9f;
+  --color-text-muted:        #827d70;
+  --color-text-faint:        #5a5650;
+  --color-text-inverse:      #0f0e0b;
+
+  /* Accent — Aged Gold */
+  --color-accent:            #be9438;
+  --color-accent-rgb:        190, 148, 56;
+  --color-accent-light:      #d5ad52;
+  --color-accent-lighter:    #e8c872;
+  --color-accent-dark:       #8c6c20;
+  --color-accent-darker:     #6a5018;
+  --color-accent-subtle:     rgba(190, 148, 56, 0.12);
+  --color-accent-muted:      rgba(190, 148, 56, 0.25);
+
+  /* Semantic */
+  --color-success:           #52b788;
+  --color-success-subtle:    rgba(82, 183, 136, 0.12);
+  --color-warning:           #e0a030;
+  --color-warning-subtle:    rgba(224, 160, 48, 0.12);
+  --color-error:             #e05050;
+  --color-error-subtle:      rgba(224, 80, 80, 0.12);
+  --color-info:              #5a9acf;
+  --color-info-subtle:       rgba(90, 154, 207, 0.12);
+
+
+  /* --------------------------------------------------------------------------
+     2. COLOR — Faction Palette
+     -------------------------------------------------------------------------- */
+
+  /* Crimson Wastes — Red / Aggro */
+  --faction-crimson:           #e63946;
+  --faction-crimson-dark:      #8b1a22;
+  --faction-crimson-light:     #ff6b6b;
+  --faction-crimson-subtle:    rgba(230, 57, 70, 0.12);
+  --faction-crimson-muted:     rgba(230, 57, 70, 0.25);
+
+  /* Sapphire Isles — Blue / Control */
+  --faction-sapphire:          #4895ef;
+  --faction-sapphire-dark:     #1a5276;
+  --faction-sapphire-light:    #7ec8e3;
+  --faction-sapphire-subtle:   rgba(72, 149, 239, 0.12);
+  --faction-sapphire-muted:    rgba(72, 149, 239, 0.25);
+
+  /* Verdant Glades — Green / Growth */
+  --faction-verdant:           #52b788;
+  --faction-verdant-dark:      #1b5e3a;
+  --faction-verdant-light:     #95d5b2;
+  --faction-verdant-subtle:    rgba(82, 183, 136, 0.12);
+  --faction-verdant-muted:     rgba(82, 183, 136, 0.25);
+
+  /* Onyx Abyss — Dark / Sacrifice */
+  --faction-onyx:              #6c6c6c;
+  --faction-onyx-dark:         #2e2e2e;
+  --faction-onyx-light:        #adb5bd;
+  --faction-onyx-subtle:       rgba(108, 108, 108, 0.12);
+  --faction-onyx-muted:        rgba(108, 108, 108, 0.25);
+
+  /* Radiant Bastions — Gold / Harmony */
+  --faction-radiant:           #f4d35e;
+  --faction-radiant-dark:      #9e8420;
+  --faction-radiant-light:     #fff3b0;
+  --faction-radiant-subtle:    rgba(244, 211, 94, 0.12);
+  --faction-radiant-muted:     rgba(244, 211, 94, 0.25);
+
+  /* Amethyst Expanse — Purple / Trickery */
+  --faction-amethyst:          #b185db;
+  --faction-amethyst-dark:     #6a3d7d;
+  --faction-amethyst-light:    #d4b5f0;
+  --faction-amethyst-subtle:   rgba(177, 133, 219, 0.12);
+  --faction-amethyst-muted:    rgba(177, 133, 219, 0.25);
+
+
+  /* --------------------------------------------------------------------------
+     3. COLOR — Rarity
+     -------------------------------------------------------------------------- */
+
+  --rarity-common:           #b3b3b3;
+  --rarity-common-subtle:    rgba(179, 179, 179, 0.12);
+  --rarity-ethereal:         #4169E1;
+  --rarity-ethereal-subtle:  rgba(65, 105, 225, 0.12);
+  --rarity-mythic:           #FF8C00;
+  --rarity-mythic-subtle:    rgba(255, 140, 0, 0.12);
+  --rarity-legendary:        #FFD700;
+  --rarity-legendary-subtle: rgba(255, 215, 0, 0.12);
+
+
+  /* --------------------------------------------------------------------------
+     4. COLOR — Resource Types
+     -------------------------------------------------------------------------- */
+
+  --resource-mana:             #5a9acf;
+  --resource-mana-bg:          rgba(90, 154, 207, 0.15);
+  --resource-mana-border:      rgba(90, 154, 207, 0.30);
+  --resource-energy:           #d5ad52;
+  --resource-energy-bg:        rgba(213, 173, 82, 0.15);
+  --resource-energy-border:    rgba(213, 173, 82, 0.30);
+  --resource-flexible:         #b185db;
+  --resource-flexible-bg:      rgba(177, 133, 219, 0.15);
+  --resource-flexible-border:  rgba(177, 133, 219, 0.30);
+
+
+  /* --------------------------------------------------------------------------
+     5. TYPOGRAPHY
+     -------------------------------------------------------------------------- */
+
+  --font-display:            'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-body:               'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:               'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* Display Scale */
+  --text-display-hero:       3rem;
+  --text-display-1:          2.25rem;
+  --text-display-2:          1.75rem;
+  --text-display-3:          1.375rem;
+
+  /* Body Scale */
+  --text-body-lg:            1.0625rem;
+  --text-body:               0.9375rem;
+  --text-body-sm:            0.8125rem;
+
+  /* Utility Scale */
+  --text-label:              0.6875rem;
+  --text-micro:              0.625rem;
+  --text-eyebrow:            0.5625rem;
+
+  /* Line Heights */
+  --leading-tight:           1.15;
+  --leading-snug:            1.3;
+  --leading-normal:          1.6;
+  --leading-relaxed:         1.75;
+
+  /* Letter Spacing */
+  --tracking-tight:          -0.01em;
+  --tracking-normal:         0;
+  --tracking-wide:           0.03em;
+  --tracking-wider:          0.06em;
+  --tracking-widest:         0.12em;
+
+  /* Font Weights */
+  --weight-regular:          400;
+  --weight-medium:           500;
+  --weight-semibold:         600;
+  --weight-bold:             700;
+  --weight-black:            900;
+
+
+  /* --------------------------------------------------------------------------
+     6. SPACING
+     -------------------------------------------------------------------------- */
+
+  --space-1:    0.25rem;
+  --space-2:    0.5rem;
+  --space-3:    0.75rem;
+  --space-4:    1rem;
+  --space-5:    1.25rem;
+  --space-6:    1.5rem;
+  --space-8:    2rem;
+  --space-10:   2.5rem;
+  --space-12:   3rem;
+  --space-16:   4rem;
+  --space-20:   5rem;
+
+
+  /* --------------------------------------------------------------------------
+     7. BORDERS & RADII
+     -------------------------------------------------------------------------- */
+
+  --border-width:            2px;
+  --border-width-thin:       1px;
+  --border-width-thick:      3px;
+
+  --radius-sm:               3px;
+  --radius-md:               5px;
+  --radius-lg:               8px;
+  --radius-xl:               12px;
+  --radius-full:             9999px;
+
+  --card-radius:             5px;
+  --card-border-width:       2px;
+
+
+  /* --------------------------------------------------------------------------
+     8. SHADOWS & ELEVATION
+     -------------------------------------------------------------------------- */
+
+  --shadow-sm:     0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md:     0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-lg:     0 8px 28px rgba(0, 0, 0, 0.35), 0 4px 8px rgba(0, 0, 0, 0.2);
+  --shadow-xl:     0 16px 48px rgba(0, 0, 0, 0.4), 0 8px 16px rgba(0, 0, 0, 0.25);
+  --shadow-glow:   0 0 16px rgba(190, 148, 56, 0.2);
+  --shadow-inset:  inset 0 1px 3px rgba(0, 0, 0, 0.3);
+
+
+  /* --------------------------------------------------------------------------
+     9. TRANSITIONS
+     -------------------------------------------------------------------------- */
+
+  --transition-fast:         120ms ease;
+  --transition-base:         200ms ease;
+  --transition-slow:         350ms ease;
+  --transition-spring:       400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+
+  /* --------------------------------------------------------------------------
+     10. Z-INDEX SCALE
+     -------------------------------------------------------------------------- */
+
+  --z-base:       0;
+  --z-dropdown:   100;
+  --z-sticky:     200;
+  --z-overlay:    300;
+  --z-modal:      400;
+  --z-popover:    500;
+  --z-toast:      600;
+  --z-tooltip:    700;
+}

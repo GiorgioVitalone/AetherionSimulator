@@ -1,0 +1,25 @@
+{
+  "name": "@aetherion-sim/cards",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "generate:cards": "tsx scripts/generate.ts",
+    "postinstall": "node -e \"const fs=require('fs');const files=fs.readdirSync('data').filter(f=>f.endsWith('.json'));if(!files.length){console.log('[cards] No card data found. Run pnpm generate:cards with Docker running to generate card data.')}\""
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@aetherion-sim/config": "workspace:*",
+    "pg": "^8.16.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

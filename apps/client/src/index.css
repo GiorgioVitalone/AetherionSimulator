@@ -1,0 +1,115 @@
+@import "tailwindcss";
+@import "./theme/aetherion-tokens.css";
+@import "./theme/fonts.css";
+
+/* ==========================================================================
+   Tailwind v4 Theme — Register custom colors for utility class generation.
+   Values mirror the design tokens in aetherion-tokens.css.
+   ========================================================================== */
+@theme {
+  /* Warm border colors */
+  --color-frame: #44403a;
+  --color-frame-light: #302d27;
+
+  /* Text colors */
+  --color-ink: #dedad0;
+  --color-ink-muted: #827d70;
+  --color-ink-faint: #5a5650;
+  --color-ink-inverse: #0f0e0b;
+
+  /* Accent (aged gold) */
+  --color-accent: #be9438;
+  --color-accent-light: #d5ad52;
+  --color-accent-dark: #8c6c20;
+
+  /* Surfaces */
+  --color-surface: #191815;
+  --color-surface-alt: #22211d;
+  --color-surface-raised: #2a2925;
+
+  /* Alignment colors — 3-tier: base, light, dark */
+  --color-alignment-crimson: #e63946;
+  --color-alignment-crimson-dark: #8b1a22;
+  --color-alignment-crimson-light: #ff6b6b;
+
+  --color-alignment-sapphire: #4895ef;
+  --color-alignment-sapphire-dark: #1a5276;
+  --color-alignment-sapphire-light: #7ec8e3;
+
+  --color-alignment-verdant: #52b788;
+  --color-alignment-verdant-dark: #1b5e3a;
+  --color-alignment-verdant-light: #95d5b2;
+
+  --color-alignment-onyx: #6c6c6c;
+  --color-alignment-onyx-dark: #2e2e2e;
+  --color-alignment-onyx-light: #adb5bd;
+
+  --color-alignment-radiant: #f4d35e;
+  --color-alignment-radiant-dark: #9e8420;
+  --color-alignment-radiant-light: #fff3b0;
+
+  --color-alignment-amethyst: #b185db;
+  --color-alignment-amethyst-dark: #6a3d7d;
+  --color-alignment-amethyst-light: #d4b5f0;
+}
+
+/* ==========================================================================
+   Default Border Color — Tailwind v4 bare `border` uses currentColor.
+   Override to warm border color.
+   ========================================================================== */
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--color-border);
+  }
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+code {
+  font-family: var(--font-mono);
+}
+
+/* Focus ring — consistent gold accent across all interactive elements */
+*:focus-visible {
+  outline: 2px solid var(--color-accent-muted);
+  outline-offset: 2px;
+}
+
+/* Inputs/textareas handle focus via border changes, not outline */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
+/* ==========================================================================
+   Scrollbar — warm Gilded Ink tones
+   ========================================================================== */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface-alt);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-faint);
+}
