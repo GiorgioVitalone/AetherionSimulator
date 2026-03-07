@@ -1,51 +1,145 @@
 /**
- * Effect DSL — Discriminated union for card effects.
- * Phase 1 will expand this with all effect variants.
+ * Effect DSL Type System — barrel re-exports.
+ *
+ * Dependency graph (no cycles):
+ *   common ─┬─ targets
+ *            ├─ conditions
+ *            ├─ durations (standalone)
+ *            ├─ triggers ← conditions
+ *            ├─ effects ← targets, conditions, durations, triggers
+ *            └─ ability ← effects, triggers, conditions
  */
-export type Effect = DealDamageEffect;
 
-export interface DealDamageEffect {
-  readonly type: 'deal_damage';
-  readonly amount: number;
-  readonly target: TargetExpr;
-}
+// ── Foundation ──────────────────────────────────────────
+export type {
+  ZoneType,
+  Side,
+  ResourceType,
+  CardTypeCode,
+  Stat,
+  Trait,
+  AmountExpr,
+  CountingExpr,
+  CountingFilter,
+  ResourceCost,
+  StatModifier,
+  TokenDef,
+} from './common.js';
 
-/**
- * Target expression — describes what an effect targets.
- */
-export type TargetExpr =
-  | { readonly type: 'self' }
-  | { readonly type: 'target_character'; readonly zone?: ZoneType }
-  | { readonly type: 'all_characters'; readonly side: 'allied' | 'enemy' | 'any' };
+// ── Targets ─────────────────────────────────────────────
+export type {
+  TargetExpr,
+  SelfTarget,
+  HeroTarget,
+  TargetCharacter,
+  TargetEquipment,
+  AllCharacters,
+  AllCharactersInZone,
+  UpToTargets,
+  AdjacentToSelf,
+  EquippedCharacter,
+  OwnerHero,
+  TargetCardInDiscard,
+  TargetSpell,
+  CopyTarget,
+  RandomTarget,
+  EachPlayer,
+  SourceCharacter,
+  TargetFilter,
+} from './targets.js';
 
-/**
- * Trigger — when an effect activates.
- */
-export type Trigger =
-  | { readonly type: 'on_deploy' }
-  | { readonly type: 'on_destroy' }
-  | { readonly type: 'on_turn_start' }
-  | { readonly type: 'on_turn_end' }
-  | { readonly type: 'on_attack' }
-  | { readonly type: 'on_condition'; readonly condition: Condition };
+// ── Conditions ──────────────────────────────────────────
+export type {
+  Condition,
+  HpThreshold,
+  StatCompare,
+  CardCount,
+  ZoneIs,
+  HasTrait,
+  CostCheck,
+  CardTypeCheck,
+  ResourceCheck,
+  IsAlive,
+  TurnCount,
+  IsTransformed,
+  ControlsCharacter,
+  AndCondition,
+  OrCondition,
+  NotCondition,
+} from './conditions.js';
 
-/**
- * Condition — boolean expressions for trigger guards and ability costs.
- */
-export type Condition =
-  | { readonly type: 'hp_below'; readonly threshold: number }
-  | { readonly type: 'zone_is'; readonly zone: ZoneType }
-  | { readonly type: 'has_trait'; readonly trait: string };
+// ── Durations ───────────────────────────────────────────
+export type {
+  Duration,
+  InstantDuration,
+  UntilEndOfTurn,
+  UntilNextUpkeep,
+  PermanentDuration,
+  ForCombat,
+  WhileInPlay,
+} from './durations.js';
 
-/**
- * Duration — how long an effect persists.
- */
-export type Duration =
-  | { readonly type: 'instant' }
-  | { readonly type: 'until_end_of_turn' }
-  | { readonly type: 'permanent' };
+// ── Triggers ────────────────────────────────────────────
+export type {
+  Trigger,
+  OnDeploy,
+  OnDestroy,
+  OnTurnStart,
+  OnTurnEnd,
+  OnAttack,
+  OnTakeDamage,
+  OnDealLethalDamage,
+  OnAllyDeployed,
+  OnAllyDestroyed,
+  OnSpellCast,
+  OnSacrifice,
+  OnHealed,
+  OnEquipmentAttached,
+  WhileCondition,
+  Activated,
+  OnCast,
+  OnCounter,
+  OnFlash,
+  OnOverheal,
+  TriggerFilter,
+} from './triggers.js';
 
-/**
- * Zone types on the battlefield.
- */
-export type ZoneType = 'reserve' | 'frontline' | 'high_ground';
+// ── Effects ─────────────────────────────────────────────
+export type {
+  Effect,
+  DealDamageEffect,
+  HealEffect,
+  ModifyStatsEffect,
+  DrawCardsEffect,
+  ScryEffect,
+  DeployTokenEffect,
+  DestroyEffect,
+  SacrificeEffect,
+  BounceEffect,
+  DiscardEffect,
+  ReturnFromDiscardEffect,
+  CounterSpellEffect,
+  GainResourceEffect,
+  CostReductionEffect,
+  CostReductionFilter,
+  GrantTraitEffect,
+  GrantAbilityEffect,
+  GrantedAbilityRef,
+  MoveEffect,
+  ApplyStatusEffect,
+  StatusType,
+  ChooseOneEffect,
+  ChooseOneOption,
+  ConditionalEffect,
+  CompositeEffect,
+  ReplacementEffect,
+  ReplacedEvent,
+} from './effects.js';
+
+// ── Ability (top-level) ─────────────────────────────────
+export type {
+  AbilityDSL,
+  TriggeredAbilityDSL,
+  AuraAbilityDSL,
+  StatGrantDSL,
+} from './ability.js';
