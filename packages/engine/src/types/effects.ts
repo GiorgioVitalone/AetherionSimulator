@@ -10,6 +10,7 @@
  */
 import type {
   AmountExpr,
+  CardTypeCode,
   ResourceType,
   Side,
   StatModifier,
@@ -75,13 +76,21 @@ export interface ScryEffect {
   readonly pickCount: number;
   readonly remainder: 'bottom' | 'discard' | 'shuffle';
 }
-export interface DeployTokenEffect {
-  readonly type: 'deploy_token';
-  readonly token: TokenDef;
-  readonly count: number;
-  readonly zone?: ZoneType;
-  readonly inEachEmpty?: boolean;
-}
+export type DeployTokenEffect =
+  | {
+      readonly type: 'deploy_token';
+      readonly token: TokenDef;
+      readonly count: number;
+      readonly zone?: ZoneType;
+      readonly inEachEmpty?: false | undefined;
+    }
+  | {
+      readonly type: 'deploy_token';
+      readonly token: TokenDef;
+      readonly inEachEmpty: true;
+      readonly zone: ZoneType;
+      readonly count?: never;
+    };
 export interface DestroyEffect {
   readonly type: 'destroy';
   readonly target: TargetExpr;
@@ -122,7 +131,7 @@ export interface CostReductionEffect {
   readonly duration: Duration;
 }
 export interface CostReductionFilter {
-  readonly cardType?: 'S' | 'E' | 'C';
+  readonly cardType?: Extract<CardTypeCode, 'C' | 'S' | 'E'>;
   readonly tag?: string;
   readonly firstPerTurn?: boolean;
 }

@@ -56,7 +56,7 @@ export interface UpToTargets {
   readonly side: Side;
   readonly filter?: TargetFilter;
 }
-/** Adjacent to the target's current zone, resolved at runtime. */
+/** Adjacent to the effect source's (self's) current zone, resolved at runtime. */
 export interface AdjacentToSelf {
   readonly type: 'adjacent_to_self';
 }
