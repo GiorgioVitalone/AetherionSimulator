@@ -6,7 +6,7 @@
     },
     "aetherion-db": {
       "command": "cmd",
-      "args": ["/c", "node", "D:/Projects/CustomTCG/Documentation/mcp-server/dist/db-server.js"],
+      "args": ["/c", "node", "D:/Projects/CustomTCG/mcp-db-server/dist/index.js"],
       "env": {
         "MCP_DB_HOST": "localhost",
         "MCP_DB_PORT": "5432"

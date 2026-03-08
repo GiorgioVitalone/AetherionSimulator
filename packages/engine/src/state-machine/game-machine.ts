@@ -63,23 +63,27 @@ export const gameMachine = setup({
           pendingChoice: null,
         };
       }
+      const newState = {
+        ...result.state,
+        log: [...result.state.log, ...result.events],
+      };
       return {
-        gameState: {
-          ...result.state,
-          log: [...result.state.log, ...result.events],
-        },
-        pendingChoice: context.pendingChoice,
+        gameState: newState,
+        pendingChoice: newState.pendingChoice ?? context.pendingChoice,
       };
     }),
     applyPlayerAction: assign(({ context, event }) => {
       if (event.type !== 'PLAYER_ACTION') return {};
       const result = executePlayerAction(context.gameState, event.action);
+      const newState = {
+        ...result.state,
+        log: [...result.state.log, ...result.events],
+      };
       return {
-        gameState: {
-          ...result.state,
-          log: [...result.state.log, ...result.events],
-        },
-        pendingChoice: result.state.winner !== null ? null : context.pendingChoice,
+        gameState: newState,
+        pendingChoice: newState.winner !== null
+          ? null
+          : newState.pendingChoice ?? context.pendingChoice,
       };
     }),
     setPhase: assign(({ context }, params: { readonly phase: GameState['phase'] }) => ({
@@ -152,6 +156,44 @@ export const gameMachine = setup({
       gameState: context.gameState,
       pendingChoice: context.gameState.pendingChoice,
     })),
+    applyPlayerResponse: assign(({ context, event }) => {
+      if (event.type !== 'PLAYER_RESPONSE') return {};
+      // Route response based on current pendingChoice type
+      const choice = context.pendingChoice;
+      if (!choice) return {};
+
+      if (choice.type === 'reserve_exhaust') {
+        // Mark selected reserve characters as exhausted for resource generation
+        const player = context.gameState.players[choice.playerId]!;
+        const selectedIds = event.response.selectedOptionIds;
+        const newReserve = player.zones.reserve.map(c => {
+          if (c && selectedIds.includes(c.instanceId)) {
+            return { ...c, exhausted: true };
+          }
+          return c;
+        });
+        const newPlayers = [...context.gameState.players] as [
+          typeof context.gameState.players[0],
+          typeof context.gameState.players[1],
+        ];
+        newPlayers[choice.playerId] = {
+          ...player,
+          zones: { ...player.zones, reserve: newReserve },
+        };
+        return {
+          gameState: { ...context.gameState, players: newPlayers },
+          pendingChoice: null,
+        };
+      }
+
+      if (choice.type === 'select_targets') {
+        // Clear pending choice — full effect resumption deferred to future iteration
+        return { pendingChoice: null };
+      }
+
+      // Generic response: clear the choice
+      return { pendingChoice: null };
+    }),
   },
 }).createMachine({
   id: 'aetherionGame',
@@ -241,6 +283,9 @@ export const gameMachine = setup({
             PLAYER_ACTION: {
               actions: 'applyPlayerAction',
             },
+            PLAYER_RESPONSE: {
+              actions: 'applyPlayerResponse',
+            },
             END_PHASE: {
               target: 'action',
             },
@@ -256,6 +301,9 @@ export const gameMachine = setup({
           on: {
             PLAYER_ACTION: {
               actions: 'applyPlayerAction',
+            },
+            PLAYER_RESPONSE: {
+              actions: 'applyPlayerResponse',
             },
             END_PHASE: {
               target: 'endPhase',

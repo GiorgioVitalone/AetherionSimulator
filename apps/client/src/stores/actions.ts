@@ -19,6 +19,7 @@ export interface DeployCharacterAction {
 export interface CastSpellAction {
   readonly type: 'cast_spell';
   readonly cardInstanceId: string;
+  readonly targetId?: string;
 }
 
 export interface AttachEquipmentAction {

@@ -2,6 +2,9 @@
 @import "./theme/aetherion-tokens.css";
 @import "./theme/fonts.css";
 
+/* Scan ui package source for Tailwind class generation */
+@source "../../packages/ui/src/**/*.tsx";
+
 /* ==========================================================================
    Tailwind v4 Theme — Register custom colors for utility class generation.
    Values mirror the design tokens in aetherion-tokens.css.
@@ -112,4 +115,39 @@ select:focus-visible {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-faint);
+}
+
+/* ==========================================================================
+   Faction Theming — data-faction attribute sets card-level CSS properties.
+   Components reference --card-faction-color and --card-faction-light for
+   borders, glows, and tints.
+   ========================================================================== */
+
+[data-faction="crimson"] {
+  --card-faction-color: var(--faction-crimson);
+  --card-faction-light: var(--faction-crimson-light);
+}
+[data-faction="sapphire"] {
+  --card-faction-color: var(--faction-sapphire);
+  --card-faction-light: var(--faction-sapphire-light);
+}
+[data-faction="verdant"] {
+  --card-faction-color: var(--faction-verdant);
+  --card-faction-light: var(--faction-verdant-light);
+}
+[data-faction="onyx"] {
+  --card-faction-color: var(--faction-onyx);
+  --card-faction-light: var(--faction-onyx-light);
+}
+[data-faction="radiant"] {
+  --card-faction-color: var(--faction-radiant);
+  --card-faction-light: var(--faction-radiant-light);
+}
+[data-faction="amethyst"] {
+  --card-faction-color: var(--faction-amethyst);
+  --card-faction-light: var(--faction-amethyst-light);
+}
+[data-faction="none"] {
+  --card-faction-color: #b2ac9e;
+  --card-faction-light: #d4d0c8;
 }

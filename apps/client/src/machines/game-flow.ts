@@ -117,6 +117,7 @@ function mapActionToEvent(action: GameAction): GameMachineEvent | null {
         action: {
           type: 'cast_spell',
           cardInstanceId: action.cardInstanceId,
+          targetId: action.targetId,
         },
       };
 

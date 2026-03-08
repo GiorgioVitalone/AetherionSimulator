@@ -36,6 +36,8 @@ export interface DeployOption {
 export interface CastSpellOption {
   readonly cardInstanceId: string;
   readonly cost: ResourceCost;
+  readonly needsTarget: boolean;
+  readonly validTargets: readonly string[];
 }
 
 export interface EquipOption {
@@ -72,7 +74,7 @@ export function computeAvailableActions(state: GameState): AvailableActions {
 
   return {
     canDeploy: isStrategy ? computeDeployOptions(player) : [],
-    canCastSpell: isStrategy ? computeSpellOptions(player) : [],
+    canCastSpell: isStrategy ? computeSpellOptions(player, opponent) : [],
     canAttachEquipment: isStrategy ? computeEquipOptions(player) : [],
     canMove: isStrategy ? computeMoveOptions(player) : [],
     canActivateAbility: isStrategy ? computeActivateOptions(player, state) : [],
@@ -141,13 +143,49 @@ function getOpenSlotIndices(
 
 // ── Spells ────────────────────────────────────────────────────────────────────
 
-function computeSpellOptions(player: PlayerState): readonly CastSpellOption[] {
+function computeSpellOptions(
+  player: PlayerState,
+  opponent: PlayerState,
+): readonly CastSpellOption[] {
   const options: CastSpellOption[] = [];
 
   for (const card of player.hand) {
     if (card.cardType !== 'S') continue;
     if (!canAfford(player, card.cost)) continue;
-    options.push({ cardInstanceId: card.instanceId, cost: card.cost });
+
+    // Check if any on_cast effect needs a target
+    let needsTarget = false;
+    let validTargets: string[] = [];
+    for (const ability of card.abilities) {
+      if (ability.type !== 'triggered') continue;
+      if (ability.trigger.type !== 'on_cast') continue;
+      for (const effect of ability.effects) {
+        if ('target' in effect && effect.target !== undefined) {
+          const target = effect.target as { readonly type: string; readonly side?: string };
+          if (target.type === 'target_character') {
+            needsTarget = true;
+            const side = target.side;
+            if (side === 'enemy') {
+              validTargets = getAllCards(opponent.zones).map(c => c.instanceId);
+            } else if (side === 'allied') {
+              validTargets = getAllCards(player.zones).map(c => c.instanceId);
+            } else {
+              validTargets = [
+                ...getAllCards(player.zones).map(c => c.instanceId),
+                ...getAllCards(opponent.zones).map(c => c.instanceId),
+              ];
+            }
+          }
+        }
+      }
+    }
+
+    options.push({
+      cardInstanceId: card.instanceId,
+      cost: card.cost,
+      needsTarget,
+      validTargets,
+    });
   }
 
   return options;
@@ -195,7 +233,7 @@ function computeMoveOptions(player: PlayerState): readonly MoveOption[] {
   for (const zone of zones) {
     const cards = getCardsInZone(player.zones, zone);
     for (const card of cards) {
-      if (card.exhausted || card.movedThisTurn) continue;
+      if (card.exhausted || card.summoningSick || card.movedThisTurn) continue;
 
       const adjacentZones = ADJACENT.get(zone) ?? [];
       const validDests = adjacentZones.filter(z => hasOpenSlot(player.zones, z));

@@ -14,10 +14,17 @@ import type {
   ResourceCost,
 } from '@aetherion-sim/engine';
 
+export interface AbilityMeta {
+  readonly name: string;
+  readonly effect: string;
+}
+
 export interface RegistryWithAbilities {
   readonly registry: CardDefinitionRegistry;
   readonly getAbilities: (cardDefId: number) => readonly AbilityDSL[];
   readonly getHeroAbilities: (cardDefId: number) => readonly AbilityDSL[];
+  readonly getAbilityMeta: (cardDefId: number) => readonly AbilityMeta[];
+  readonly getHeroAbilityMeta: (cardDefId: number) => readonly AbilityMeta[];
 }
 
 /**
@@ -40,12 +47,20 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
   const heroMap = new Map<number, HeroDefinition>();
   const abilityMap = new Map<number, readonly AbilityDSL[]>();
   const heroAbilityMap = new Map<number, readonly AbilityDSL[]>();
+  const metaMap = new Map<number, readonly AbilityMeta[]>();
+  const heroMetaMap = new Map<number, readonly AbilityMeta[]>();
 
   for (const card of cards) {
     // Extract DSL abilities from the card data
     const dslAbilities = card.abilities
       .map(a => a.dsl as AbilityDSL | null)
       .filter((dsl): dsl is AbilityDSL => dsl !== null);
+
+    // Extract ability metadata (name + effect text)
+    const meta: AbilityMeta[] = card.abilities.map(a => ({
+      name: a.name,
+      effect: a.effect,
+    }));
 
     if (card.cardType === 'H') {
       // Hero cards: LP comes from stats.hp
@@ -57,6 +72,7 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
         alignment: card.alignment,
       });
       heroAbilityMap.set(card.id, dslAbilities);
+      heroMetaMap.set(card.id, meta);
     } else {
       // All other card types
       cardMap.set(card.id, {
@@ -70,6 +86,7 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
         alignment: card.alignment,
       });
       abilityMap.set(card.id, dslAbilities);
+      metaMap.set(card.id, meta);
     }
   }
 
@@ -82,5 +99,7 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
     registry,
     getAbilities: (cardDefId: number) => abilityMap.get(cardDefId) ?? [],
     getHeroAbilities: (cardDefId: number) => heroAbilityMap.get(cardDefId) ?? [],
+    getAbilityMeta: (cardDefId: number) => metaMap.get(cardDefId) ?? [],
+    getHeroAbilityMeta: (cardDefId: number) => heroMetaMap.get(cardDefId) ?? [],
   };
 }

@@ -141,9 +141,9 @@ async function main(): Promise<void> {
     const { rows } = await pool.query<DbRow>(
       `SELECT
         id, name, "cardType", rarity, alignment, cost, stats,
-        abilities, tags, "flavorText", "setCode", "transformsInto"
-      FROM "Cards"
-      WHERE "deletedAt" IS NULL
+        abilities, traits AS tags, "flavorText",
+        "setId" AS "setCode", "transformationId" AS "transformsInto"
+      FROM cards
       ORDER BY id`,
     );
 

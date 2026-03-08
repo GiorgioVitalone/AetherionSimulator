@@ -12,7 +12,9 @@ import type { PlayerAction } from './types.js';
 import { deployToZone, moveCard } from '../zones/zone-manager.js';
 import { resolveCombat } from '../combat/combat-resolver.js';
 import { canAfford, payCost } from '../actions/cost-checker.js';
+import { executeEffect } from '../effects/interpreter.js';
 import { MAX_HAND_SIZE } from '../types/game-state.js';
+import type { EffectContext } from '../types/game-state.js';
 
 // ── Upkeep Actions ──────────────────────────────────────────────────────────
 
@@ -164,7 +166,7 @@ function executeDeploy(
 
 function executeCastSpell(
   state: GameState,
-  action: { cardInstanceId: string },
+  action: { cardInstanceId: string; targetId?: string },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
   const player = state.players[state.activePlayerIndex]!;
   const cardIndex = player.hand.findIndex(c => c.instanceId === action.cardInstanceId);
@@ -185,14 +187,35 @@ function executeCastSpell(
     },
   };
 
-  return {
-    state: setPlayer(state, state.activePlayerIndex, newPlayer),
-    events: [{
-      type: 'SPELL_CAST',
-      cardInstanceId: card.instanceId,
-      playerId: state.activePlayerIndex,
-    }],
+  let currentState = setPlayer(state, state.activePlayerIndex, newPlayer);
+  const allEvents: GameEvent[] = [{
+    type: 'SPELL_CAST',
+    cardInstanceId: card.instanceId,
+    playerId: state.activePlayerIndex,
+  }];
+
+  // Execute spell effects for on_cast triggered abilities
+  const context: EffectContext = {
+    sourceInstanceId: card.instanceId,
+    controllerId: state.activePlayerIndex,
+    triggerDepth: 0,
+    selectedTargets: action.targetId ? [action.targetId] : undefined,
   };
+
+  for (const ability of card.abilities) {
+    if (ability.type !== 'triggered') continue;
+    if (ability.trigger.type !== 'on_cast') continue;
+    for (const effect of ability.effects) {
+      const result = executeEffect(currentState, effect, context);
+      currentState = result.newState;
+      allEvents.push(...result.events);
+      if (result.pendingChoice !== undefined) {
+        currentState = { ...currentState, pendingChoice: result.pendingChoice };
+      }
+    }
+  }
+
+  return { state: currentState, events: allEvents };
 }
 
 function executeAttachEquipment(
@@ -208,10 +231,28 @@ function executeAttachEquipment(
   const paidPlayer = payCost(player, equipCard.cost);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
 
-  // Attach to target character
+  // Compute stat bonuses from equipment's stat_grant abilities
+  let atkBonus = 0;
+  let hpBonus = 0;
+  let armBonus = 0;
+  for (const ability of equipCard.abilities) {
+    if (ability.type === 'stat_grant') {
+      atkBonus += ability.modifier.atk ?? 0;
+      hpBonus += ability.modifier.hp ?? 0;
+      armBonus += ability.modifier.arm ?? 0;
+    }
+  }
+
+  // Attach to target character and apply stat grants
   const attachToCard = (c: CardInstance | null): CardInstance | null => {
     if (c === null || c.instanceId !== action.targetInstanceId) return c;
-    return { ...c, equipment: equipCard };
+    return {
+      ...c,
+      equipment: equipCard,
+      currentAtk: c.currentAtk + atkBonus,
+      currentHp: c.currentHp + hpBonus,
+      currentArm: c.currentArm + armBonus,
+    };
   };
 
   const newZones = {
@@ -270,9 +311,54 @@ function executeActivateAbility(
   state: GameState,
   action: { cardInstanceId: string; abilityIndex: number },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  // Placeholder — ability execution routes through effect interpreter
+  const player = state.players[state.activePlayerIndex]!;
+
+  // Find the card on the battlefield
+  const allSlots = [
+    ...player.zones.reserve,
+    ...player.zones.frontline,
+    ...player.zones.highGround,
+  ];
+  const card = allSlots.find(c => c?.instanceId === action.cardInstanceId);
+  if (!card) return { state, events: [] };
+
+  // Check the ability exists
+  const ability = card.abilities[action.abilityIndex];
+  if (!ability) return { state, events: [] };
+
+  // Pay cost if the ability is an activated triggered ability
+  let updatedPlayer = player;
+  if (ability.type === 'triggered' && ability.trigger.type === 'activated') {
+    const abilityCost = ability.trigger.cost;
+    if (!canAfford(player, abilityCost)) return { state, events: [] };
+    updatedPlayer = payCost(player, abilityCost);
+  }
+
+  // Exhaust the card
+  const exhaustCard = (c: CardInstance | null): CardInstance | null => {
+    if (c === null || c.instanceId !== action.cardInstanceId) return c;
+    return { ...c, exhausted: true };
+  };
+
+  const newZones = {
+    reserve: updatedPlayer.zones.reserve.map(exhaustCard),
+    frontline: updatedPlayer.zones.frontline.map(exhaustCard),
+    highGround: updatedPlayer.zones.highGround.map(exhaustCard),
+  };
+
+  const newPlayer: PlayerState = {
+    ...updatedPlayer,
+    zones: newZones,
+    turnCounters: {
+      ...updatedPlayer.turnCounters,
+      abilitiesActivated: updatedPlayer.turnCounters.abilitiesActivated + 1,
+    },
+  };
+
+  // Full effect execution deferred to future iteration —
+  // for now, pay cost + exhaust + log the activation event
   return {
-    state,
+    state: setPlayer(state, state.activePlayerIndex, newPlayer),
     events: [{
       type: 'ABILITY_ACTIVATED',
       cardInstanceId: action.cardInstanceId,
@@ -290,13 +376,20 @@ function executeDiscardForEnergy(
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
+
+  // Determine resource type from the card's cost structure (Rulebook:
+  // "1 temporary resource of that card's type — Mana if Magic-aligned,
+  // Energy if Tech-aligned")
+  const resourceType: import('../types/index.js').ResourceType =
+    card.cost.energy > card.cost.mana ? 'energy' : 'mana';
+
   const newPlayer: PlayerState = {
     ...player,
     hand: player.hand.filter((_, i) => i !== cardIndex),
     discardPile: [...player.discardPile, card],
     temporaryResources: [
       ...player.temporaryResources,
-      { resourceType: 'energy', amount: 1 },
+      { resourceType, amount: 1 },
     ],
   };
 
