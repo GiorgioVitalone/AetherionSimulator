@@ -290,6 +290,61 @@ describe('Turn Flow State Machine', () => {
     });
   });
 
+  describe('turn number', () => {
+    it('should increment every turn regardless of starting player', () => {
+      const state = makePlayableState({ activePlayerIndex: 1 });
+      const actor = createActor(gameMachine, {
+        input: { gameState: state },
+      });
+      actor.start();
+
+      const initialTurn = actor.getSnapshot().context.gameState.turnNumber;
+
+      // End strategy → action
+      actor.send({ type: 'END_PHASE' });
+      // End action → endPhase → passTurn → next upkeep
+      actor.send({ type: 'END_PHASE' });
+
+      const afterOneTurn = actor.getSnapshot().context.gameState.turnNumber;
+      expect(afterOneTurn).toBe(initialTurn + 1);
+
+      // Do another full turn
+      actor.send({ type: 'END_PHASE' });
+      actor.send({ type: 'END_PHASE' });
+
+      const afterTwoTurns = actor.getSnapshot().context.gameState.turnNumber;
+      expect(afterTwoTurns).toBe(initialTurn + 2);
+    });
+  });
+
+  describe('draw events in log', () => {
+    it('should log resource draw events during upkeep', () => {
+      const state = makePlayableState();
+      const actor = createActor(gameMachine, {
+        input: { gameState: state },
+      });
+      actor.start();
+
+      const log = actor.getSnapshot().context.gameState.log;
+      const resourceEvents = log.filter(e => e.type === 'RESOURCE_GAINED');
+      expect(resourceEvents.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should log main deck draw events during upkeep', () => {
+      const state = makePlayableState({
+        turnState: { discardedForEnergy: false, firstPlayerFirstTurn: false },
+      });
+      const actor = createActor(gameMachine, {
+        input: { gameState: state },
+      });
+      actor.start();
+
+      const log = actor.getSnapshot().context.gameState.log;
+      const drawEvents = log.filter(e => e.type === 'CARD_DRAWN');
+      expect(drawEvents.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
   describe('concession', () => {
     it('should end game immediately on concede', () => {
       const state = makePlayableState();

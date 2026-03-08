@@ -6,7 +6,6 @@ import {
 import {
   mockCard,
   mockCardWithTraits,
-  mockHero,
   resetInstanceCounter,
   zonesWithCards,
   emptyZones,
@@ -45,15 +44,12 @@ describe('Targeting', () => {
   });
 
   describe('getValidAttackTargets', () => {
-    const hero = mockHero();
-
     describe('Empty Board Rule', () => {
       it('should allow any attacker to target hero when board empty', () => {
         const targets = getValidAttackTargets(
           'frontline',
           [],
           emptyZones(),
-          hero,
         );
         expect(targets).toHaveLength(1);
         expect(targets[0]?.type).toBe('hero');
@@ -64,7 +60,6 @@ describe('Targeting', () => {
           'reserve',
           [],
           emptyZones(),
-          hero,
         );
         expect(targets).toHaveLength(1);
         expect(targets[0]?.type).toBe('hero');
@@ -77,7 +72,7 @@ describe('Targeting', () => {
         const zones = zonesWithCards({
           frontline: [defender, null, null],
         });
-        const targets = getValidAttackTargets('reserve', [], zones, hero);
+        const targets = getValidAttackTargets('reserve', [], zones);
         expect(targets).toHaveLength(0);
       });
 
@@ -92,7 +87,6 @@ describe('Targeting', () => {
           'reserve',
           ['sniper'],
           zones,
-          hero,
         );
         expect(targets).toHaveLength(2);
         expect(targets.every(t => t.type === 'character')).toBe(true);
@@ -111,7 +105,6 @@ describe('Targeting', () => {
           'frontline',
           [],
           zones,
-          hero,
         );
         expect(targets).toHaveLength(2);
         const ids = targets.map(t => t.instanceId);
@@ -127,7 +120,6 @@ describe('Targeting', () => {
           'frontline',
           [],
           zones,
-          hero,
         );
         expect(targets.some(t => t.type === 'hero')).toBe(false);
       });
@@ -145,7 +137,6 @@ describe('Targeting', () => {
           'high_ground',
           [],
           zones,
-          hero,
         );
         expect(targets).toHaveLength(3);
         expect(targets.some(t => t.type === 'hero')).toBe(true);
@@ -163,7 +154,6 @@ describe('Targeting', () => {
           'frontline',
           [],
           zones,
-          hero,
         );
         expect(targets).toHaveLength(1);
         expect(targets[0]?.instanceId).toBe(defender.instanceId);
@@ -179,7 +169,6 @@ describe('Targeting', () => {
           'frontline',
           [],
           zones,
-          hero,
         );
         expect(targets).toHaveLength(2);
       });
@@ -193,7 +182,6 @@ describe('Targeting', () => {
           'high_ground',
           [],
           zones,
-          hero,
         );
         // Must target defender, no hero option
         expect(targets).toHaveLength(1);
@@ -212,7 +200,6 @@ describe('Targeting', () => {
           'frontline',
           ['flying'],
           zones,
-          hero,
         );
         // Flying bypasses all defenders (none have Flying/Sniper)
         expect(targets.length).toBeGreaterThan(1);
@@ -230,7 +217,6 @@ describe('Targeting', () => {
           'frontline',
           ['flying'],
           zones,
-          hero,
         );
         // Cannot bypass — must target the flying defender
         expect(targets).toHaveLength(1);
@@ -247,7 +233,6 @@ describe('Targeting', () => {
           'frontline',
           ['flying'],
           zones,
-          hero,
         );
         expect(targets).toHaveLength(1);
         expect(targets[0]?.instanceId).toBe(sniperDefender.instanceId);

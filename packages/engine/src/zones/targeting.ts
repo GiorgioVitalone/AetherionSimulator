@@ -2,7 +2,7 @@
  * Attack Targeting — determines valid attack targets based on zone positions,
  * Defender priority, Flying bypass, Sniper from Reserve, and Empty Board Rule.
  */
-import type { CardInstance, HeroState, ZoneState } from '../types/game-state.js';
+import type { CardInstance, ZoneState } from '../types/game-state.js';
 import type { Trait, ZoneType } from '../types/common.js';
 import { getCardsInZone } from './zone-manager.js';
 
@@ -55,7 +55,6 @@ export function getValidAttackTargets(
   attackerZone: ZoneType,
   attackerTraits: readonly Trait[],
   defenderZones: ZoneState,
-  defenderHero: HeroState,
 ): readonly AttackTarget[] {
   const isFlying = hasTrait(attackerTraits, 'flying');
   const isSniper = hasTrait(attackerTraits, 'sniper');
@@ -88,7 +87,6 @@ export function getValidAttackTargets(
     defenderZones,
     isFlying,
     canTargetHero,
-    defenderHero,
   );
 }
 
@@ -108,7 +106,6 @@ function applyDefenderPriority(
   defenderZones: ZoneState,
   attackerIsFlying: boolean,
   canTargetHero: boolean,
-  _defenderHero: HeroState,
 ): readonly AttackTarget[] {
   const defenders = getDefendersInFrontline(defenderZones);
   const hasActiveDefenders = defenders.length > 0;

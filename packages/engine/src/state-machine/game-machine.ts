@@ -43,8 +43,14 @@ export const gameMachine = setup({
     refreshAllCards: assign({
       gameState: ({ context }) => refreshCards(context.gameState),
     }),
-    drawResource: assign({
-      gameState: ({ context }) => drawResourceCard(context.gameState).state,
+    drawResource: assign(({ context }) => {
+      const result = drawResourceCard(context.gameState);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+      };
     }),
     drawMainCard: assign(({ context }) => {
       const result = drawMainDeckCard(context.gameState);
@@ -57,7 +63,13 @@ export const gameMachine = setup({
           pendingChoice: null,
         };
       }
-      return { gameState: result.state, pendingChoice: context.pendingChoice };
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+        pendingChoice: context.pendingChoice,
+      };
     }),
     applyPlayerAction: assign(({ context, event }) => {
       if (event.type !== 'PLAYER_ACTION') return {};

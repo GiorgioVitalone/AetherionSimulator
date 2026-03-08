@@ -109,7 +109,10 @@ function executeDealDamage(
       const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
       newPlayers[playerId] = { ...currentState.players[playerId]!, hero: { ...hero, currentLp: newLp } };
       currentState = { ...currentState, players: newPlayers };
-      if (newLp <= 0) currentState = { ...currentState, winner: context.controllerId };
+      if (newLp <= 0) {
+        const opponentId = (playerId === 0 ? 1 : 0) as 0 | 1;
+        currentState = { ...currentState, winner: opponentId };
+      }
     } else {
       events.push({ type: 'DAMAGE_DEALT', sourceId: context.sourceInstanceId, targetId, amount });
       currentState = updateCardInState(currentState, targetId, c => ({
@@ -318,11 +321,13 @@ function executeBounce(
     events.push({ type: 'CARD_BOUNCED', cardInstanceId: targetId });
     currentState = removeCardFromState(currentState, targetId);
     if (!card.isToken) {
-      // Return to owner's hand
+      // Return to owner's hand (and remove from discard pile where removeCardFromState put it)
+      const ownerState = currentState.players[card.owner]!;
       const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
       newPlayers[card.owner] = {
-        ...currentState.players[card.owner]!,
-        hand: [...currentState.players[card.owner]!.hand, resetCard(card)],
+        ...ownerState,
+        discardPile: ownerState.discardPile.filter(c => c.instanceId !== card.instanceId),
+        hand: [...ownerState.hand, resetCard(card)],
       };
       currentState = { ...currentState, players: newPlayers };
     }
@@ -385,7 +390,7 @@ function executeGainResource(
   }
 
   return {
-    newState: { ...state, players: newPlayers },
+    newState: { ...state, players: newPlayers, rng: { ...state.rng, counter: state.rng.counter + effect.amount } },
     events: [{
       type: 'RESOURCE_GAINED',
       playerId: context.controllerId,

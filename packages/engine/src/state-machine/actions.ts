@@ -367,7 +367,7 @@ export function passTurn(state: GameState): GameState {
   return {
     ...state,
     activePlayerIndex: nextPlayer as 0 | 1,
-    turnNumber: nextPlayer === 0 ? state.turnNumber + 1 : state.turnNumber,
+    turnNumber: state.turnNumber + 1,
     turnState: { discardedForEnergy: false, firstPlayerFirstTurn: false },
   };
 }

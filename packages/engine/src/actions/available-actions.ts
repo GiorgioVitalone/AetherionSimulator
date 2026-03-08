@@ -284,7 +284,6 @@ function computeAttackOptions(
         zone,
         traits,
         opponent.zones,
-        opponent.hero,
       );
 
       if (targets.length > 0) {

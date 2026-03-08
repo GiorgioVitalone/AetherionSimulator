@@ -116,7 +116,6 @@ export function resolveCombat(
     attackerLocation.zone,
     allTraits(attackerLocation.card),
     defenderPlayer.zones,
-    defenderPlayer.hero,
   );
   const isValidTarget =
     targetId === 'hero'

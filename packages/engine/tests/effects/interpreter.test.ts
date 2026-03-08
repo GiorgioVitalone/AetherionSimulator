@@ -68,6 +68,33 @@ describe('Effect Interpreter', () => {
       expect(result.events.some(e => e.type === 'HERO_DAMAGED')).toBe(true);
     });
 
+    it('should set opponent as winner when self-damage kills own hero', () => {
+      const state = mockGameState({
+        players: [
+          mockPlayerState(0, {
+            hero: {
+              ...mockGameState().players[0]!.hero,
+              currentLp: 3,
+              maxLp: 25,
+            },
+          }),
+          mockPlayerState(1),
+        ],
+      });
+
+      const effect: Effect = {
+        type: 'deal_damage',
+        amount: { type: 'fixed', value: 5 },
+        target: { type: 'owner_hero' },
+      };
+
+      // Controller 0 damages their own hero
+      const result = executeEffect(state, effect, ctx('src', 0));
+      expect(result.newState.players[0]!.hero.currentLp).toBe(0);
+      // Player 1 (opponent) should win, NOT player 0 (controller)
+      expect(result.newState.winner).toBe(1);
+    });
+
     it('should destroy character when HP reaches 0', () => {
       const target = mockCard({ currentHp: 2, owner: 1 });
       let p1Zones = deployToZone(emptyZones(), target, 'frontline');
@@ -261,6 +288,28 @@ describe('Effect Interpreter', () => {
       expect(result.newState.players[1]!.hand[0]!.currentAtk).toBe(2); // Reset
     });
 
+    it('should not duplicate card in discard pile', () => {
+      const card = mockCard({ owner: 1, isToken: false });
+      let zones = deployToZone(emptyZones(), card, 'frontline');
+
+      const state = mockGameState({
+        players: [
+          mockPlayerState(0),
+          mockPlayerState(1, { zones }),
+        ],
+      });
+
+      const effect: Effect = {
+        type: 'bounce',
+        target: { type: 'all_characters', side: 'enemy' },
+      };
+
+      const result = executeEffect(state, effect, ctx('src', 0));
+      // Card should be in hand but NOT in discard
+      expect(result.newState.players[1]!.hand).toHaveLength(1);
+      expect(result.newState.players[1]!.discardPile).toHaveLength(0);
+    });
+
     it('should remove tokens from game (not to hand)', () => {
       const token = mockCard({ owner: 1, isToken: true });
       let zones = deployToZone(emptyZones(), token, 'frontline');
@@ -360,6 +409,22 @@ describe('Effect Interpreter', () => {
       expect(result.newState.players[0]!.resourceBank).toHaveLength(2);
       expect(result.newState.players[0]!.resourceBank[0]!.resourceType).toBe('mana');
       expect(result.newState.players[0]!.resourceBank[0]!.exhausted).toBe(false);
+    });
+
+    it('should advance rng.counter to avoid duplicate resource IDs', () => {
+      const state = mockGameState();
+
+      const effect: Effect = {
+        type: 'gain_resource',
+        resourceType: 'mana',
+        amount: 3,
+      };
+
+      const result = executeEffect(state, effect, ctx('src', 0));
+      expect(result.newState.rng.counter).toBe(state.rng.counter + 3);
+      // All resource IDs should be unique
+      const ids = result.newState.players[0]!.resourceBank.map(r => r.instanceId);
+      expect(new Set(ids).size).toBe(ids.length);
     });
 
     it('should add temporary resources when temporary flag is set', () => {
