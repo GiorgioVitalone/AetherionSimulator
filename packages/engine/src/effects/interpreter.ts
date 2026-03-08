@@ -323,13 +323,21 @@ function executeBounce(
     if (!card.isToken) {
       // Return to owner's hand (and remove from discard pile where removeCardFromState put it)
       const ownerState = currentState.players[card.owner]!;
+      // If the card had equipment, send it to discard separately
+      const equipmentToDiscard = card.equipment !== null ? [card.equipment] : [];
       const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
       newPlayers[card.owner] = {
         ...ownerState,
-        discardPile: ownerState.discardPile.filter(c => c.instanceId !== card.instanceId),
+        discardPile: [
+          ...ownerState.discardPile.filter(c => c.instanceId !== card.instanceId),
+          ...equipmentToDiscard,
+        ],
         hand: [...ownerState.hand, resetCard(card)],
       };
       currentState = { ...currentState, players: newPlayers };
+      if (card.equipment !== null) {
+        events.push({ type: 'CARD_DESTROYED', cardInstanceId: card.equipment.instanceId, cause: 'effect', playerId: card.owner });
+      }
     }
     // Tokens are removed from game when bounced
   }

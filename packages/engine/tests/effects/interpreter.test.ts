@@ -310,6 +310,40 @@ describe('Effect Interpreter', () => {
       expect(result.newState.players[1]!.discardPile).toHaveLength(0);
     });
 
+    it('should send equipment to discard when bouncing equipped card', () => {
+      const equipment = mockCard({ name: 'Sword', cardType: 'E' as any, owner: 1, isToken: false });
+      const card = mockCard({
+        owner: 1,
+        isToken: false,
+        equipment,
+      });
+      let zones = deployToZone(emptyZones(), card, 'frontline');
+
+      const state = mockGameState({
+        players: [
+          mockPlayerState(0),
+          mockPlayerState(1, { zones }),
+        ],
+      });
+
+      const effect: Effect = {
+        type: 'bounce',
+        target: { type: 'all_characters', side: 'enemy' },
+      };
+
+      const result = executeEffect(state, effect, ctx('src', 0));
+      // Card should be in hand with equipment nulled (reset)
+      expect(result.newState.players[1]!.hand).toHaveLength(1);
+      expect(result.newState.players[1]!.hand[0]!.equipment).toBeNull();
+      // Equipment should be in discard pile
+      expect(result.newState.players[1]!.discardPile).toHaveLength(1);
+      expect(result.newState.players[1]!.discardPile[0]!.instanceId).toBe(equipment.instanceId);
+      // Should emit CARD_DESTROYED for the equipment
+      expect(result.events.some(
+        e => e.type === 'CARD_DESTROYED' && e.cardInstanceId === equipment.instanceId
+      )).toBe(true);
+    });
+
     it('should remove tokens from game (not to hand)', () => {
       const token = mockCard({ owner: 1, isToken: true });
       let zones = deployToZone(emptyZones(), token, 'frontline');
