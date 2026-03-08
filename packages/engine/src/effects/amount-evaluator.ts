@@ -8,7 +8,7 @@ import { getCardsInZone, getAllCards } from '../zones/zone-manager.js';
 export function evaluateAmount(
   state: GameState,
   amount: AmountExpr,
-  _context: EffectContext,
+  context: EffectContext,
 ): number {
   switch (amount.type) {
     case 'fixed':
@@ -28,7 +28,7 @@ export function evaluateAmount(
 
       switch (counting.type) {
         case 'cards_in_zone': {
-          count = countCardsInZone(state, counting);
+          count = countCardsInZone(state, counting, context.controllerId);
           break;
         }
         case 'characters_destroyed_this_turn':
@@ -39,8 +39,8 @@ export function evaluateAmount(
           break;
         case 'empty_slots': {
           const player = counting.side === 'enemy'
-            ? state.players[state.activePlayerIndex === 0 ? 1 : 0]!
-            : state.players[state.activePlayerIndex]!;
+            ? state.players[context.controllerId === 0 ? 1 : 0]!
+            : state.players[context.controllerId]!;
           const zoneCards = getCardsInZone(player.zones, counting.zone);
           const zoneSlots = counting.zone === 'frontline' ? 3 : 2;
           count = zoneSlots - zoneCards.length;
@@ -56,10 +56,11 @@ export function evaluateAmount(
 function countCardsInZone(
   state: GameState,
   counting: Extract<AmountExpr, { type: 'count' }>['counting'] & { type: 'cards_in_zone' },
+  controllerId: 0 | 1,
 ): number {
   const playerIndex = counting.side === 'enemy'
-    ? (state.activePlayerIndex === 0 ? 1 : 0)
-    : state.activePlayerIndex;
+    ? (controllerId === 0 ? 1 : 0)
+    : controllerId;
   const player = state.players[playerIndex]!;
 
   switch (counting.zone) {

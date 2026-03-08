@@ -92,7 +92,7 @@ function computeDeployOptions(player: PlayerState): readonly DeployOption[] {
     if (card.cardType !== 'C') continue;
     if (!canAfford(player, card.cost)) continue;
 
-    const validSlots = getValidDeploySlots(player, card);
+    const validSlots = getValidDeploySlots(player);
     if (validSlots.length > 0) {
       options.push({
         cardInstanceId: card.instanceId,
@@ -107,7 +107,6 @@ function computeDeployOptions(player: PlayerState): readonly DeployOption[] {
 
 function getValidDeploySlots(
   player: PlayerState,
-  _card: CardInstance,
 ): readonly { readonly zone: ZoneType; readonly slots: readonly number[] }[] {
   const result: { readonly zone: ZoneType; readonly slots: readonly number[] }[] = [];
 

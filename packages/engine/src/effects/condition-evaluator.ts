@@ -3,7 +3,7 @@
  */
 import type { Condition } from '../types/conditions.js';
 import type { GameState, EffectContext, CardInstance } from '../types/game-state.js';
-import { findCard, getAllCards } from '../zones/zone-manager.js';
+import { findCard, getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 
 export function evaluateCondition(
   state: GameState,
@@ -236,7 +236,7 @@ function evaluateControlsCharacter(
 ): boolean {
   const player = state.players[context.controllerId]!;
   const cards = cond.zone !== undefined
-    ? getAllCards(player.zones).filter(() => true) // zone filter handled below
+    ? getCardsInZone(player.zones, cond.zone)
     : getAllCards(player.zones);
 
   return cards.some(c => {

@@ -9,6 +9,7 @@ import type {
   EffectContext,
   EffectResult,
   CardInstance,
+  ResourceCard,
 } from '../types/game-state.js';
 import { resolveTargets } from './target-resolver.js';
 import { evaluateAmount } from './amount-evaluator.js';
@@ -117,7 +118,7 @@ function executeDealDamage(
       // Check destruction
       const cardCheck = findCardInState(currentState, targetId);
       if (cardCheck !== null && cardCheck.currentHp <= 0) {
-        events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'effect' });
+        events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'effect', playerId: cardCheck.owner });
         currentState = removeCardFromState(currentState, targetId);
       }
     }
@@ -153,6 +154,8 @@ function executeHeal(
       currentState = updateCardInState(currentState, targetId, c => {
         const healed = Math.min(amount, c.baseHp - c.currentHp);
         if (healed > 0) events.push({ type: 'CHARACTER_HEALED', cardInstanceId: targetId, amount: healed });
+        const excess = amount - (c.baseHp - c.currentHp);
+        if (excess > 0) events.push({ type: 'CHARACTER_OVERHEALED', cardInstanceId: targetId, excess });
         return { ...c, currentHp: Math.min(c.baseHp, c.currentHp + amount) };
       });
     }
@@ -226,7 +229,6 @@ function executeDeployToken(
   const zone: ZoneType = effect.zone ?? 'frontline';
   const events: GameEvent[] = [];
   let currentState = state;
-  let tokenCounter = 0;
 
   const count = effect.inEachEmpty === true
     ? ZONE_SLOTS[zone]
@@ -240,9 +242,10 @@ function executeDeployToken(
     const openSlot = zoneArr.findIndex(s => s === null);
     if (openSlot === -1) break;
 
-    tokenCounter++;
+    const tokenId = currentState.rng.counter + 1;
+    currentState = { ...currentState, rng: { ...currentState.rng, counter: tokenId } };
     const token: CardInstance = {
-      instanceId: `token_${context.sourceInstanceId}_${String(tokenCounter)}`,
+      instanceId: `token_${String(tokenId)}`,
       cardDefId: 0,
       name: effect.token.name,
       cardType: 'C',
@@ -291,7 +294,9 @@ function executeDestroy(
   const events: GameEvent[] = [];
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'effect' });
+    const card = findCardInState(currentState, targetId);
+    if (card === null) continue;
+    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'effect', playerId: card.owner });
     currentState = removeCardFromState(currentState, targetId);
   }
   return { newState: currentState, events };
@@ -337,8 +342,10 @@ function executeSacrifice(
   const events: GameEvent[] = [];
   let currentState = state;
   for (const targetId of resolved.targetIds) {
+    const card = findCardInState(currentState, targetId);
+    if (card === null) continue;
     events.push({ type: 'CARD_SACRIFICED', cardInstanceId: targetId });
-    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'sacrifice' });
+    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'sacrifice', playerId: card.owner });
     currentState = removeCardFromState(currentState, targetId);
   }
   return { newState: currentState, events };
@@ -359,6 +366,21 @@ function executeGainResource(
         ...player.temporaryResources,
         { resourceType: effect.resourceType, amount: effect.amount },
       ],
+    };
+  } else {
+    // Permanent: add ResourceCards to the bank
+    const newCards: ResourceCard[] = [];
+    for (let i = 0; i < effect.amount; i++) {
+      const cardId = state.rng.counter + i + 1;
+      newCards.push({
+        instanceId: `res_gained_${String(cardId)}`,
+        resourceType: effect.resourceType,
+        exhausted: false,
+      });
+    }
+    newPlayers[context.controllerId] = {
+      ...player,
+      resourceBank: [...player.resourceBank, ...newCards],
     };
   }
 
@@ -429,11 +451,15 @@ function executeApplyStatus(
 
 function executeDiscard(
   state: GameState,
-  _effect: Extract<Effect, { type: 'discard' }>,
+  effect: Extract<Effect, { type: 'discard' }>,
   context: EffectContext,
 ): EffectResult {
-  // Requires player choice — return PendingChoice
-  const player = state.players[context.controllerId]!;
+  // Resolve target player from effect.target
+  const targetPlayerId = 'side' in effect.target && effect.target.side === 'enemy'
+    ? (context.controllerId === 0 ? 1 : 0) as 0 | 1
+    : context.controllerId;
+
+  const player = state.players[targetPlayerId]!;
   if (player.hand.length === 0) return unchanged(state);
 
   return {
@@ -441,11 +467,11 @@ function executeDiscard(
     events: [],
     pendingChoice: {
       type: 'choose_discard',
-      playerId: context.controllerId,
+      playerId: targetPlayerId,
       options: player.hand.map(c => ({ id: c.instanceId, label: c.name })),
-      minSelections: Math.min(_effect.count, player.hand.length),
-      maxSelections: Math.min(_effect.count, player.hand.length),
-      context: `Discard ${String(_effect.count)} card(s)`,
+      minSelections: Math.min(effect.count, player.hand.length),
+      maxSelections: Math.min(effect.count, player.hand.length),
+      context: `Discard ${String(effect.count)} card(s)`,
     },
   };
 }
@@ -458,19 +484,40 @@ function executeMove(
   const resolved = resolveTargets(state, effect.target, context);
   if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
-  // Simplified: just track the move event
+  if (effect.destination === 'any' || effect.destination === 'adjacent_to_current') {
+    // Requires player choice — not yet implemented
+    return unchanged(state);
+  }
+
   const events: GameEvent[] = [];
+  let currentState = state;
+
   for (const targetId of resolved.targetIds) {
-    if (effect.destination !== 'any' && effect.destination !== 'adjacent_to_current') {
-      events.push({
-        type: 'CARD_MOVED',
-        cardInstanceId: targetId,
-        fromZone: 'frontline', // simplified
-        toZone: effect.destination,
-      });
+    for (let pi = 0; pi < 2; pi++) {
+      const player = currentState.players[pi]!;
+      const location = findCard(player.zones, targetId);
+      if (location === null) continue;
+
+      const fromZone = location.zone;
+      const toZone = effect.destination;
+      if (fromZone === toZone) break;
+
+      const { zones: clearedZones } = removeFromZone(player.zones, targetId);
+      const movedCard: CardInstance = { ...location.card, movedThisTurn: true };
+      try {
+        const newZones = deployToZone(clearedZones, movedCard, toZone);
+        const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
+        newPlayers[pi] = { ...player, zones: newZones };
+        currentState = { ...currentState, players: newPlayers };
+        events.push({ type: 'CARD_MOVED', cardInstanceId: targetId, fromZone, toZone });
+      } catch {
+        // No open slot in destination — skip
+      }
+      break;
     }
   }
-  return { newState: state, events };
+
+  return { newState: currentState, events };
 }
 
 // ── Compound Effects ─────────────────────────────────────────────────────────

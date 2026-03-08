@@ -319,6 +319,133 @@ describe('Effect Interpreter', () => {
     });
   });
 
+  describe('move (effect)', () => {
+    it('should move a character to a new zone', () => {
+      const card = mockCard({ owner: 0 });
+      let zones = deployToZone(emptyZones(), card, 'frontline');
+
+      const state = mockGameState({
+        players: [
+          mockPlayerState(0, { zones }),
+          mockPlayerState(1),
+        ],
+      });
+
+      const effect: Effect = {
+        type: 'move',
+        target: { type: 'self' },
+        destination: 'reserve',
+      };
+
+      const result = executeEffect(state, effect, ctx(card.instanceId, 0));
+      // Card should be in reserve now
+      expect(result.newState.players[0]!.zones.reserve.some(s => s !== null)).toBe(true);
+      // Card should be gone from frontline
+      expect(result.newState.players[0]!.zones.frontline[0]).toBeNull();
+      expect(result.events.some(e => e.type === 'CARD_MOVED')).toBe(true);
+    });
+  });
+
+  describe('gain_resource', () => {
+    it('should add permanent resource cards to bank', () => {
+      const state = mockGameState();
+
+      const effect: Effect = {
+        type: 'gain_resource',
+        resourceType: 'mana',
+        amount: 2,
+      };
+
+      const result = executeEffect(state, effect, ctx('src', 0));
+      expect(result.newState.players[0]!.resourceBank).toHaveLength(2);
+      expect(result.newState.players[0]!.resourceBank[0]!.resourceType).toBe('mana');
+      expect(result.newState.players[0]!.resourceBank[0]!.exhausted).toBe(false);
+    });
+
+    it('should add temporary resources when temporary flag is set', () => {
+      const state = mockGameState();
+
+      const effect: Effect = {
+        type: 'gain_resource',
+        resourceType: 'energy',
+        amount: 1,
+        temporary: true,
+      };
+
+      const result = executeEffect(state, effect, ctx('src', 0));
+      expect(result.newState.players[0]!.temporaryResources).toHaveLength(1);
+      expect(result.newState.players[0]!.temporaryResources[0]!.resourceType).toBe('energy');
+    });
+  });
+
+  describe('deploy_token (unique IDs)', () => {
+    it('should generate unique token IDs across multiple deployments', () => {
+      const state = mockGameState();
+
+      const effect: Effect = {
+        type: 'deploy_token',
+        token: { name: 'Sapling', atk: 1, hp: 1 },
+        count: 2,
+        zone: 'frontline',
+      };
+
+      const result = executeEffect(state, effect, ctx('src', 0));
+      const tokens = result.newState.players[0]!.zones.frontline.filter(s => s !== null);
+      expect(tokens).toHaveLength(2);
+      expect(tokens[0]!.instanceId).not.toBe(tokens[1]!.instanceId);
+    });
+  });
+
+  describe('heal (overheal)', () => {
+    it('should emit CHARACTER_OVERHEALED when healing exceeds max HP', () => {
+      const card = mockCard({ currentHp: 4, baseHp: 5, owner: 0 });
+      let zones = deployToZone(emptyZones(), card, 'frontline');
+
+      const state = mockGameState({
+        players: [
+          mockPlayerState(0, { zones }),
+          mockPlayerState(1),
+        ],
+      });
+
+      const effect: Effect = {
+        type: 'heal',
+        amount: { type: 'fixed', value: 5 },
+        target: { type: 'self' },
+      };
+
+      const result = executeEffect(state, effect, ctx(card.instanceId, 0));
+      expect(result.events.some(e => e.type === 'CHARACTER_HEALED')).toBe(true);
+      expect(result.events.some(e => e.type === 'CHARACTER_OVERHEALED')).toBe(true);
+      const overhealEvent = result.events.find(e => e.type === 'CHARACTER_OVERHEALED');
+      expect(overhealEvent).toBeDefined();
+      if (overhealEvent?.type === 'CHARACTER_OVERHEALED') {
+        expect(overhealEvent.excess).toBe(4); // 5 heal - 1 missing HP = 4 excess
+      }
+    });
+  });
+
+  describe('discard (target resolution)', () => {
+    it('should target enemy player when target side is enemy', () => {
+      const state = mockGameState({
+        players: [
+          mockPlayerState(0),
+          mockPlayerState(1, { hand: [mockCard({ owner: 1 })] }),
+        ],
+      });
+
+      const effect: Effect = {
+        type: 'discard',
+        count: 1,
+        target: { type: 'player', side: 'enemy' },
+      };
+
+      const result = executeEffect(state, effect, ctx('src', 0));
+      expect(result.pendingChoice).toBeDefined();
+      expect(result.pendingChoice?.playerId).toBe(1); // Enemy player
+    });
+  });
+
   describe('choose_one', () => {
     it('should return PendingChoice', () => {
       const state = mockGameState();

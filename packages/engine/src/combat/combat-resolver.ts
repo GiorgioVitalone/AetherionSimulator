@@ -201,6 +201,8 @@ function resolveCharacterAttack(
   attackerInstanceId: string,
   targetId: string,
   events: GameEvent[],
+  attackerPlayerId: 0 | 1 = state.activePlayerIndex,
+  defenderPlayerId: 0 | 1 = (state.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
 ): CombatResult {
   // Find defender in either player's zones
   let defender: CardInstance | null = null;
@@ -271,6 +273,7 @@ function resolveCharacterAttack(
       type: 'CARD_DESTROYED',
       cardInstanceId: targetId,
       cause: 'combat',
+      playerId: defenderPlayerId,
     });
     const removal = removeCardFromZones(currentState, targetId);
     if (removal !== null) {
@@ -284,6 +287,7 @@ function resolveCharacterAttack(
       type: 'CARD_DESTROYED',
       cardInstanceId: attackerInstanceId,
       cause: 'combat',
+      playerId: attackerPlayerId,
     });
     const removal = removeCardFromZones(currentState, attackerInstanceId);
     if (removal !== null) {

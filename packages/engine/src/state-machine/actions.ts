@@ -11,7 +11,7 @@ import type {
 import type { PlayerAction } from './types.js';
 import { deployToZone, moveCard } from '../zones/zone-manager.js';
 import { resolveCombat } from '../combat/combat-resolver.js';
-import { payCost } from '../actions/cost-checker.js';
+import { canAfford, payCost } from '../actions/cost-checker.js';
 import { MAX_HAND_SIZE } from '../types/game-state.js';
 
 // ── Upkeep Actions ──────────────────────────────────────────────────────────
@@ -129,6 +129,7 @@ function executeDeploy(
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
+  if (!canAfford(player, card.cost)) return { state, events: [] };
   const paidPlayer = payCost(player, card.cost);
 
   const deployedCard: CardInstance = {
@@ -170,6 +171,7 @@ function executeCastSpell(
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
+  if (!canAfford(player, card.cost)) return { state, events: [] };
   const paidPlayer = payCost(player, card.cost);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
 
@@ -202,6 +204,7 @@ function executeAttachEquipment(
   if (cardIndex === -1) return { state, events: [] };
 
   const equipCard = player.hand[cardIndex]!;
+  if (!canAfford(player, equipCard.cost)) return { state, events: [] };
   const paidPlayer = payCost(player, equipCard.cost);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
 

@@ -177,6 +177,53 @@ describe('Combat Resolver', () => {
     });
   });
 
+  describe('CARD_DESTROYED events include playerId', () => {
+    it('should include correct playerId for defender destruction', () => {
+      const state = gameWithCards(
+        [{ currentAtk: 5, currentHp: 10, currentArm: 0 }],
+        [{ currentAtk: 1, currentHp: 3, currentArm: 0 }],
+      );
+      const attacker = state.players[0]!.zones.frontline[0]!;
+      const defender = state.players[1]!.zones.frontline[0]!;
+
+      const result = resolveCombat(state, attacker.instanceId, defender.instanceId);
+
+      const destroyEvent = result.events.find(
+        e => e.type === 'CARD_DESTROYED' && e.cardInstanceId === defender.instanceId,
+      );
+      expect(destroyEvent).toBeDefined();
+      if (destroyEvent?.type === 'CARD_DESTROYED') {
+        expect(destroyEvent.playerId).toBe(1); // Defender belongs to player 1
+      }
+    });
+
+    it('should include correct playerId for mutual destruction', () => {
+      const state = gameWithCards(
+        [{ currentAtk: 3, currentHp: 2 }],
+        [{ currentAtk: 3, currentHp: 2 }],
+      );
+      const attacker = state.players[0]!.zones.frontline[0]!;
+      const defender = state.players[1]!.zones.frontline[0]!;
+
+      const result = resolveCombat(state, attacker.instanceId, defender.instanceId);
+
+      const destroyed = result.events.filter(e => e.type === 'CARD_DESTROYED');
+      expect(destroyed).toHaveLength(2);
+      const defenderDeath = destroyed.find(
+        e => e.type === 'CARD_DESTROYED' && e.cardInstanceId === defender.instanceId,
+      );
+      const attackerDeath = destroyed.find(
+        e => e.type === 'CARD_DESTROYED' && e.cardInstanceId === attacker.instanceId,
+      );
+      if (defenderDeath?.type === 'CARD_DESTROYED') {
+        expect(defenderDeath.playerId).toBe(1);
+      }
+      if (attackerDeath?.type === 'CARD_DESTROYED') {
+        expect(attackerDeath.playerId).toBe(0);
+      }
+    });
+  });
+
   describe('First Strike in combat', () => {
     it('should prevent counter-damage when FS attacker kills', () => {
       const state = gameWithCards(

@@ -28,7 +28,7 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'on_deploy' },
           { type: 'CARD_DEPLOYED', cardInstanceId: 'c1', zone: 'frontline', playerId: 0 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(true);
     });
@@ -38,7 +38,7 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'on_deploy' },
           { type: 'CARD_DEPLOYED', cardInstanceId: 'c2', zone: 'frontline', playerId: 0 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(false);
     });
@@ -47,8 +47,8 @@ describe('Trigger Matcher', () => {
       expect(
         triggerMatchesEvent(
           { type: 'on_destroy' },
-          { type: 'CARD_DESTROYED', cardInstanceId: 'c1', cause: 'combat' },
-          'c1', 0, 0,
+          { type: 'CARD_DESTROYED', cardInstanceId: 'c1', cause: 'combat', playerId: 0 },
+          'c1', 0,
         ),
       ).toBe(true);
     });
@@ -58,14 +58,14 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'on_turn_start' },
           { type: 'TURN_START', playerId: 0, turnNumber: 1 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(true);
       expect(
         triggerMatchesEvent(
           { type: 'on_turn_start' },
           { type: 'TURN_START', playerId: 1, turnNumber: 1 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(false);
     });
@@ -75,7 +75,7 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'on_attack' },
           { type: 'CHARACTER_ATTACKED', attackerId: 'c1', targetId: 'c2' },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(true);
     });
@@ -85,7 +85,7 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'on_attack' },
           { type: 'CHARACTER_ATTACKED', attackerId: 'c2', targetId: 'c1' },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(false);
     });
@@ -95,7 +95,7 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'on_ally_deployed' },
           { type: 'CARD_DEPLOYED', cardInstanceId: 'c2', zone: 'frontline', playerId: 0 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(true);
       // Self does not trigger ally_deployed
@@ -103,7 +103,7 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'on_ally_deployed' },
           { type: 'CARD_DEPLOYED', cardInstanceId: 'c1', zone: 'frontline', playerId: 0 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(false);
     });
@@ -113,7 +113,7 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'on_ally_deployed' },
           { type: 'CARD_DEPLOYED', cardInstanceId: 'c3', zone: 'frontline', playerId: 1 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(false);
     });
@@ -123,14 +123,14 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'on_spell_cast', side: 'allied' },
           { type: 'SPELL_CAST', cardInstanceId: 's1', playerId: 0 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(true);
       expect(
         triggerMatchesEvent(
           { type: 'on_spell_cast', side: 'allied' },
           { type: 'SPELL_CAST', cardInstanceId: 's1', playerId: 1 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(false);
     });
@@ -140,9 +140,54 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'on_take_damage' },
           { type: 'DAMAGE_DEALT', sourceId: 'c2', targetId: 'c1', amount: 3 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(true);
+    });
+
+    it('on_ally_destroyed matches only same-player cards', () => {
+      // Allied card destroyed — should match
+      expect(
+        triggerMatchesEvent(
+          { type: 'on_ally_destroyed' },
+          { type: 'CARD_DESTROYED', cardInstanceId: 'c2', cause: 'combat', playerId: 0 },
+          'c1', 0,
+        ),
+      ).toBe(true);
+      // Enemy card destroyed — should NOT match
+      expect(
+        triggerMatchesEvent(
+          { type: 'on_ally_destroyed' },
+          { type: 'CARD_DESTROYED', cardInstanceId: 'c2', cause: 'combat', playerId: 1 },
+          'c1', 0,
+        ),
+      ).toBe(false);
+      // Self destroyed — should NOT match (on_ally excludes self)
+      expect(
+        triggerMatchesEvent(
+          { type: 'on_ally_destroyed' },
+          { type: 'CARD_DESTROYED', cardInstanceId: 'c1', cause: 'combat', playerId: 0 },
+          'c1', 0,
+        ),
+      ).toBe(false);
+    });
+
+    it('on_overheal matches CHARACTER_OVERHEALED, not CHARACTER_HEALED', () => {
+      expect(
+        triggerMatchesEvent(
+          { type: 'on_overheal' },
+          { type: 'CHARACTER_OVERHEALED', cardInstanceId: 'c1', excess: 3 },
+          'c1', 0,
+        ),
+      ).toBe(true);
+      // Regular heal should NOT match
+      expect(
+        triggerMatchesEvent(
+          { type: 'on_overheal' },
+          { type: 'CHARACTER_HEALED', cardInstanceId: 'c1', amount: 3 },
+          'c1', 0,
+        ),
+      ).toBe(false);
     });
 
     it('activated trigger never matches events', () => {
@@ -150,7 +195,7 @@ describe('Trigger Matcher', () => {
         triggerMatchesEvent(
           { type: 'activated', cost: { mana: 1, energy: 0, flexible: 0 } },
           { type: 'TURN_START', playerId: 0, turnNumber: 1 },
-          'c1', 0, 0,
+          'c1', 0,
         ),
       ).toBe(false);
     });

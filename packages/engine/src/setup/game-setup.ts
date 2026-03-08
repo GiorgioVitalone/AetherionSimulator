@@ -110,7 +110,6 @@ function createHeroState(def: HeroDefinition): HeroState {
 }
 
 function createResourceCard(
-  _defId: number,
   resourceType: 'mana' | 'energy',
 ): ResourceCard {
   return {
@@ -207,7 +206,7 @@ function buildPlayerState(
       def !== undefined && def.cardType === 'R'
         ? guessResourceType(def)
         : 'mana';
-    return createResourceCard(id, resourceType);
+    return createResourceCard(resourceType);
   });
 
   // Shuffle both decks

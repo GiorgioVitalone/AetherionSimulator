@@ -193,6 +193,48 @@ describe('Turn Flow State Machine', () => {
     });
   });
 
+  describe('affordability guards', () => {
+    it('should ignore deploy when player cannot afford cost', () => {
+      const expensiveCard = mockCard({
+        name: 'Expensive',
+        cardType: 'C',
+        cost: { mana: 10, energy: 0, flexible: 0 },
+        owner: 0,
+      });
+      const state = makePlayableState();
+      const modState = {
+        ...state,
+        players: [
+          { ...state.players[0]!, hand: [expensiveCard] },
+          state.players[1]!,
+        ] as const,
+      };
+
+      const actor = createActor(gameMachine, {
+        input: { gameState: modState },
+      });
+      actor.start();
+
+      actor.send({
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'deploy',
+          cardInstanceId: expensiveCard.instanceId,
+          zone: 'frontline',
+          slotIndex: 0,
+        },
+      });
+
+      const ctx = actor.getSnapshot().context;
+      // Card should still be in hand (deploy rejected)
+      expect(ctx.gameState.players[0]!.hand.some(
+        c => c.instanceId === expensiveCard.instanceId,
+      )).toBe(true);
+      // Frontline should still be empty
+      expect(ctx.gameState.players[0]!.zones.frontline[0]).toBeNull();
+    });
+  });
+
   describe('combat', () => {
     it('should resolve attack during action phase', () => {
       const attacker = mockCard({

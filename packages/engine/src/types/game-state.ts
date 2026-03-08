@@ -233,6 +233,7 @@ export type GameEvent =
   | StatModifiedEvent
   | LethalDamageDealtEvent
   | CharacterHealedEvent
+  | CharacterOverhealedEvent
   | CardMovedEvent;
 
 export interface CardDeployedEvent {
@@ -245,6 +246,7 @@ export interface CardDestroyedEvent {
   readonly type: 'CARD_DESTROYED';
   readonly cardInstanceId: string;
   readonly cause: 'combat' | 'effect' | 'sacrifice';
+  readonly playerId: 0 | 1;
 }
 export interface CardBouncedEvent {
   readonly type: 'CARD_BOUNCED';
@@ -340,6 +342,11 @@ export interface CharacterHealedEvent {
   readonly type: 'CHARACTER_HEALED';
   readonly cardInstanceId: string;
   readonly amount: number;
+}
+export interface CharacterOverhealedEvent {
+  readonly type: 'CHARACTER_OVERHEALED';
+  readonly cardInstanceId: string;
+  readonly excess: number;
 }
 export interface CardMovedEvent {
   readonly type: 'CARD_MOVED';

@@ -33,7 +33,6 @@ export function triggerMatchesEvent(
   event: GameEvent,
   sourceInstanceId: string,
   ownerPlayerId: 0 | 1,
-  _activePlayerId: 0 | 1,
   getCardInfo?: (instanceId: string) => CardInfo | null,
 ): boolean {
   switch (trigger.type) {
@@ -70,7 +69,7 @@ export function triggerMatchesEvent(
     case 'on_ally_destroyed':
       if (event.type !== 'CARD_DESTROYED') return false;
       if (event.cardInstanceId === sourceInstanceId) return false;
-      // Need to verify it's the same player's card
+      if (event.playerId !== ownerPlayerId) return false;
       return matchesFilter(
         trigger.filter,
         getCardInfo?.(event.cardInstanceId) ?? null,
@@ -97,9 +96,7 @@ export function triggerMatchesEvent(
       return event.type === 'EQUIPMENT_ATTACHED' && event.targetId === sourceInstanceId;
 
     case 'on_overheal':
-      // Overheal is a special case: CHARACTER_HEALED where excess > 0
-      // Needs additional context (max HP) — engine should emit separate event or check
-      return event.type === 'CHARACTER_HEALED' && event.cardInstanceId === sourceInstanceId;
+      return event.type === 'CHARACTER_OVERHEALED' && event.cardInstanceId === sourceInstanceId;
 
     case 'on_deal_damage':
       return event.type === 'DAMAGE_DEALT' && event.sourceId === sourceInstanceId;
@@ -145,7 +142,6 @@ export function findMatchingTriggers(
       event,
       rt.sourceInstanceId,
       rt.ownerPlayerId,
-      activePlayerId,
       getCardInfo,
     ),
   );

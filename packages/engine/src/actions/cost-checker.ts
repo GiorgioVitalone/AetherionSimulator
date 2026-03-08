@@ -46,11 +46,15 @@ export function canAfford(player: PlayerState, cost: ResourceCost): boolean {
   return totalRemaining >= cost.flexible;
 }
 
-/** Deduct cost from player resources. Returns updated PlayerState. */
+/** Deduct cost from player resources. Returns updated PlayerState. Throws if insufficient. */
 export function payCost(
   player: PlayerState,
   cost: ResourceCost,
 ): PlayerState {
+  if (!canAfford(player, cost)) {
+    throw new Error('Insufficient resources to pay cost');
+  }
+
   let manaNeeded = cost.mana;
   let energyNeeded = cost.energy;
   let flexNeeded = cost.flexible;

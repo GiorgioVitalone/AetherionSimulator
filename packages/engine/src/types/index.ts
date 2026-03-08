@@ -206,6 +206,7 @@ export type {
   StatModifiedEvent,
   LethalDamageDealtEvent,
   CharacterHealedEvent,
+  CharacterOverhealedEvent,
   CardMovedEvent,
   TurnState,
   RngState,
