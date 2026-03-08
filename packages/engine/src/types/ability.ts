@@ -5,7 +5,7 @@
  * - aura: continuous passive (buffs, cost reductions while in play)
  * - stat_grant: equipment stat bonuses (no trigger, no condition)
  */
-import type { StatModifier } from './common.js';
+import type { StatModifier, DynamicStatSource } from './common.js';
 import type { Effect } from './effects.js';
 import type { Trigger } from './triggers.js';
 import type { Condition } from './conditions.js';
@@ -17,6 +17,8 @@ export interface TriggeredAbilityDSL {
   readonly trigger: Trigger;
   readonly effects: readonly Effect[];
   readonly condition?: Condition;
+  readonly cooldown?: number;
+  readonly oncePerTurn?: boolean;
 }
 
 export interface AuraAbilityDSL {
@@ -28,4 +30,5 @@ export interface AuraAbilityDSL {
 export interface StatGrantDSL {
   readonly type: 'stat_grant';
   readonly modifier: StatModifier;
+  readonly dynamicModifier?: DynamicStatSource;
 }

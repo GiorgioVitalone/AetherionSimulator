@@ -1,6 +1,6 @@
 /**
  * Effects — the actions that abilities perform.
- * 22 variants covering ~95% of 146 abilities across 128 cards.
+ * 28 variants covering all abilities across 130 cards.
  *
  * Key design decisions:
  * - GrantedAbilityRef uses Trigger (no circular dep — triggers.ts doesn't import effects.ts)
@@ -11,6 +11,7 @@
 import type {
   AmountExpr,
   CardTypeCode,
+  DynamicStatSource,
   ResourceType,
   Side,
   StatModifier,
@@ -19,7 +20,7 @@ import type {
   ZoneType,
   ResourceCost,
 } from './common.js';
-import type { TargetExpr } from './targets.js';
+import type { TargetExpr, TargetFilter } from './targets.js';
 import type { Condition } from './conditions.js';
 import type { Duration } from './durations.js';
 import type { Trigger } from './triggers.js';
@@ -43,10 +44,17 @@ export type Effect =
   | GrantAbilityEffect
   | MoveEffect
   | ApplyStatusEffect
+  | CleanseEffect
+  | SearchDeckEffect
+  | ShuffleIntoDeckEffect
+  | CopyCardEffect
+  | DeployFromDeckEffect
+  | AttachAsEquipmentEffect
   | ChooseOneEffect
   | ConditionalEffect
   | CompositeEffect
-  | ReplacementEffect;
+  | ReplacementEffect
+  | ScheduledEffect;
 
 export interface DealDamageEffect {
   readonly type: 'deal_damage';
@@ -63,19 +71,22 @@ export interface ModifyStatsEffect {
   readonly modifier: StatModifier;
   readonly target: TargetExpr;
   readonly duration: Duration;
+  readonly dynamicModifier?: DynamicStatSource;
 }
 export interface DrawCardsEffect {
   readonly type: 'draw_cards';
   readonly count: AmountExpr;
   readonly player: Side;
 }
-/** Approximation — multi-destination scry flagged for Phase 2. */
 export interface ScryEffect {
   readonly type: 'scry';
   readonly lookCount: number;
-  readonly pickCount: number;
-  readonly remainder: 'bottom' | 'discard' | 'shuffle';
+  readonly action: ScryAction;
 }
+export type ScryAction =
+  | { readonly type: 'pick_and_remainder'; readonly pickCount: number; readonly pickTo: 'hand'; readonly remainder: 'bottom' | 'discard' | 'shuffle' }
+  | { readonly type: 'distribute'; readonly destinations: readonly ('hand' | 'discard' | 'bottom')[] }
+  | { readonly type: 'rearrange' };
 export type DeployTokenEffect =
   | {
       readonly type: 'deploy_token';
@@ -164,7 +175,38 @@ export interface ApplyStatusEffect {
   readonly value?: number;
   readonly durationTurns?: number;
 }
-export type StatusType = 'persistent' | 'regeneration' | 'slowed' | 'stunned';
+export type StatusType = 'persistent' | 'regeneration' | 'slowed' | 'stunned' | 'hexproof' | 'anti_redirect';
+export interface CleanseEffect {
+  readonly type: 'cleanse';
+  readonly target: TargetExpr;
+}
+export interface SearchDeckEffect {
+  readonly type: 'search_deck';
+  readonly filter: TargetFilter;
+  readonly destination: 'hand' | 'battlefield';
+  readonly castForFree?: boolean;
+  readonly castFreeIfCost?: number;
+}
+export interface ShuffleIntoDeckEffect {
+  readonly type: 'shuffle_into_deck';
+  readonly source: 'discard' | 'hand';
+}
+export interface CopyCardEffect {
+  readonly type: 'copy_card';
+  readonly source: 'discard' | 'deck';
+  readonly filter?: TargetFilter;
+  readonly destination: 'hand';
+}
+export interface DeployFromDeckEffect {
+  readonly type: 'deploy_from_deck';
+  readonly filter: TargetFilter;
+}
+/** Morph a character into equipment attached to a target. Symbiotic Crawler. */
+export interface AttachAsEquipmentEffect {
+  readonly type: 'attach_as_equipment';
+  readonly target: TargetExpr;
+  readonly retainAbilities?: boolean;
+}
 export interface ChooseOneEffect {
   readonly type: 'choose_one';
   readonly options: readonly ChooseOneOption[];
@@ -192,3 +234,15 @@ export interface ReplacementEffect {
 export type ReplacedEvent =
   | { readonly type: 'on_would_be_destroyed' }
   | { readonly type: 'on_would_take_damage'; readonly reduction?: number };
+
+/** Effect that fires at a scheduled future timing. */
+export interface ScheduledEffect {
+  readonly type: 'scheduled';
+  readonly timing: ScheduledTiming;
+  readonly effects: readonly Effect[];
+  readonly condition?: Condition;
+}
+export type ScheduledTiming =
+  | { readonly type: 'next_turn_start' }
+  | { readonly type: 'end_of_turn' }
+  | { readonly type: 'next_upkeep' };

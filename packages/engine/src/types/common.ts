@@ -29,7 +29,10 @@ export type Trait =
  */
 export type AmountExpr =
   | { readonly type: 'fixed'; readonly value: number }
-  | { readonly type: 'count'; readonly counting: CountingExpr; readonly max?: number };
+  | { readonly type: 'count'; readonly counting: CountingExpr; readonly max?: number }
+  | { readonly type: 'x_cost'; readonly resource: ResourceType }
+  | { readonly type: 'event_value'; readonly event: 'damage_taken' }
+  | { readonly type: 'dice'; readonly count: number; readonly sides: number };
 
 export type CountingExpr =
   | {
@@ -60,6 +63,12 @@ export interface StatModifier {
   readonly hp?: number;
   readonly arm?: number;
 }
+
+export type DynamicStatSource =
+  | { readonly type: 'per_count'; readonly stat: Stat; readonly counting: CountingExpr; readonly valuePerCount: number }
+  | { readonly type: 'equals_stat'; readonly stat: Stat; readonly sourceRef: Stat }
+  | { readonly type: 'multiply'; readonly factor: number }
+  | { readonly type: 'x_cost'; readonly stat: Stat; readonly resource: ResourceType };
 
 export interface TokenDef {
   readonly name: string;
