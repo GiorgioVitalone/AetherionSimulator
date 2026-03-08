@@ -2,7 +2,7 @@
  * Target expressions — describe what an effect targets.
  * 16 variants covering all targeting patterns in the card database.
  */
-import type { ZoneType, Side, CardTypeCode, Trait } from './common.js';
+import type { ZoneType, Side, CardTypeCode, Trait, AmountExpr } from './common.js';
 
 export type TargetExpr =
   | SelfTarget
@@ -20,7 +20,8 @@ export type TargetExpr =
   | CopyTarget
   | RandomTarget
   | EachPlayer
-  | SourceCharacter;
+  | SourceCharacter
+  | PlayerTarget;
 
 export interface SelfTarget {
   readonly type: 'self';
@@ -52,7 +53,7 @@ export interface AllCharactersInZone {
 }
 export interface UpToTargets {
   readonly type: 'up_to';
-  readonly count: number;
+  readonly count: number | AmountExpr;
   readonly side: Side;
   readonly filter?: TargetFilter;
 }
@@ -90,6 +91,11 @@ export interface EachPlayer {
 export interface SourceCharacter {
   readonly type: 'source_character';
 }
+/** Target a player (for discard-from-hand, sacrifice-from-hand, etc.). */
+export interface PlayerTarget {
+  readonly type: 'player';
+  readonly side: Side;
+}
 
 export interface TargetFilter {
   readonly trait?: Trait;
@@ -99,4 +105,9 @@ export interface TargetFilter {
   readonly maxAtk?: number;
   readonly cardType?: CardTypeCode;
   readonly tag?: string;
+  readonly excludeSelf?: boolean;
+  readonly costRelativeTo?: {
+    readonly reference: 'destroyed_card' | 'cast_spell';
+    readonly offset: number;
+  };
 }

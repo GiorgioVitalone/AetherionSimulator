@@ -74,6 +74,13 @@ export function executeEffect(
     case 'cost_reduction':
     case 'grant_ability':
     case 'replacement':
+    case 'cleanse':
+    case 'search_deck':
+    case 'shuffle_into_deck':
+    case 'copy_card':
+    case 'deploy_from_deck':
+    case 'attach_as_equipment':
+    case 'scheduled':
       return unchanged(state);
   }
 }
@@ -159,6 +166,9 @@ function executeModifyStats(
   effect: Extract<Effect, { type: 'modify_stats' }>,
   context: EffectContext,
 ): EffectResult {
+  // Dynamic modifier requires runtime evaluation — stub for now
+  if (effect.dynamicModifier !== undefined) return unchanged(state);
+
   const resolved = resolveTargets(state, effect.target, context);
   if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 

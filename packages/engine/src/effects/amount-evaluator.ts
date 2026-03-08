@@ -10,35 +10,47 @@ export function evaluateAmount(
   amount: AmountExpr,
   _context: EffectContext,
 ): number {
-  if (amount.type === 'fixed') return amount.value;
+  switch (amount.type) {
+    case 'fixed':
+      return amount.value;
+    case 'x_cost':
+      // X cost is determined at cast time — stored in context
+      return 0; // Placeholder: resolved by cost-payment system
+    case 'event_value':
+      // Event-derived value — resolved by event context
+      return 0; // Placeholder: resolved by event system
+    case 'dice':
+      // Dice rolls use PRNG — placeholder until integrated
+      return amount.count; // Minimum roll (1 per die)
+    case 'count': {
+      const { counting } = amount;
+      let count: number;
 
-  const { counting } = amount;
-  let count: number;
+      switch (counting.type) {
+        case 'cards_in_zone': {
+          count = countCardsInZone(state, counting);
+          break;
+        }
+        case 'characters_destroyed_this_turn':
+          count = state.log.filter(e => e.type === 'CARD_DESTROYED').length;
+          break;
+        case 'spells_cast_this_turn':
+          count = state.log.filter(e => e.type === 'SPELL_CAST').length;
+          break;
+        case 'empty_slots': {
+          const player = counting.side === 'enemy'
+            ? state.players[state.activePlayerIndex === 0 ? 1 : 0]!
+            : state.players[state.activePlayerIndex]!;
+          const zoneCards = getCardsInZone(player.zones, counting.zone);
+          const zoneSlots = counting.zone === 'frontline' ? 3 : 2;
+          count = zoneSlots - zoneCards.length;
+          break;
+        }
+      }
 
-  switch (counting.type) {
-    case 'cards_in_zone': {
-      count = countCardsInZone(state, counting);
-      break;
-    }
-    case 'characters_destroyed_this_turn':
-      // Approximate: count CARD_DESTROYED events in log this turn
-      count = state.log.filter(e => e.type === 'CARD_DESTROYED').length;
-      break;
-    case 'spells_cast_this_turn':
-      count = state.log.filter(e => e.type === 'SPELL_CAST').length;
-      break;
-    case 'empty_slots': {
-      const player = counting.side === 'enemy'
-        ? state.players[state.activePlayerIndex === 0 ? 1 : 0]!
-        : state.players[state.activePlayerIndex]!;
-      const zoneCards = getCardsInZone(player.zones, counting.zone);
-      const zoneSlots = counting.zone === 'frontline' ? 3 : 2;
-      count = zoneSlots - zoneCards.length;
-      break;
+      return amount.max !== undefined ? Math.min(count, amount.max) : count;
     }
   }
-
-  return amount.max !== undefined ? Math.min(count, amount.max) : count;
 }
 
 function countCardsInZone(

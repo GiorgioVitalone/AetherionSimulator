@@ -35,6 +35,12 @@ export function evaluateCondition(
       return state.players[context.controllerId]!.hero.transformed;
     case 'controls_character':
       return evaluateControlsCharacter(state, condition, context);
+    case 'compare_to_opponent':
+      return evaluateCompareToOpponent(state, condition, context);
+    case 'event_context':
+      return false; // Stub — requires runtime event context tracking
+    case 'triggering_card_cost':
+      return false; // Stub — requires triggering card reference
     case 'and':
       return condition.conditions.every(c => evaluateCondition(state, c, context));
     case 'or':
@@ -97,11 +103,29 @@ function evaluateCardCount(
 ): boolean {
   const player = state.players[context.controllerId]!;
   let count: number;
-  switch (cond.zone) {
-    case 'hand': count = player.hand.length; break;
-    case 'discard': count = player.discardPile.length; break;
-    case 'resource_bank': count = player.resourceBank.length; break;
-    case 'battlefield': count = getAllCards(player.zones).length; break;
+  if (cond.tag !== undefined) {
+    // Tag-filtered counting — iterate cards instead of using .length
+    switch (cond.zone) {
+      case 'hand':
+        count = player.hand.filter(c => c.tags.includes(cond.tag!)).length;
+        break;
+      case 'discard':
+        count = player.discardPile.filter(c => c.tags.includes(cond.tag!)).length;
+        break;
+      case 'battlefield':
+        count = getAllCards(player.zones).filter(c => c.tags.includes(cond.tag!)).length;
+        break;
+      case 'resource_bank':
+        count = player.resourceBank.length; // Resources don't have tags
+        break;
+    }
+  } else {
+    switch (cond.zone) {
+      case 'hand': count = player.hand.length; break;
+      case 'discard': count = player.discardPile.length; break;
+      case 'resource_bank': count = player.resourceBank.length; break;
+      case 'battlefield': count = getAllCards(player.zones).length; break;
+    }
   }
   return compare(count, cond.comparison, cond.value);
 }
@@ -180,6 +204,29 @@ function evaluateTurnCount(
     case 'ability_activated': count = counters.abilitiesActivated; break;
   }
   return compare(count, cond.comparison, cond.value);
+}
+
+function evaluateCompareToOpponent(
+  state: GameState,
+  cond: Extract<Condition, { type: 'compare_to_opponent' }>,
+  context: EffectContext,
+): boolean {
+  const player = state.players[context.controllerId]!;
+  const opponentIdx = context.controllerId === 0 ? 1 : 0;
+  const opponent = state.players[opponentIdx]!;
+  let playerValue: number;
+  let opponentValue: number;
+  switch (cond.metric) {
+    case 'battlefield_count':
+      playerValue = getAllCards(player.zones).length;
+      opponentValue = getAllCards(opponent.zones).length;
+      break;
+    case 'hand_count':
+      playerValue = player.hand.length;
+      opponentValue = opponent.hand.length;
+      break;
+  }
+  return compare(playerValue, cond.comparison, opponentValue);
 }
 
 function evaluateControlsCharacter(

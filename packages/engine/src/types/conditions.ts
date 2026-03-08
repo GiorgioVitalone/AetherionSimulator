@@ -17,6 +17,9 @@ export type Condition =
   | TurnCount
   | IsTransformed
   | ControlsCharacter
+  | CompareToOpponent
+  | EventContext
+  | TriggeringCardCost
   | AndCondition
   | OrCondition
   | NotCondition;
@@ -37,6 +40,7 @@ export interface CardCount {
   readonly zone: 'hand' | 'discard' | 'battlefield' | 'resource_bank';
   readonly comparison: 'less_than' | 'less_equal' | 'greater_than' | 'greater_equal' | 'equal';
   readonly value: number;
+  readonly tag?: string;
 }
 export interface ZoneIs {
   readonly type: 'zone_is';
@@ -78,6 +82,23 @@ export interface ControlsCharacter {
   readonly trait?: Trait;
   readonly tag?: string;
   readonly zone?: ZoneType;
+}
+/** Compare player metric to opponent (e.g. fewer characters on battlefield). */
+export interface CompareToOpponent {
+  readonly type: 'compare_to_opponent';
+  readonly metric: 'battlefield_count' | 'hand_count';
+  readonly comparison: 'less_than' | 'less_equal' | 'greater_than' | 'greater_equal' | 'equal';
+}
+/** Check event/turn context flags (e.g. used temporary resource this action). */
+export interface EventContext {
+  readonly type: 'event_context';
+  readonly check: 'used_temporary_resource' | 'gained_temporary_resource_this_turn';
+}
+/** Reference the triggering card's cost for conditional effects. */
+export interface TriggeringCardCost {
+  readonly type: 'triggering_card_cost';
+  readonly comparison: 'less_equal' | 'greater_equal' | 'equal';
+  readonly relativeTo: 'triggering_spell';
 }
 export interface AndCondition {
   readonly type: 'and';

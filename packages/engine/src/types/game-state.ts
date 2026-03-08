@@ -129,7 +129,7 @@ export interface ActiveStatus {
   readonly remainingTurns: number | null;
 }
 
-export type StatusEffectType = 'persistent' | 'regeneration' | 'slowed' | 'stunned';
+export type StatusEffectType = 'persistent' | 'regeneration' | 'slowed' | 'stunned' | 'hexproof' | 'anti_redirect';
 
 // ── Hero State ───────────────────────────────────────────────────────────────
 

@@ -79,9 +79,12 @@ export function triggerMatchesEvent(
     case 'on_spell_cast': {
       if (event.type !== 'SPELL_CAST') return false;
       const sideFilter = trigger.side;
-      if (sideFilter === 'allied') return event.playerId === ownerPlayerId;
-      if (sideFilter === 'enemy') return event.playerId !== ownerPlayerId;
-      return true; // 'any' or undefined
+      if (sideFilter === 'allied' && event.playerId !== ownerPlayerId) return false;
+      if (sideFilter === 'enemy' && event.playerId === ownerPlayerId) return false;
+      return matchesFilter(
+        trigger.filter,
+        getCardInfo?.(event.cardInstanceId) ?? null,
+      );
     }
 
     case 'on_sacrifice':
@@ -97,6 +100,24 @@ export function triggerMatchesEvent(
       // Overheal is a special case: CHARACTER_HEALED where excess > 0
       // Needs additional context (max HP) — engine should emit separate event or check
       return event.type === 'CHARACTER_HEALED' && event.cardInstanceId === sourceInstanceId;
+
+    case 'on_deal_damage':
+      return event.type === 'DAMAGE_DEALT' && event.sourceId === sourceInstanceId;
+
+    case 'on_block':
+      // Block events not yet emitted — placeholder
+      return false;
+
+    case 'on_gain_resource':
+      if (event.type !== 'RESOURCE_GAINED') return false;
+      if (event.playerId !== ownerPlayerId) return false;
+      if (trigger.resourceType !== undefined && event.resourceType !== trigger.resourceType) return false;
+      return true;
+
+    case 'on_stat_modified':
+      if (event.type !== 'STAT_MODIFIED') return false;
+      // Side filtering requires card ownership lookup — accept all for now
+      return true;
 
     // These are not event-reactive — they're checked differently
     case 'while':

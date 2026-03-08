@@ -10,6 +10,7 @@ import type {
   CardInstance,
 } from '../types/game-state.js';
 import { getAllCards, getCardsInZone } from '../zones/zone-manager.js';
+import { evaluateAmount } from './amount-evaluator.js';
 
 export type ResolvedTargets =
   | { readonly resolved: true; readonly targetIds: readonly string[] }
@@ -55,6 +56,9 @@ export function resolveTargets(
 
     case 'each_player':
       return { resolved: true, targetIds: ['hero_0', 'hero_1'] };
+
+    case 'player':
+      return resolvePlayerTarget(target, context);
 
     case 'target_spell':
     case 'target_equipment':
@@ -145,10 +149,13 @@ function resolveUpTo(
   context: EffectContext,
 ): ResolvedTargets {
   const cards = getCardsBySide(state, target.side, context);
-  const filtered = applyFilter(cards, target.filter);
+  const filtered = applyFilter(cards, target.filter, context);
   if (filtered.length === 0) {
     return { resolved: true, targetIds: [] };
   }
+  const count = typeof target.count === 'number'
+    ? target.count
+    : evaluateAmount(state, target.count, context);
   return {
     resolved: false,
     pendingChoice: {
@@ -156,10 +163,22 @@ function resolveUpTo(
       playerId: context.controllerId,
       options: filtered.map(c => ({ id: c.instanceId, label: c.name })),
       minSelections: 0,
-      maxSelections: Math.min(target.count, filtered.length),
-      context: `Choose up to ${String(target.count)} targets`,
+      maxSelections: Math.min(count, filtered.length),
+      context: `Choose up to ${String(count)} targets`,
     },
   };
+}
+
+function resolvePlayerTarget(
+  target: Extract<TargetExpr, { type: 'player' }>,
+  context: EffectContext,
+): ResolvedTargets {
+  const id = target.side === 'allied'
+    ? `hero_${String(context.controllerId)}`
+    : target.side === 'enemy'
+      ? `hero_${String(context.controllerId === 0 ? 1 : 0)}`
+      : `hero_${String(context.controllerId)}`;
+  return { resolved: true, targetIds: [id] };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -187,10 +206,12 @@ function getPlayersBySide(
 
 function applyFilter(
   cards: readonly CardInstance[],
-  filter: { trait?: string; maxCost?: number; minCost?: number; maxHp?: number; maxAtk?: number; cardType?: string; tag?: string } | undefined,
+  filter: { trait?: string; maxCost?: number; minCost?: number; maxHp?: number; maxAtk?: number; cardType?: string; tag?: string; excludeSelf?: boolean } | undefined,
+  context?: EffectContext,
 ): readonly CardInstance[] {
   if (filter === undefined) return cards;
   return cards.filter(c => {
+    if (filter.excludeSelf === true && context !== undefined && c.instanceId === context.sourceInstanceId) return false;
     if (filter.trait !== undefined && !c.traits.includes(filter.trait as never)) return false;
     if (filter.tag !== undefined && !c.tags.includes(filter.tag)) return false;
     if (filter.cardType !== undefined && c.cardType !== filter.cardType) return false;
