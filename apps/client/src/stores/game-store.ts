@@ -42,8 +42,9 @@ interface GameStore {
   readonly pendingChoice: PendingChoice | null;
   readonly isStarted: boolean;
 
-  // Internal (called by controller callback)
+  // Internal: called by controller callback
   readonly _updateState: (state: GameState) => void;
+  // Internal: called by UI (e.g. "Return to Menu")
   readonly _reset: () => void;
 
   // Public API (called by UI)
@@ -92,6 +93,11 @@ export const useGameStore = create<GameStore>()(
 
         // Load all cards and create registry
         const allCards = getAllCards();
+        if (allCards.length === 0) {
+          throw new Error(
+            'Card data not loaded. Call initCardData() before startGame().',
+          );
+        }
         const registryWithAbilities = createRegistry(allCards);
 
         // Use provided deck selections

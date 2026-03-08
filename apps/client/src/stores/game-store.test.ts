@@ -7,18 +7,9 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import type { DeckSelection } from '@aetherion-sim/engine';
-import { createRegistry } from '@/features/game-setup/registry-adapter';
+import { createRegistry, RARITY_COPY_LIMITS } from '@/features/game-setup';
 import { GameFlowController } from '@/machines/game-flow';
 import { MOCK_CARDS } from './__fixtures__/mock-cards';
-
-// ── Test Helpers ────────────────────────────────────────────────────────────
-
-const RARITY_COPY_LIMITS: Record<string, number> = {
-  Common: 3,
-  Ethereal: 2,
-  Mythic: 2,
-  Legendary: 1,
-};
 
 function buildTestDeck(faction: string): DeckSelection {
   const hero = MOCK_CARDS.find(

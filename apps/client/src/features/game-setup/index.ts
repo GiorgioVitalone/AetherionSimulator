@@ -7,5 +7,6 @@ export {
   getCardsByFaction,
   getHeroForFaction,
   buildStarterDeck,
+  RARITY_COPY_LIMITS,
 } from './deck-loader.js';
 export type { GameConfig, PlayerConfig } from './game-config.js';

@@ -36,7 +36,7 @@ export interface Ability {
   readonly effect: string;
   readonly trigger: string | null;
   readonly abilityType: string | null;
-  readonly dsl: unknown | null;
+  readonly dsl: unknown;
 }
 
 export interface SimCard {

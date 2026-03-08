@@ -24,7 +24,7 @@ export const MOCK_CARDS: SimCard[] = [
         dsl: {
           type: 'triggered',
           trigger: { type: 'on_ally_destroyed', side: 'allied' },
-          effects: [{ type: 'draw_cards', amount: 1, target: { type: 'self' } }],
+          effects: [{ type: 'draw_cards', count: { type: 'fixed', value: 1 }, player: 'allied' }],
         },
       },
     ],
@@ -52,8 +52,7 @@ export const MOCK_CARDS: SimCard[] = [
         abilityType: 'Aura',
         dsl: {
           type: 'aura',
-          target: { type: 'all_characters', side: 'allied' },
-          modifiers: [{ stat: 'arm', amount: 1 }],
+          effects: [{ type: 'modify_stats', modifier: { arm: 1 }, target: { type: 'all_characters', side: 'allied' }, duration: { type: 'permanent' } }],
         },
       },
     ],

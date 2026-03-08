@@ -38,7 +38,7 @@ export function getHeroForFaction(faction: string): SimCard | undefined {
 
 // ── Rarity Copy Limits ──────────────────────────────────────────────────────
 
-const RARITY_COPY_LIMITS: Record<string, number> = {
+export const RARITY_COPY_LIMITS: Record<string, number> = {
   Common: 3,
   Ethereal: 2,
   Mythic: 2,

@@ -64,16 +64,15 @@ export class GameFlowController {
       input: { gameState: hydratedState },
     });
 
-    // 4. Subscribe to state changes — push snapshots to the store
+    // 4. Subscribe to state changes — push snapshots to the store.
+    //    XState v5: subscribe before start ensures the initial snapshot is
+    //    delivered synchronously when start() is called — no manual push needed.
     this.actor.subscribe(snapshot => {
       onStateChange(snapshot.context.gameState);
     });
 
-    // 5. Start the actor
+    // 5. Start the actor (emits initial snapshot to subscriber above)
     this.actor.start();
-
-    // 6. Push initial state immediately
-    onStateChange(hydratedState);
   }
 
   /**

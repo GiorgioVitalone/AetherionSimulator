@@ -54,8 +54,11 @@ function hydratePlayer(
 
 function hydrateCard(card: CardInstance, getAbilities: AbilityLookup): CardInstance {
   const abilities = getAbilities(card.cardDefId);
-  if (abilities.length === 0) return card;
-  return { ...card, abilities };
+  const equipment = card.equipment
+    ? hydrateCard(card.equipment, getAbilities)
+    : null;
+  if (abilities.length === 0 && equipment === card.equipment) return card;
+  return { ...card, abilities, equipment };
 }
 
 function hydrateHero(hero: HeroState, getHeroAbilities: AbilityLookup): HeroState {
