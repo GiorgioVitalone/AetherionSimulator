@@ -74,6 +74,7 @@ function parseAbilities(abilitiesData: unknown): Ability[] {
     effect: String(a['effect'] ?? ''),
     trigger: a['trigger'] ? String(a['trigger']) : null,
     abilityType: a['abilityType'] ? String(a['abilityType']) : null,
+    dsl: a['dsl'] ?? null,
   }));
 }
 
