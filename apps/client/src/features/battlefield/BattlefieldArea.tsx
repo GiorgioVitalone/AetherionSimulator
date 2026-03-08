@@ -1,9 +1,10 @@
 /**
  * BattlefieldArea — combines opponent's battlefield, divider, and player's battlefield.
- * Highlighted slots are computed from the action flow store.
+ * Highlighted slots are computed from the action flow store for both zone selection
+ * (deployment/movement) and target selection (attacks/spells).
  */
 import { type ReactNode, useMemo } from 'react';
-import type { ZoneType } from '@aetherion-sim/engine';
+import type { ZoneType, CardInstance } from '@aetherion-sim/engine';
 import { useViewingPlayer } from '@/hooks/useViewingPlayer';
 import { useActionFlowStore } from '@/stores/action-flow-store';
 import { PlayerBattlefield } from './PlayerBattlefield';
@@ -18,8 +19,8 @@ export function BattlefieldArea({ onSlotClick, onCardClick }: BattlefieldAreaPro
   const { myState, opponentState } = useViewingPlayer();
   const flowState = useActionFlowStore((s) => s.flowState);
 
-  // Compute highlighted slots from action flow
-  const playerHighlights = useMemo(() => {
+  // Compute highlighted slots from zone-based action flow (deploy/move)
+  const zoneHighlights = useMemo(() => {
     const map = new Map<ZoneType, ReadonlySet<number>>();
     if (flowState.step === 'awaiting_zone') {
       for (const slot of flowState.validSlots) {
@@ -36,7 +37,35 @@ export function BattlefieldArea({ onSlotClick, onCardClick }: BattlefieldAreaPro
     return map;
   }, [flowState]);
 
-  const emptyHighlights = useMemo(() => new Map<ZoneType, ReadonlySet<number>>(), []);
+  // Compute target highlights for cards on the player's battlefield
+  const playerTargetHighlights = useMemo(() => {
+    if (flowState.step !== 'awaiting_target' || !myState) {
+      return new Map<ZoneType, ReadonlySet<number>>();
+    }
+    return computeTargetHighlights(flowState.validTargets, myState.zones);
+  }, [flowState, myState]);
+
+  // Compute target highlights for cards on the opponent's battlefield
+  const opponentTargetHighlights = useMemo(() => {
+    if (flowState.step !== 'awaiting_target' || !opponentState) {
+      return new Map<ZoneType, ReadonlySet<number>>();
+    }
+    return computeTargetHighlights(flowState.validTargets, opponentState.zones);
+  }, [flowState, opponentState]);
+
+  // Merge zone highlights (deploy/move) with target highlights for the player
+  const mergedPlayerHighlights = useMemo(() => {
+    const merged = new Map(zoneHighlights);
+    for (const [zone, indices] of playerTargetHighlights) {
+      const existing = merged.get(zone);
+      if (existing) {
+        merged.set(zone, new Set([...existing, ...indices]));
+      } else {
+        merged.set(zone, indices);
+      }
+    }
+    return merged;
+  }, [zoneHighlights, playerTargetHighlights]);
 
   if (!myState || !opponentState) return null;
 
@@ -46,7 +75,7 @@ export function BattlefieldArea({ onSlotClick, onCardClick }: BattlefieldAreaPro
       <PlayerBattlefield
         zones={opponentState.zones}
         isOpponent
-        highlightedSlots={emptyHighlights}
+        highlightedSlots={opponentTargetHighlights}
         onSlotClick={onSlotClick}
         onCardClick={onCardClick}
       />
@@ -57,10 +86,32 @@ export function BattlefieldArea({ onSlotClick, onCardClick }: BattlefieldAreaPro
       <PlayerBattlefield
         zones={myState.zones}
         isOpponent={false}
-        highlightedSlots={playerHighlights}
+        highlightedSlots={mergedPlayerHighlights}
         onSlotClick={onSlotClick}
         onCardClick={onCardClick}
       />
     </div>
   );
+}
+
+/** Find slot indices where valid target cards are located. */
+function computeTargetHighlights(
+  validTargets: readonly string[],
+  zones: { readonly reserve: readonly (CardInstance | null)[]; readonly frontline: readonly (CardInstance | null)[]; readonly highGround: readonly (CardInstance | null)[] },
+): Map<ZoneType, ReadonlySet<number>> {
+  const map = new Map<ZoneType, ReadonlySet<number>>();
+  const validSet = new Set(validTargets);
+  const zoneEntries: [ZoneType, readonly (CardInstance | null)[]][] = [
+    ['reserve', zones.reserve],
+    ['frontline', zones.frontline],
+    ['high_ground', zones.highGround],
+  ];
+  for (const [zone, slots] of zoneEntries) {
+    const indices = new Set<number>();
+    for (let i = 0; i < slots.length; i++) {
+      if (slots[i] && validSet.has(slots[i]!.instanceId)) indices.add(i);
+    }
+    if (indices.size > 0) map.set(zone, indices);
+  }
+  return map;
 }

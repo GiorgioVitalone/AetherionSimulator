@@ -12,6 +12,8 @@ import type { TriggeredAbilityDSL } from '../types/ability.js';
 import { hasOpenSlot, getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 import { getValidAttackTargets, type AttackTarget } from '../zones/targeting.js';
 import { canAfford } from './cost-checker.js';
+import { applyFilter } from '../effects/target-resolver.js';
+import type { Effect } from '../types/effects.js';
 
 // ── Result Types ──────────────────────────────────────────────────────────────
 
@@ -153,29 +155,29 @@ function computeSpellOptions(
     if (card.cardType !== 'S') continue;
     if (!canAfford(player, card.cost)) continue;
 
-    // Check if any on_cast effect needs a target
+    // Collect all target requirements from on_cast effects (including nested composites)
     let needsTarget = false;
     let validTargets: string[] = [];
     for (const ability of card.abilities) {
       if (ability.type !== 'triggered') continue;
       if (ability.trigger.type !== 'on_cast') continue;
-      for (const effect of ability.effects) {
-        if ('target' in effect && effect.target !== undefined) {
-          const target = effect.target as { readonly type: string; readonly side?: string };
-          if (target.type === 'target_character') {
-            needsTarget = true;
-            const side = target.side;
-            if (side === 'enemy') {
-              validTargets = getAllCards(opponent.zones).map(c => c.instanceId);
-            } else if (side === 'allied') {
-              validTargets = getAllCards(player.zones).map(c => c.instanceId);
-            } else {
-              validTargets = [
-                ...getAllCards(player.zones).map(c => c.instanceId),
-                ...getAllCards(opponent.zones).map(c => c.instanceId),
-              ];
-            }
+
+      const targetReqs = extractTargetRequirements(ability.effects);
+      for (const target of targetReqs) {
+        if (target.type === 'target_character') {
+          needsTarget = true;
+          const side = target.side;
+          let candidates: readonly CardInstance[];
+          if (side === 'enemy') {
+            candidates = getAllCards(opponent.zones);
+          } else if (side === 'allied') {
+            candidates = getAllCards(player.zones);
+          } else {
+            candidates = [...getAllCards(player.zones), ...getAllCards(opponent.zones)];
           }
+          // Apply target filter constraints (trait, cost, tag, etc.)
+          const filtered = applyFilter(candidates, target.filter as Parameters<typeof applyFilter>[1]);
+          validTargets = filtered.map(c => c.instanceId);
         }
       }
     }
@@ -189,6 +191,33 @@ function computeSpellOptions(
   }
 
   return options;
+}
+
+/** Extract target requirements from effects, recursing into composite/conditional/choose_one. */
+function extractTargetRequirements(
+  effects: readonly Effect[],
+): readonly { readonly type: string; readonly side?: string; readonly filter?: unknown }[] {
+  const targets: { readonly type: string; readonly side?: string; readonly filter?: unknown }[] = [];
+  for (const effect of effects) {
+    if ('target' in effect && effect.target !== undefined) {
+      targets.push(effect.target as { readonly type: string; readonly side?: string; readonly filter?: unknown });
+    }
+    if (effect.type === 'composite') {
+      targets.push(...extractTargetRequirements(effect.effects));
+    }
+    if (effect.type === 'conditional') {
+      targets.push(...extractTargetRequirements(effect.ifTrue));
+      if (effect.ifFalse) {
+        targets.push(...extractTargetRequirements(effect.ifFalse));
+      }
+    }
+    if (effect.type === 'choose_one') {
+      for (const option of effect.options) {
+        targets.push(...extractTargetRequirements(option.effects));
+      }
+    }
+  }
+  return targets;
 }
 
 // ── Equipment ─────────────────────────────────────────────────────────────────

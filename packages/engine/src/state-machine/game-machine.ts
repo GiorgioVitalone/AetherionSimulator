@@ -69,7 +69,9 @@ export const gameMachine = setup({
       };
       return {
         gameState: newState,
-        pendingChoice: newState.pendingChoice ?? context.pendingChoice,
+        pendingChoice: newState.pendingChoice !== undefined
+          ? newState.pendingChoice
+          : context.pendingChoice,
       };
     }),
     applyPlayerAction: assign(({ context, event }) => {
@@ -83,7 +85,9 @@ export const gameMachine = setup({
         gameState: newState,
         pendingChoice: newState.winner !== null
           ? null
-          : newState.pendingChoice ?? context.pendingChoice,
+          : newState.pendingChoice !== undefined
+            ? newState.pendingChoice
+            : context.pendingChoice,
       };
     }),
     setPhase: assign(({ context }, params: { readonly phase: GameState['phase'] }) => ({
@@ -181,18 +185,29 @@ export const gameMachine = setup({
           zones: { ...player.zones, reserve: newReserve },
         };
         return {
-          gameState: { ...context.gameState, players: newPlayers },
+          gameState: { ...context.gameState, players: newPlayers, pendingChoice: null },
           pendingChoice: null,
         };
       }
 
       if (choice.type === 'select_targets') {
-        // Clear pending choice — full effect resumption deferred to future iteration
-        return { pendingChoice: null };
+        // TODO: Full effect resumption (store continuation state, re-enter interpreter
+        // with selected targets) is deferred to a future iteration. Currently, targeted
+        // spells are pre-resolved by computeSpellOptions, which sets selectedTargets on
+        // EffectContext before executeEffect runs. This fallback handler only fires for
+        // targets inside nested effects (composite/conditional/choose_one) that
+        // computeSpellOptions doesn't detect — those effects are silently dropped.
+        return {
+          gameState: { ...context.gameState, pendingChoice: null },
+          pendingChoice: null,
+        };
       }
 
       // Generic response: clear the choice
-      return { pendingChoice: null };
+      return {
+        gameState: { ...context.gameState, pendingChoice: null },
+        pendingChoice: null,
+      };
     }),
   },
 }).createMachine({

@@ -3,9 +3,10 @@
  * Layout: OpponentPanel → BattlefieldArea → ActionBar → PlayerPanel → HandRow
  * Plus overlays: PendingChoice, TurnHandoff, GameOver, GameLog
  */
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode, useCallback, useMemo } from 'react';
 import { useGameStore } from '@/stores/game-store';
 import { useUiStore } from '@/stores/ui-store';
+import { useActionFlowStore } from '@/stores/action-flow-store';
 import { useViewingPlayer } from '@/hooks/useViewingPlayer';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useViewingPlayerSync } from '@/hooks/useViewingPlayerSync';
@@ -34,6 +35,10 @@ export function GameScreen(): ReactNode {
 
   const { myState, opponentState, isMyTurn } = useViewingPlayer();
   const controller = useActionController();
+  const dispatch = useGameStore((s) => s.dispatch);
+  const flowState = useActionFlowStore((s) => s.flowState);
+  const flowReset = useActionFlowStore((s) => s.reset);
+  const selectCard = useUiStore((s) => s.selectCard);
   const hoveredCardId = useUiStore((s) => s.hoveredCardId);
   const hoverCard = useUiStore((s) => s.hoverCard);
 
@@ -50,6 +55,23 @@ export function GameScreen(): ReactNode {
     }
     return null;
   }, [hoveredCardId, state]);
+
+  // Check if the opponent's hero is a valid target during awaiting_target
+  const heroTargetable = flowState.step === 'awaiting_target' &&
+    flowState.validTargets.includes('hero');
+
+  const handleHeroClick = useCallback(() => {
+    if (flowState.step !== 'awaiting_target') return;
+    const sourceId = flowState.cardInstanceId;
+    const actionType = flowState.actionType;
+    if (actionType === 'attack') {
+      dispatch({ type: 'declare_attack', attackerInstanceId: sourceId, targetId: 'hero' });
+    } else if (actionType === 'cast_spell') {
+      dispatch({ type: 'cast_spell', cardInstanceId: sourceId, targetId: 'hero' });
+    }
+    flowReset();
+    selectCard(null);
+  }, [flowState, dispatch, flowReset, selectCard]);
 
   useKeyboardShortcuts();
   useViewingPlayerSync();
@@ -68,7 +90,11 @@ export function GameScreen(): ReactNode {
     <ErrorBoundary onReset={reset}>
       <div className="min-h-screen min-w-[1280px] flex flex-col bg-[var(--color-bg)]">
         {/* Opponent panel (top) */}
-        <OpponentPanel player={opponentState} />
+        <OpponentPanel
+          player={opponentState}
+          heroHighlighted={heroTargetable}
+          onHeroClick={handleHeroClick}
+        />
 
         {/* Battlefield (middle, fills available space) */}
         <BattlefieldArea

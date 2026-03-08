@@ -204,7 +204,7 @@ function getPlayersBySide(
   }
 }
 
-function applyFilter(
+export function applyFilter(
   cards: readonly CardInstance[],
   filter: { trait?: string; maxCost?: number; minCost?: number; maxHp?: number; maxAtk?: number; cardType?: string; tag?: string; excludeSelf?: boolean } | undefined,
   context?: EffectContext,

@@ -147,6 +147,13 @@ export function useActionController() {
         }
         if (action === 'attack' && attackOption) {
           const targets = attackOption.validTargets.map((t) => t.instanceId ?? 'hero');
+          // Auto-resolve if hero is the only valid target
+          if (targets.length === 1 && targets[0] === 'hero') {
+            dispatch({ type: 'declare_attack', attackerInstanceId: instanceId, targetId: 'hero' });
+            reset();
+            selectCard(null);
+            return;
+          }
           setAwaitingTarget(instanceId, 'attack', targets);
           return;
         }
@@ -225,6 +232,13 @@ export function useActionController() {
           const option = availableActions.canAttack.find((a) => a.attackerInstanceId === instanceId);
           if (option) {
             const targets = option.validTargets.map((t) => t.instanceId ?? 'hero');
+            // Auto-resolve if hero is the only valid target
+            if (targets.length === 1 && targets[0] === 'hero') {
+              dispatch({ type: 'declare_attack', attackerInstanceId: instanceId, targetId: 'hero' });
+              reset();
+              selectCard(null);
+              break;
+            }
             setAwaitingTarget(instanceId, 'attack', targets);
           }
           break;

@@ -377,9 +377,9 @@ function executeDiscardForEnergy(
 
   const card = player.hand[cardIndex]!;
 
-  // Determine resource type from the card's cost structure (Rulebook:
-  // "1 temporary resource of that card's type — Mana if Magic-aligned,
-  // Energy if Tech-aligned")
+  // Determine resource type from the card's cost structure:
+  // cards with more energy cost grant Energy, otherwise Mana.
+  // Flexible-only cards default to Mana.
   const resourceType: import('../types/index.js').ResourceType =
     card.cost.energy > card.cost.mana ? 'energy' : 'mana';
 
