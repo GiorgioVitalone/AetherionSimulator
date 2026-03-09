@@ -27,7 +27,7 @@ export function ActionBar({ onChoose, onCancel }: ActionBarProps): ReactNode {
   if (flowState.step === 'awaiting_zone') {
     return (
       <div
-        className="flex items-center justify-center gap-3 px-4 py-2 border-t"
+        className="flex items-center justify-center gap-3 px-4 py-2 border-t shrink-0 relative z-10"
         style={{
           backgroundColor: 'var(--color-surface-raised)',
           borderColor: 'var(--color-border)',
@@ -55,7 +55,7 @@ export function ActionBar({ onChoose, onCancel }: ActionBarProps): ReactNode {
 
   return (
     <div
-      className="flex items-center justify-center gap-2 px-4 py-2 border-t"
+      className="flex items-center justify-center gap-2 px-4 py-2 border-t shrink-0 relative z-10"
       style={{
         backgroundColor: 'var(--color-surface-raised)',
         borderColor: 'var(--color-border)',

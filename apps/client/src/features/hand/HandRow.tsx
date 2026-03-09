@@ -25,7 +25,7 @@ export function HandRow({ cards, onCardClick }: HandRowProps): ReactNode {
 
   return (
     <div
-      className="border-t border-[var(--color-border)] px-4 py-2 overflow-x-auto"
+      className="border-t border-[var(--color-border)] px-4 py-2 overflow-x-auto shrink-0"
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
       <div className="flex gap-2 justify-center min-w-min">
