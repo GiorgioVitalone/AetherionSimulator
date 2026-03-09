@@ -22,6 +22,7 @@ export interface AvailableActions {
   readonly canAttachEquipment: readonly EquipOption[];
   readonly canMove: readonly MoveOption[];
   readonly canActivateAbility: readonly ActivateOption[];
+  readonly canActivateHeroAbility: readonly HeroActivateOption[];
   readonly canAttack: readonly AttackOption[];
   readonly canDiscardForEnergy: boolean;
   readonly canTransform: boolean;
@@ -59,6 +60,11 @@ export interface ActivateOption {
   readonly cost: ResourceCost;
 }
 
+export interface HeroActivateOption {
+  readonly abilityIndex: number;
+  readonly cost: ResourceCost;
+}
+
 export interface AttackOption {
   readonly attackerInstanceId: string;
   readonly validTargets: readonly AttackTarget[];
@@ -79,6 +85,7 @@ export function computeAvailableActions(state: GameState): AvailableActions {
     canAttachEquipment: isStrategy ? computeEquipOptions(player) : [],
     canMove: isStrategy ? computeMoveOptions(player) : [],
     canActivateAbility: isStrategy ? computeActivateOptions(player, state) : [],
+    canActivateHeroAbility: isStrategy ? computeHeroActivateOptions(player, state) : [],
     canAttack: isAction ? computeAttackOptions(player, opponent) : [],
     canDiscardForEnergy: isStrategy && computeCanDiscardForEnergy(player, state),
     canTransform: isStrategy && computeCanTransform(player),
@@ -282,6 +289,49 @@ function computeActivateOptions(
         cost: activatedTrigger.cost,
       });
     }
+  }
+
+  return options;
+}
+
+// ── Hero Ability Activation ──────────────────────────────────────────────────
+
+function computeHeroActivateOptions(
+  player: PlayerState,
+  state: GameState,
+): readonly HeroActivateOption[] {
+  const options: HeroActivateOption[] = [];
+  const hero = player.hero;
+
+  for (let i = 0; i < hero.abilities.length; i++) {
+    const ability = hero.abilities[i]!;
+    if (ability.type !== 'triggered') continue;
+
+    const triggered = ability as TriggeredAbilityDSL;
+    if (triggered.trigger.type !== 'activated') continue;
+
+    const activatedTrigger = triggered.trigger;
+
+    // Check cooldown
+    const cooldown = hero.cooldowns.get(i);
+    if (cooldown !== undefined && cooldown > 0) continue;
+
+    // Check once-per-turn
+    if (activatedTrigger.oncePerTurn === true) {
+      const alreadyUsed = state.log.some(
+        e =>
+          e.type === 'HERO_ABILITY_ACTIVATED' &&
+          e.abilityIndex === i,
+      );
+      if (alreadyUsed) continue;
+    }
+
+    if (!canAfford(player, activatedTrigger.cost)) continue;
+
+    options.push({
+      abilityIndex: i,
+      cost: activatedTrigger.cost,
+    });
   }
 
   return options;

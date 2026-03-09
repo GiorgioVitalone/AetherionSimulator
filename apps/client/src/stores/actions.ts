@@ -41,6 +41,11 @@ export interface ActivateAbilityAction {
   readonly abilityIndex: number;
 }
 
+export interface ActivateHeroAbilityAction {
+  readonly type: 'activate_hero_ability';
+  readonly abilityIndex: number;
+}
+
 export interface DeclareAttackAction {
   readonly type: 'declare_attack';
   readonly attackerInstanceId: string;
@@ -84,6 +89,7 @@ export type GameAction =
   | AttachEquipmentAction
   | MoveCharacterAction
   | ActivateAbilityAction
+  | ActivateHeroAbilityAction
   | DeclareAttackAction
   | DiscardForEnergyAction
   | DeclareTransformationAction

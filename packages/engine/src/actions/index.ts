@@ -6,6 +6,7 @@ export type {
   EquipOption,
   MoveOption,
   ActivateOption,
+  HeroActivateOption,
   AttackOption,
 } from './available-actions.js';
 export { canAfford, payCost, getAvailableResources } from './cost-checker.js';

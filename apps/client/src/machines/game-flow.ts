@@ -152,6 +152,15 @@ function mapActionToEvent(action: GameAction): GameMachineEvent | null {
         },
       };
 
+    case 'activate_hero_ability':
+      return {
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'activate_hero_ability',
+          abilityIndex: action.abilityIndex,
+        },
+      };
+
     case 'declare_attack':
       return {
         type: 'PLAYER_ACTION',

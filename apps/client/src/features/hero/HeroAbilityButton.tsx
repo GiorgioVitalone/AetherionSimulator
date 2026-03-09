@@ -1,11 +1,11 @@
 /**
  * HeroAbilityButton — shows ability name, cost, and cooldown state.
- * Dispatches ability activation via the action flow.
+ * Dispatches hero ability activation when clicked during the player's turn.
  */
 import type { ReactNode } from 'react';
 import type { AbilityDSL } from '@aetherion-sim/engine';
 import { Tooltip } from '@/features/shared/Tooltip';
-import { getHeroAbilityMeta } from '@/stores/game-store';
+import { useGameStore, getHeroAbilityMeta } from '@/stores/game-store';
 
 interface HeroAbilityButtonProps {
   readonly ability: AbilityDSL;
@@ -20,22 +20,51 @@ export function HeroAbilityButton({
   heroCardDefId,
   isMyTurn,
 }: HeroAbilityButtonProps): ReactNode {
+  const dispatch = useGameStore((s) => s.dispatch);
+  const heroOptions = useGameStore((s) => s.availableActions?.canActivateHeroAbility ?? []);
+  const option = heroOptions.find((o) => o.abilityIndex === abilityIndex);
+  const canActivate = isMyTurn && option !== undefined;
+
   const meta = getHeroAbilityMeta(heroCardDefId);
   const abilityName = meta[abilityIndex]?.name ?? 'Ability';
   const abilityDesc = meta[abilityIndex]?.effect ?? '';
+
+  // Format cost display
+  const costText = option
+    ? [
+        option.cost.mana > 0 ? `${String(option.cost.mana)}M` : '',
+        option.cost.energy > 0 ? `${String(option.cost.energy)}E` : '',
+        option.cost.flexible > 0 ? `${String(option.cost.flexible)}F` : '',
+      ].filter(Boolean).join(' ') || 'Free'
+    : '';
+
+  const handleClick = () => {
+    if (!canActivate) return;
+    dispatch({ type: 'activate_hero_ability', abilityIndex });
+  };
 
   const content = (
     <div
       className={`
         text-[10px] rounded-[var(--radius-sm)] p-1.5 border
         transition-colors duration-150
-        ${isMyTurn
-          ? 'border-[var(--color-border)] hover:border-[var(--color-accent-muted)] cursor-pointer'
-          : 'border-[var(--color-border-subtle)] opacity-60'}
+        ${canActivate
+          ? 'border-[var(--color-accent-muted)] hover:border-[var(--color-accent)] cursor-pointer'
+          : isMyTurn
+            ? 'border-[var(--color-border)] opacity-60 cursor-not-allowed'
+            : 'border-[var(--color-border-subtle)] opacity-60'}
       `}
       style={{ backgroundColor: 'var(--color-surface-alt)' }}
+      onClick={handleClick}
     >
-      <span className="font-semibold text-[var(--color-text)]">{abilityName}</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-[var(--color-text)]">{abilityName}</span>
+        {costText && (
+          <span className="font-mono text-[8px] text-[var(--color-text-muted)] shrink-0">
+            {costText}
+          </span>
+        )}
+      </div>
       {abilityDesc && (
         <p className="text-[var(--color-text-secondary)] mt-0.5 line-clamp-1">
           {abilityDesc}

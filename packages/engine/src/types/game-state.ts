@@ -268,6 +268,7 @@ export type GameEvent =
   | HeroHealedEvent
   | SpellCastEvent
   | AbilityActivatedEvent
+  | HeroAbilityActivatedEvent
   | CharacterAttackedEvent
   | CardDrawnEvent
   | CardDiscardedEvent
@@ -331,6 +332,11 @@ export interface SpellCastEvent {
 export interface AbilityActivatedEvent {
   readonly type: 'ABILITY_ACTIVATED';
   readonly cardInstanceId: string;
+  readonly abilityIndex: number;
+}
+export interface HeroAbilityActivatedEvent {
+  readonly type: 'HERO_ABILITY_ACTIVATED';
+  readonly playerId: 0 | 1;
   readonly abilityIndex: number;
 }
 export interface CharacterAttackedEvent {

@@ -73,6 +73,7 @@ export type {
   EquipOption,
   MoveOption,
   ActivateOption,
+  HeroActivateOption,
   AttackOption,
 } from './actions/index.js';
 

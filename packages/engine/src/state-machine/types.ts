@@ -23,6 +23,7 @@ export type PlayerAction =
   | AttachEquipmentAction
   | MoveAction
   | ActivateAbilityAction
+  | ActivateHeroAbilityAction
   | DeclareAttackAction
   | DiscardForEnergyAction
   | DeclareTransformAction;
@@ -68,6 +69,11 @@ export interface DeclareAttackAction {
 export interface DiscardForEnergyAction {
   readonly type: 'discard_for_energy';
   readonly cardInstanceId: string;
+}
+
+export interface ActivateHeroAbilityAction {
+  readonly type: 'activate_hero_ability';
+  readonly abilityIndex: number;
 }
 
 export interface DeclareTransformAction {

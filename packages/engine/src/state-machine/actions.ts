@@ -124,6 +124,8 @@ export function executePlayerAction(
       return executeDiscardForEnergy(state, action);
     case 'declare_attack':
       return executeDeclareAttack(state, action);
+    case 'activate_hero_ability':
+      return executeActivateHeroAbility(state, action);
     case 'declare_transform':
       return { state, events: [] }; // Placeholder
   }
@@ -141,9 +143,11 @@ function executeDeploy(
   if (!canAfford(player, card.cost)) return { state, events: [] };
   const paidPlayer = payCost(player, card.cost);
 
+  const hasHaste = card.traits.includes('haste');
   const deployedCard: CardInstance = {
     ...card,
-    summoningSick: !card.traits.includes('haste'),
+    exhausted: !hasHaste,
+    summoningSick: !hasHaste,
     owner: state.activePlayerIndex,
   };
 
@@ -381,6 +385,54 @@ function executeActivateAbility(
     events: [{
       type: 'ABILITY_ACTIVATED',
       cardInstanceId: action.cardInstanceId,
+      abilityIndex: action.abilityIndex,
+    }],
+  };
+}
+
+function executeActivateHeroAbility(
+  state: GameState,
+  action: { abilityIndex: number },
+): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+  const player = state.players[state.activePlayerIndex]!;
+  const hero = player.hero;
+
+  const ability = hero.abilities[action.abilityIndex];
+  if (!ability) return { state, events: [] };
+
+  // Pay cost if activated trigger
+  let updatedPlayer = player;
+  if (ability.type === 'triggered' && ability.trigger.type === 'activated') {
+    const abilityCost = ability.trigger.cost;
+    if (!canAfford(player, abilityCost)) return { state, events: [] };
+    updatedPlayer = payCost(player, abilityCost);
+  }
+
+  // Update cooldown on the hero
+  const newCooldowns = new Map(hero.cooldowns);
+  if (ability.type === 'triggered' && ability.trigger.type === 'activated' && ability.trigger.cooldown !== undefined) {
+    newCooldowns.set(action.abilityIndex, ability.trigger.cooldown);
+  }
+
+  const newHero = {
+    ...hero,
+    cooldowns: newCooldowns,
+  };
+
+  const newPlayer: PlayerState = {
+    ...updatedPlayer,
+    hero: newHero,
+    turnCounters: {
+      ...updatedPlayer.turnCounters,
+      abilitiesActivated: updatedPlayer.turnCounters.abilitiesActivated + 1,
+    },
+  };
+
+  return {
+    state: setPlayer(state, state.activePlayerIndex, newPlayer),
+    events: [{
+      type: 'HERO_ABILITY_ACTIVATED',
+      playerId: state.activePlayerIndex,
       abilityIndex: action.abilityIndex,
     }],
   };

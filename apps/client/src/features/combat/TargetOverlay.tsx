@@ -8,14 +8,25 @@
 import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useActionFlowStore } from '@/stores/action-flow-store';
+import type { ActionIntent } from '@/stores/action-flow-store';
+
+const TARGET_INSTRUCTIONS: Partial<Record<ActionIntent, string>> = {
+  attack: 'Select an attack target',
+  cast_spell: 'Select a spell target',
+  attach_equipment: 'Select an allied character to equip',
+  activate_ability: 'Select a target for ability',
+};
 
 interface TargetOverlayProps {
   readonly onCancel: () => void;
 }
 
 export function TargetOverlay({ onCancel }: TargetOverlayProps): ReactNode {
-  const step = useActionFlowStore((s) => s.flowState.step);
-  const isAwaitingTarget = step === 'awaiting_target';
+  const flowState = useActionFlowStore((s) => s.flowState);
+  const isAwaitingTarget = flowState.step === 'awaiting_target';
+  const instructionText = isAwaitingTarget
+    ? TARGET_INSTRUCTIONS[flowState.actionType] ?? 'Select a target'
+    : 'Select a target';
 
   return (
     <AnimatePresence>
@@ -58,7 +69,7 @@ export function TargetOverlay({ onCancel }: TargetOverlayProps): ReactNode {
             style={{ pointerEvents: 'none' }}
           >
             <span className="text-sm font-semibold font-body text-[var(--color-accent-light)]">
-              Select a target
+              {instructionText}
             </span>
           </div>
         </motion.div>

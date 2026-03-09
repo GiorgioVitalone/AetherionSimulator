@@ -11,6 +11,9 @@ export function useKeyboardShortcuts(): void {
   const canEndPhase = useGameStore((s) => s.availableActions?.canEndPhase ?? false);
   const cancelFlow = useActionFlowStore((s) => s.cancel);
   const selectCard = useUiStore((s) => s.selectCard);
+  const hoverCard = useUiStore((s) => s.hoverCard);
+  const selectedCardId = useUiStore((s) => s.selectedCardId);
+  const hoveredCardId = useUiStore((s) => s.hoveredCardId);
   const flowStep = useActionFlowStore((s) => s.flowState.step);
 
   useEffect(() => {
@@ -23,14 +26,23 @@ export function useKeyboardShortcuts(): void {
         dispatch({ type: 'end_phase' });
       }
 
-      if (e.key === 'Escape' && flowStep !== 'idle') {
-        e.preventDefault();
-        cancelFlow();
-        selectCard(null);
+      if (e.key === 'Escape') {
+        if (flowStep !== 'idle') {
+          // Cancel active action flow (card_selected, awaiting_zone, awaiting_target)
+          cancelFlow();
+          selectCard(null);
+          hoverCard(null);
+          e.preventDefault();
+        } else if (hoveredCardId || selectedCardId) {
+          // Dismiss card detail preview and selection in idle state
+          hoverCard(null);
+          selectCard(null);
+          e.preventDefault();
+        }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [dispatch, canEndPhase, cancelFlow, selectCard, flowStep]);
+  }, [dispatch, canEndPhase, cancelFlow, selectCard, hoverCard, selectedCardId, hoveredCardId, flowStep]);
 }

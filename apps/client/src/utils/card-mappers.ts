@@ -23,15 +23,16 @@ export function mapCardToDisplay(
 ): CardDisplayProps {
   const faction = getFaction(card.alignment);
 
-  // Check if card is playable (deployable, castable, etc.) in hand mode
+  // Check if card is playable (deployable, castable, equippable) in hand mode.
+  // Discard-for-energy is intentionally excluded — it's a universal fallback
+  // action, not meaningful "playability" for visual feedback.
   let playable: boolean | undefined;
   if (opts.mode === 'hand' && opts.availableActions) {
     const actions = opts.availableActions;
     playable =
       actions.canDeploy.some((d) => d.cardInstanceId === card.instanceId) ||
       actions.canCastSpell.some((s) => s.cardInstanceId === card.instanceId) ||
-      actions.canAttachEquipment.some((e) => e.cardInstanceId === card.instanceId) ||
-      (actions.canDiscardForEnergy && card.cardType !== 'H');
+      actions.canAttachEquipment.some((e) => e.cardInstanceId === card.instanceId);
   }
 
   // Map abilities to display format using metadata lookup

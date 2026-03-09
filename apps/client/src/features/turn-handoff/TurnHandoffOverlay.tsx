@@ -42,9 +42,9 @@ export function TurnHandoffOverlay(): ReactNode {
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center"
+      className="fixed inset-0 flex items-center justify-center text-[var(--color-text)]"
       style={{
-        zIndex: 'var(--z-overlay)',
+        zIndex: 'var(--z-modal)',
         backgroundColor: 'var(--color-surface-overlay)',
       }}
     >
