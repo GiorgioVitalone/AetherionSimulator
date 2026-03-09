@@ -50,6 +50,7 @@ export interface MoveAction {
   readonly type: 'move';
   readonly cardInstanceId: string;
   readonly toZone: ZoneType;
+  readonly slotIndex: number;
 }
 
 export interface ActivateAbilityAction {

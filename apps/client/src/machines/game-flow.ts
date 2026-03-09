@@ -138,6 +138,7 @@ function mapActionToEvent(action: GameAction): GameMachineEvent | null {
           type: 'move',
           cardInstanceId: action.cardInstanceId,
           toZone: action.toZone,
+          slotIndex: action.slotIndex,
         },
       };
 

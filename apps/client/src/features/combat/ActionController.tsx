@@ -27,6 +27,7 @@ export function useActionController() {
   const handleHandCardClick = useCallback(
     (instanceId: string) => {
       if (!availableActions) return;
+      if (flowState.step === 'awaiting_zone') return;
 
       // If clicking the already-selected card, cancel
       if (flowState.step === 'card_selected' && flowState.cardInstanceId === instanceId) {
@@ -97,6 +98,7 @@ export function useActionController() {
   const handleBattlefieldCardClick = useCallback(
     (instanceId: string) => {
       if (!availableActions) return;
+      if (flowState.step === 'awaiting_zone') return;
 
       // If awaiting a target, check if this card is a valid target
       if (flowState.step === 'awaiting_target') {
@@ -138,11 +140,7 @@ export function useActionController() {
       if (possibleActions.length === 1) {
         const action = possibleActions[0]!;
         if (action === 'move' && moveOption) {
-          const validSlots = moveOption.validDestinations.map((zone) => ({
-            zone,
-            slotIndex: 0, // Will be resolved when clicking the slot
-          }));
-          setAwaitingZone(instanceId, 'move', validSlots);
+          setAwaitingZone(instanceId, 'move', moveOption.validSlots);
           return;
         }
         if (action === 'attack' && attackOption) {
@@ -157,6 +155,20 @@ export function useActionController() {
           setAwaitingTarget(instanceId, 'attack', targets);
           return;
         }
+        if (action === 'activate_ability') {
+          const activateOption = availableActions.canActivateAbility.find(
+            (a) => a.cardInstanceId === instanceId,
+          );
+          if (!activateOption) return;
+          dispatch({
+            type: 'activate_ability',
+            cardInstanceId: instanceId,
+            abilityIndex: activateOption.abilityIndex,
+          });
+          reset();
+          selectCard(null);
+          return;
+        }
       }
 
       selectBattlefieldCard(instanceId, possibleActions);
@@ -168,6 +180,10 @@ export function useActionController() {
   const handleSlotClick = useCallback(
     (zone: ZoneType, slotIndex: number) => {
       if (flowState.step !== 'awaiting_zone') return;
+      const isValidSlot = flowState.validSlots.some(
+        (slot) => slot.zone === zone && slot.slotIndex === slotIndex,
+      );
+      if (!isValidSlot) return;
 
       const instanceId = flowState.cardInstanceId;
       const actionType = flowState.actionType;
@@ -175,7 +191,12 @@ export function useActionController() {
       if (actionType === 'deploy') {
         dispatch({ type: 'deploy_character', cardInstanceId: instanceId, zone, slotIndex });
       } else if (actionType === 'move') {
-        dispatch({ type: 'move_character', cardInstanceId: instanceId, toZone: zone });
+        dispatch({
+          type: 'move_character',
+          cardInstanceId: instanceId,
+          toZone: zone,
+          slotIndex,
+        });
       }
       reset();
       selectCard(null);
@@ -223,8 +244,22 @@ export function useActionController() {
         case 'move': {
           const option = availableActions.canMove.find((m) => m.cardInstanceId === instanceId);
           if (option) {
-            const validSlots = option.validDestinations.map((zone) => ({ zone, slotIndex: 0 }));
-            setAwaitingZone(instanceId, 'move', validSlots);
+            setAwaitingZone(instanceId, 'move', option.validSlots);
+          }
+          break;
+        }
+        case 'activate_ability': {
+          const option = availableActions.canActivateAbility.find(
+            (a) => a.cardInstanceId === instanceId,
+          );
+          if (option) {
+            dispatch({
+              type: 'activate_ability',
+              cardInstanceId: instanceId,
+              abilityIndex: option.abilityIndex,
+            });
+            reset();
+            selectCard(null);
           }
           break;
         }

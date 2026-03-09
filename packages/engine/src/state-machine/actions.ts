@@ -283,10 +283,19 @@ function executeAttachEquipment(
 
 function executeMove(
   state: GameState,
-  action: { cardInstanceId: string; toZone: import('../types/common.js').ZoneType },
+  action: {
+    cardInstanceId: string;
+    toZone: import('../types/common.js').ZoneType;
+    slotIndex: number;
+  },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
   const player = state.players[state.activePlayerIndex]!;
-  const newZones = moveCard(player.zones, action.cardInstanceId, action.toZone);
+  const newZones = moveCard(
+    player.zones,
+    action.cardInstanceId,
+    action.toZone,
+    action.slotIndex,
+  );
 
   const fromLoc = (['reserve', 'frontline', 'high_ground'] as const)
     .find(z => {

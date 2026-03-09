@@ -18,6 +18,11 @@ import {
   removeTemporaryResources,
   passTurn,
 } from './actions.js';
+import {
+  registerInitialTriggers,
+  resolveTriggeredEvents,
+  resumePendingResolution,
+} from '../events/index.js';
 import { applyMulligan } from '../setup/game-setup.js';
 
 export const gameMachine = setup({
@@ -45,27 +50,31 @@ export const gameMachine = setup({
     }),
     drawResource: assign(({ context }) => {
       const result = drawResourceCard(context.gameState);
+      const resolved = resolveTriggeredEvents(result.state, result.events);
       return {
         gameState: {
-          ...result.state,
-          log: [...result.state.log, ...result.events],
+          ...resolved.state,
+          log: [...resolved.state.log, ...resolved.events],
         },
+        pendingChoice: resolved.state.pendingChoice,
       };
     }),
     drawMainCard: assign(({ context }) => {
       const result = drawMainDeckCard(context.gameState);
       if (result.deckEmpty) {
-        return {
-          gameState: {
-            ...context.gameState,
-            winner: (context.gameState.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
-          },
-          pendingChoice: null,
-        };
-      }
+      return {
+        gameState: {
+          ...context.gameState,
+          winner: (context.gameState.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
+          pendingResolution: null,
+        },
+        pendingChoice: null,
+      };
+    }
+      const resolved = resolveTriggeredEvents(result.state, result.events);
       const newState = {
-        ...result.state,
-        log: [...result.state.log, ...result.events],
+        ...resolved.state,
+        log: [...resolved.state.log, ...resolved.events],
       };
       return {
         gameState: newState,
@@ -77,9 +86,10 @@ export const gameMachine = setup({
     applyPlayerAction: assign(({ context, event }) => {
       if (event.type !== 'PLAYER_ACTION') return {};
       const result = executePlayerAction(context.gameState, event.action);
+      const resolved = resolveTriggeredEvents(result.state, result.events);
       const newState = {
-        ...result.state,
-        log: [...result.state.log, ...result.events],
+        ...resolved.state,
+        log: [...resolved.state.log, ...resolved.events],
       };
       return {
         gameState: newState,
@@ -127,24 +137,24 @@ export const gameMachine = setup({
     clearPendingChoice: assign({ pendingChoice: null }),
     executeTurnPass: assign(({ context }) => {
       const newState = passTurn(context.gameState);
+      const resolved = resolveTriggeredEvents(newState, [
+        {
+          type: 'TURN_END' as const,
+          playerId: context.gameState.activePlayerIndex,
+          turnNumber: context.gameState.turnNumber,
+        },
+        {
+          type: 'TURN_START' as const,
+          playerId: newState.activePlayerIndex,
+          turnNumber: newState.turnNumber,
+        },
+      ]);
       return {
         gameState: {
-          ...newState,
-          log: [
-            ...newState.log,
-            {
-              type: 'TURN_END' as const,
-              playerId: context.gameState.activePlayerIndex,
-              turnNumber: context.gameState.turnNumber,
-            },
-            {
-              type: 'TURN_START' as const,
-              playerId: newState.activePlayerIndex,
-              turnNumber: newState.turnNumber,
-            },
-          ],
+          ...resolved.state,
+          log: [...resolved.state.log, ...resolved.events],
         },
-        pendingChoice: null,
+        pendingChoice: resolved.state.pendingChoice,
       };
     }),
     concede: assign(({ context, event }) => {
@@ -153,6 +163,7 @@ export const gameMachine = setup({
         gameState: {
           ...context.gameState,
           winner: (event.playerId === 0 ? 1 : 0) as 0 | 1,
+          pendingResolution: null,
         },
       };
     }),
@@ -191,31 +202,46 @@ export const gameMachine = setup({
       }
 
       if (choice.type === 'select_targets') {
-        // TODO: Full effect resumption (store continuation state, re-enter interpreter
-        // with selected targets) is deferred to a future iteration. Currently, targeted
-        // spells are pre-resolved by computeSpellOptions, which sets selectedTargets on
-        // EffectContext before executeEffect runs. This fallback handler only fires for
-        // targets inside nested effects (composite/conditional/choose_one) that
-        // computeSpellOptions doesn't detect — those effects are silently dropped.
+        const resolved = resumePendingResolution(context.gameState, event.response);
         return {
-          gameState: { ...context.gameState, pendingChoice: null },
-          pendingChoice: null,
+          gameState: {
+            ...resolved.state,
+            log: [...resolved.state.log, ...resolved.events],
+          },
+          pendingChoice: resolved.state.pendingChoice,
         };
       }
 
-      // Generic response: clear the choice
+      if (choice.type === 'choose_one' || choice.type === 'choose_discard') {
+        const resolved = resumePendingResolution(context.gameState, event.response);
+        return {
+          gameState: {
+            ...resolved.state,
+            log: [...resolved.state.log, ...resolved.events],
+          },
+          pendingChoice: resolved.state.pendingChoice,
+        };
+      }
+
       return {
-        gameState: { ...context.gameState, pendingChoice: null },
+        gameState: {
+          ...context.gameState,
+          pendingChoice: null,
+          pendingResolution: null,
+        },
         pendingChoice: null,
       };
     }),
   },
 }).createMachine({
   id: 'aetherionGame',
-  context: ({ input }) => ({
-    gameState: input.gameState,
-    pendingChoice: input.gameState.pendingChoice,
-  }),
+  context: ({ input }) => {
+    const initializedState = registerInitialTriggers(input.gameState);
+    return {
+      gameState: initializedState,
+      pendingChoice: initializedState.pendingChoice,
+    };
+  },
   initial: 'mulligan',
   on: {
     CONCEDE: {

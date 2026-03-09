@@ -32,6 +32,7 @@ export interface MoveCharacterAction {
   readonly type: 'move_character';
   readonly cardInstanceId: string;
   readonly toZone: ZoneType;
+  readonly slotIndex: number;
 }
 
 export interface ActivateAbilityAction {

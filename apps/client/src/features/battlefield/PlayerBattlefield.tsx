@@ -11,6 +11,7 @@ interface PlayerBattlefieldProps {
   readonly zones: ZoneState;
   readonly isOpponent: boolean;
   readonly highlightedSlots: Map<ZoneType, ReadonlySet<number>>;
+  readonly highlightLabel?: string;
   readonly onSlotClick: (zone: ZoneType, slotIndex: number) => void;
   readonly onCardClick?: (instanceId: string) => void;
 }
@@ -19,6 +20,7 @@ export function PlayerBattlefield({
   zones,
   isOpponent,
   highlightedSlots,
+  highlightLabel,
   onSlotClick,
   onCardClick,
 }: PlayerBattlefieldProps): ReactNode {
@@ -44,6 +46,7 @@ export function PlayerBattlefield({
           zone={zone}
           slots={slots}
           highlightedSlots={highlightedSlots.get(zone) ?? new Set()}
+          highlightLabel={highlightLabel}
           onSlotClick={onSlotClick}
           onCardClick={onCardClick}
         />

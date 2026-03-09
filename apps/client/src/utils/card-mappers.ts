@@ -40,7 +40,9 @@ export function mapCardToDisplay(
     name: meta[i]?.name ?? '',
     cost: null,
     effect: meta[i]?.effect ?? '',
-    trigger: a.type === 'triggered' ? 'Trigger' : null,
+    trigger: a.type === 'triggered'
+      ? (a.trigger.type === 'activated' ? 'Activated' : 'Trigger')
+      : null,
     abilityType: a.type,
   }));
 

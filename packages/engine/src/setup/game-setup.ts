@@ -163,6 +163,7 @@ export function createGame(
       maxSelections: 1,
       context: 'Choose whether to keep your opening hand or mulligan.',
     },
+    pendingResolution: null,
     log: [],
     winner: null,
     rng: rng3,

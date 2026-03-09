@@ -12,6 +12,7 @@ import { BattlefieldCard } from './BattlefieldCard';
 interface ZoneSlotProps {
   readonly card: CardInstance | null;
   readonly highlighted: boolean;
+  readonly highlightLabel?: string;
   readonly onSlotClick: () => void;
   readonly onCardClick?: (instanceId: string) => void;
 }
@@ -19,6 +20,7 @@ interface ZoneSlotProps {
 export function ZoneSlot({
   card,
   highlighted,
+  highlightLabel,
   onSlotClick,
   onCardClick,
 }: ZoneSlotProps): ReactNode {
@@ -47,7 +49,7 @@ export function ZoneSlot({
           >
             {highlighted && (
               <span className="text-[8px] text-[var(--color-accent)] font-semibold uppercase tracking-widest">
-                Deploy
+                {highlightLabel ?? 'Deploy'}
               </span>
             )}
           </div>

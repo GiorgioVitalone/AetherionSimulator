@@ -9,7 +9,7 @@ import type {
 } from '../types/game-state.js';
 import type { ResourceCost, ZoneType, Trait } from '../types/common.js';
 import type { TriggeredAbilityDSL } from '../types/ability.js';
-import { hasOpenSlot, getAllCards, getCardsInZone } from '../zones/zone-manager.js';
+import { getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 import { getValidAttackTargets, type AttackTarget } from '../zones/targeting.js';
 import { canAfford } from './cost-checker.js';
 import { applyFilter } from '../effects/target-resolver.js';
@@ -51,7 +51,7 @@ export interface EquipOption {
 export interface MoveOption {
   readonly cardInstanceId: string;
   readonly fromZone: ZoneType;
-  readonly validDestinations: readonly ZoneType[];
+  readonly validSlots: readonly { readonly zone: ZoneType; readonly slotIndex: number }[];
 }
 
 export interface ActivateOption {
@@ -265,13 +265,18 @@ function computeMoveOptions(player: PlayerState): readonly MoveOption[] {
       if (card.exhausted || card.summoningSick || card.movedThisTurn) continue;
 
       const adjacentZones = ADJACENT.get(zone) ?? [];
-      const validDests = adjacentZones.filter(z => hasOpenSlot(player.zones, z));
+      const validSlots = adjacentZones.flatMap(destination =>
+        getOpenSlotIndices(player, destination).map(slotIndex => ({
+          zone: destination,
+          slotIndex,
+        })),
+      );
 
-      if (validDests.length > 0) {
+      if (validSlots.length > 0) {
         options.push({
           cardInstanceId: card.instanceId,
           fromZone: zone,
-          validDestinations: validDests,
+          validSlots,
         });
       }
     }

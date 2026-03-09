@@ -5,7 +5,14 @@ export {
 
 export {
   registerCardTriggers,
+  registerHeroTriggers,
+  registerInitialTriggers,
   unregisterCardTriggers,
   getAllRegisteredTriggers,
   resetRegistrationCounter,
 } from './trigger-registry.js';
+
+export {
+  resolveTriggeredEvents,
+  resumePendingResolution,
+} from './trigger-resolution.js';

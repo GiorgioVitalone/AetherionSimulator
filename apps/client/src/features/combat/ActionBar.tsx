@@ -24,6 +24,33 @@ const ACTION_LABELS: Record<ActionIntent, string> = {
 export function ActionBar({ onChoose, onCancel }: ActionBarProps): ReactNode {
   const flowState = useActionFlowStore((s) => s.flowState);
 
+  if (flowState.step === 'awaiting_zone') {
+    return (
+      <div
+        className="flex items-center justify-center gap-3 px-4 py-2 border-t"
+        style={{
+          backgroundColor: 'var(--color-surface-raised)',
+          borderColor: 'var(--color-border)',
+        }}
+      >
+        <span className="text-[9px] uppercase tracking-widest text-[var(--color-text-faint)] font-semibold font-body">
+          Select destination
+        </span>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="
+            px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold font-body
+            text-[var(--color-text-muted)] hover:text-[var(--color-text)]
+            transition-colors duration-150 cursor-pointer
+          "
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
   if (flowState.step !== 'card_selected') return null;
 
   return (

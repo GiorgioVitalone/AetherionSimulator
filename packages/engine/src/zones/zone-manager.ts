@@ -162,6 +162,7 @@ export function moveCard(
   zones: ZoneState,
   instanceId: string,
   toZone: ZoneType,
+  slotIndex?: number,
 ): ZoneState {
   const location = findCard(zones, instanceId);
   if (location === null) {
@@ -172,9 +173,15 @@ export function moveCard(
       `Cannot move directly from ${location.zone} to ${toZone}`,
     );
   }
-  const targetSlot = firstOpenSlot(zones, toZone);
+  const targetSlot = slotIndex ?? firstOpenSlot(zones, toZone);
   if (targetSlot === -1) {
     throw new Error(`No open slot in ${toZone}`);
+  }
+  if (targetSlot < 0 || targetSlot >= getZoneSlots(toZone)) {
+    throw new Error(`Slot ${String(targetSlot)} out of range for ${toZone}`);
+  }
+  if (getZoneArray(zones, toZone)[targetSlot] !== null) {
+    throw new Error(`Slot ${String(targetSlot)} in ${toZone} is occupied`);
   }
   const movedCard: CardInstance = {
     ...location.card,

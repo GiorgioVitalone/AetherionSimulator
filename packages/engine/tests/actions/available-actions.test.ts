@@ -208,8 +208,9 @@ describe('Available Actions', () => {
 
       const actions = computeAvailableActions(state);
       expect(actions.canMove).toHaveLength(1);
-      expect(actions.canMove[0]!.validDestinations).toContain('reserve');
-      expect(actions.canMove[0]!.validDestinations).toContain('high_ground');
+      const destinations = actions.canMove[0]!.validSlots.map(slot => slot.zone);
+      expect(destinations).toContain('reserve');
+      expect(destinations).toContain('high_ground');
     });
 
     it('should not allow exhausted characters to move', () => {

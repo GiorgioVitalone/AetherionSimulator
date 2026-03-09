@@ -26,6 +26,7 @@ export interface GameState {
   readonly phase: GamePhase;
   readonly stack: readonly StackItem[];
   readonly pendingChoice: PendingChoice | null;
+  readonly pendingResolution: PendingResolution | null;
   readonly log: readonly GameEvent[];
   readonly winner: 0 | 1 | 'draw' | null;
   readonly rng: RngState;
@@ -175,6 +176,37 @@ export interface PendingChoice {
   readonly minSelections: number;
   readonly maxSelections: number;
   readonly context: string;
+}
+
+export interface PendingResolution {
+  readonly currentTrigger: TriggerResolutionWorkItem;
+  readonly frames: readonly EffectExecutionFrame[];
+  readonly bufferedEvents: readonly GameEvent[];
+  readonly remainingWorkItems: readonly ResolutionWorkItem[];
+}
+
+export interface EffectExecutionFrame {
+  readonly effects: readonly Effect[];
+  readonly index: number;
+}
+
+export type ResolutionWorkItem =
+  | EventResolutionWorkItem
+  | TriggerResolutionWorkItem;
+
+export interface EventResolutionWorkItem {
+  readonly kind: 'event';
+  readonly event: GameEvent;
+  readonly triggerDepth: number;
+}
+
+export interface TriggerResolutionWorkItem {
+  readonly kind: 'trigger';
+  readonly sourceInstanceId: string;
+  readonly controllerId: 0 | 1;
+  readonly effects: readonly Effect[];
+  readonly condition?: Condition;
+  readonly triggerDepth: number;
 }
 
 export type PendingChoiceType =

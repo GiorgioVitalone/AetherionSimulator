@@ -102,6 +102,7 @@ export function mockGameState(overrides?: Partial<GameState>): GameState {
     phase: 'action',
     stack: [],
     pendingChoice: null,
+    pendingResolution: null,
     log: [],
     winner: null,
     rng: { seed: 42, counter: 0 },

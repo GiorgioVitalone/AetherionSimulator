@@ -17,28 +17,35 @@ export function resetRegistrationCounter(): void {
 }
 
 function extractTriggeredAbilities(
-  card: CardInstance,
+  abilitiesOwner: { readonly abilities: readonly unknown[] },
 ): readonly { ability: TriggeredAbilityDSL; index: number }[] {
   const result: { ability: TriggeredAbilityDSL; index: number }[] = [];
-  for (let i = 0; i < card.abilities.length; i++) {
-    const ability = card.abilities[i];
-    if (ability !== undefined && ability.type === 'triggered') {
-      result.push({ ability, index: i });
+  for (let i = 0; i < abilitiesOwner.abilities.length; i++) {
+    const ability = abilitiesOwner.abilities[i];
+    if (
+      ability !== undefined &&
+      ability !== null &&
+      typeof ability === 'object' &&
+      'type' in ability &&
+      ability.type === 'triggered'
+    ) {
+      result.push({ ability: ability as TriggeredAbilityDSL, index: i });
     }
   }
   return result;
 }
 
 function createRegisteredTrigger(
-  card: CardInstance,
+  sourceInstanceId: string,
+  ownerPlayerId: 0 | 1,
   ability: TriggeredAbilityDSL,
   abilityIndex: number,
 ): RegisteredTrigger {
   registrationCounter++;
   return {
     id: `trigger_${String(registrationCounter)}`,
-    sourceInstanceId: card.instanceId,
-    ownerPlayerId: card.owner,
+    sourceInstanceId,
+    ownerPlayerId,
     trigger: ability.trigger,
     effects: ability.effects,
     condition: ability.condition,
@@ -48,7 +55,7 @@ function createRegisteredTrigger(
 
 /**
  * Register all triggered abilities from a card entering play.
- * Adds RegisteredTrigger entries to the card's registeredTriggers array.
+ * Replaces the card's registeredTriggers array to avoid duplicate registration.
  */
 export function registerCardTriggers(
   state: GameState,
@@ -57,13 +64,56 @@ export function registerCardTriggers(
   return updateCardTriggers(state, cardInstanceId, card => {
     const triggered = extractTriggeredAbilities(card);
     const newTriggers = triggered.map(({ ability, index }) =>
-      createRegisteredTrigger(card, ability, index),
+      createRegisteredTrigger(card.instanceId, card.owner, ability, index),
     );
     return {
       ...card,
-      registeredTriggers: [...card.registeredTriggers, ...newTriggers],
+      registeredTriggers: newTriggers,
     };
   });
+}
+
+export function registerHeroTriggers(
+  state: GameState,
+  playerId: 0 | 1,
+): GameState {
+  const player = state.players[playerId];
+  if (player === undefined) return state;
+
+  const triggered = extractTriggeredAbilities(player.hero);
+  const newTriggers = triggered.map(({ ability, index }) =>
+    createRegisteredTrigger(`hero_${String(playerId)}`, playerId, ability, index),
+  );
+
+  const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+  newPlayers[playerId] = {
+    ...player,
+    hero: {
+      ...player.hero,
+      registeredTriggers: newTriggers,
+    },
+  };
+  return { ...state, players: newPlayers };
+}
+
+export function registerInitialTriggers(state: GameState): GameState {
+  resetRegistrationCounter();
+
+  let currentState = state;
+  currentState = registerHeroTriggers(currentState, 0);
+  currentState = registerHeroTriggers(currentState, 1);
+
+  for (const player of currentState.players) {
+    for (const zone of [player.zones.reserve, player.zones.frontline, player.zones.highGround]) {
+      for (const slot of zone) {
+        if (slot !== null) {
+          currentState = registerCardTriggers(currentState, slot.instanceId);
+        }
+      }
+    }
+  }
+
+  return currentState;
 }
 
 /**

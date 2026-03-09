@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createActor } from 'xstate';
 import { gameMachine } from '../../src/state-machine/game-machine.js';
+import { registerInitialTriggers } from '../../src/events/index.js';
 import {
   mockCard,
   mockGameState,
@@ -163,6 +164,123 @@ describe('Turn Flow State Machine', () => {
       )).toBeUndefined();
     });
 
+    it('should resolve on_deploy triggered abilities immediately', () => {
+      const handCard = mockCard({
+        name: 'Invoker',
+        cardType: 'C',
+        cost: { mana: 1, energy: 0, flexible: 0 },
+        owner: 0,
+        abilities: [{
+          type: 'triggered',
+          trigger: { type: 'on_deploy' },
+          effects: [{
+            type: 'gain_resource',
+            resourceType: 'mana',
+            amount: 1,
+          }],
+        }],
+      });
+
+      const state = makePlayableState();
+      const modState = {
+        ...state,
+        players: [
+          { ...state.players[0]!, hand: [handCard] },
+          state.players[1]!,
+        ] as const,
+      };
+
+      const actor = createActor(gameMachine, {
+        input: { gameState: modState },
+      });
+      actor.start();
+
+      const bankBefore = actor.getSnapshot().context.gameState.players[0]!.resourceBank.length;
+
+      actor.send({
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'deploy',
+          cardInstanceId: handCard.instanceId,
+          zone: 'frontline',
+          slotIndex: 0,
+        },
+      });
+
+      const ctx = actor.getSnapshot().context;
+      expect(ctx.gameState.players[0]!.resourceBank.length).toBe(bankBefore + 1);
+      const gainedEvents = ctx.gameState.log.filter(
+        e => e.type === 'RESOURCE_GAINED' && e.playerId === 0,
+      );
+      expect(gainedEvents.length).toBeGreaterThan(1);
+    });
+
+    it('should resume targeted deploy triggers after target selection', () => {
+      const enemy = mockCard({
+        name: 'Target',
+        owner: 1,
+        currentHp: 3,
+        baseHp: 3,
+      });
+      const handCard = mockCard({
+        name: 'Sharpshooter',
+        cardType: 'C',
+        cost: { mana: 1, energy: 0, flexible: 0 },
+        owner: 0,
+        abilities: [{
+          type: 'triggered',
+          trigger: { type: 'on_deploy' },
+          effects: [{
+            type: 'deal_damage',
+            amount: { type: 'fixed', value: 2 },
+            target: {
+              type: 'target_character',
+              side: 'enemy',
+            },
+          }],
+        }],
+      });
+
+      const state = makePlayableState();
+      const modState = {
+        ...state,
+        players: [
+          { ...state.players[0]!, hand: [handCard] },
+          {
+            ...state.players[1]!,
+            zones: deployToZone(emptyZones(), enemy, 'frontline', 0),
+          },
+        ] as const,
+      };
+
+      const actor = createActor(gameMachine, {
+        input: { gameState: modState },
+      });
+      actor.start();
+
+      actor.send({
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'deploy',
+          cardInstanceId: handCard.instanceId,
+          zone: 'frontline',
+          slotIndex: 0,
+        },
+      });
+
+      expect(actor.getSnapshot().context.gameState.pendingChoice?.type).toBe('select_targets');
+
+      actor.send({
+        type: 'PLAYER_RESPONSE',
+        response: {
+          selectedOptionIds: [enemy.instanceId],
+        },
+      });
+
+      const updatedEnemy = actor.getSnapshot().context.gameState.players[1]!.zones.frontline[0]!;
+      expect(updatedEnemy.currentHp).toBe(1);
+    });
+
     it('should allow discard for energy once per turn', () => {
       const handCard = mockCard({ name: 'Fodder', owner: 0 });
       const state = makePlayableState();
@@ -314,6 +432,53 @@ describe('Turn Flow State Machine', () => {
 
       const afterTwoTurns = actor.getSnapshot().context.gameState.turnNumber;
       expect(afterTwoTurns).toBe(initialTurn + 2);
+    });
+  });
+
+  describe('triggered turn events', () => {
+    it('should resolve registered hero turn-start triggers', () => {
+      const templateState = makePlayableState();
+      const baseState = makePlayableState({
+        phase: 'upkeep',
+        players: [
+          templateState.players[0]!,
+          mockPlayerState(1, {
+            hand: [mockCard({ owner: 1 })],
+            mainDeck: Array.from({ length: 20 }, (_, i) =>
+              mockCard({ name: `P1Deck_${String(i)}`, owner: 1 }),
+            ),
+            resourceDeck: Array.from({ length: 10 }, (_, i) => ({
+              instanceId: `p1_rd_${String(i)}`,
+              resourceType: 'mana' as const,
+              exhausted: false,
+            })),
+            hero: {
+              ...mockPlayerState(1).hero,
+              abilities: [{
+                type: 'triggered',
+                trigger: { type: 'on_turn_start' },
+                effects: [{
+                  type: 'gain_resource',
+                  resourceType: 'mana',
+                  amount: 1,
+                }],
+              }],
+            },
+          }),
+        ] as const,
+      });
+      const state = registerInitialTriggers(baseState);
+
+      const actor = createActor(gameMachine, {
+        input: { gameState: state },
+      });
+      actor.start();
+
+      actor.send({ type: 'END_PHASE' });
+      actor.send({ type: 'END_PHASE' });
+
+      const playerOne = actor.getSnapshot().context.gameState.players[1]!;
+      expect(playerOne.resourceBank.length).toBe(2);
     });
   });
 

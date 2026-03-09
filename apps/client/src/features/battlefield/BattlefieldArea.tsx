@@ -18,6 +18,9 @@ interface BattlefieldAreaProps {
 export function BattlefieldArea({ onSlotClick, onCardClick }: BattlefieldAreaProps): ReactNode {
   const { myState, opponentState } = useViewingPlayer();
   const flowState = useActionFlowStore((s) => s.flowState);
+  const zoneHighlightLabel = flowState.step === 'awaiting_zone'
+    ? (flowState.actionType === 'move' ? 'Move' : 'Deploy')
+    : undefined;
 
   // Compute highlighted slots from zone-based action flow (deploy/move)
   const zoneHighlights = useMemo(() => {
@@ -76,6 +79,7 @@ export function BattlefieldArea({ onSlotClick, onCardClick }: BattlefieldAreaPro
         zones={opponentState.zones}
         isOpponent
         highlightedSlots={opponentTargetHighlights}
+        highlightLabel={zoneHighlightLabel}
         onSlotClick={onSlotClick}
         onCardClick={onCardClick}
       />
@@ -87,6 +91,7 @@ export function BattlefieldArea({ onSlotClick, onCardClick }: BattlefieldAreaPro
         zones={myState.zones}
         isOpponent={false}
         highlightedSlots={mergedPlayerHighlights}
+        highlightLabel={zoneHighlightLabel}
         onSlotClick={onSlotClick}
         onCardClick={onCardClick}
       />

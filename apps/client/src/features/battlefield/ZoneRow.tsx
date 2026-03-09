@@ -10,6 +10,7 @@ interface ZoneRowProps {
   readonly zone: ZoneType;
   readonly slots: readonly (CardInstance | null)[];
   readonly highlightedSlots: ReadonlySet<number>;
+  readonly highlightLabel?: string;
   readonly onSlotClick: (zone: ZoneType, slotIndex: number) => void;
   readonly onCardClick?: (instanceId: string) => void;
 }
@@ -24,6 +25,7 @@ export function ZoneRow({
   zone,
   slots,
   highlightedSlots,
+  highlightLabel,
   onSlotClick,
   onCardClick,
 }: ZoneRowProps): ReactNode {
@@ -41,6 +43,7 @@ export function ZoneRow({
             key={`${zone}-${index}`}
             card={card}
             highlighted={highlightedSlots.has(index)}
+            highlightLabel={highlightLabel}
             onSlotClick={() => onSlotClick(zone, index)}
             onCardClick={onCardClick}
           />

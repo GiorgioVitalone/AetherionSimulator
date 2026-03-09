@@ -44,8 +44,12 @@ export {
   triggerMatchesEvent,
   findMatchingTriggers,
   registerCardTriggers,
+  registerHeroTriggers,
+  registerInitialTriggers,
   unregisterCardTriggers,
   getAllRegisteredTriggers,
+  resolveTriggeredEvents,
+  resumePendingResolution,
 } from './events/index.js';
 
 // ── Effects ─────────────────────────────────────────────────────────────────
