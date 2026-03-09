@@ -179,7 +179,7 @@ export interface PendingChoice {
 }
 
 export interface PendingResolution {
-  readonly currentTrigger: TriggerResolutionWorkItem;
+  readonly currentWorkItem: ContinuableResolutionWorkItem;
   readonly frames: readonly EffectExecutionFrame[];
   readonly bufferedEvents: readonly GameEvent[];
   readonly remainingWorkItems: readonly ResolutionWorkItem[];
@@ -192,12 +192,26 @@ export interface EffectExecutionFrame {
 
 export type ResolutionWorkItem =
   | EventResolutionWorkItem
+  | ContinuableResolutionWorkItem;
+
+export type ContinuableResolutionWorkItem =
+  | EffectResolutionWorkItem
   | TriggerResolutionWorkItem;
 
 export interface EventResolutionWorkItem {
   readonly kind: 'event';
   readonly event: GameEvent;
   readonly triggerDepth: number;
+}
+
+export interface EffectResolutionWorkItem {
+  readonly kind: 'effect';
+  readonly sourceInstanceId: string;
+  readonly controllerId: 0 | 1;
+  readonly effects: readonly Effect[];
+  readonly condition?: Condition;
+  readonly triggerDepth: number;
+  readonly selectedTargets?: readonly string[];
 }
 
 export interface TriggerResolutionWorkItem {

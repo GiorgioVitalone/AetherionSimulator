@@ -20,10 +20,11 @@ import {
 } from './actions.js';
 import {
   registerInitialTriggers,
+  resolveEffectWorkItem,
   resolveTriggeredEvents,
-  resumePendingResolution,
 } from '../events/index.js';
 import { applyMulligan } from '../setup/game-setup.js';
+import { applyPendingChoiceResponse } from './player-response.js';
 
 export const gameMachine = setup({
   types: {
@@ -86,7 +87,9 @@ export const gameMachine = setup({
     applyPlayerAction: assign(({ context, event }) => {
       if (event.type !== 'PLAYER_ACTION') return {};
       const result = executePlayerAction(context.gameState, event.action);
-      const resolved = resolveTriggeredEvents(result.state, result.events);
+      const resolved = result.effectWorkItem !== undefined
+        ? resolveEffectWorkItem(result.state, result.effectWorkItem, result.events)
+        : resolveTriggeredEvents(result.state, result.events);
       const newState = {
         ...resolved.state,
         log: [...resolved.state.log, ...resolved.events],
@@ -173,63 +176,13 @@ export const gameMachine = setup({
     })),
     applyPlayerResponse: assign(({ context, event }) => {
       if (event.type !== 'PLAYER_RESPONSE') return {};
-      // Route response based on current pendingChoice type
-      const choice = context.pendingChoice;
-      if (!choice) return {};
-
-      if (choice.type === 'reserve_exhaust') {
-        // Mark selected reserve characters as exhausted for resource generation
-        const player = context.gameState.players[choice.playerId]!;
-        const selectedIds = event.response.selectedOptionIds;
-        const newReserve = player.zones.reserve.map(c => {
-          if (c && selectedIds.includes(c.instanceId)) {
-            return { ...c, exhausted: true };
-          }
-          return c;
-        });
-        const newPlayers = [...context.gameState.players] as [
-          typeof context.gameState.players[0],
-          typeof context.gameState.players[1],
-        ];
-        newPlayers[choice.playerId] = {
-          ...player,
-          zones: { ...player.zones, reserve: newReserve },
-        };
-        return {
-          gameState: { ...context.gameState, players: newPlayers, pendingChoice: null },
-          pendingChoice: null,
-        };
-      }
-
-      if (choice.type === 'select_targets') {
-        const resolved = resumePendingResolution(context.gameState, event.response);
-        return {
-          gameState: {
-            ...resolved.state,
-            log: [...resolved.state.log, ...resolved.events],
-          },
-          pendingChoice: resolved.state.pendingChoice,
-        };
-      }
-
-      if (choice.type === 'choose_one' || choice.type === 'choose_discard') {
-        const resolved = resumePendingResolution(context.gameState, event.response);
-        return {
-          gameState: {
-            ...resolved.state,
-            log: [...resolved.state.log, ...resolved.events],
-          },
-          pendingChoice: resolved.state.pendingChoice,
-        };
-      }
-
+      const resolved = applyPendingChoiceResponse(context.gameState, event.response);
       return {
         gameState: {
-          ...context.gameState,
-          pendingChoice: null,
-          pendingResolution: null,
+          ...resolved.state,
+          log: [...resolved.state.log, ...resolved.events],
         },
-        pendingChoice: null,
+        pendingChoice: resolved.pendingChoice,
       };
     }),
   },

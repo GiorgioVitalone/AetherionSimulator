@@ -481,7 +481,7 @@ function executeDiscard(
     pendingChoice: {
       type: 'choose_discard',
       playerId: targetPlayerId,
-      options: player.hand.map(c => ({ id: c.instanceId, label: c.name })),
+      options: player.hand.map(c => ({ id: c.instanceId, label: c.name, instanceId: c.instanceId })),
       minSelections: Math.min(effect.count, player.hand.length),
       maxSelections: Math.min(effect.count, player.hand.length),
       context: `Discard ${String(effect.count)} card(s)`,

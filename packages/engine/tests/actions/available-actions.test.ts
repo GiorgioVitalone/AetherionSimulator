@@ -139,6 +139,38 @@ describe('Available Actions', () => {
       expect(actions.canCastSpell).toHaveLength(1);
       expect(actions.canCastSpell[0]!.cardInstanceId).toBe(spell.instanceId);
     });
+
+    it('should expose hero targets for hero-targeting spells', () => {
+      const spell = mockCard({
+        name: 'Soul Lance',
+        cardType: 'S',
+        cost: { mana: 1, energy: 0, flexible: 0 },
+        owner: 0,
+        abilities: [{
+          type: 'triggered',
+          trigger: { type: 'on_cast' },
+          effects: [{
+            type: 'deal_damage',
+            amount: { type: 'fixed', value: 2 },
+            target: { type: 'hero', side: 'enemy' },
+          }],
+        }],
+      });
+      const bank = makeBank([{ type: 'mana' }]);
+
+      const state = mockGameState({
+        phase: 'strategy',
+        players: [
+          mockPlayerState(0, { hand: [spell], resourceBank: bank }),
+          mockPlayerState(1),
+        ],
+      });
+
+      const actions = computeAvailableActions(state);
+      expect(actions.canCastSpell).toHaveLength(1);
+      expect(actions.canCastSpell[0]!.needsTarget).toBe(true);
+      expect(actions.canCastSpell[0]!.validTargets).toEqual(['hero_1']);
+    });
   });
 
   describe('equipment options', () => {

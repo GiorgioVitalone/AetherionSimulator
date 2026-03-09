@@ -15,6 +15,8 @@ interface PlayerPanelProps {
   readonly phase: GamePhase;
   readonly turnNumber: number;
   readonly isMyTurn: boolean;
+  readonly onHeroClick?: () => void;
+  readonly heroHighlighted?: boolean;
 }
 
 export function PlayerPanel({
@@ -22,6 +24,8 @@ export function PlayerPanel({
   phase,
   turnNumber,
   isMyTurn,
+  onHeroClick,
+  heroHighlighted,
 }: PlayerPanelProps): ReactNode {
   const dispatch = useGameStore((s) => s.dispatch);
   const canTransform = useGameStore((s) => s.availableActions?.canTransform ?? false);
@@ -36,7 +40,10 @@ export function PlayerPanel({
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
       {/* Hero panel */}
-      <div className="w-64 shrink-0">
+      <div
+        className={`w-64 shrink-0 ${heroHighlighted ? 'cursor-pointer ring-2 ring-[var(--color-error)] rounded-[var(--radius-lg)]' : ''}`}
+        onClick={heroHighlighted ? onHeroClick : undefined}
+      >
         <HeroPanel
           hero={player.hero}
           faction={faction}

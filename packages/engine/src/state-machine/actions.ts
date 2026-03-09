@@ -6,15 +6,22 @@ import type {
   GameState,
   PlayerState,
   CardInstance,
+  EffectResolutionWorkItem,
   GameEvent,
 } from '../types/game-state.js';
+import type { Effect } from '../types/effects.js';
 import type { PlayerAction } from './types.js';
 import { deployToZone, moveCard } from '../zones/zone-manager.js';
 import { resolveCombat } from '../combat/combat-resolver.js';
 import { canAfford, payCost } from '../actions/cost-checker.js';
-import { executeEffect } from '../effects/interpreter.js';
+import { computeSpellTargeting } from '../actions/spell-targeting.js';
 import { MAX_HAND_SIZE } from '../types/game-state.js';
-import type { EffectContext } from '../types/game-state.js';
+
+interface PlayerActionResult {
+  readonly state: GameState;
+  readonly events: readonly GameEvent[];
+  readonly effectWorkItem?: EffectResolutionWorkItem;
+}
 
 // ── Upkeep Actions ──────────────────────────────────────────────────────────
 
@@ -101,7 +108,7 @@ export function drawMainDeckCard(state: GameState): {
 export function executePlayerAction(
   state: GameState,
   action: PlayerAction,
-): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+): PlayerActionResult {
   switch (action.type) {
     case 'deploy':
       return executeDeploy(state, action);
@@ -167,13 +174,21 @@ function executeDeploy(
 function executeCastSpell(
   state: GameState,
   action: { cardInstanceId: string; targetId?: string },
-): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+): PlayerActionResult {
   const player = state.players[state.activePlayerIndex]!;
   const cardIndex = player.hand.findIndex(c => c.instanceId === action.cardInstanceId);
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
   if (!canAfford(player, card.cost)) return { state, events: [] };
+  const targeting = computeSpellTargeting(state, state.activePlayerIndex, card);
+  if (targeting.needsTarget) {
+    if (action.targetId === undefined) return { state, events: [] };
+    if (!targeting.validTargets.includes(action.targetId)) {
+      return { state, events: [] };
+    }
+  }
+
   const paidPlayer = payCost(player, card.cost);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
 
@@ -187,35 +202,30 @@ function executeCastSpell(
     },
   };
 
-  let currentState = setPlayer(state, state.activePlayerIndex, newPlayer);
+  const spellEffects = getSpellCastEffects(card);
   const allEvents: GameEvent[] = [{
     type: 'SPELL_CAST',
     cardInstanceId: card.instanceId,
     playerId: state.activePlayerIndex,
   }];
 
-  // Execute spell effects for on_cast triggered abilities
-  const context: EffectContext = {
-    sourceInstanceId: card.instanceId,
-    controllerId: state.activePlayerIndex,
-    triggerDepth: 0,
-    selectedTargets: action.targetId ? [action.targetId] : undefined,
-  };
-
-  for (const ability of card.abilities) {
-    if (ability.type !== 'triggered') continue;
-    if (ability.trigger.type !== 'on_cast') continue;
-    for (const effect of ability.effects) {
-      const result = executeEffect(currentState, effect, context);
-      currentState = result.newState;
-      allEvents.push(...result.events);
-      if (result.pendingChoice !== undefined) {
-        currentState = { ...currentState, pendingChoice: result.pendingChoice };
-      }
-    }
+  const nextState = setPlayer(state, state.activePlayerIndex, newPlayer);
+  if (spellEffects.length === 0) {
+    return { state: nextState, events: allEvents };
   }
 
-  return { state: currentState, events: allEvents };
+  return {
+    state: nextState,
+    events: allEvents,
+    effectWorkItem: {
+      kind: 'effect',
+      sourceInstanceId: card.instanceId,
+      controllerId: state.activePlayerIndex,
+      effects: spellEffects,
+      triggerDepth: 0,
+      selectedTargets: action.targetId !== undefined ? [action.targetId] : undefined,
+    },
+  };
 }
 
 function executeAttachEquipment(
@@ -415,6 +425,29 @@ function executeDiscardForEnergy(
       playerId: state.activePlayerIndex,
     }],
   };
+}
+
+function getSpellCastEffects(card: CardInstance): readonly Effect[] {
+  const effects: Effect[] = [];
+
+  for (const ability of card.abilities) {
+    if (ability.type !== 'triggered' || ability.trigger.type !== 'on_cast') {
+      continue;
+    }
+
+    if (ability.condition !== undefined) {
+      effects.push({
+        type: 'conditional',
+        condition: ability.condition,
+        ifTrue: ability.effects,
+      });
+      continue;
+    }
+
+    effects.push(...ability.effects);
+  }
+
+  return effects;
 }
 
 function executeDeclareAttack(

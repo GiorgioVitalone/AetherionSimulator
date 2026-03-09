@@ -281,6 +281,189 @@ describe('Turn Flow State Machine', () => {
       expect(updatedEnemy.currentHp).toBe(1);
     });
 
+    it('should pause spell execution for choose_one and resume remaining effects after response', () => {
+      const spell = mockCard({
+        name: 'Forked Insight',
+        cardType: 'S',
+        cost: { mana: 1, energy: 0, flexible: 0 },
+        owner: 0,
+        abilities: [{
+          type: 'triggered',
+          trigger: { type: 'on_cast' },
+          effects: [
+            {
+              type: 'choose_one',
+              options: [
+                {
+                  label: 'Gain Mana',
+                  effects: [{
+                    type: 'gain_resource',
+                    resourceType: 'mana',
+                    amount: 1,
+                  }],
+                },
+                {
+                  label: 'Gain Energy',
+                  effects: [{
+                    type: 'gain_resource',
+                    resourceType: 'energy',
+                    amount: 1,
+                  }],
+                },
+              ],
+            },
+            {
+              type: 'gain_resource',
+              resourceType: 'mana',
+              amount: 1,
+            },
+          ],
+        }],
+      });
+
+      const state = makePlayableState();
+      const modState = {
+        ...state,
+        players: [
+          { ...state.players[0]!, hand: [spell] },
+          state.players[1]!,
+        ] as const,
+      };
+
+      const actor = createActor(gameMachine, {
+        input: { gameState: modState },
+      });
+      actor.start();
+
+      const resourceCountBefore = actor.getSnapshot().context.gameState.players[0]!.resourceBank.length;
+      const exhaustedBefore = actor.getSnapshot().context.gameState.players[0]!.resourceBank
+        .filter(resource => resource.exhausted).length;
+
+      actor.send({
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'cast_spell',
+          cardInstanceId: spell.instanceId,
+        },
+      });
+
+      const pendingSnapshot = actor.getSnapshot().context.gameState;
+      expect(pendingSnapshot.pendingChoice?.type).toBe('choose_one');
+      expect(pendingSnapshot.pendingResolution).not.toBeNull();
+      expect(pendingSnapshot.players[0]!.resourceBank.length).toBe(resourceCountBefore);
+      expect(pendingSnapshot.players[0]!.resourceBank.filter(resource => resource.exhausted).length)
+        .toBe(exhaustedBefore + 1);
+
+      actor.send({
+        type: 'PLAYER_RESPONSE',
+        response: {
+          selectedOptionIds: ['0'],
+        },
+      });
+
+      const resolvedSnapshot = actor.getSnapshot().context.gameState;
+      expect(resolvedSnapshot.pendingChoice).toBeNull();
+      expect(resolvedSnapshot.pendingResolution).toBeNull();
+      expect(resolvedSnapshot.players[0]!.resourceBank.length).toBe(resourceCountBefore + 2);
+    });
+
+    it('should reject spell casts with illegal targets', () => {
+      const enemy = mockCard({
+        name: 'Enemy',
+        owner: 1,
+      });
+      const spell = mockCard({
+        name: 'Smite',
+        cardType: 'S',
+        cost: { mana: 1, energy: 0, flexible: 0 },
+        owner: 0,
+        abilities: [{
+          type: 'triggered',
+          trigger: { type: 'on_cast' },
+          effects: [{
+            type: 'deal_damage',
+            amount: { type: 'fixed', value: 2 },
+            target: { type: 'target_character', side: 'enemy' },
+          }],
+        }],
+      });
+
+      const state = makePlayableState();
+      const modState = {
+        ...state,
+        players: [
+          { ...state.players[0]!, hand: [spell] },
+          {
+            ...state.players[1]!,
+            zones: deployToZone(emptyZones(), enemy, 'frontline', 0),
+          },
+        ] as const,
+      };
+
+      const actor = createActor(gameMachine, {
+        input: { gameState: modState },
+      });
+      actor.start();
+
+      actor.send({
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'cast_spell',
+          cardInstanceId: spell.instanceId,
+          targetId: 'hero_1',
+        },
+      });
+
+      const snapshot = actor.getSnapshot().context.gameState;
+      expect(snapshot.players[0]!.hand.some(card => card.instanceId === spell.instanceId)).toBe(true);
+      expect(snapshot.players[1]!.zones.frontline[0]!.currentHp).toBe(enemy.currentHp);
+    });
+
+    it('should cast hero-targeting spells against the selected hero token', () => {
+      const spell = mockCard({
+        name: 'Soul Lance',
+        cardType: 'S',
+        cost: { mana: 1, energy: 0, flexible: 0 },
+        owner: 0,
+        abilities: [{
+          type: 'triggered',
+          trigger: { type: 'on_cast' },
+          effects: [{
+            type: 'deal_damage',
+            amount: { type: 'fixed', value: 3 },
+            target: { type: 'hero', side: 'enemy' },
+          }],
+        }],
+      });
+
+      const state = makePlayableState();
+      const modState = {
+        ...state,
+        players: [
+          { ...state.players[0]!, hand: [spell] },
+          state.players[1]!,
+        ] as const,
+      };
+
+      const actor = createActor(gameMachine, {
+        input: { gameState: modState },
+      });
+      actor.start();
+
+      const lpBefore = actor.getSnapshot().context.gameState.players[1]!.hero.currentLp;
+
+      actor.send({
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'cast_spell',
+          cardInstanceId: spell.instanceId,
+          targetId: 'hero_1',
+        },
+      });
+
+      expect(actor.getSnapshot().context.gameState.players[1]!.hero.currentLp).toBe(lpBefore - 3);
+    });
+
     it('should allow discard for energy once per turn', () => {
       const handCard = mockCard({ name: 'Fodder', owner: 0 });
       const state = makePlayableState();

@@ -25,6 +25,7 @@ import { GameLog } from '@/features/game-log/GameLog';
 import { TargetOverlay } from '@/features/combat/TargetOverlay';
 import { ErrorBoundary } from '@/features/shared/ErrorBoundary';
 import { CardDetailModal } from '@/features/shared/CardDetailModal';
+import { getHeroTargetTokenForPlayer, HERO_ATTACK_TARGET } from '@/features/combat/target-tokens';
 
 export function GameScreen(): ReactNode {
   const state = useGameStore((s) => s.state);
@@ -33,7 +34,7 @@ export function GameScreen(): ReactNode {
   const phase = state?.phase ?? 'setup';
   const turnNumber = state?.turnNumber ?? 0;
 
-  const { myState, opponentState, isMyTurn } = useViewingPlayer();
+  const { myState, opponentState, isMyTurn, viewingPlayer } = useViewingPlayer();
   const controller = useActionController();
   const dispatch = useGameStore((s) => s.dispatch);
   const flowState = useActionFlowStore((s) => s.flowState);
@@ -56,18 +57,23 @@ export function GameScreen(): ReactNode {
     return null;
   }, [hoveredCardId, state]);
 
-  // Check if the opponent's hero is a valid target during awaiting_target
-  const heroTargetable = flowState.step === 'awaiting_target' &&
-    flowState.validTargets.includes('hero');
+  const opponentPlayerId = viewingPlayer === 0 ? 1 : 0;
+  const myHeroTargetToken = flowState.step === 'awaiting_target'
+    ? getHeroTargetTokenForPlayer(flowState.validTargets, viewingPlayer)
+    : null;
+  const opponentHeroTargetToken = flowState.step === 'awaiting_target'
+    ? getHeroTargetTokenForPlayer(flowState.validTargets, opponentPlayerId) ??
+      (flowState.validTargets.includes(HERO_ATTACK_TARGET) ? HERO_ATTACK_TARGET : null)
+    : null;
 
-  const handleHeroClick = useCallback(() => {
+  const handleHeroClick = useCallback((targetId: string) => {
     if (flowState.step !== 'awaiting_target') return;
     const sourceId = flowState.cardInstanceId;
     const actionType = flowState.actionType;
     if (actionType === 'attack') {
-      dispatch({ type: 'declare_attack', attackerInstanceId: sourceId, targetId: 'hero' });
+      dispatch({ type: 'declare_attack', attackerInstanceId: sourceId, targetId: HERO_ATTACK_TARGET });
     } else if (actionType === 'cast_spell') {
-      dispatch({ type: 'cast_spell', cardInstanceId: sourceId, targetId: 'hero' });
+      dispatch({ type: 'cast_spell', cardInstanceId: sourceId, targetId });
     }
     flowReset();
     selectCard(null);
@@ -92,8 +98,10 @@ export function GameScreen(): ReactNode {
         {/* Opponent panel (top) */}
         <OpponentPanel
           player={opponentState}
-          heroHighlighted={heroTargetable}
-          onHeroClick={handleHeroClick}
+          heroHighlighted={opponentHeroTargetToken !== null}
+          onHeroClick={opponentHeroTargetToken !== null
+            ? () => handleHeroClick(opponentHeroTargetToken)
+            : undefined}
         />
 
         {/* Battlefield (middle, fills available space) */}
@@ -111,6 +119,10 @@ export function GameScreen(): ReactNode {
           phase={phase}
           turnNumber={turnNumber}
           isMyTurn={isMyTurn}
+          heroHighlighted={myHeroTargetToken !== null}
+          onHeroClick={myHeroTargetToken !== null
+            ? () => handleHeroClick(myHeroTargetToken)
+            : undefined}
         />
 
         {/* Hand row (bottom) */}

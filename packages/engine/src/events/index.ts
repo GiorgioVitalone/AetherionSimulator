@@ -13,6 +13,7 @@ export {
 } from './trigger-registry.js';
 
 export {
+  resolveEffectWorkItem,
   resolveTriggeredEvents,
   resumePendingResolution,
 } from './trigger-resolution.js';

@@ -1,6 +1,8 @@
 import type {
   CardInstance,
+  ContinuableResolutionWorkItem,
   EffectContext,
+  EffectResolutionWorkItem,
   EffectExecutionFrame,
   EventResolutionWorkItem,
   GameEvent,
@@ -71,6 +73,49 @@ export function resolveTriggeredEvents(
   );
 }
 
+export function resolveEffectWorkItem(
+  state: GameState,
+  workItem: EffectResolutionWorkItem,
+  initialEvents: readonly GameEvent[] = [],
+): ResolutionDrainResult {
+  const resolved = runEffectWorkItem(
+    clearPendingResolution(state),
+    workItem,
+    [{ effects: workItem.effects, index: 0 }],
+  );
+
+  if (resolved.pendingChoice !== undefined) {
+    return {
+      state: {
+        ...resolved.state,
+        pendingChoice: resolved.pendingChoice,
+        pendingResolution: {
+          currentWorkItem: workItem,
+          frames: resolved.frames,
+          bufferedEvents: [
+            ...initialEvents,
+            ...resolved.generatedEvents,
+          ],
+          remainingWorkItems: [],
+        },
+      },
+      events: [],
+    };
+  }
+
+  return drainResolutionQueue(
+    resolved.state,
+    eventsToWorkItems(
+      [
+        ...initialEvents,
+        ...resolved.generatedEvents,
+      ],
+      workItem.triggerDepth,
+    ),
+    [],
+  );
+}
+
 export function resumePendingResolution(
   state: GameState,
   response: PlayerResponse,
@@ -93,9 +138,9 @@ export function resumePendingResolution(
     };
   }
 
-  const resumed = runTriggerEffects(
+  const resumed = runEffectWorkItem(
     clearPendingResolution(state),
-    pending.currentTrigger,
+    pending.currentWorkItem,
     pending.frames,
     resumeInput,
   );
@@ -106,7 +151,7 @@ export function resumePendingResolution(
         ...resumed.state,
         pendingChoice: resumed.pendingChoice,
         pendingResolution: {
-          currentTrigger: pending.currentTrigger,
+          currentWorkItem: pending.currentWorkItem,
           frames: resumed.frames,
           bufferedEvents: [
             ...pending.bufferedEvents,
@@ -125,7 +170,7 @@ export function resumePendingResolution(
         ...pending.bufferedEvents,
         ...resumed.generatedEvents,
       ],
-      pending.currentTrigger.triggerDepth,
+      pending.currentWorkItem.triggerDepth,
     ),
     ...pending.remainingWorkItems,
   ];
@@ -174,7 +219,7 @@ function drainResolutionQueue(
       continue;
     }
 
-    const triggered = runTriggerEffects(
+    const triggered = runEffectWorkItem(
       currentState,
       item,
       [{ effects: item.effects, index: 0 }],
@@ -188,7 +233,7 @@ function drainResolutionQueue(
           ...currentState,
           pendingChoice: triggered.pendingChoice,
           pendingResolution: {
-            currentTrigger: item,
+            currentWorkItem: item,
             frames: triggered.frames,
             bufferedEvents: triggered.generatedEvents,
             remainingWorkItems: queue,
@@ -210,22 +255,25 @@ function drainResolutionQueue(
   };
 }
 
-function runTriggerEffects(
+function runEffectWorkItem(
   state: GameState,
-  trigger: TriggerResolutionWorkItem,
+  workItem: ContinuableResolutionWorkItem,
   frames: readonly EffectExecutionFrame[],
   resumeInput?: ResumeInput,
 ): EffectRunResult {
   const baseContext: EffectContext = {
-    sourceInstanceId: trigger.sourceInstanceId,
-    controllerId: trigger.controllerId,
-    triggerDepth: trigger.triggerDepth,
+    sourceInstanceId: workItem.sourceInstanceId,
+    controllerId: workItem.controllerId,
+    triggerDepth: workItem.triggerDepth,
+    selectedTargets: workItem.kind === 'effect'
+      ? workItem.selectedTargets
+      : undefined,
   };
 
   if (
     resumeInput === undefined &&
-    trigger.condition !== undefined &&
-    !evaluateCondition(state, trigger.condition, baseContext)
+    workItem.condition !== undefined &&
+    !evaluateCondition(state, workItem.condition, baseContext)
   ) {
     return {
       state,
@@ -288,7 +336,7 @@ function runTriggerEffects(
         const discarded = resolveDiscardChoice(
           currentState,
           effect,
-          trigger.controllerId,
+          workItem.controllerId,
           pendingResume.selectedOptionIds,
         );
         currentState = discarded.state;
@@ -324,7 +372,7 @@ function runTriggerEffects(
         state: currentState,
         generatedEvents,
         frames: cloneFrames(frameStack),
-        pendingChoice: buildChooseOneChoice(effect, trigger.controllerId),
+        pendingChoice: buildChooseOneChoice(effect, workItem.controllerId),
       };
     }
 

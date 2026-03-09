@@ -10,6 +10,7 @@ import { useGameStore } from '@/stores/game-store';
 import { useActionFlowStore } from '@/stores/action-flow-store';
 import type { ActionIntent } from '@/stores/action-flow-store';
 import { useUiStore } from '@/stores/ui-store';
+import { attackTargetsToTokens, HERO_ATTACK_TARGET } from './target-tokens';
 
 export function useActionController() {
   const dispatch = useGameStore((s) => s.dispatch);
@@ -144,10 +145,10 @@ export function useActionController() {
           return;
         }
         if (action === 'attack' && attackOption) {
-          const targets = attackOption.validTargets.map((t) => t.instanceId ?? 'hero');
+          const targets = attackTargetsToTokens(attackOption.validTargets);
           // Auto-resolve if hero is the only valid target
-          if (targets.length === 1 && targets[0] === 'hero') {
-            dispatch({ type: 'declare_attack', attackerInstanceId: instanceId, targetId: 'hero' });
+          if (targets.length === 1 && targets[0] === HERO_ATTACK_TARGET) {
+            dispatch({ type: 'declare_attack', attackerInstanceId: instanceId, targetId: HERO_ATTACK_TARGET });
             reset();
             selectCard(null);
             return;
@@ -266,10 +267,10 @@ export function useActionController() {
         case 'attack': {
           const option = availableActions.canAttack.find((a) => a.attackerInstanceId === instanceId);
           if (option) {
-            const targets = option.validTargets.map((t) => t.instanceId ?? 'hero');
+            const targets = attackTargetsToTokens(option.validTargets);
             // Auto-resolve if hero is the only valid target
-            if (targets.length === 1 && targets[0] === 'hero') {
-              dispatch({ type: 'declare_attack', attackerInstanceId: instanceId, targetId: 'hero' });
+            if (targets.length === 1 && targets[0] === HERO_ATTACK_TARGET) {
+              dispatch({ type: 'declare_attack', attackerInstanceId: instanceId, targetId: HERO_ATTACK_TARGET });
               reset();
               selectCard(null);
               break;

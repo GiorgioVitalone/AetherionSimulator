@@ -135,7 +135,7 @@ function resolveTargetCharacter(
     pendingChoice: {
       type: 'select_targets',
       playerId: context.controllerId,
-      options: filtered.map(c => ({ id: c.instanceId, label: c.name })),
+      options: filtered.map(c => ({ id: c.instanceId, label: c.name, instanceId: c.instanceId })),
       minSelections: 1,
       maxSelections: 1,
       context: 'Choose a target character',
@@ -161,7 +161,7 @@ function resolveUpTo(
     pendingChoice: {
       type: 'select_targets',
       playerId: context.controllerId,
-      options: filtered.map(c => ({ id: c.instanceId, label: c.name })),
+      options: filtered.map(c => ({ id: c.instanceId, label: c.name, instanceId: c.instanceId })),
       minSelections: 0,
       maxSelections: Math.min(count, filtered.length),
       context: `Choose up to ${String(count)} targets`,
