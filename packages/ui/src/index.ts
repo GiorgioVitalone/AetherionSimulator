@@ -23,6 +23,10 @@ export { LpBar } from './components/LpBar.js';
 export { CardBack } from './components/CardBack.js';
 export { FactionBorder } from './components/FactionBorder.js';
 
+// Context
+export { ArtProvider, useArtBaseUrl } from './context/ArtContext.js';
+
 // Utils
 export { getFaction, FACTION_COLORS, FACTION_NAMES } from './utils/faction.js';
 export type { FactionName } from './utils/faction.js';
+export { resolveArtUrl } from './utils/art-url.js';

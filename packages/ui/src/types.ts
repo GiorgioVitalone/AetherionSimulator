@@ -15,6 +15,7 @@ export interface CardDisplayProps {
   readonly stats: StatsDisplay | null;
   readonly abilities: readonly AbilityDisplay[];
   readonly traits: readonly string[];
+  readonly artUrl?: string;
   readonly rarity?: string;
   readonly flavorText?: string;
 

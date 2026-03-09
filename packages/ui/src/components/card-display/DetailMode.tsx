@@ -4,6 +4,8 @@
  */
 import type { ReactNode } from 'react';
 import type { CardDisplayProps } from '../../types.js';
+import { useArtBaseUrl } from '../../context/ArtContext.js';
+import { resolveArtUrl } from '../../utils/art-url.js';
 import { CostBadge } from '../CostBadge.js';
 import { StatBadge } from '../StatBadge.js';
 
@@ -19,12 +21,15 @@ const CARD_TYPE_LABELS: Record<string, string> = {
 export function DetailMode(props: CardDisplayProps): ReactNode {
   const {
     name, cost, stats, modifiedStats, cardType, abilities,
-    traits, rarity, flavorText,
+    traits, rarity, flavorText, artUrl,
   } = props;
+
+  const artBaseUrl = useArtBaseUrl();
+  const resolvedUrl = resolveArtUrl(artUrl, artBaseUrl);
 
   return (
     <div
-      className="w-[280px] rounded-[var(--radius-lg)] border-2 p-4 flex flex-col gap-3"
+      className="relative w-[280px] rounded-[var(--radius-lg)] border-2 p-4 flex flex-col gap-3 overflow-hidden"
       style={{
         borderColor: 'var(--card-faction-color)',
         background: `
@@ -34,6 +39,16 @@ export function DetailMode(props: CardDisplayProps): ReactNode {
         backgroundSize: '100% 20%, 100% 100%',
       }}
     >
+      {/* Card art background */}
+      {resolvedUrl && (
+        <img
+          src={resolvedUrl}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover rounded-[var(--radius-lg)] opacity-30 pointer-events-none"
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>

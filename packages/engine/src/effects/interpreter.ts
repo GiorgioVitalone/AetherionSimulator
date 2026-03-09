@@ -273,6 +273,7 @@ function executeDeployToken(
       tags: [...(effect.token.tags ?? [])],
       cost: { mana: 0, energy: 0, flexible: 0 },
       alignment: [],
+      artUrl: null,
       owner: context.controllerId,
     };
 

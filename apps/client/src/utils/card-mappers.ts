@@ -58,6 +58,7 @@ export function mapCardToDisplay(
     name: card.name,
     cardType: card.cardType,
     faction,
+    artUrl: card.artUrl ?? undefined,
     cost: {
       mana: card.cost.mana,
       energy: card.cost.energy,

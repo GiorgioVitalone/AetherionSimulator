@@ -98,9 +98,16 @@ interface DbRow {
   stats: Record<string, unknown> | null;
   abilities: unknown;
   tags: unknown;
+  artUrl: string | null;
   flavorText: string | null;
   setCode: string | null;
   transformsInto: number | null;
+}
+
+function normalizeArtUrl(raw: string | null): string | null {
+  if (!raw) return null;
+  if (raw.startsWith('Art/')) return raw.split('?')[0];
+  return null; // skip dead external CDN URLs
 }
 
 function transformCard(row: DbRow): SimCard | null {
@@ -126,6 +133,7 @@ function transformCard(row: DbRow): SimCard | null {
     stats: parseStats(row.stats),
     abilities: parseAbilities(row.abilities),
     traits: Array.isArray(row.tags) ? row.tags.map(String) : [],
+    artUrl: normalizeArtUrl(row.artUrl),
     flavorText: row.flavorText ?? null,
     setCode: row.setCode ?? null,
     transformsInto: row.transformsInto ?? null,
@@ -141,7 +149,7 @@ async function main(): Promise<void> {
     const { rows } = await pool.query<DbRow>(
       `SELECT
         id, name, "cardType", rarity, alignment, cost, stats,
-        abilities, traits AS tags, "flavorText",
+        abilities, traits AS tags, "artUrl", "flavorText",
         "setId" AS "setCode", "transformationId" AS "transformsInto"
       FROM cards
       ORDER BY id`,

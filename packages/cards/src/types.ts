@@ -49,6 +49,7 @@ export interface SimCard {
   readonly stats: Stats | null;
   readonly abilities: readonly Ability[];
   readonly traits: readonly string[];
+  readonly artUrl: string | null;
   readonly flavorText: string | null;
   readonly setCode: string | null;
   readonly transformsInto: number | null;

@@ -25,6 +25,7 @@ export interface CardDefinition {
   readonly traits?: readonly string[];
   readonly tags?: readonly string[];
   readonly alignment?: readonly string[];
+  readonly artUrl?: string | null;
 }
 
 export interface HeroDefinition {
@@ -90,6 +91,7 @@ function createCardInstance(
     tags: def.tags ?? [],
     cost: def.cost,
     alignment: def.alignment ?? [],
+    artUrl: def.artUrl ?? null,
     owner,
   };
 }

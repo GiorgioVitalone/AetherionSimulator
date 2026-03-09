@@ -44,6 +44,7 @@ export function mockCard(overrides?: Partial<CardInstance>): CardInstance {
     tags: [],
     cost: { mana: 1, energy: 0, flexible: 0 },
     alignment: ['Onyx'],
+    artUrl: null,
     owner: 0,
     ...overrides,
   };

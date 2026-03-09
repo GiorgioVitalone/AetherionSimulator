@@ -29,6 +29,7 @@ export const MOCK_CARDS: SimCard[] = [
       },
     ],
     traits: [],
+    artUrl: null,
     flavorText: 'Death is merely a door.',
     setCode: 'CORE',
     transformsInto: null,
@@ -57,6 +58,7 @@ export const MOCK_CARDS: SimCard[] = [
       },
     ],
     traits: [],
+    artUrl: null,
     flavorText: 'Her light burns brightest in the dark.',
     setCode: 'CORE',
     transformsInto: null,
@@ -106,14 +108,14 @@ export const MOCK_CARDS: SimCard[] = [
   {
     id: 500, name: 'Onyx Mana Crystal', cardType: 'R', rarity: 'Common',
     alignment: ['Onyx'], cost: { mana: 0, energy: 0, flexible: 0, xMana: false, xEnergy: false },
-    stats: null, abilities: [], traits: [], flavorText: null, setCode: 'CORE', transformsInto: null,
+    stats: null, abilities: [], traits: [], artUrl: null, flavorText: null, setCode: 'CORE', transformsInto: null,
   },
 
   // ── Radiant Resources ──────────────────────────────────────────────────
   {
     id: 501, name: 'Radiant Mana Crystal', cardType: 'R', rarity: 'Common',
     alignment: ['Radiant'], cost: { mana: 0, energy: 0, flexible: 0, xMana: false, xEnergy: false },
-    stats: null, abilities: [], traits: [], flavorText: null, setCode: 'CORE', transformsInto: null,
+    stats: null, abilities: [], traits: [], artUrl: null, flavorText: null, setCode: 'CORE', transformsInto: null,
   },
 ];
 
@@ -143,6 +145,7 @@ function createCharacters(
     stats: { hp: t.hp, atk: t.atk, arm: t.arm },
     abilities: [],
     traits: [],
+    artUrl: null,
     flavorText: null,
     setCode: 'CORE',
     transformsInto: null,
@@ -170,6 +173,7 @@ function createSpells(
     stats: null,
     abilities: [],
     traits: [],
+    artUrl: null,
     flavorText: null,
     setCode: 'CORE',
     transformsInto: null,

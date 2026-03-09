@@ -4,7 +4,7 @@
  */
 import type { ReactNode } from 'react';
 import type { SimCard } from '@aetherion-sim/cards';
-import { getFaction, LpBar } from '@aetherion-sim/ui';
+import { getFaction, LpBar, useArtBaseUrl, resolveArtUrl } from '@aetherion-sim/ui';
 
 interface HeroPickerCardProps {
   readonly hero: SimCard;
@@ -21,6 +21,8 @@ export function HeroPickerCard({
 }: HeroPickerCardProps): ReactNode {
   const faction = getFaction(hero.alignment);
   const lp = hero.stats?.hp ?? 30;
+  const artBaseUrl = useArtBaseUrl();
+  const resolvedArt = resolveArtUrl(hero.artUrl ?? undefined, artBaseUrl);
 
   return (
     <button
@@ -29,8 +31,8 @@ export function HeroPickerCard({
       disabled={disabled}
       data-faction={faction}
       className={`
-        w-full text-left rounded-[var(--radius-lg)] border-2 p-4
-        transition-all duration-200 cursor-pointer
+        relative w-full text-left rounded-[var(--radius-lg)] border-2 p-4
+        transition-all duration-200 cursor-pointer overflow-hidden
         ${selected
           ? 'ring-2 ring-[var(--color-accent)] border-[var(--card-faction-color)]'
           : 'border-[var(--color-border)] hover:border-[var(--card-faction-color)]'}
@@ -43,6 +45,16 @@ export function HeroPickerCard({
         backgroundSize: '100% 30%, 100% 100%',
       }}
     >
+      {/* Hero art background */}
+      {resolvedArt && (
+        <img
+          src={resolvedArt}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover rounded-[var(--radius-lg)] opacity-25 pointer-events-none"
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        />
+      )}
+
       {/* Hero name */}
       <h3
         className="text-lg font-black leading-tight mb-1"

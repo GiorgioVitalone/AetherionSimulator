@@ -5,6 +5,8 @@
  */
 import type { ReactNode } from 'react';
 import type { CardDisplayProps } from '../../types.js';
+import { useArtBaseUrl } from '../../context/ArtContext.js';
+import { resolveArtUrl } from '../../utils/art-url.js';
 import { CostBadge } from '../CostBadge.js';
 import { StatBadge } from '../StatBadge.js';
 
@@ -17,8 +19,11 @@ const CARD_TYPE_LABELS: Record<string, string> = {
 export function HandMode(props: CardDisplayProps): ReactNode {
   const {
     name, cost, stats, cardType, abilities, playable, selected,
-    onClick, onMouseEnter, onMouseLeave,
+    artUrl, onClick, onMouseEnter, onMouseLeave,
   } = props;
+
+  const artBaseUrl = useArtBaseUrl();
+  const resolvedUrl = resolveArtUrl(artUrl, artBaseUrl);
 
   const firstAbility = abilities[0];
 
@@ -26,7 +31,7 @@ export function HandMode(props: CardDisplayProps): ReactNode {
     <div
       className={`
         relative w-[100px] h-[140px] rounded-[var(--radius-md)] border-2 p-2
-        flex flex-col cursor-pointer select-none
+        flex flex-col cursor-pointer select-none overflow-hidden
         transition-all duration-150 hover:translate-y-[-4px] hover:shadow-lg
         ${selected ? 'ring-2 ring-[var(--color-accent)] ring-offset-1 ring-offset-[var(--color-bg)]' : ''}
       `}
@@ -44,6 +49,16 @@ export function HandMode(props: CardDisplayProps): ReactNode {
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
+      {/* Card art background */}
+      {resolvedUrl && (
+        <img
+          src={resolvedUrl}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover rounded-[var(--radius-md)] opacity-20 pointer-events-none"
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        />
+      )}
+
       {/* Cost badge */}
       <div className="flex justify-end mb-0.5">
         <CostBadge cost={cost} size="sm" />

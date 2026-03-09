@@ -102,6 +102,7 @@ export interface CardInstance {
   readonly tags: readonly string[];
   readonly cost: ResourceCost;
   readonly alignment: readonly string[];
+  readonly artUrl: string | null;
   readonly owner: 0 | 1;
 }
 

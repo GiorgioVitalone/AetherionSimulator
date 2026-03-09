@@ -84,6 +84,7 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
         traits: card.traits,
         tags: card.traits, // tags mapped from traits
         alignment: card.alignment,
+        artUrl: card.artUrl,
       });
       abilityMap.set(card.id, dslAbilities);
       metaMap.set(card.id, meta);

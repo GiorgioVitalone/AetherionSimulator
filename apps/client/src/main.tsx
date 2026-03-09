@@ -1,9 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
+import { ArtProvider } from '@aetherion-sim/ui';
 import { initCardData } from '@/features/game-setup/deck-loader';
 import type { SimCard } from '@aetherion-sim/cards';
 import './index.css';
+
+const ART_BASE_URL = import.meta.env.VITE_ART_BASE_URL ?? '';
 
 const root = document.getElementById('root')!;
 
@@ -34,7 +37,7 @@ async function bootstrap(): Promise<void> {
     const module = await import(
       /* @vite-ignore */ '@aetherion-sim/cards/data/cards.json'
     );
-    cards = (module.default ?? module) as readonly SimCard[];
+    cards = (module.default ?? module) as unknown as readonly SimCard[];
   } catch {
     renderError(
       'Card Data Not Found',
@@ -57,7 +60,9 @@ async function bootstrap(): Promise<void> {
 
   createRoot(root).render(
     <StrictMode>
-      <App />
+      <ArtProvider value={ART_BASE_URL}>
+        <App />
+      </ArtProvider>
     </StrictMode>,
   );
 }
