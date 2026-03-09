@@ -94,10 +94,11 @@ export function GameScreen(): ReactNode {
 
   return (
     <ErrorBoundary onReset={reset}>
-      <div className="min-h-screen min-w-[1280px] flex flex-col bg-[var(--color-bg)]">
+      <div className="h-screen min-w-[1280px] flex flex-col bg-[var(--color-bg)] overflow-hidden">
         {/* Opponent panel (top) */}
         <OpponentPanel
           player={opponentState}
+          playerIndex={opponentPlayerId as 0 | 1}
           heroHighlighted={opponentHeroTargetToken !== null}
           onHeroClick={opponentHeroTargetToken !== null
             ? () => handleHeroClick(opponentHeroTargetToken)
@@ -123,6 +124,7 @@ export function GameScreen(): ReactNode {
           onHeroClick={myHeroTargetToken !== null
             ? () => handleHeroClick(myHeroTargetToken)
             : undefined}
+          playerIndex={viewingPlayer}
         />
 
         {/* Hand row (bottom) */}

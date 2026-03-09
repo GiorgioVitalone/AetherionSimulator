@@ -25,7 +25,7 @@ export function ZoneSlot({
   onCardClick,
 }: ZoneSlotProps): ReactNode {
   return (
-    <div className="w-[80px] h-[110px] relative">
+    <div className="w-[72px] h-[96px] relative">
       <AnimatePresence mode="wait">
         {card ? (
           <BattlefieldCard
@@ -39,7 +39,7 @@ export function ZoneSlot({
             key="empty"
             onClick={onSlotClick}
             className={`
-              w-[80px] h-[110px] rounded-[var(--radius-md)]
+              w-[72px] h-[96px] rounded-[var(--radius-md)]
               border-2 border-dashed flex items-center justify-center
               transition-all duration-150
               ${highlighted

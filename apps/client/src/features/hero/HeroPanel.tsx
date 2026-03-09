@@ -1,11 +1,14 @@
 /**
  * HeroPanel — displays the hero's name, LP bar, transformation state,
  * and ability buttons for the viewing player.
+ * Subscribes to animation queue for hero damage/heal popups.
  */
-import type { ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import type { HeroState } from '@aetherion-sim/engine';
 import { LpBar } from '@aetherion-sim/ui';
 import { HeroAbilityButton } from './HeroAbilityButton';
+import { DamagePopup } from '@/features/battlefield/DamagePopup';
+import { useUiStore } from '@/stores/ui-store';
 
 interface HeroPanelProps {
   readonly hero: HeroState;
@@ -13,6 +16,7 @@ interface HeroPanelProps {
   readonly isMyTurn: boolean;
   readonly canTransform: boolean;
   readonly onTransform?: () => void;
+  readonly playerIndex: 0 | 1;
 }
 
 export function HeroPanel({
@@ -21,7 +25,25 @@ export function HeroPanel({
   isMyTurn,
   canTransform,
   onTransform,
+  playerIndex,
 }: HeroPanelProps): ReactNode {
+  const animationQueue = useUiStore((s) => s.animationQueue);
+  const currentAnim = animationQueue.length > 0 ? animationQueue[0] : undefined;
+
+  const heroDamageValue = useMemo(() => {
+    if (currentAnim?.targetId === `hero-${playerIndex}` && currentAnim.type === 'damage') {
+      return currentAnim.value ?? null;
+    }
+    return null;
+  }, [currentAnim, playerIndex]);
+
+  const heroHealValue = useMemo(() => {
+    if (currentAnim?.targetId === `hero-${playerIndex}` && currentAnim.type === 'heal') {
+      return currentAnim.value ?? null;
+    }
+    return null;
+  }, [currentAnim, playerIndex]);
+
   return (
     <div
       data-faction={faction}
@@ -56,8 +78,12 @@ export function HeroPanel({
         )}
       </div>
 
-      {/* LP bar */}
-      <LpBar current={hero.currentLp} max={hero.maxLp} />
+      {/* LP bar with damage/heal popups */}
+      <div className="relative">
+        <LpBar current={hero.currentLp} max={hero.maxLp} />
+        <DamagePopup value={heroDamageValue} type="damage" />
+        <DamagePopup value={heroHealValue} type="heal" />
+      </div>
 
       {/* Abilities */}
       {hero.abilities.length > 0 && (

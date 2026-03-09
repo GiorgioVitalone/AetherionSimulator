@@ -1,23 +1,42 @@
 /**
  * OpponentPanel — compact display of the opponent's hero, resources, and hand count.
  * No interactivity — the opponent's state is read-only from the viewing player's perspective.
+ * Subscribes to animation queue for hero damage popups.
  */
-import type { ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import type { PlayerState } from '@aetherion-sim/engine';
 import { LpBar, CardBack } from '@aetherion-sim/ui';
 import { ResourceBank } from '@/features/hero/ResourceBank';
+import { DamagePopup } from '@/features/battlefield/DamagePopup';
+import { useUiStore } from '@/stores/ui-store';
 
 interface OpponentPanelProps {
   readonly player: PlayerState;
+  readonly playerIndex: 0 | 1;
   readonly onHeroClick?: () => void;
   readonly heroHighlighted?: boolean;
 }
 
-export function OpponentPanel({ player, onHeroClick, heroHighlighted }: OpponentPanelProps): ReactNode {
+export function OpponentPanel({ player, playerIndex, onHeroClick, heroHighlighted }: OpponentPanelProps): ReactNode {
   const hero = player.hero;
-  // Hero doesn't have alignment directly — infer from cards or use name-based lookup
-  // For now, use 'none' and let data-faction style it
   const handCount = player.hand.length;
+
+  const animationQueue = useUiStore((s) => s.animationQueue);
+  const currentAnim = animationQueue.length > 0 ? animationQueue[0] : undefined;
+
+  const heroDamageValue = useMemo(() => {
+    if (currentAnim?.targetId === `hero-${playerIndex}` && currentAnim.type === 'damage') {
+      return currentAnim.value ?? null;
+    }
+    return null;
+  }, [currentAnim, playerIndex]);
+
+  const heroHealValue = useMemo(() => {
+    if (currentAnim?.targetId === `hero-${playerIndex}` && currentAnim.type === 'heal') {
+      return currentAnim.value ?? null;
+    }
+    return null;
+  }, [currentAnim, playerIndex]);
 
   return (
     <div className="flex items-center gap-4 px-4 py-2 border-b border-[var(--color-border)]"
@@ -43,8 +62,10 @@ export function OpponentPanel({ player, onHeroClick, heroHighlighted }: Opponent
             </span>
           )}
         </div>
-        <div className="w-48">
+        <div className="w-48 relative">
           <LpBar current={hero.currentLp} max={hero.maxLp} size="sm" />
+          <DamagePopup value={heroDamageValue} type="damage" />
+          <DamagePopup value={heroHealValue} type="heal" />
         </div>
       </div>
 

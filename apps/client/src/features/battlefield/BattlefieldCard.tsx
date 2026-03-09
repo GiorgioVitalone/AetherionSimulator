@@ -51,16 +51,21 @@ export function BattlefieldCard({
     return null;
   }, [currentAnim, card.instanceId]);
 
+  // Check if this card is the attacker in the current animation
+  const isAttacking = currentAnim?.type === 'attack' && currentAnim?.sourceId === card.instanceId;
+
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, scale: 0.9 }}
+      initial={{ opacity: 0, scale: 0.85 }}
       animate={{
         opacity: 1,
-        scale: 1,
+        scale: isAttacking ? [1, 1.1, 1] : 1,
+        y: isAttacking ? [0, -6, 0] : 0,
         rotate: card.exhausted ? 6 : 0,
       }}
-      transition={{ duration: 0.2 }}
+      exit={{ opacity: 0, scale: 0.7 }}
+      transition={{ duration: isAttacking ? 0.3 : 0.2 }}
       className="relative"
     >
       <CardDisplay {...displayProps} />

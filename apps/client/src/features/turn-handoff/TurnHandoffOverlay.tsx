@@ -1,8 +1,10 @@
 /**
  * TurnHandoffOverlay — full-screen "Player N's Turn" shown on turn changes.
  * Blocks interaction for 1.5s, then swaps the viewing player perspective.
+ * Uses AnimatePresence for smooth fade in/out transitions.
  */
 import { type ReactNode, useEffect, useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useGameStore } from '@/stores/game-store';
 import { useUiStore } from '@/stores/ui-store';
 
@@ -38,24 +40,35 @@ export function TurnHandoffOverlay(): ReactNode {
     return () => clearTimeout(timer);
   }, [turnNumber, activePlayerIndex, setViewingPlayer]);
 
-  if (!visible) return null;
-
   return (
-    <div
-      className="fixed inset-0 flex items-center justify-center text-[var(--color-text)]"
-      style={{
-        zIndex: 'var(--z-modal)',
-        backgroundColor: 'var(--color-surface-overlay)',
-      }}
-    >
-      <div className="text-center">
-        <h1 className="text-4xl font-black mb-2">
-          Player {displayPlayer + 1}&apos;s Turn
-        </h1>
-        <span className="font-mono text-lg text-[var(--color-text-muted)]">
-          Turn {turnNumber}
-        </span>
-      </div>
-    </div>
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          className="fixed inset-0 flex items-center justify-center text-[var(--color-text)]"
+          style={{
+            zIndex: 'var(--z-modal)',
+            backgroundColor: 'var(--color-surface-overlay)',
+          }}
+        >
+          <motion.div
+            className="text-center"
+            initial={{ scale: 0.9 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+          >
+            <h1 className="text-4xl font-black mb-2">
+              Player {displayPlayer + 1}&apos;s Turn
+            </h1>
+            <span className="font-mono text-lg text-[var(--color-text-muted)]">
+              Turn {turnNumber}
+            </span>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

@@ -41,7 +41,7 @@ export function ActionBar({ onChoose, onCancel }: ActionBarProps): ReactNode {
           onClick={onCancel}
           className="
             px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold font-body
-            text-[var(--color-text-muted)] hover:text-[var(--color-text)]
+            border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-alt)]
             transition-colors duration-150 cursor-pointer
           "
         >
@@ -85,7 +85,7 @@ export function ActionBar({ onChoose, onCancel }: ActionBarProps): ReactNode {
         onClick={onCancel}
         className="
           px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold font-body
-          text-[var(--color-text-muted)] hover:text-[var(--color-text)]
+          border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-alt)]
           transition-colors duration-150 cursor-pointer
         "
       >

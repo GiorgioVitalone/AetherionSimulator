@@ -21,9 +21,10 @@ export function BattlefieldMode(props: CardDisplayProps): ReactNode {
   return (
     <div
       className={`
-        relative w-[80px] h-[110px] rounded-[var(--radius-md)] border-2 p-1
+        relative w-[72px] h-[96px] rounded-[var(--radius-md)] border-2 p-1
         flex flex-col justify-between cursor-pointer select-none
         transition-all duration-150
+        hover:ring-1 hover:ring-[var(--card-faction-light)] hover:brightness-110
         ${selected ? 'ring-2 ring-[var(--color-accent)] ring-offset-1 ring-offset-[var(--color-bg)]' : ''}
         ${highlighted ? 'shadow-[0_0_12px_var(--card-faction-light)]' : ''}
       `}
@@ -51,7 +52,10 @@ export function BattlefieldMode(props: CardDisplayProps): ReactNode {
       )}
 
       {/* Name */}
-      <div className="text-[9px] font-semibold leading-tight truncate text-[var(--color-text)]">
+      <div
+        className="text-[9px] font-bold leading-tight truncate text-[var(--color-text)]"
+        style={{ fontFamily: 'var(--font-display)' }}
+      >
         {name}
       </div>
 

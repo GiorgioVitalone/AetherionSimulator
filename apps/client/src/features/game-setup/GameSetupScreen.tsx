@@ -104,7 +104,7 @@ export function GameSetupScreen(): ReactNode {
             px-6 py-2.5 rounded-[var(--radius-md)] font-semibold text-sm font-body
             transition-all duration-200
             ${canStart
-              ? 'bg-[var(--color-accent)] text-[var(--color-text-inverse)] hover:brightness-110 cursor-pointer'
+              ? 'bg-[var(--color-accent)] text-[var(--color-text-inverse)] hover:bg-[var(--color-accent-light)] hover:shadow-[0_0_8px_rgba(190,148,56,0.3)] active:scale-[0.97] cursor-pointer'
               : 'bg-[var(--color-surface-alt)] text-[var(--color-text-faint)] cursor-not-allowed'}
           `}
         >

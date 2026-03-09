@@ -151,3 +151,16 @@ select:focus-visible {
   --card-faction-color: #b2ac9e;
   --card-faction-light: #d4d0c8;
 }
+
+/* ==========================================================================
+   Reduced Motion — catch CSS-based animations not handled by Framer Motion.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

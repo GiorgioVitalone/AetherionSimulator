@@ -39,7 +39,7 @@ export function PlayerBattlefield({
       ];
 
   return (
-    <div className="flex flex-col gap-2 items-center py-2">
+    <div className="flex flex-col gap-1 items-center py-1">
       {zoneOrder.map(({ zone, slots }) => (
         <ZoneRow
           key={zone}

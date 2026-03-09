@@ -60,7 +60,7 @@ export function PhaseIndicator({ phase, turnNumber, isMyTurn }: PhaseIndicatorPr
           className="
             px-3 py-1 rounded-[var(--radius-md)] text-[11px] font-semibold font-body
             bg-[var(--color-accent)] text-[var(--color-text-inverse)]
-            hover:brightness-110 transition-all duration-150 cursor-pointer
+            hover:bg-[var(--color-accent-light)] hover:shadow-[0_0_8px_rgba(190,148,56,0.3)] active:scale-[0.97] active:brightness-95 transition-all duration-150 cursor-pointer
           "
         >
           End Phase

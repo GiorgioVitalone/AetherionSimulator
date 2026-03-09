@@ -73,7 +73,7 @@ export function BattlefieldArea({ onSlotClick, onCardClick }: BattlefieldAreaPro
   if (!myState || !opponentState) return null;
 
   return (
-    <div className="flex-1 flex flex-col justify-center">
+    <div className="flex-1 min-h-0 flex flex-col justify-center">
       {/* Opponent battlefield (mirrored order) */}
       <PlayerBattlefield
         zones={opponentState.zones}

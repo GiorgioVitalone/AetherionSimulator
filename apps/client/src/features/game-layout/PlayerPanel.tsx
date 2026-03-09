@@ -17,6 +17,7 @@ interface PlayerPanelProps {
   readonly isMyTurn: boolean;
   readonly onHeroClick?: () => void;
   readonly heroHighlighted?: boolean;
+  readonly playerIndex: 0 | 1;
 }
 
 export function PlayerPanel({
@@ -26,6 +27,7 @@ export function PlayerPanel({
   isMyTurn,
   onHeroClick,
   heroHighlighted,
+  playerIndex,
 }: PlayerPanelProps): ReactNode {
   const dispatch = useGameStore((s) => s.dispatch);
   const canTransform = useGameStore((s) => s.availableActions?.canTransform ?? false);
@@ -36,7 +38,7 @@ export function PlayerPanel({
 
   return (
     <div
-      className="flex items-start gap-4 px-4 py-3 border-t border-[var(--color-border)]"
+      className="flex items-start gap-4 px-4 py-2 border-t border-[var(--color-border)]"
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
       {/* Hero panel */}
@@ -50,6 +52,7 @@ export function PlayerPanel({
           isMyTurn={isMyTurn}
           canTransform={isMyTurn && canTransform}
           onTransform={() => dispatch({ type: 'declare_transformation' })}
+          playerIndex={playerIndex}
         />
       </div>
 

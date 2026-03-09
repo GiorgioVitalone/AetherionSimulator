@@ -25,7 +25,7 @@ export function HandMode(props: CardDisplayProps): ReactNode {
   return (
     <div
       className={`
-        relative w-[120px] h-[170px] rounded-[var(--radius-md)] border-2 p-2
+        relative w-[100px] h-[140px] rounded-[var(--radius-md)] border-2 p-2
         flex flex-col cursor-pointer select-none
         transition-all duration-150 hover:translate-y-[-4px] hover:shadow-lg
         ${selected ? 'ring-2 ring-[var(--color-accent)] ring-offset-1 ring-offset-[var(--color-bg)]' : ''}
@@ -64,7 +64,7 @@ export function HandMode(props: CardDisplayProps): ReactNode {
 
       {/* Ability (first only, 2-line clamp) */}
       {firstAbility && (
-        <div className="text-[8px] text-[var(--color-text-secondary)] leading-snug line-clamp-2 mb-auto">
+        <div className="text-[9px] text-[var(--color-text-secondary)] leading-snug line-clamp-2 mb-auto">
           {firstAbility.name && (
             <span className="font-semibold text-[var(--color-text-muted)]">
               {firstAbility.name}:{' '}
