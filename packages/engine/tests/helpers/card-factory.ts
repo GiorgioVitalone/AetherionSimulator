@@ -108,6 +108,7 @@ export function mockGameState(overrides?: Partial<GameState>): GameState {
     winner: null,
     rng: { seed: 42, counter: 0 },
     turnState: { discardedForEnergy: false, firstPlayerFirstTurn: false },
+    scheduledEffects: [],
     ...overrides,
   };
 }
@@ -121,6 +122,7 @@ export function mockPlayerState(owner: 0 | 1, overrides?: Partial<PlayerState>):
     resourceDeck: [],
     resourceBank: [],
     discardPile: [],
+    exileZone: [],
     temporaryResources: [],
     turnCounters: {
       spellsCast: 0,

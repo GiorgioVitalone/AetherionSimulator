@@ -95,6 +95,7 @@ export function HeroPanel({
               abilityIndex={i}
               heroCardDefId={hero.cardDefId}
               isMyTurn={isMyTurn}
+              cooldownRemaining={hero.cooldowns.get(i)}
             />
           ))}
         </div>

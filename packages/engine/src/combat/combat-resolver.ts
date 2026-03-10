@@ -14,6 +14,7 @@ import {
   calculateCombatDamage,
   calculateHeroDamage,
 } from './damage-calculator.js';
+import { updateCardInState, destroyCard } from '../state/index.js';
 
 export interface CombatResult {
   readonly newState: GameState;
@@ -25,69 +26,6 @@ function allTraits(card: CardInstance): readonly Trait[] {
     ...card.traits,
     ...card.grantedTraits.map(g => g.trait),
   ];
-}
-
-// ── Updaters (immutable) ─────────────────────────────────────────────────────
-
-function updateCardInZones(
-  state: GameState,
-  instanceId: string,
-  updater: (card: CardInstance) => CardInstance,
-): GameState {
-  return {
-    ...state,
-    players: state.players.map(player => ({
-      ...player,
-      zones: {
-        reserve: player.zones.reserve.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        frontline: player.zones.frontline.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        highGround: player.zones.highGround.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-      },
-    })) as unknown as readonly [typeof state.players[0], typeof state.players[1]],
-  };
-}
-
-function removeCardFromZones(
-  state: GameState,
-  instanceId: string,
-): { state: GameState; removedFrom: 0 | 1; card: CardInstance } | null {
-  for (let pi = 0; pi < 2; pi++) {
-    const player = state.players[pi]!;
-    const location = findCard(player.zones, instanceId);
-    if (location !== null) {
-      const newZones = {
-        reserve: player.zones.reserve.map(c =>
-          c?.instanceId === instanceId ? null : c,
-        ),
-        frontline: player.zones.frontline.map(c =>
-          c?.instanceId === instanceId ? null : c,
-        ),
-        highGround: player.zones.highGround.map(c =>
-          c?.instanceId === instanceId ? null : c,
-        ),
-      };
-      const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
-      newPlayers[pi] = {
-        ...player,
-        zones: newZones,
-        discardPile: location.card.isToken
-          ? player.discardPile
-          : [...player.discardPile, location.card],
-      };
-      return {
-        state: { ...state, players: newPlayers },
-        removedFrom: pi as 0 | 1,
-        card: location.card,
-      };
-    }
-  }
-  return null;
 }
 
 // ── Core Resolution ──────────────────────────────────────────────────────────
@@ -128,7 +66,7 @@ export function resolveCombat(
   }
 
   // 3. Exhaust attacker
-  let currentState = updateCardInZones(state, attackerInstanceId, card => ({
+  let currentState = updateCardInState(state, attackerInstanceId, card => ({
     ...card,
     exhausted: true,
     attackedThisTurn: true,
@@ -200,8 +138,8 @@ function resolveCharacterAttack(
   attackerInstanceId: string,
   targetId: string,
   events: GameEvent[],
-  attackerPlayerId: 0 | 1 = state.activePlayerIndex,
-  defenderPlayerId: 0 | 1 = (state.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
+  _attackerPlayerId: 0 | 1 = state.activePlayerIndex,
+  _defenderPlayerId: 0 | 1 = (state.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
 ): CombatResult {
   // Find defender in either player's zones
   let defender: CardInstance | null = null;
@@ -237,7 +175,7 @@ function resolveCharacterAttack(
       targetId,
       amount: result.damageToDefender,
     });
-    currentState = updateCardInZones(currentState, targetId, card => ({
+    currentState = updateCardInState(currentState, targetId, card => ({
       ...card,
       currentHp: card.currentHp - result.damageToDefender,
     }));
@@ -251,7 +189,7 @@ function resolveCharacterAttack(
       targetId: attackerInstanceId,
       amount: result.damageToAttacker,
     });
-    currentState = updateCardInZones(
+    currentState = updateCardInState(
       currentState,
       attackerInstanceId,
       card => ({
@@ -268,30 +206,16 @@ function resolveCharacterAttack(
       attackerId: attackerInstanceId,
       targetId,
     });
-    events.push({
-      type: 'CARD_DESTROYED',
-      cardInstanceId: targetId,
-      cause: 'combat',
-      playerId: defenderPlayerId,
-    });
-    const removal = removeCardFromZones(currentState, targetId);
-    if (removal !== null) {
-      currentState = removal.state;
-    }
+    const defenderDestroy = destroyCard(currentState, targetId, 'combat');
+    currentState = defenderDestroy.state;
+    events.push(...defenderDestroy.events);
   }
 
   // Destroy attacker if dead
   if (result.attackerDestroyed) {
-    events.push({
-      type: 'CARD_DESTROYED',
-      cardInstanceId: attackerInstanceId,
-      cause: 'combat',
-      playerId: attackerPlayerId,
-    });
-    const removal = removeCardFromZones(currentState, attackerInstanceId);
-    if (removal !== null) {
-      currentState = removal.state;
-    }
+    const attackerDestroy = destroyCard(currentState, attackerInstanceId, 'combat');
+    currentState = attackerDestroy.state;
+    events.push(...attackerDestroy.events);
   }
 
   return { newState: currentState, events };

@@ -65,6 +65,7 @@ export {
   canAfford,
   payCost,
   getAvailableResources,
+  computeMaxX,
 } from './actions/index.js';
 export type {
   AvailableActions,

@@ -9,4 +9,4 @@ export type {
   HeroActivateOption,
   AttackOption,
 } from './available-actions.js';
-export { canAfford, payCost, getAvailableResources } from './cost-checker.js';
+export { canAfford, payCost, getAvailableResources, computeMaxX } from './cost-checker.js';

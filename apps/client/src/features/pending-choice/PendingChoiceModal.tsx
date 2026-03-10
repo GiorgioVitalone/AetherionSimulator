@@ -9,6 +9,7 @@ import { useUiStore } from '@/stores/ui-store';
 import { MulliganChoice } from './MulliganChoice';
 import { MulliganHandoff } from './MulliganHandoff';
 import { ReserveExhaustChoice } from './ReserveExhaustChoice';
+import { ResponseWindowChoice } from './ResponseWindowChoice';
 
 interface PendingChoiceModalProps {
   readonly choice: PendingChoice;
@@ -44,6 +45,11 @@ export function PendingChoiceModal({ choice }: PendingChoiceModalProps): ReactNo
   // Reserve exhaust choice
   if (choice.type === 'reserve_exhaust') {
     return <ReserveExhaustChoice choice={choice} />;
+  }
+
+  // Response window for Counter/Flash
+  if (choice.type === 'response_window') {
+    return <ResponseWindowChoice choice={choice} />;
   }
 
   // Generic choice modal for other types
@@ -157,4 +163,7 @@ const CHOICE_TITLES: Record<string, string> = {
   choose_one: 'Choose One',
   choose_zone_slot: 'Choose Zone',
   choose_discard: 'Choose Cards to Discard',
+  response_window: 'Response Window',
+  choose_x_value: 'Choose X Value',
+  choose_flexible_split: 'Choose Resource Split',
 };

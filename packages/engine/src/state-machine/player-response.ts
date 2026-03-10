@@ -6,6 +6,7 @@ import type {
   PlayerResponse,
 } from '../types/game-state.js';
 import { resumePendingResolution } from '../events/index.js';
+import { resolveStack } from '../stack/stack-resolver.js';
 
 interface PlayerResponseResult {
   readonly state: GameState;
@@ -64,6 +65,28 @@ export function applyPendingChoiceResponse(
       state: resolved.state,
       pendingChoice: resolved.state.pendingChoice,
       events: resolved.events,
+    };
+  }
+
+  // Response window: player chose pass or a Counter/Flash card
+  if (choice.type === 'response_window') {
+    const selectedId = response.selectedOptionIds[0];
+    if (selectedId === undefined || selectedId === 'pass') {
+      // Pass: resolve the stack
+      const resolved = resolveStack({ ...state, pendingChoice: null });
+      return {
+        state: resolved.state,
+        pendingChoice: null,
+        events: [...resolved.events],
+      };
+    }
+    // Player selected a Counter/Flash card — for now resolve the stack
+    // Full counter chain (push counter to stack, open new window) is a future enhancement
+    const resolved = resolveStack({ ...state, pendingChoice: null });
+    return {
+      state: resolved.state,
+      pendingChoice: null,
+      events: [...resolved.events],
     };
   }
 

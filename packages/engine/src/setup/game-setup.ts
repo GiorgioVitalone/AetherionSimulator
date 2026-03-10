@@ -173,6 +173,7 @@ export function createGame(
       discardedForEnergy: false,
       firstPlayerFirstTurn: true,
     },
+    scheduledEffects: [],
   };
 }
 
@@ -233,6 +234,7 @@ function buildPlayerState(
       resourceDeck: shuffledResource,
       resourceBank: [],
       discardPile: [],
+      exileZone: [],
       temporaryResources: [],
       turnCounters: {
         spellsCast: 0,

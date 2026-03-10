@@ -74,6 +74,7 @@ export interface DiscardForEnergyAction {
 export interface ActivateHeroAbilityAction {
   readonly type: 'activate_hero_ability';
   readonly abilityIndex: number;
+  readonly targetId?: string;
 }
 
 export interface DeclareTransformAction {

@@ -63,6 +63,8 @@ export interface ActivateOption {
 export interface HeroActivateOption {
   readonly abilityIndex: number;
   readonly cost: ResourceCost;
+  readonly needsTarget: boolean;
+  readonly validTargets: readonly string[];
 }
 
 export interface AttackOption {
@@ -316,6 +318,16 @@ function computeHeroActivateOptions(
     const cooldown = hero.cooldowns.get(i);
     if (cooldown !== undefined && cooldown > 0) continue;
 
+    // Check once-per-game
+    if (activatedTrigger.oncePerGame === true) {
+      const everUsed = state.log.some(
+        e =>
+          e.type === 'HERO_ABILITY_ACTIVATED' &&
+          e.abilityIndex === i,
+      );
+      if (everUsed) continue;
+    }
+
     // Check once-per-turn
     if (activatedTrigger.oncePerTurn === true) {
       const alreadyUsed = state.log.some(
@@ -326,11 +338,16 @@ function computeHeroActivateOptions(
       if (alreadyUsed) continue;
     }
 
+    // Can't activate on the turn hero transforms
+    if (hero.transformedThisTurn) continue;
+
     if (!canAfford(player, activatedTrigger.cost)) continue;
 
     options.push({
       abilityIndex: i,
       cost: activatedTrigger.cost,
+      needsTarget: false,
+      validTargets: [],
     });
   }
 

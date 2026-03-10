@@ -63,6 +63,8 @@ export function mapCardToDisplay(
       mana: card.cost.mana,
       energy: card.cost.energy,
       flexible: card.cost.flexible,
+      xMana: card.cost.xMana,
+      xEnergy: card.cost.xEnergy,
     },
     stats: (card.baseHp > 0 || card.baseAtk > 0 || card.baseArm > 0)
       ? { hp: card.baseHp, atk: card.baseAtk, arm: card.baseArm }

@@ -17,7 +17,14 @@ import {
   executePlayerAction,
   removeTemporaryResources,
   passTurn,
+  decrementHeroCooldowns,
 } from './actions.js';
+import { processStatusTicks } from './status-processing.js';
+import { expireEndOfTurnModifiers } from './modifier-expiry.js';
+import {
+  processScheduledEffects,
+  decrementScheduledTimers,
+} from '../effects/scheduled-processor.js';
 import {
   registerInitialTriggers,
   resolveEffectWorkItem,
@@ -47,7 +54,10 @@ export const gameMachine = setup({
   },
   actions: {
     refreshAllCards: assign({
-      gameState: ({ context }) => refreshCards(context.gameState),
+      gameState: ({ context }) => {
+        const refreshed = refreshCards(context.gameState);
+        return decrementHeroCooldowns(refreshed);
+      },
     }),
     drawResource: assign(({ context }) => {
       const result = drawResourceCard(context.gameState);
@@ -117,8 +127,66 @@ export const gameMachine = setup({
         ],
       },
     })),
+    processStatuses: assign(({ context }) => {
+      const result = processStatusTicks(context.gameState);
+      const resolved = resolveTriggeredEvents(result.state, result.events);
+      return {
+        gameState: {
+          ...resolved.state,
+          log: [...resolved.state.log, ...resolved.events],
+        },
+        pendingChoice: resolved.state.pendingChoice,
+      };
+    }),
     removeTemps: assign({
       gameState: ({ context }) => removeTemporaryResources(context.gameState),
+    }),
+    processScheduledUpkeep: assign(({ context }) => {
+      let currentState = context.gameState;
+      // Process next_upkeep and next_turn_start scheduled effects
+      const upkeepResult = processScheduledEffects(currentState, 'next_upkeep');
+      currentState = upkeepResult.state;
+      const turnStartResult = processScheduledEffects(currentState, 'next_turn_start');
+      currentState = turnStartResult.state;
+      // Decrement timers for next cycle
+      currentState = decrementScheduledTimers(currentState);
+      const allEvents = [...upkeepResult.events, ...turnStartResult.events];
+      if (allEvents.length > 0) {
+        const resolved = resolveTriggeredEvents(currentState, allEvents);
+        return {
+          gameState: {
+            ...resolved.state,
+            log: [...resolved.state.log, ...resolved.events],
+          },
+          pendingChoice: resolved.state.pendingChoice,
+        };
+      }
+      return { gameState: currentState };
+    }),
+    processScheduledEndPhase: assign(({ context }) => {
+      const result = processScheduledEffects(context.gameState, 'end_of_turn');
+      if (result.events.length > 0) {
+        const resolved = resolveTriggeredEvents(result.state, result.events);
+        return {
+          gameState: {
+            ...resolved.state,
+            log: [...resolved.state.log, ...resolved.events],
+          },
+          pendingChoice: resolved.state.pendingChoice,
+        };
+      }
+      return { gameState: result.state };
+    }),
+    expireModifiers: assign(({ context }) => {
+      const result = expireEndOfTurnModifiers(context.gameState);
+      const resolved = resolveTriggeredEvents(result.state, result.events);
+      return {
+        gameState: {
+          ...resolved.state,
+          log: [...resolved.state.log, ...resolved.events],
+        },
+        pendingChoice: resolved.state.pendingChoice,
+      };
     }),
     setHandSizeChoice: assign(({ context }) => {
       const player = context.gameState.players[context.gameState.activePlayerIndex]!;
@@ -235,6 +303,8 @@ export const gameMachine = setup({
           entry: [
             { type: 'setPhase', params: { phase: 'upkeep' as const } },
             'refreshAllCards',
+            'processStatuses',
+            'processScheduledUpkeep',
             'drawResource',
           ],
           always: [
@@ -313,6 +383,8 @@ export const gameMachine = setup({
           entry: [
             { type: 'setPhase', params: { phase: 'end' as const } },
             'removeTemps',
+            'expireModifiers',
+            'processScheduledEndPhase',
           ],
           always: [
             {

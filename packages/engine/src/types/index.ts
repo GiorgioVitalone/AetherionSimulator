@@ -213,10 +213,14 @@ export type {
   CharacterHealedEvent,
   CharacterOverhealedEvent,
   CardMovedEvent,
+  CardLeftBattlefieldEvent,
+  SpellCounteredEvent,
   TurnState,
   RngState,
   EffectContext,
   EffectResult,
+  ScheduledEffectEntry,
+  ResponseWindowContext,
 } from './game-state.js';
 
 export {

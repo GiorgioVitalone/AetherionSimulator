@@ -43,6 +43,8 @@ export interface CostDisplay {
   readonly mana: number;
   readonly energy: number;
   readonly flexible: number;
+  readonly xMana?: boolean;
+  readonly xEnergy?: boolean;
 }
 
 export interface StatsDisplay {

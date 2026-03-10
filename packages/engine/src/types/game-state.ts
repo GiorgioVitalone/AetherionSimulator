@@ -31,6 +31,7 @@ export interface GameState {
   readonly winner: 0 | 1 | 'draw' | null;
   readonly rng: RngState;
   readonly turnState: TurnState;
+  readonly scheduledEffects: readonly ScheduledEffectEntry[];
 }
 
 export type GamePhase =
@@ -52,6 +53,7 @@ export interface PlayerState {
   readonly resourceDeck: readonly ResourceCard[];
   readonly resourceBank: readonly ResourceCard[];
   readonly discardPile: readonly CardInstance[];
+  readonly exileZone: readonly CardInstance[];
   readonly temporaryResources: readonly TemporaryResource[];
   readonly turnCounters: TurnCounters;
 }
@@ -104,6 +106,7 @@ export interface CardInstance {
   readonly alignment: readonly string[];
   readonly artUrl: string | null;
   readonly owner: 0 | 1;
+  readonly xValue?: number;
 }
 
 export interface GrantedTrait {
@@ -177,6 +180,7 @@ export interface PendingChoice {
   readonly minSelections: number;
   readonly maxSelections: number;
   readonly context: string;
+  readonly responseContext?: ResponseWindowContext;
 }
 
 export interface PendingResolution {
@@ -231,7 +235,10 @@ export type PendingChoiceType =
   | 'discard_to_hand_limit'
   | 'choose_one'
   | 'choose_zone_slot'
-  | 'choose_discard';
+  | 'choose_discard'
+  | 'response_window'
+  | 'choose_x_value'
+  | 'choose_flexible_split';
 
 export interface ChoiceOption {
   readonly id: string;
@@ -249,11 +256,17 @@ export interface PlayerResponse {
 
 export interface StackItem {
   readonly id: string;
-  readonly type: 'spell' | 'ability' | 'attack';
+  readonly type: 'spell' | 'ability' | 'attack' | 'counter' | 'flash';
   readonly sourceInstanceId: string;
   readonly controllerId: 0 | 1;
   readonly effects: readonly Effect[];
   readonly targets: readonly string[];
+  readonly countered?: boolean;
+}
+
+export interface ResponseWindowContext {
+  readonly respondingPlayerId: 0 | 1;
+  readonly stackItemId: string;
 }
 
 // ── Game Events (emitted during state transitions) ───────────────────────────
@@ -282,7 +295,9 @@ export type GameEvent =
   | LethalDamageDealtEvent
   | CharacterHealedEvent
   | CharacterOverhealedEvent
-  | CardMovedEvent;
+  | CardMovedEvent
+  | CardLeftBattlefieldEvent
+  | SpellCounteredEvent;
 
 export interface CardDeployedEvent {
   readonly type: 'CARD_DEPLOYED';
@@ -303,6 +318,13 @@ export interface CardBouncedEvent {
 export interface CardExiledEvent {
   readonly type: 'CARD_EXILED';
   readonly cardInstanceId: string;
+  readonly playerId: 0 | 1;
+}
+export interface CardLeftBattlefieldEvent {
+  readonly type: 'CARD_LEFT_BATTLEFIELD';
+  readonly cardInstanceId: string;
+  readonly destination: 'discard' | 'exile' | 'hand';
+  readonly playerId: 0 | 1;
 }
 export interface CardSacrificedEvent {
   readonly type: 'CARD_SACRIFICED';
@@ -408,11 +430,28 @@ export interface CardMovedEvent {
   readonly toZone: ZoneType;
 }
 
+export interface SpellCounteredEvent {
+  readonly type: 'SPELL_COUNTERED';
+  readonly cardInstanceId: string;
+}
+
 // ── Turn State (per-turn tracking) ───────────────────────────────────────────
 
 export interface TurnState {
   readonly discardedForEnergy: boolean;
   readonly firstPlayerFirstTurn: boolean;
+}
+
+export interface ScheduledEffectEntry {
+  readonly id: string;
+  readonly timing: import('./effects.js').ScheduledTiming;
+  readonly turnsRemaining: number;
+  readonly effects: readonly Effect[];
+  readonly sourceInstanceId: string;
+  readonly targetInstanceId?: string;
+  readonly controllerId: 0 | 1;
+  readonly condition?: Condition;
+  readonly oneShot: boolean;
 }
 
 // ── RNG State (seeded PRNG for determinism) ──────────────────────────────────
@@ -429,6 +468,7 @@ export interface EffectContext {
   readonly controllerId: 0 | 1;
   readonly triggerDepth: number;
   readonly selectedTargets?: readonly string[];
+  readonly xValue?: number;
 }
 
 // ── Effect Result (returned by all engine operations) ────────────────────────

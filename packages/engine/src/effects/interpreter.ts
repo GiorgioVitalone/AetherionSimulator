@@ -17,33 +17,18 @@ import { evaluateCondition } from './condition-evaluator.js';
 import { findCard, removeFromZone, deployToZone } from '../zones/zone-manager.js';
 import { ZONE_SLOTS } from '../types/game-state.js';
 import type { ZoneType } from '../types/common.js';
+import {
+  updateCardInState,
+  findCardInState,
+  removeCardFromState,
+  resetCard,
+  destroyCard,
+} from '../state/index.js';
+import { registerScheduledEffect } from './scheduled-processor.js';
+import { counterStackItem } from '../stack/stack-resolver.js';
 
 function unchanged(state: GameState): EffectResult {
   return { newState: state, events: [] };
-}
-
-function updateCardInState(
-  state: GameState,
-  instanceId: string,
-  updater: (card: CardInstance) => CardInstance,
-): GameState {
-  return {
-    ...state,
-    players: state.players.map(player => ({
-      ...player,
-      zones: {
-        reserve: player.zones.reserve.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        frontline: player.zones.frontline.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        highGround: player.zones.highGround.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-      },
-    })) as unknown as readonly [typeof state.players[0], typeof state.players[1]],
-  };
 }
 
 export function executeEffect(
@@ -68,9 +53,14 @@ export function executeEffect(
     case 'composite': return executeComposite(state, effect, context);
     case 'conditional': return executeConditional(state, effect, context);
     case 'choose_one': return executeChooseOne(state, effect, context);
+    case 'scheduled': {
+      const newState = registerScheduledEffect(state, effect, context);
+      return { newState, events: [] };
+    }
+    case 'counter_spell':
+      return executeCounterSpell(state, effect, context);
     // Phase 2 primitives — stub for now
     case 'scry':
-    case 'counter_spell':
     case 'return_from_discard':
     case 'cost_reduction':
     case 'grant_ability':
@@ -81,7 +71,6 @@ export function executeEffect(
     case 'copy_card':
     case 'deploy_from_deck':
     case 'attach_as_equipment':
-    case 'scheduled':
       return unchanged(state);
   }
 }
@@ -121,8 +110,9 @@ function executeDealDamage(
       // Check destruction
       const cardCheck = findCardInState(currentState, targetId);
       if (cardCheck !== null && cardCheck.currentHp <= 0) {
-        events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'effect', playerId: cardCheck.owner });
-        currentState = removeCardFromState(currentState, targetId);
+        const destruction = destroyCard(currentState, targetId, 'effect');
+        currentState = destruction.state;
+        events.push(...destruction.events);
       }
     }
   }
@@ -181,14 +171,26 @@ function executeModifyStats(
   const events: GameEvent[] = [];
   let currentState = state;
 
+  const modifiedTargets: string[] = [];
   for (const targetId of resolved.targetIds) {
     events.push({ type: 'STAT_MODIFIED', cardInstanceId: targetId, modifier: effect.modifier });
     currentState = updateCardInState(currentState, targetId, c => ({
       ...c,
       currentAtk: c.currentAtk + (effect.modifier.atk ?? 0),
-      currentHp: c.currentHp + (effect.modifier.hp ?? 0),
+      currentHp: Math.max(0, c.currentHp + (effect.modifier.hp ?? 0)),
       currentArm: c.currentArm + (effect.modifier.arm ?? 0),
     }));
+    modifiedTargets.push(targetId);
+  }
+
+  // Stat-reduction destruction check: if HP reduced to 0, destroy
+  for (const targetId of modifiedTargets) {
+    const card = findCardInState(currentState, targetId);
+    if (card !== null && card.currentHp <= 0) {
+      const destruction = destroyCard(currentState, targetId, 'effect');
+      currentState = destruction.state;
+      events.push(...destruction.events);
+    }
   }
 
   return { newState: currentState, events };
@@ -298,10 +300,9 @@ function executeDestroy(
   const events: GameEvent[] = [];
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    const card = findCardInState(currentState, targetId);
-    if (card === null) continue;
-    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'effect', playerId: card.owner });
-    currentState = removeCardFromState(currentState, targetId);
+    const destruction = destroyCard(currentState, targetId, 'effect');
+    currentState = destruction.state;
+    events.push(...destruction.events);
   }
   return { newState: currentState, events };
 }
@@ -356,11 +357,10 @@ function executeSacrifice(
   const events: GameEvent[] = [];
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    const card = findCardInState(currentState, targetId);
-    if (card === null) continue;
     events.push({ type: 'CARD_SACRIFICED', cardInstanceId: targetId });
-    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'sacrifice', playerId: card.owner });
-    currentState = removeCardFromState(currentState, targetId);
+    const destruction = destroyCard(currentState, targetId, 'sacrifice');
+    currentState = destruction.state;
+    events.push(...destruction.events);
   }
   return { newState: currentState, events };
 }
@@ -600,44 +600,25 @@ function executeChooseOne(
   };
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+function executeCounterSpell(
+  state: GameState,
+  _effect: Extract<Effect, { type: 'counter_spell' }>,
+  _context: EffectContext,
+): EffectResult {
+  // Find the target spell on the stack
+  // The target is typically the most recent non-counter spell, or a specific stack item
+  if (state.stack.length === 0) return unchanged(state);
 
-function findCardInState(state: GameState, instanceId: string): CardInstance | null {
-  for (const player of state.players) {
-    const loc = findCard(player.zones, instanceId);
-    if (loc !== null) return loc.card;
-  }
-  return null;
-}
+  // Counter the top-most uncountered spell on the stack
+  const targetItem = [...state.stack].reverse().find(
+    item => item.countered !== true,
+  );
+  if (targetItem === undefined) return unchanged(state);
 
-function removeCardFromState(state: GameState, instanceId: string): GameState {
-  const newPlayers = state.players.map(player => {
-    const { zones, removed } = removeFromZone(player.zones, instanceId);
-    return {
-      ...player,
-      zones,
-      discardPile: removed !== null && !removed.isToken
-        ? [...player.discardPile, removed]
-        : player.discardPile,
-    };
-  }) as unknown as readonly [typeof state.players[0], typeof state.players[1]];
-  return { ...state, players: newPlayers };
-}
-
-function resetCard(card: CardInstance): CardInstance {
+  const newState = counterStackItem(state, targetItem.id);
   return {
-    ...card,
-    currentHp: card.baseHp,
-    currentAtk: card.baseAtk,
-    currentArm: card.baseArm,
-    exhausted: false,
-    summoningSick: false,
-    movedThisTurn: false,
-    attackedThisTurn: false,
-    grantedTraits: [],
-    modifiers: [],
-    statusEffects: [],
-    registeredTriggers: [],
-    equipment: null,
+    newState,
+    events: [{ type: 'SPELL_COUNTERED', cardInstanceId: targetItem.sourceInstanceId }],
   };
 }
+

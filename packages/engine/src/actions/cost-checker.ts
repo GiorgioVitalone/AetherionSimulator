@@ -30,36 +30,71 @@ export function getAvailableResources(player: PlayerState): {
   return { mana, energy };
 }
 
-/** Can the player afford the given cost? */
-export function canAfford(player: PlayerState, cost: ResourceCost): boolean {
+/** Can the player afford the given cost? Accepts optional xValue for X-cost cards. */
+export function canAfford(
+  player: PlayerState,
+  cost: ResourceCost,
+  xValue?: number,
+): boolean {
   const avail = getAvailableResources(player);
+  const totalAvailable = avail.mana + avail.energy;
 
-  // After paying specific costs, how much of each remains?
+  // Flexible flag: entire cost payable with any resource mix
+  if (cost.flexible > 0) {
+    const baseCost = cost.mana + cost.energy;
+    return totalAvailable >= baseCost;
+  }
+
+  // X-cost: base cost + X (X can be 0, so always affordable if base is)
+  if (cost.xMana === true || cost.xEnergy === true) {
+    const x = xValue ?? 0;
+    const totalCost = cost.mana + cost.energy + x;
+    return totalAvailable >= totalCost;
+  }
+
+  // Standard cost: specific resources first, then remainder
   const remainingMana = avail.mana - cost.mana;
   const remainingEnergy = avail.energy - cost.energy;
 
-  // If either specific cost exceeds available, can't afford
   if (remainingMana < 0 || remainingEnergy < 0) return false;
 
-  // Flexible can be paid from either remaining resource
-  const totalRemaining = remainingMana + remainingEnergy;
-  return totalRemaining >= cost.flexible;
+  return true;
+}
+
+/** Maximum X value a player can afford for an X-cost card. */
+export function computeMaxX(player: PlayerState, cost: ResourceCost): number {
+  const avail = getAvailableResources(player);
+  const totalAvailable = avail.mana + avail.energy;
+  const baseCost = cost.mana + cost.energy;
+  return Math.max(0, totalAvailable - baseCost);
 }
 
 /** Deduct cost from player resources. Returns updated PlayerState. Throws if insufficient. */
 export function payCost(
   player: PlayerState,
   cost: ResourceCost,
+  xValue?: number,
 ): PlayerState {
-  if (!canAfford(player, cost)) {
+  if (!canAfford(player, cost, xValue)) {
     throw new Error('Insufficient resources to pay cost');
   }
 
+  // Flexible flag: total cost payable with any resource mix
+  if (cost.flexible > 0) {
+    const totalNeeded = cost.mana + cost.energy;
+    return exhaustAnyResources(player, totalNeeded);
+  }
+
+  // X-cost: base + X in any mix
+  if ((cost.xMana === true || cost.xEnergy === true) && xValue !== undefined) {
+    const totalNeeded = cost.mana + cost.energy + xValue;
+    return exhaustAnyResources(player, totalNeeded);
+  }
+
+  // Standard payment: specific resources first
   let manaNeeded = cost.mana;
   let energyNeeded = cost.energy;
-  let flexNeeded = cost.flexible;
 
-  // Exhaust resource bank cards — specific first, then flexible
   const newBank: ResourceCard[] = player.resourceBank.map(rc => {
     if (rc.exhausted) return rc;
 
@@ -75,16 +110,9 @@ export function payCost(
     return rc;
   });
 
-  // Pay flexible from remaining unexhausted bank cards
-  const finalBank: ResourceCard[] = newBank.map(rc => {
-    if (rc.exhausted || flexNeeded <= 0) return rc;
-    flexNeeded--;
-    return { ...rc, exhausted: true };
-  });
-
   // Deduct from temporary resources if bank wasn't enough
   let tempResources = player.temporaryResources;
-  if (manaNeeded > 0 || energyNeeded > 0 || flexNeeded > 0) {
+  if (manaNeeded > 0 || energyNeeded > 0) {
     tempResources = tempResources
       .map(tmp => {
         if (tmp.resourceType === 'mana' && manaNeeded > 0) {
@@ -97,11 +125,6 @@ export function payCost(
           energyNeeded -= deduct;
           return { ...tmp, amount: tmp.amount - deduct };
         }
-        if (flexNeeded > 0) {
-          const deduct = Math.min(tmp.amount, flexNeeded);
-          flexNeeded -= deduct;
-          return { ...tmp, amount: tmp.amount - deduct };
-        }
         return tmp;
       })
       .filter(tmp => tmp.amount > 0);
@@ -109,7 +132,39 @@ export function payCost(
 
   return {
     ...player,
-    resourceBank: finalBank,
+    resourceBank: newBank,
+    temporaryResources: tempResources,
+  };
+}
+
+/** Exhaust any available resources totaling the given amount. */
+function exhaustAnyResources(
+  player: PlayerState,
+  totalNeeded: number,
+): PlayerState {
+  let remaining = totalNeeded;
+
+  const newBank: ResourceCard[] = player.resourceBank.map(rc => {
+    if (rc.exhausted || remaining <= 0) return rc;
+    remaining--;
+    return { ...rc, exhausted: true };
+  });
+
+  let tempResources = player.temporaryResources;
+  if (remaining > 0) {
+    tempResources = tempResources
+      .map(tmp => {
+        if (remaining <= 0) return tmp;
+        const deduct = Math.min(tmp.amount, remaining);
+        remaining -= deduct;
+        return { ...tmp, amount: tmp.amount - deduct };
+      })
+      .filter(tmp => tmp.amount > 0);
+  }
+
+  return {
+    ...player,
+    resourceBank: newBank,
     temporaryResources: tempResources,
   };
 }

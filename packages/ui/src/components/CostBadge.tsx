@@ -13,20 +13,33 @@ interface CostBadgeProps {
 const RESOURCE_COLORS = {
   mana:     { color: '#5a9acf', bg: 'rgba(90,154,207,0.15)' },
   energy:   { color: '#d5ad52', bg: 'rgba(213,173,82,0.15)' },
-  flexible: { color: '#b185db', bg: 'rgba(177,133,219,0.15)' },
+  neutral:  { color: '#9ca3af', bg: 'rgba(156,163,175,0.15)' },
 } as const;
 
 export function CostBadge({ cost, size = 'md' }: CostBadgeProps): ReactNode {
-  const parts: { label: string; value: number; color: string; bg: string }[] = [];
+  const parts: { label: string; value: string; color: string; bg: string }[] = [];
 
-  if (cost.mana > 0) {
-    parts.push({ label: 'M', value: cost.mana, ...RESOURCE_COLORS.mana });
+  // X-cost pills
+  if (cost.xMana === true) {
+    parts.push({ label: 'X', value: 'X', ...RESOURCE_COLORS.mana });
   }
-  if (cost.energy > 0) {
-    parts.push({ label: 'E', value: cost.energy, ...RESOURCE_COLORS.energy });
+  if (cost.xEnergy === true) {
+    parts.push({ label: 'XE', value: 'X', ...RESOURCE_COLORS.energy });
   }
+
+  // Flexible flag: show total cost as a neutral pill (any resource mix)
   if (cost.flexible > 0) {
-    parts.push({ label: 'F', value: cost.flexible, ...RESOURCE_COLORS.flexible });
+    const totalCost = cost.mana + cost.energy;
+    if (totalCost > 0) {
+      parts.push({ label: 'N', value: String(totalCost), ...RESOURCE_COLORS.neutral });
+    }
+  } else {
+    if (cost.mana > 0) {
+      parts.push({ label: 'M', value: String(cost.mana), ...RESOURCE_COLORS.mana });
+    }
+    if (cost.energy > 0) {
+      parts.push({ label: 'E', value: String(cost.energy), ...RESOURCE_COLORS.energy });
+    }
   }
 
   if (parts.length === 0) {
@@ -45,7 +58,7 @@ export function CostBadge({ cost, size = 'md' }: CostBadgeProps): ReactNode {
           className="inline-flex items-center rounded-sm px-1 py-0.5 font-mono font-medium"
           style={{ backgroundColor: p.bg, color: p.color }}
         >
-          {p.value}{p.label}
+          {p.value}
         </span>
       ))}
     </span>

@@ -332,8 +332,8 @@ function executeMove(
 
 function executeActivateAbility(
   state: GameState,
-  action: { cardInstanceId: string; abilityIndex: number },
-): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+  action: { cardInstanceId: string; abilityIndex: number; targetId?: string },
+): PlayerActionResult {
   const player = state.players[state.activePlayerIndex]!;
 
   // Find the card on the battlefield
@@ -378,22 +378,37 @@ function executeActivateAbility(
     },
   };
 
-  // Full effect execution deferred to future iteration —
-  // for now, pay cost + exhaust + log the activation event
+  const nextState = setPlayer(state, state.activePlayerIndex, newPlayer);
+  const allEvents: GameEvent[] = [{
+    type: 'ABILITY_ACTIVATED',
+    cardInstanceId: action.cardInstanceId,
+    abilityIndex: action.abilityIndex,
+  }];
+
+  // Extract and execute ability effects
+  const abilityEffects = getHeroAbilityEffects(ability);
+  if (abilityEffects.length === 0) {
+    return { state: nextState, events: allEvents };
+  }
+
   return {
-    state: setPlayer(state, state.activePlayerIndex, newPlayer),
-    events: [{
-      type: 'ABILITY_ACTIVATED',
-      cardInstanceId: action.cardInstanceId,
-      abilityIndex: action.abilityIndex,
-    }],
+    state: nextState,
+    events: allEvents,
+    effectWorkItem: {
+      kind: 'effect',
+      sourceInstanceId: action.cardInstanceId,
+      controllerId: state.activePlayerIndex,
+      effects: abilityEffects,
+      triggerDepth: 0,
+      selectedTargets: action.targetId !== undefined ? [action.targetId] : undefined,
+    },
   };
 }
 
 function executeActivateHeroAbility(
   state: GameState,
-  action: { abilityIndex: number },
-): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+  action: { abilityIndex: number; targetId?: string },
+): PlayerActionResult {
   const player = state.players[state.activePlayerIndex]!;
   const hero = player.hero;
 
@@ -428,14 +443,43 @@ function executeActivateHeroAbility(
     },
   };
 
+  const nextState = setPlayer(state, state.activePlayerIndex, newPlayer);
+  const allEvents: GameEvent[] = [{
+    type: 'HERO_ABILITY_ACTIVATED',
+    playerId: state.activePlayerIndex,
+    abilityIndex: action.abilityIndex,
+  }];
+
+  // Extract and execute ability effects
+  const abilityEffects = getHeroAbilityEffects(ability);
+  if (abilityEffects.length === 0) {
+    return { state: nextState, events: allEvents };
+  }
+
   return {
-    state: setPlayer(state, state.activePlayerIndex, newPlayer),
-    events: [{
-      type: 'HERO_ABILITY_ACTIVATED',
-      playerId: state.activePlayerIndex,
-      abilityIndex: action.abilityIndex,
-    }],
+    state: nextState,
+    events: allEvents,
+    effectWorkItem: {
+      kind: 'effect',
+      sourceInstanceId: `hero_${String(state.activePlayerIndex)}`,
+      controllerId: state.activePlayerIndex,
+      effects: abilityEffects,
+      triggerDepth: 0,
+      selectedTargets: action.targetId !== undefined ? [action.targetId] : undefined,
+    },
   };
+}
+
+function getHeroAbilityEffects(ability: import('../types/ability.js').AbilityDSL): readonly Effect[] {
+  if (ability.type !== 'triggered') return [];
+  if (ability.condition !== undefined) {
+    return [{
+      type: 'conditional',
+      condition: ability.condition,
+      ifTrue: ability.effects,
+    }];
+  }
+  return ability.effects;
 }
 
 function executeDiscardForEnergy(
@@ -545,6 +589,26 @@ export function discardCards(
       ...player,
       hand: remaining,
       discardPile: [...player.discardPile, ...discarded],
+    };
+  });
+}
+
+export function decrementHeroCooldowns(state: GameState): GameState {
+  return updateActivePlayer(state, player => {
+    const hero = player.hero;
+    if (hero.cooldowns.size === 0) return player;
+
+    const newCooldowns = new Map<number, number>();
+    for (const [abilityIndex, remaining] of hero.cooldowns) {
+      const decremented = remaining - 1;
+      if (decremented > 0) {
+        newCooldowns.set(abilityIndex, decremented);
+      }
+    }
+
+    return {
+      ...player,
+      hero: { ...hero, cooldowns: newCooldowns },
     };
   });
 }
