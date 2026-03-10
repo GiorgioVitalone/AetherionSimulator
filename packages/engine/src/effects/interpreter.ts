@@ -14,7 +14,7 @@ import type {
 import { resolveTargets } from './target-resolver.js';
 import { evaluateAmount } from './amount-evaluator.js';
 import { evaluateCondition } from './condition-evaluator.js';
-import { findCard, removeFromZone, deployToZone } from '../zones/zone-manager.js';
+import { findCard, deployToZone, moveCard } from '../zones/zone-manager.js';
 import { ZONE_SLOTS } from '../types/game-state.js';
 import type { ZoneType } from '../types/common.js';
 import {
@@ -27,6 +27,10 @@ import {
 import { registerScheduledEffect } from './scheduled-processor.js';
 import { counterStackItem } from '../stack/stack-resolver.js';
 import { canAfford, payCost } from '../actions/cost-checker.js';
+import {
+  getActiveReplacementEffect,
+  markReplacementEffectUsed,
+} from './replacement-handler.js';
 
 function unchanged(state: GameState): EffectResult {
   return { newState: state, events: [] };
@@ -61,11 +65,14 @@ export function executeEffect(
     case 'counter_spell':
       return executeCounterSpell(state, effect, context);
     // Phase 2 primitives — stub for now
+    case 'cost_reduction':
+      return executeCostReduction(state, effect, context);
+    case 'grant_ability':
+      return executeGrantAbility(state, effect, context);
+    case 'replacement':
+      return executeReplacement(state, effect, context);
     case 'scry':
     case 'return_from_discard':
-    case 'cost_reduction':
-    case 'grant_ability':
-    case 'replacement':
     case 'cleanse':
     case 'search_deck':
     case 'shuffle_into_deck':
@@ -108,11 +115,20 @@ function executeDealDamage(
       if (targetCard === null) {
         continue;
       }
-      const actualDamage = Math.max(0, amount - targetCard.currentArm);
-      events.push({ type: 'DAMAGE_DEALT', sourceId: context.sourceInstanceId, targetId, amount: actualDamage });
-      currentState = updateCardInState(currentState, targetId, c => ({
-        ...c, currentHp: c.currentHp - actualDamage,
-      }));
+      const damageResult = applyReplacementToDamage(
+        currentState,
+        targetCard,
+        Math.max(0, amount - targetCard.currentArm),
+      );
+      currentState = damageResult.state;
+      const actualDamage = damageResult.damage;
+      events.push(...damageResult.events);
+      if (actualDamage > 0) {
+        events.push({ type: 'DAMAGE_DEALT', sourceId: context.sourceInstanceId, targetId, amount: actualDamage });
+        currentState = updateCardInState(currentState, targetId, c => ({
+          ...c, currentHp: c.currentHp - actualDamage,
+        }));
+      }
       // Check destruction
       const cardCheck = findCardInState(currentState, targetId);
       if (cardCheck !== null && cardCheck.currentHp <= 0) {
@@ -124,6 +140,55 @@ function executeDealDamage(
   }
 
   return { newState: currentState, events };
+}
+
+function applyReplacementToDamage(
+  state: GameState,
+  card: CardInstance,
+  amount: number,
+): { readonly state: GameState; readonly damage: number; readonly events: readonly GameEvent[] } {
+  if (amount <= 0) {
+    return { state, damage: 0, events: [] };
+  }
+
+  const replacement = getActiveReplacementEffect(state, card, 'on_would_take_damage');
+  if (replacement === null) {
+    return { state, damage: amount, events: [] };
+  }
+
+  let currentState = replacement.effect.oncePerTurn === true
+    ? markReplacementEffectUsed(state, replacement.id)
+    : state;
+  const events: GameEvent[] = [];
+
+  for (const effect of replacement.effect.instead) {
+    const result = executeEffect(currentState, effect, {
+      sourceInstanceId: replacement.sourceInstanceId,
+      controllerId: replacement.controllerId,
+      triggerDepth: 0,
+    });
+    currentState = result.newState;
+    events.push(...result.events);
+  }
+
+  if (
+    replacement.effect.replaces.type === 'on_would_take_damage' &&
+    replacement.effect.replaces.reduction !== undefined
+  ) {
+    return {
+      state: currentState,
+      damage: replacement.effect.replaces.type === 'on_would_take_damage'
+        ? Math.max(0, amount - (replacement.effect.replaces.reduction ?? 0))
+        : 0,
+      events,
+    };
+  }
+
+  return {
+    state: currentState,
+    damage: replacement.effect.instead.length === 0 ? 0 : 0,
+    events,
+  };
 }
 
 function executeHeal(
@@ -169,7 +234,6 @@ function executeModifyStats(
   context: EffectContext,
 ): EffectResult {
   // Dynamic modifier requires runtime evaluation — stub for now
-  if (effect.dynamicModifier !== undefined) return unchanged(state);
 
   const resolved = resolveTargets(state, effect.target, context);
   if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
@@ -179,13 +243,51 @@ function executeModifyStats(
 
   const modifiedTargets: string[] = [];
   for (const targetId of resolved.targetIds) {
-    events.push({ type: 'STAT_MODIFIED', cardInstanceId: targetId, modifier: effect.modifier });
-    currentState = updateCardInState(currentState, targetId, c => ({
-      ...c,
-      currentAtk: c.currentAtk + (effect.modifier.atk ?? 0),
-      currentHp: Math.max(0, c.currentHp + (effect.modifier.hp ?? 0)),
-      currentArm: c.currentArm + (effect.modifier.arm ?? 0),
-    }));
+    const targetCard = findCardInState(currentState, targetId);
+    if (targetCard === null) {
+      continue;
+    }
+
+    const modifier = effect.dynamicModifier === undefined
+      ? effect.modifier
+      : resolveDynamicModifier(currentState, effect, targetCard, context);
+    events.push({ type: 'STAT_MODIFIED', cardInstanceId: targetId, modifier });
+    currentState = updateCardInState(currentState, targetId, c => {
+      const updatedCard: CardInstance = {
+        ...c,
+        currentAtk: c.currentAtk + (modifier.atk ?? 0),
+        currentHp: Math.max(0, c.currentHp + (modifier.hp ?? 0)),
+        currentArm: c.currentArm + (modifier.arm ?? 0),
+      };
+
+      if (effect.duration.type === 'permanent') {
+        return {
+          ...updatedCard,
+          baseAtk: c.baseAtk + (modifier.atk ?? 0),
+          baseHp: c.baseHp + (modifier.hp ?? 0),
+          baseArm: c.baseArm + (modifier.arm ?? 0),
+        };
+      }
+
+      if (effect.duration.type === 'until_end_of_turn' || effect.duration.type === 'until_next_upkeep') {
+        return {
+          ...updatedCard,
+          modifiers: [
+            ...c.modifiers,
+            {
+              id: `modifier:${context.sourceInstanceId}:${targetId}:${String(c.modifiers.length)}`,
+              sourceInstanceId: context.sourceInstanceId,
+              modifier,
+              duration: effect.duration.type === 'until_end_of_turn'
+                ? { type: 'until_end_of_turn' }
+                : { type: 'until_next_upkeep' },
+            },
+          ],
+        };
+      }
+
+      return updatedCard;
+    });
     modifiedTargets.push(targetId);
   }
 
@@ -200,6 +302,42 @@ function executeModifyStats(
   }
 
   return { newState: currentState, events };
+}
+
+function resolveDynamicModifier(
+  state: GameState,
+  effect: Extract<Effect, { type: 'modify_stats' }>,
+  targetCard: CardInstance,
+  context: EffectContext,
+): Extract<Effect, { type: 'modify_stats' }>['modifier'] {
+  if (effect.dynamicModifier === undefined) {
+    return effect.modifier;
+  }
+
+  switch (effect.dynamicModifier.type) {
+    case 'equals_stat': {
+      const statValue = effect.dynamicModifier.sourceRef === 'atk'
+        ? targetCard.currentAtk
+        : effect.dynamicModifier.sourceRef === 'hp'
+          ? targetCard.currentHp
+          : targetCard.currentArm;
+      return {
+        ...effect.modifier,
+        [effect.dynamicModifier.stat]: statValue,
+      };
+    }
+    case 'x_cost': {
+      const sourceCard = context.sourceInstanceId.startsWith('hero_')
+        ? null
+        : findCardInState(state, context.sourceInstanceId);
+      return {
+        ...effect.modifier,
+        [effect.dynamicModifier.stat]: sourceCard?.xValue ?? context.xValue ?? 0,
+      };
+    }
+    default:
+      return effect.modifier;
+  }
 }
 
 function executeDrawCards(
@@ -280,14 +418,19 @@ function executeDeployToken(
       summoningSick: true,
       movedThisTurn: false,
       attackedThisTurn: false,
+      movesThisTurn: 0,
+      deployedTurn: state.turnNumber,
+      stealthBroken: false,
       traits: [...(effect.token.traits ?? [])],
       grantedTraits: [],
       abilities: [],
+      grantedAbilities: [],
       abilityCooldowns: new Map(),
       activatedAbilityTurns: new Map(),
       registeredTriggers: [],
       modifiers: [],
       statusEffects: [],
+      replacementEffects: [],
       equipment: null,
       isToken: true,
       tags: [...(effect.token.tags ?? [])],
@@ -484,6 +627,116 @@ function executeApplyStatus(
   return { newState: currentState, events: [] };
 }
 
+function executeCostReduction(
+  state: GameState,
+  effect: Extract<Effect, { type: 'cost_reduction' }>,
+  context: EffectContext,
+): EffectResult {
+  const player = state.players[context.controllerId]!;
+  const players = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+  players[context.controllerId] = {
+    ...player,
+    activeCostReductions: [
+      ...player.activeCostReductions,
+      {
+        id: `cost_reduction:${context.sourceInstanceId}:${String(player.activeCostReductions.length)}`,
+        sourceInstanceId: context.sourceInstanceId,
+        reduction: effect.reduction,
+        appliesTo: effect.appliesTo,
+        duration: effect.duration.type === 'until_end_of_turn'
+          ? { type: 'until_end_of_turn' }
+          : effect.duration.type === 'until_next_upkeep'
+            ? { type: 'until_next_upkeep' }
+            : effect.duration.type === 'while_in_play'
+              ? { type: 'while_in_play', sourceId: context.sourceInstanceId }
+              : { type: 'permanent' },
+      },
+    ],
+  };
+  return { newState: { ...state, players }, events: [] };
+}
+
+function executeGrantAbility(
+  state: GameState,
+  effect: Extract<Effect, { type: 'grant_ability' }>,
+  context: EffectContext,
+): EffectResult {
+  const resolved = resolveTargets(state, effect.target, context);
+  if (!resolved.resolved) {
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  }
+
+  let currentState = state;
+  for (const targetId of resolved.targetIds) {
+    currentState = updateCardInState(currentState, targetId, card => ({
+      ...card,
+      grantedAbilities: [
+        ...card.grantedAbilities,
+        {
+          sourceInstanceId: context.sourceInstanceId,
+          ability: { type: 'triggered', ...effect.ability },
+          duration: effect.duration.type === 'until_end_of_turn'
+            ? { type: 'until_end_of_turn' }
+            : effect.duration.type === 'until_next_upkeep'
+              ? { type: 'until_next_upkeep' }
+              : effect.duration.type === 'while_in_play'
+                ? { type: 'while_in_play', sourceId: context.sourceInstanceId }
+                : { type: 'permanent' },
+        },
+      ],
+    }));
+  }
+
+  return { newState: currentState, events: [] };
+}
+
+function executeReplacement(
+  state: GameState,
+  effect: Extract<Effect, { type: 'replacement' }>,
+  context: EffectContext,
+): EffectResult {
+  const targetIds = context.selectedTargets !== undefined && context.selectedTargets.length > 0
+    ? context.selectedTargets
+    : resolveReplacementTargets(state, context.sourceInstanceId);
+  if (targetIds.length === 0) {
+    return unchanged(state);
+  }
+
+  let currentState = state;
+  for (const targetId of targetIds) {
+    currentState = updateCardInState(currentState, targetId, card => ({
+      ...card,
+      replacementEffects: [
+        ...card.replacementEffects,
+        {
+          id: `replacement:${context.sourceInstanceId}:${String(card.replacementEffects.length)}`,
+          sourceInstanceId: context.sourceInstanceId,
+          controllerId: context.controllerId,
+          effect,
+          duration: { type: 'until_end_of_turn' },
+        },
+      ],
+    }));
+  }
+
+  return { newState: currentState, events: [] };
+}
+
+function resolveReplacementTargets(
+  state: GameState,
+  sourceInstanceId: string,
+): readonly string[] {
+  const equippedTarget = resolveTargets(state, { type: 'equipped_character' }, {
+    sourceInstanceId,
+    controllerId: 0,
+    triggerDepth: 0,
+  });
+  if (equippedTarget.resolved && equippedTarget.targetIds.length > 0) {
+    return equippedTarget.targetIds;
+  }
+  return sourceInstanceId.startsWith('hero_') ? [] : [sourceInstanceId];
+}
+
 function mergeStatusEffect(
   statuses: readonly CardInstance['statusEffects'][number][],
   nextStatus: CardInstance['statusEffects'][number],
@@ -564,10 +817,8 @@ function executeMove(
       const toZone = effect.destination;
       if (fromZone === toZone) break;
 
-      const { zones: clearedZones } = removeFromZone(player.zones, targetId);
-      const movedCard: CardInstance = { ...location.card, movedThisTurn: true };
       try {
-        const newZones = deployToZone(clearedZones, movedCard, toZone);
+        const newZones = moveCard(player.zones, targetId, toZone, undefined, state.turnNumber);
         const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
         newPlayers[pi] = { ...player, zones: newZones };
         currentState = { ...currentState, players: newPlayers };

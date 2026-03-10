@@ -132,6 +132,25 @@ function mapActionToEvent(action: GameAction): GameMachineEvent | null {
         },
       };
 
+    case 'remove_equipment':
+      return {
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'remove_equipment',
+          cardInstanceId: action.cardInstanceId,
+        },
+      };
+
+    case 'transfer_equipment':
+      return {
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'transfer_equipment',
+          cardInstanceId: action.cardInstanceId,
+          targetInstanceId: action.targetInstanceId,
+        },
+      };
+
     case 'move_character':
       return {
         type: 'PLAYER_ACTION',

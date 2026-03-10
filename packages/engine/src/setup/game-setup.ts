@@ -102,14 +102,19 @@ function createCardInstance(
     summoningSick: false,
     movedThisTurn: false,
     attackedThisTurn: false,
+    movesThisTurn: 0,
+    deployedTurn: null,
+    stealthBroken: false,
     traits: (def.traits ?? []) as CardInstance['traits'],
     grantedTraits: [],
     abilities: def.abilities ?? [],
+    grantedAbilities: [],
     abilityCooldowns: new Map(),
     activatedAbilityTurns: new Map(),
     registeredTriggers: [],
     modifiers: [],
     statusEffects: [],
+    replacementEffects: [],
     equipment: null,
     isToken: false,
     tags: def.tags ?? [],
@@ -238,8 +243,10 @@ export function createGame(
     turnState: {
       discardedForEnergy: false,
       firstPlayerFirstTurn: true,
+      usedReplacementEffectIds: [],
     },
     scheduledEffects: [],
+    deferredTriggerQueue: [],
   };
 }
 
@@ -299,6 +306,7 @@ function buildPlayerState(
       discardPile: [],
       exileZone: [],
       temporaryResources: [],
+      activeCostReductions: [],
       turnCounters: {
         spellsCast: 0,
         equipmentPlayed: 0,

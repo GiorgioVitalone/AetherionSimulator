@@ -21,6 +21,8 @@ export type PlayerAction =
   | DeployAction
   | CastSpellAction
   | AttachEquipmentAction
+  | RemoveEquipmentAction
+  | TransferEquipmentAction
   | MoveAction
   | ActivateAbilityAction
   | ActivateHeroAbilityAction
@@ -44,6 +46,17 @@ export interface CastSpellAction {
 
 export interface AttachEquipmentAction {
   readonly type: 'attach_equipment';
+  readonly cardInstanceId: string;
+  readonly targetInstanceId: string;
+}
+
+export interface RemoveEquipmentAction {
+  readonly type: 'remove_equipment';
+  readonly cardInstanceId: string;
+}
+
+export interface TransferEquipmentAction {
+  readonly type: 'transfer_equipment';
   readonly cardInstanceId: string;
   readonly targetInstanceId: string;
 }

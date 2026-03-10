@@ -14,6 +14,7 @@ const TARGET_INSTRUCTIONS: Partial<Record<ActionIntent, string>> = {
   attack: 'Select an attack target',
   cast_spell: 'Select a spell target',
   attach_equipment: 'Select an allied character to equip',
+  transfer_equipment: 'Select an allied character to receive the equipment',
   activate_ability: 'Select a target for ability',
 };
 

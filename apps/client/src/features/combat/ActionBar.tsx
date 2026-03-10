@@ -16,6 +16,8 @@ const ACTION_LABELS: Record<ActionIntent, string> = {
   deploy: 'Deploy',
   cast_spell: 'Cast',
   attach_equipment: 'Equip',
+  remove_equipment: 'Remove',
+  transfer_equipment: 'Transfer',
   move: 'Move',
   activate_ability: 'Activate',
   attack: 'Attack',

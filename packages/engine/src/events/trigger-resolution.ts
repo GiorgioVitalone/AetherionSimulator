@@ -27,6 +27,13 @@ import {
   getAllRegisteredTriggers,
   registerCardTriggers,
 } from './trigger-registry.js';
+import {
+  getRuntimeCardTraits,
+} from '../state/runtime-card-helpers.js';
+import {
+  discardCardsFromHand,
+  normalizeGameState,
+} from '../state/index.js';
 
 interface ResolutionDrainResult {
   readonly state: GameState;
@@ -45,6 +52,7 @@ interface ResolvableTrigger {
   readonly ownerPlayerId: 0 | 1;
   readonly effects: TriggerResolutionWorkItem['effects'];
   readonly condition?: TriggerResolutionWorkItem['condition'];
+  readonly resolveAfterChain?: boolean;
 }
 
 type ResumeInput =
@@ -78,10 +86,16 @@ export function resolveTriggeredEvents(
     event,
     triggerDepth: 0,
   }));
+  const deferredWorkItems = initialWorkItems.length === 0 && state.stack.length === 0
+    ? [...state.deferredTriggerQueue]
+    : [];
 
   return drainResolutionQueue(
-    clearPendingResolution(state),
-    initialWorkItems,
+    clearPendingResolution({
+      ...state,
+      deferredTriggerQueue: deferredWorkItems.length > 0 ? [] : state.deferredTriggerQueue,
+    }),
+    [...initialWorkItems, ...deferredWorkItems],
     [],
   );
 }
@@ -226,8 +240,15 @@ function drainResolutionQueue(
           activePlayerId,
           item.triggerDepth + 1,
         );
+      const { immediate, deferred } = partitionDeferredTriggers(triggerItems, currentState.stack.length > 0);
+      if (deferred.length > 0) {
+        currentState = {
+          ...currentState,
+          deferredTriggerQueue: [...currentState.deferredTriggerQueue, ...deferred],
+        };
+      }
 
-      queue = [...triggerItems, ...queue];
+      queue = [...immediate, ...queue];
       continue;
     }
 
@@ -259,6 +280,14 @@ function drainResolutionQueue(
       ...eventsToWorkItems(triggered.generatedEvents, item.triggerDepth),
       ...queue,
     ];
+
+    if (queue.length === 0 && currentState.stack.length === 0 && currentState.deferredTriggerQueue.length > 0) {
+      queue = [...currentState.deferredTriggerQueue];
+      currentState = {
+        ...currentState,
+        deferredTriggerQueue: [],
+      };
+    }
   }
 
   return {
@@ -320,8 +349,9 @@ function runEffectWorkItem(
           ...baseContext,
           selectedTargets: pendingResume.selectedOptionIds,
         });
-        currentState = resumed.newState;
-        generatedEvents.push(...resumed.events);
+        const normalized = normalizeGameState(resumed.newState);
+        currentState = normalized.state;
+        generatedEvents.push(...resumed.events, ...normalized.events);
         frame.index++;
         pendingResume = undefined;
         continue;
@@ -351,8 +381,9 @@ function runEffectWorkItem(
           workItem.controllerId,
           pendingResume.selectedOptionIds,
         );
-        currentState = discarded.state;
-        generatedEvents.push(...discarded.events);
+        const normalized = normalizeGameState(discarded.state);
+        currentState = normalized.state;
+        generatedEvents.push(...discarded.events, ...normalized.events);
         frame.index++;
         pendingResume = undefined;
         continue;
@@ -360,8 +391,9 @@ function runEffectWorkItem(
 
       if (pendingResume.kind === 'pay_unless' && effect.type === 'counter_spell') {
         const resumed = resumeCounterSpellEffect(currentState, effect, baseContext, pendingResume.selectedOptionIds[0]);
-        currentState = resumed.newState;
-        generatedEvents.push(...resumed.events);
+        const normalized = normalizeGameState(resumed.newState);
+        currentState = normalized.state;
+        generatedEvents.push(...resumed.events, ...normalized.events);
         frame.index++;
         pendingResume = undefined;
         continue;
@@ -398,8 +430,9 @@ function runEffectWorkItem(
     }
 
     const result = executeEffect(currentState, effect, baseContext);
-    currentState = result.newState;
-    generatedEvents.push(...result.events);
+    const normalized = normalizeGameState(result.newState);
+    currentState = normalized.state;
+    generatedEvents.push(...result.events, ...normalized.events);
 
     if (result.pendingChoice !== undefined) {
       return {
@@ -427,30 +460,10 @@ function resolveDiscardChoice(
   selectedOptionIds: readonly string[],
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
   const playerId = getDiscardTargetPlayerId(effect, controllerId);
-  const player = state.players[playerId];
-  if (player === undefined) {
+  if (state.players[playerId] === undefined) {
     return { state, events: [] };
   }
-
-  const selectedSet = new Set(selectedOptionIds);
-  const discarded = player.hand.filter(card => selectedSet.has(card.instanceId));
-  const remainingHand = player.hand.filter(card => !selectedSet.has(card.instanceId));
-
-  const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
-  newPlayers[playerId] = {
-    ...player,
-    hand: remainingHand,
-    discardPile: [...player.discardPile, ...discarded],
-  };
-
-  return {
-    state: { ...state, players: newPlayers },
-    events: discarded.map(card => ({
-      type: 'CARD_DISCARDED' as const,
-      cardInstanceId: card.instanceId,
-      playerId,
-    })),
-  };
+  return discardCardsFromHand(state, playerId, selectedOptionIds);
 }
 
 function getDiscardTargetPlayerId(
@@ -527,7 +540,7 @@ function getCardInfo(
   return {
     instanceId: card.instanceId,
     cardType: card.cardType,
-    traits: card.traits,
+    traits: getRuntimeCardTraits(card),
     tags: card.tags,
   };
 }
@@ -593,6 +606,7 @@ function buildTriggerItems(
     effects: trigger.effects,
     condition: trigger.condition,
     triggerDepth,
+    resolveAfterChain: trigger.resolveAfterChain,
   }));
 }
 
@@ -613,13 +627,7 @@ function extractSelfDestroyTriggers(
   const triggers: ResolvableTrigger[] = [];
 
   for (const ability of card.abilities) {
-    if (
-      ability.type !== 'triggered' ||
-      !isDestroyTriggeredAbility(ability)
-    ) {
-      continue;
-    }
-
+    if (ability.type !== 'triggered' || !isDestroyTriggeredAbility(ability)) continue;
     triggers.push({
       sourceInstanceId: card.instanceId,
       ownerPlayerId,
@@ -628,7 +636,41 @@ function extractSelfDestroyTriggers(
     });
   }
 
+  for (const entry of card.grantedAbilities) {
+    if (entry.ability.type !== 'triggered' || !isDestroyTriggeredAbility(entry.ability)) continue;
+    triggers.push({
+      sourceInstanceId: card.instanceId,
+      ownerPlayerId,
+      effects: entry.ability.effects,
+      condition: entry.ability.condition,
+      resolveAfterChain: entry.resolveAfterChain,
+    });
+  }
+
   return triggers;
+}
+
+function partitionDeferredTriggers(
+  items: readonly TriggerResolutionWorkItem[],
+  shouldDefer: boolean,
+): {
+  readonly immediate: readonly TriggerResolutionWorkItem[];
+  readonly deferred: readonly TriggerResolutionWorkItem[];
+} {
+  if (!shouldDefer) {
+    return { immediate: items, deferred: [] };
+  }
+
+  const immediate: TriggerResolutionWorkItem[] = [];
+  const deferred: TriggerResolutionWorkItem[] = [];
+  for (const item of items) {
+    if (item.resolveAfterChain === true) {
+      deferred.push(item);
+      continue;
+    }
+    immediate.push(item);
+  }
+  return { immediate, deferred };
 }
 
 function isDestroyTriggeredAbility(

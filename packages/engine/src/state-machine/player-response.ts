@@ -12,10 +12,11 @@ import type { AbilityDSL } from '../types/ability.js';
 import type { ResourceType } from '../types/common.js';
 import type { Effect } from '../types/effects.js';
 import { resumePendingResolution } from '../events/index.js';
-import { canAfford, payCost } from '../actions/cost-checker.js';
+import { canAfford, getReducedCardCost, payCost } from '../actions/cost-checker.js';
 import { findCard } from '../zones/zone-manager.js';
 import { pushToStack, resolveStack } from '../stack/stack-resolver.js';
 import { advanceResponseWindow, beginResponseWindow } from '../stack/response-window.js';
+import { getRuntimeCardAbilities } from '../state/runtime-card-helpers.js';
 
 interface PlayerResponseResult {
   readonly state: GameState;
@@ -227,11 +228,12 @@ function playResponseCard(
   }
 
   const card = player.hand[cardIndex]!;
-  if (!canAfford(player, card.cost)) {
+  const reducedCost = getReducedCardCost(player, card);
+  if (!canAfford(player, reducedCost)) {
     return null;
   }
 
-  const paidPlayer = payCost(player, card.cost);
+  const paidPlayer = payCost(player, reducedCost);
   const newPlayer = {
     ...paidPlayer,
     hand: paidPlayer.hand.filter((_, i) => i !== cardIndex),
@@ -276,7 +278,7 @@ function playResponseCardAbility(
     return null;
   }
 
-  const ability = location.card.abilities[abilityIndex];
+  const ability = getRuntimeCardAbilities(location.card)[abilityIndex];
   if (ability === undefined || ability.type !== 'triggered' || ability.trigger.type !== 'activated') {
     return null;
   }
@@ -298,6 +300,7 @@ function playResponseCardAbility(
     return {
       ...card,
       exhausted: true,
+      stealthBroken: true,
       abilityCooldowns: updatedCooldowns,
       activatedAbilityTurns,
     };
@@ -396,14 +399,14 @@ function deriveReserveResourceType(card: CardInstance): ResourceType {
 }
 
 function hasCounterResponse(card: CardInstance): boolean {
-  return card.abilities.some(
+  return getRuntimeCardAbilities(card).some(
     ability => ability.type === 'triggered' && ability.trigger.type === 'on_counter',
   );
 }
 
 function extractResponseEffects(card: CardInstance): readonly Effect[] {
   const effects: Effect[] = [];
-  for (const ability of card.abilities) {
+  for (const ability of getRuntimeCardAbilities(card)) {
     if (ability.type !== 'triggered') continue;
     if (ability.trigger.type !== 'on_counter' && ability.trigger.type !== 'on_flash') continue;
     effects.push(...ability.effects);

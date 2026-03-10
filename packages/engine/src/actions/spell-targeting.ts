@@ -6,6 +6,7 @@ import type { Effect } from '../types/effects.js';
 import type { Side, TargetFilter } from '../types/index.js';
 import { getAllCards } from '../zones/zone-manager.js';
 import { applyFilter } from '../effects/target-resolver.js';
+import { isProtectedFromEnemyTargeting } from '../state/runtime-card-helpers.js';
 
 export interface SpellTargeting {
   readonly needsTarget: boolean;
@@ -105,7 +106,9 @@ function resolveSpellTargetRequirement(
       cards,
       requirement.filter,
       { sourceInstanceId, controllerId, triggerDepth: 0 },
-    ).map(card => card.instanceId);
+    )
+      .filter(card => card.owner === controllerId || !isProtectedFromEnemyTargeting(card))
+      .map(card => card.instanceId);
   }
 
   return getHeroTargetIds(controllerId, requirement.side);

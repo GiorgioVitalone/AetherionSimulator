@@ -23,6 +23,8 @@ export type ActionIntent =
   | 'deploy'
   | 'cast_spell'
   | 'attach_equipment'
+  | 'remove_equipment'
+  | 'transfer_equipment'
   | 'move'
   | 'activate_ability'
   | 'attack'

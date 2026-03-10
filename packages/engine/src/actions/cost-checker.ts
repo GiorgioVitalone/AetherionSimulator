@@ -4,7 +4,7 @@
  * Payment priority: specific resources first (mana pays mana, energy pays energy),
  * then flexible resources cover any remaining shortfall from either type.
  */
-import type { PlayerState, ResourceCard } from '../types/game-state.js';
+import type { CardInstance, PlayerState, ResourceCard } from '../types/game-state.js';
 import type { ResourceCost } from '../types/common.js';
 
 /** Total available resources (permanent bank + temporary). */
@@ -61,6 +61,45 @@ export function canAfford(
   if (remainingMana < 0 || remainingEnergy < 0) return false;
 
   return true;
+}
+
+export function getReducedCardCost(
+  player: PlayerState,
+  card: Pick<CardInstance, 'cardType' | 'tags' | 'cost'>,
+): ResourceCost {
+  let totalReduction = 0;
+
+  for (const reduction of player.activeCostReductions) {
+    if (
+      reduction.appliesTo.cardType !== undefined &&
+      reduction.appliesTo.cardType !== card.cardType
+    ) {
+      continue;
+    }
+    if (
+      reduction.appliesTo.tag !== undefined &&
+      !card.tags.includes(reduction.appliesTo.tag)
+    ) {
+      continue;
+    }
+    if (reduction.appliesTo.firstPerTurn === true && !isFirstEligiblePlayThisTurn(player, card.cardType)) {
+      continue;
+    }
+    totalReduction += reduction.reduction;
+  }
+
+  if (totalReduction <= 0) {
+    return card.cost;
+  }
+
+  const totalCost = card.cost.mana + card.cost.energy + card.cost.flexible;
+  return {
+    mana: 0,
+    energy: 0,
+    flexible: Math.max(0, totalCost - totalReduction),
+    ...(card.cost.xMana === true ? { xMana: true } : {}),
+    ...(card.cost.xEnergy === true ? { xEnergy: true } : {}),
+  };
 }
 
 /** Maximum X value a player can afford for an X-cost card. */
@@ -168,4 +207,20 @@ function exhaustAnyResources(
     resourceBank: newBank,
     temporaryResources: tempResources,
   };
+}
+
+function isFirstEligiblePlayThisTurn(
+  player: PlayerState,
+  cardType: CardInstance['cardType'],
+): boolean {
+  switch (cardType) {
+    case 'S':
+      return player.turnCounters.spellsCast === 0;
+    case 'E':
+      return player.turnCounters.equipmentPlayed === 0;
+    case 'C':
+      return player.turnCounters.charactersDeployed === 0;
+    default:
+      return false;
+  }
 }

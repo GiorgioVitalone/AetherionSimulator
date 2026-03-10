@@ -13,10 +13,15 @@ import type { Effect } from '../types/effects.js';
 import type { PlayerAction } from './types.js';
 import { computeAvailableActions } from '../actions/available-actions.js';
 import { deployToZone } from '../zones/zone-manager.js';
-import { canAfford, payCost } from '../actions/cost-checker.js';
+import { canAfford, getReducedCardCost, payCost } from '../actions/cost-checker.js';
 import { computeSpellTargeting } from '../actions/spell-targeting.js';
 import { registerHeroTriggers } from '../events/index.js';
 import { MAX_HAND_SIZE } from '../types/game-state.js';
+import {
+  cardHasActiveTrait,
+  getRuntimeCardAbilities,
+} from '../state/runtime-card-helpers.js';
+import { discardCardsFromHand } from '../state/index.js';
 
 interface PlayerActionResult {
   readonly state: GameState;
@@ -47,9 +52,11 @@ function refreshCard(card: CardInstance | null): CardInstance | null {
     summoningSick: false,
     movedThisTurn: false,
     attackedThisTurn: false,
+    movesThisTurn: 0,
     abilitiesSuppressed: false,
     transferredThisTurn: false,
     abilityCooldowns: decrementAbilityCooldownMap(card.abilityCooldowns),
+    equipment: card.equipment === null ? null : refreshCard(card.equipment),
   };
 }
 
@@ -129,6 +136,10 @@ export function executePlayerAction(
       return executeCastSpell(state, action);
     case 'attach_equipment':
       return executeAttachEquipment(state, action);
+    case 'remove_equipment':
+      return executeRemoveEquipment(state, action);
+    case 'transfer_equipment':
+      return executeTransferEquipment(state, action);
     case 'move':
       return executeMove(state, action);
     case 'activate_ability':
@@ -155,14 +166,15 @@ function executeDeploy(
   const card = player.hand[cardIndex]!;
   const isXCost = card.cost.xMana === true || card.cost.xEnergy === true;
   const xValue = isXCost ? (action.xValue ?? 0) : undefined;
+  const baseDeployCost = getReducedCardCost(player, card);
   const deployCost = action.zone === 'high_ground'
-    ? addFlexibleCost(card.cost, 2)
-    : card.cost;
+    ? addFlexibleCost(baseDeployCost, 2)
+    : baseDeployCost;
 
   if (!canAfford(player, deployCost, xValue)) return { state, events: [] };
   const paidPlayer = payCost(player, deployCost, xValue);
 
-  const hasHaste = allTraits(card).includes('haste');
+  const hasHaste = cardHasActiveTrait(card, 'haste');
 
   // For X-cost characters with 0/0 base stats, X determines stats (X/X/0)
   const xStatBonus = isXCost && xValue !== undefined ? xValue : 0;
@@ -178,6 +190,7 @@ function executeDeploy(
     exhausted: !hasHaste,
     summoningSick: !hasHaste,
     owner: state.activePlayerIndex,
+    deployedTurn: state.turnNumber,
     xValue,
   };
 
@@ -214,7 +227,8 @@ function executeCastSpell(
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
-  if (!canAfford(player, card.cost)) return { state, events: [] };
+  const castCost = getReducedCardCost(player, card);
+  if (!canAfford(player, castCost)) return { state, events: [] };
   const targeting = computeSpellTargeting(state, state.activePlayerIndex, card);
   if (targeting.needsTarget) {
     if (action.targetId === undefined) return { state, events: [] };
@@ -223,7 +237,7 @@ function executeCastSpell(
     }
   }
 
-  const paidPlayer = payCost(player, card.cost);
+  const paidPlayer = payCost(player, castCost);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
 
   const newPlayer: PlayerState = {
@@ -260,8 +274,9 @@ function executeAttachEquipment(
   if (cardIndex === -1) return { state, events: [] };
 
   const equipCard = player.hand[cardIndex]!;
-  if (!canAfford(player, equipCard.cost)) return { state, events: [] };
-  const paidPlayer = payCost(player, equipCard.cost);
+  const equipCost = getReducedCardCost(player, equipCard);
+  if (!canAfford(player, equipCost)) return { state, events: [] };
+  const paidPlayer = payCost(player, equipCost);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
 
   const target = getAllBattlefieldCards(paidPlayer).find(card => card.instanceId === action.targetInstanceId);
@@ -291,6 +306,89 @@ function executeAttachEquipment(
       targets: [action.targetInstanceId],
       cardSnapshot: equipCard,
     },
+  };
+}
+
+function executeRemoveEquipment(
+  state: GameState,
+  action: { cardInstanceId: string },
+): PlayerActionResult {
+  const player = state.players[state.activePlayerIndex]!;
+  const hostCard = getAllBattlefieldCards(player).find(card => card.instanceId === action.cardInstanceId);
+  if (hostCard?.equipment === null || hostCard === undefined) {
+    return { state, events: [] };
+  }
+
+  const newState = detachEquipmentFromHost(state, state.activePlayerIndex, hostCard.instanceId, 'discard');
+  const equipment = hostCard.equipment;
+  return {
+    state: newState,
+    events: [{
+      type: 'CARD_LEFT_BATTLEFIELD',
+      cardInstanceId: equipment.instanceId,
+      destination: 'discard',
+      playerId: state.activePlayerIndex,
+    }],
+  };
+}
+
+function executeTransferEquipment(
+  state: GameState,
+  action: { cardInstanceId: string; targetInstanceId: string },
+): PlayerActionResult {
+  const player = state.players[state.activePlayerIndex]!;
+  const sourceCard = getAllBattlefieldCards(player).find(card => card.instanceId === action.cardInstanceId);
+  if (sourceCard?.equipment === null || sourceCard === undefined) {
+    return { state, events: [] };
+  }
+
+  const equipment = sourceCard.equipment;
+  const transferCost = getReducedCardCost(player, equipment);
+  if (!canAfford(player, transferCost)) {
+    return { state, events: [] };
+  }
+
+  const targetCard = getAllBattlefieldCards(player).find(card => card.instanceId === action.targetInstanceId);
+  if (targetCard === undefined || !canAttachEquipmentToTarget(equipment, targetCard)) {
+    return { state, events: [] };
+  }
+
+  const replacedEquipment = targetCard.equipment;
+  let currentState = setPlayer(state, state.activePlayerIndex, payCost(player, transferCost));
+  currentState = detachEquipmentFromHost(currentState, state.activePlayerIndex, sourceCard.instanceId, 'none');
+  currentState = attachEquipmentToHost(
+    currentState,
+    state.activePlayerIndex,
+    action.targetInstanceId,
+    { ...equipment, transferredThisTurn: true },
+  );
+
+  return {
+    state: currentState,
+    events: [
+      ...(replacedEquipment === null
+        ? []
+        : [
+            {
+              type: 'CARD_DESTROYED' as const,
+              cardInstanceId: replacedEquipment.instanceId,
+              cause: 'effect' as const,
+              playerId: state.activePlayerIndex,
+              destroyedCard: { ...replacedEquipment, equipment: null },
+            },
+            {
+              type: 'CARD_LEFT_BATTLEFIELD' as const,
+              cardInstanceId: replacedEquipment.instanceId,
+              destination: 'discard' as const,
+              playerId: state.activePlayerIndex,
+            },
+          ]),
+      {
+        type: 'EQUIPMENT_ATTACHED' as const,
+        equipmentId: equipment.instanceId,
+        targetId: action.targetInstanceId,
+      },
+    ],
   };
 }
 
@@ -334,7 +432,7 @@ function executeActivateAbility(
   if (!card) return { state, events: [] };
 
   // Check the ability exists
-  const ability = card.abilities[action.abilityIndex];
+  const ability = getRuntimeCardAbilities(card)[action.abilityIndex];
   if (!ability) return { state, events: [] };
 
   // Pay cost if the ability is an activated triggered ability
@@ -359,6 +457,7 @@ function executeActivateAbility(
     return {
       ...c,
       exhausted: true,
+      stealthBroken: true,
       abilityCooldowns: updatedCardCooldowns,
       activatedAbilityTurns: updatedActivatedTurns,
     };
@@ -482,36 +581,37 @@ function executeDiscardForEnergy(
 
   const card = player.hand[cardIndex]!;
   const resourceType = getPrimaryResourceType(card);
-
-  const newPlayer: PlayerState = {
-    ...player,
-    hand: player.hand.filter((_, i) => i !== cardIndex),
-    discardPile: [...player.discardPile, card],
-    temporaryResources: [
-      ...player.temporaryResources,
-      { resourceType, amount: 1 },
-    ],
-  };
-
+  const discarded = discardCardsFromHand(state, state.activePlayerIndex, [action.cardInstanceId]);
+  const updatedPlayer = discarded.state.players[state.activePlayerIndex]!;
   const newState: GameState = {
-    ...setPlayer(state, state.activePlayerIndex, newPlayer),
-    turnState: { ...state.turnState, discardedForEnergy: true },
+    ...setPlayer(discarded.state, state.activePlayerIndex, {
+      ...updatedPlayer,
+      temporaryResources: [
+        ...updatedPlayer.temporaryResources,
+        { resourceType, amount: 1 },
+      ],
+    }),
+    turnState: { ...discarded.state.turnState, discardedForEnergy: true },
   };
 
   return {
     state: newState,
-    events: [{
-      type: 'CARD_DISCARDED',
-      cardInstanceId: card.instanceId,
-      playerId: state.activePlayerIndex,
-    }],
+    events: [
+      ...discarded.events,
+      {
+        type: 'RESOURCE_GAINED',
+        playerId: state.activePlayerIndex,
+        resourceType,
+        amount: 1,
+      },
+    ],
   };
 }
 
 function getSpellCastEffects(card: CardInstance): readonly Effect[] {
   const effects: Effect[] = [];
 
-  for (const ability of card.abilities) {
+  for (const ability of getRuntimeCardAbilities(card)) {
     if (ability.type !== 'triggered' || ability.trigger.type !== 'on_cast') {
       continue;
     }
@@ -535,14 +635,33 @@ function executeDeclareAttack(
   state: GameState,
   action: { attackerInstanceId: string; targetId: string | 'hero' },
 ): PlayerActionResult {
+  const attackerOwner = state.activePlayerIndex;
+  const player = state.players[attackerOwner]!;
+  const updateAttacker = (card: CardInstance | null): CardInstance | null => {
+    if (card === null || card.instanceId !== action.attackerInstanceId) {
+      return card;
+    }
+    return {
+      ...card,
+      stealthBroken: true,
+    };
+  };
+
   return {
-    state,
+    state: setPlayer(state, attackerOwner, {
+      ...player,
+      zones: {
+        reserve: player.zones.reserve.map(updateAttacker),
+        frontline: player.zones.frontline.map(updateAttacker),
+        highGround: player.zones.highGround.map(updateAttacker),
+      },
+    }),
     events: [],
     stackItem: {
       id: createStackItemId(state, 'attack', action.attackerInstanceId),
       type: 'attack',
       sourceInstanceId: action.attackerInstanceId,
-      controllerId: state.activePlayerIndex,
+      controllerId: attackerOwner,
       effects: [],
       targets: [action.targetId],
     },
@@ -571,21 +690,7 @@ export function discardCards(
   state: GameState,
   cardIds: readonly string[],
 ): GameState {
-  return updateActivePlayer(state, player => {
-    const discarded: CardInstance[] = [];
-    const remaining = player.hand.filter(c => {
-      if (cardIds.includes(c.instanceId)) {
-        discarded.push(c);
-        return false;
-      }
-      return true;
-    });
-    return {
-      ...player,
-      hand: remaining,
-      discardPile: [...player.discardPile, ...discarded],
-    };
-  });
+  return discardCardsFromHand(state, state.activePlayerIndex, cardIds).state;
 }
 
 export function decrementHeroCooldowns(state: GameState): GameState {
@@ -622,7 +727,11 @@ export function passTurn(state: GameState): GameState {
     players,
     activePlayerIndex: nextPlayer as 0 | 1,
     turnNumber: state.turnNumber + 1,
-    turnState: { discardedForEnergy: false, firstPlayerFirstTurn: false },
+    turnState: {
+      discardedForEnergy: false,
+      firstPlayerFirstTurn: false,
+      usedReplacementEffectIds: [],
+    },
   };
 }
 
@@ -663,6 +772,13 @@ function isActionLegal(state: GameState, action: PlayerAction): boolean {
       );
     case 'attach_equipment':
       return available.canAttachEquipment.some(option =>
+        option.cardInstanceId === action.cardInstanceId &&
+        option.validTargets.includes(action.targetInstanceId),
+      );
+    case 'remove_equipment':
+      return available.canRemoveEquipment.some(option => option.cardInstanceId === action.cardInstanceId);
+    case 'transfer_equipment':
+      return available.canTransferEquipment.some(option =>
         option.cardInstanceId === action.cardInstanceId &&
         option.validTargets.includes(action.targetInstanceId),
       );
@@ -730,11 +846,111 @@ function getAllBattlefieldCards(player: PlayerState): readonly CardInstance[] {
   ];
 }
 
-function allTraits(card: CardInstance): readonly string[] {
-  return [
-    ...card.traits,
-    ...card.grantedTraits.map(trait => trait.trait),
-  ];
+function detachEquipmentFromHost(
+  state: GameState,
+  playerId: 0 | 1,
+  hostInstanceId: string,
+  destination: 'discard' | 'none',
+): GameState {
+  const player = state.players[playerId]!;
+  const hostCard = getAllBattlefieldCards(player).find(card => card.instanceId === hostInstanceId);
+  if (hostCard?.equipment === null || hostCard === undefined) {
+    return state;
+  }
+
+  const equipment = hostCard.equipment;
+  const bonuses = getEquipmentStatBonuses(equipment);
+  const updateHost = (card: CardInstance | null): CardInstance | null => {
+    if (card === null || card.instanceId !== hostInstanceId) return card;
+    return {
+      ...card,
+      equipment: null,
+      baseAtk: card.baseAtk - bonuses.atk,
+      baseHp: card.baseHp - bonuses.hp,
+      baseArm: card.baseArm - bonuses.arm,
+      currentAtk: card.currentAtk - bonuses.atk,
+      currentHp: card.currentHp - bonuses.hp,
+      currentArm: card.currentArm - bonuses.arm,
+    };
+  };
+
+  const nextPlayer: PlayerState = {
+    ...player,
+    zones: {
+      reserve: player.zones.reserve.map(updateHost),
+      frontline: player.zones.frontline.map(updateHost),
+      highGround: player.zones.highGround.map(updateHost),
+    },
+    discardPile: destination === 'discard'
+      ? [...player.discardPile, { ...equipment, transferredThisTurn: false }]
+      : player.discardPile,
+  };
+
+  return setPlayer(state, playerId, nextPlayer);
+}
+
+function attachEquipmentToHost(
+  state: GameState,
+  playerId: 0 | 1,
+  hostInstanceId: string,
+  equipment: CardInstance,
+): GameState {
+  const player = state.players[playerId]!;
+  const hostCard = getAllBattlefieldCards(player).find(card => card.instanceId === hostInstanceId);
+  if (hostCard === undefined) {
+    return state;
+  }
+
+  const replacedEquipment = hostCard.equipment;
+  let discardPile = player.discardPile;
+  if (replacedEquipment !== null) {
+    discardPile = [...discardPile, { ...replacedEquipment, transferredThisTurn: false }];
+  }
+
+  const bonuses = getEquipmentStatBonuses(equipment);
+  const oldBonuses = replacedEquipment === null ? zeroStatBonuses() : getEquipmentStatBonuses(replacedEquipment);
+  const updateHost = (card: CardInstance | null): CardInstance | null => {
+    if (card === null || card.instanceId !== hostInstanceId) return card;
+    return {
+      ...card,
+      equipment,
+      baseAtk: card.baseAtk - oldBonuses.atk + bonuses.atk,
+      baseHp: card.baseHp - oldBonuses.hp + bonuses.hp,
+      baseArm: card.baseArm - oldBonuses.arm + bonuses.arm,
+      currentAtk: card.currentAtk - oldBonuses.atk + bonuses.atk,
+      currentHp: card.currentHp - oldBonuses.hp + bonuses.hp,
+      currentArm: card.currentArm - oldBonuses.arm + bonuses.arm,
+    };
+  };
+
+  return setPlayer(state, playerId, {
+    ...player,
+    zones: {
+      reserve: player.zones.reserve.map(updateHost),
+      frontline: player.zones.frontline.map(updateHost),
+      highGround: player.zones.highGround.map(updateHost),
+    },
+    discardPile,
+  });
+}
+
+function getEquipmentStatBonuses(equipment: CardInstance): { atk: number; hp: number; arm: number } {
+  let atk = 0;
+  let hp = 0;
+  let arm = 0;
+
+  for (const ability of equipment.abilities) {
+    if (ability.type !== 'stat_grant') continue;
+    atk += ability.modifier.atk ?? 0;
+    hp += ability.modifier.hp ?? 0;
+    arm += ability.modifier.arm ?? 0;
+  }
+
+  return { atk, hp, arm };
+}
+
+function zeroStatBonuses(): { atk: number; hp: number; arm: number } {
+  return { atk: 0, hp: 0, arm: 0 };
 }
 
 function canAttachEquipmentToTarget(

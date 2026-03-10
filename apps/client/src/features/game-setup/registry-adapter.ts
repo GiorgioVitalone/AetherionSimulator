@@ -80,17 +80,21 @@ function normalizeTraits(traits: readonly string[]): readonly Trait[] {
     const normalized = trait.trim().toLowerCase().replace(/\s+/g, '_');
     switch (normalized) {
       case 'haste':
-      case 'rush':
       case 'sniper':
       case 'elite':
       case 'flying':
       case 'defender':
       case 'stealth':
-      case 'recycle':
       case 'swift':
       case 'volatile':
         return [normalized as Trait];
       default:
+        if (normalized === 'rush' || normalized.startsWith('rush_')) {
+          return ['rush'];
+        }
+        if (normalized === 'recycle' || normalized.startsWith('recycle_')) {
+          return ['recycle'];
+        }
         return [];
     }
   });

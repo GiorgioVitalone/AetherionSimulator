@@ -38,6 +38,7 @@ export interface GameState {
   readonly rng: RngState;
   readonly turnState: TurnState;
   readonly scheduledEffects: readonly ScheduledEffectEntry[];
+  readonly deferredTriggerQueue: readonly TriggerResolutionWorkItem[];
 }
 
 export type GamePhase =
@@ -63,6 +64,7 @@ export interface PlayerState {
   readonly discardPile: readonly CardInstance[];
   readonly exileZone: readonly CardInstance[];
   readonly temporaryResources: readonly TemporaryResource[];
+  readonly activeCostReductions: readonly ActiveCostReduction[];
   readonly turnCounters: TurnCounters;
 }
 
@@ -102,14 +104,19 @@ export interface CardInstance {
   readonly summoningSick: boolean;
   readonly movedThisTurn: boolean;
   readonly attackedThisTurn: boolean;
+  readonly movesThisTurn: number;
+  readonly deployedTurn: number | null;
+  readonly stealthBroken: boolean;
   readonly traits: readonly Trait[];
   readonly grantedTraits: readonly GrantedTrait[];
   readonly abilities: readonly AbilityDSL[];
+  readonly grantedAbilities: readonly GrantedAbility[];
   readonly abilityCooldowns: ReadonlyMap<number, number>;
   readonly activatedAbilityTurns: ReadonlyMap<number, number>;
   readonly registeredTriggers: readonly RegisteredTrigger[];
   readonly modifiers: readonly ActiveModifier[];
   readonly statusEffects: readonly ActiveStatus[];
+  readonly replacementEffects: readonly ActiveReplacementEffect[];
   readonly equipment: CardInstance | null;
   readonly isToken: boolean;
   readonly tags: readonly string[];
@@ -146,9 +153,34 @@ export interface ActiveStatus {
   readonly statusType: StatusEffectType;
   readonly value: number;
   readonly remainingTurns: number | null;
+  readonly sourceInstanceId?: string;
+  readonly duration?: GrantedDuration;
 }
 
 export type StatusEffectType = 'persistent' | 'regeneration' | 'slowed' | 'stunned' | 'hexproof' | 'anti_redirect';
+
+export interface GrantedAbility {
+  readonly sourceInstanceId: string;
+  readonly ability: AbilityDSL;
+  readonly duration: GrantedDuration;
+  readonly resolveAfterChain?: boolean;
+}
+
+export interface ActiveReplacementEffect {
+  readonly id: string;
+  readonly sourceInstanceId: string;
+  readonly controllerId: 0 | 1;
+  readonly effect: Extract<Effect, { readonly type: 'replacement' }>;
+  readonly duration: GrantedDuration;
+}
+
+export interface ActiveCostReduction {
+  readonly id: string;
+  readonly sourceInstanceId: string;
+  readonly reduction: number;
+  readonly appliesTo: Extract<Effect, { readonly type: 'cost_reduction' }>['appliesTo'];
+  readonly duration: GrantedDuration;
+}
 
 // ── Hero State ───────────────────────────────────────────────────────────────
 
@@ -200,6 +232,7 @@ export interface RegisteredTrigger {
   readonly effects: readonly Effect[];
   readonly condition?: Condition;
   readonly abilityIndex: number;
+  readonly resolveAfterChain?: boolean;
 }
 
 // ── PendingChoice (engine pauses for player input) ───────────────────────────
@@ -257,6 +290,7 @@ export interface TriggerResolutionWorkItem {
   readonly effects: readonly Effect[];
   readonly condition?: Condition;
   readonly triggerDepth: number;
+  readonly resolveAfterChain?: boolean;
 }
 
 export type PendingChoiceType =
@@ -497,6 +531,7 @@ export interface SpellCounteredEvent {
 export interface TurnState {
   readonly discardedForEnergy: boolean;
   readonly firstPlayerFirstTurn: boolean;
+  readonly usedReplacementEffectIds: readonly string[];
 }
 
 export interface ScheduledEffectEntry {

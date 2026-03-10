@@ -9,6 +9,7 @@ import type {
 import { resolveCombat } from '../combat/combat-resolver.js';
 import { resolveEffectWorkItem, resolveTriggeredEvents } from '../events/index.js';
 import { findCard, moveCard } from '../zones/zone-manager.js';
+import { normalizeGameState } from '../state/index.js';
 
 interface StackItemResolution {
   readonly state: GameState;
@@ -58,9 +59,11 @@ export function resolveStack(
       { ...currentState, stack: [...remainingStack] },
       item,
     );
+    const normalized = normalizeGameState(itemResult.state);
+    const allItemEvents = [...itemResult.events, ...normalized.events];
     const resolved = itemResult.effectWorkItem !== undefined
-      ? resolveEffectWorkItem(itemResult.state, itemResult.effectWorkItem, itemResult.events)
-      : resolveTriggeredEvents(itemResult.state, itemResult.events);
+      ? resolveEffectWorkItem(normalized.state, itemResult.effectWorkItem, allItemEvents)
+      : resolveTriggeredEvents(normalized.state, allItemEvents);
 
     currentState = {
       ...resolved.state,
@@ -71,6 +74,12 @@ export function resolveStack(
     if (currentState.pendingChoice !== null || currentState.pendingResolution !== null) {
       return { state: currentState, events: allEvents };
     }
+  }
+
+  if (currentState.stack.length === 0 && currentState.deferredTriggerQueue.length > 0) {
+    const deferredResolved = resolveTriggeredEvents(currentState, []);
+    currentState = deferredResolved.state;
+    allEvents.push(...deferredResolved.events);
   }
 
   return {
@@ -323,7 +332,7 @@ function resolveMoveItem(
   }
 
   try {
-    const newZones = moveCard(player.zones, item.sourceInstanceId, toZone, slotIndex);
+    const newZones = moveCard(player.zones, item.sourceInstanceId, toZone, slotIndex, state.turnNumber);
     return {
       state: setPlayer(state, item.controllerId, {
         ...player,

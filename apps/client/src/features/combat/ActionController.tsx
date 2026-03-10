@@ -118,6 +118,8 @@ export function useActionController() {
             dispatch({ type: 'attach_equipment', cardInstanceId: sourceId, targetInstanceId: instanceId });
           } else if (actionType === 'cast_spell') {
             dispatch({ type: 'cast_spell', cardInstanceId: sourceId, targetId: instanceId });
+          } else if (actionType === 'transfer_equipment') {
+            dispatch({ type: 'transfer_equipment', cardInstanceId: sourceId, targetInstanceId: instanceId });
           }
           reset();
           selectCard(null);
@@ -134,6 +136,16 @@ export function useActionController() {
       const attackOption = availableActions.canAttack.find((a) => a.attackerInstanceId === instanceId);
       if (attackOption) possibleActions.push('attack');
 
+      const removeEquipmentOption = availableActions.canRemoveEquipment.find(
+        (option) => option.cardInstanceId === instanceId,
+      );
+      if (removeEquipmentOption) possibleActions.push('remove_equipment');
+
+      const transferEquipmentOption = availableActions.canTransferEquipment.find(
+        (option) => option.cardInstanceId === instanceId,
+      );
+      if (transferEquipmentOption) possibleActions.push('transfer_equipment');
+
       if (availableActions.canActivateAbility.some((a) => a.cardInstanceId === instanceId)) {
         possibleActions.push('activate_ability');
       }
@@ -147,6 +159,10 @@ export function useActionController() {
         const action = possibleActions[0]!;
         if (action === 'move' && moveOption) {
           setAwaitingZone(instanceId, 'move', moveOption.validSlots);
+          return;
+        }
+        if (action === 'transfer_equipment' && transferEquipmentOption) {
+          setAwaitingTarget(instanceId, 'transfer_equipment', transferEquipmentOption.validTargets);
           return;
         }
         if (action === 'attack' && attackOption) {
@@ -241,6 +257,18 @@ export function useActionController() {
           const option = availableActions.canAttachEquipment.find((e) => e.cardInstanceId === instanceId);
           if (option) {
             setAwaitingTarget(instanceId, 'attach_equipment', option.validTargets);
+          }
+          break;
+        }
+        case 'remove_equipment':
+          dispatch({ type: 'remove_equipment', cardInstanceId: instanceId });
+          reset();
+          selectCard(null);
+          break;
+        case 'transfer_equipment': {
+          const option = availableActions.canTransferEquipment.find((e) => e.cardInstanceId === instanceId);
+          if (option) {
+            setAwaitingTarget(instanceId, 'transfer_equipment', option.validTargets);
           }
           break;
         }

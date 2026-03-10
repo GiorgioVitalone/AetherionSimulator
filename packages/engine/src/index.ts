@@ -72,6 +72,8 @@ export type {
   DeployOption,
   CastSpellOption,
   EquipOption,
+  RemoveEquipmentOption,
+  TransferEquipmentOption,
   MoveOption,
   ActivateOption,
   HeroActivateOption,

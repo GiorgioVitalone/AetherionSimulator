@@ -15,6 +15,12 @@ import {
   calculateHeroDamage,
 } from './damage-calculator.js';
 import { updateCardInState, destroyCard } from '../state/index.js';
+import { getRuntimeCardTraits } from '../state/runtime-card-helpers.js';
+import {
+  getActiveReplacementEffect,
+  markReplacementEffectUsed,
+} from '../effects/replacement-handler.js';
+import { executeEffect } from '../effects/interpreter.js';
 
 export interface CombatResult {
   readonly newState: GameState;
@@ -22,10 +28,7 @@ export interface CombatResult {
 }
 
 function allTraits(card: CardInstance): readonly Trait[] {
-  return [
-    ...card.traits,
-    ...card.grantedTraits.map(g => g.trait),
-  ];
+  return getRuntimeCardTraits(card);
 }
 
 // ── Core Resolution ──────────────────────────────────────────────────────────
@@ -169,34 +172,45 @@ function resolveCharacterAttack(
 
   // Apply damage to defender
   if (result.damageToDefender > 0) {
-    events.push({
-      type: 'DAMAGE_DEALT',
-      sourceId: attackerInstanceId,
-      targetId,
-      amount: result.damageToDefender,
-    });
-    currentState = updateCardInState(currentState, targetId, card => ({
-      ...card,
-      currentHp: card.currentHp - result.damageToDefender,
-    }));
+    const replacement = applyReplacementToDamage(currentState, defender, result.damageToDefender);
+    currentState = replacement.state;
+    events.push(...replacement.events);
+    if (replacement.damage > 0) {
+      events.push({
+        type: 'DAMAGE_DEALT',
+        sourceId: attackerInstanceId,
+        targetId,
+        amount: replacement.damage,
+      });
+      currentState = updateCardInState(currentState, targetId, card => ({
+        ...card,
+        currentHp: card.currentHp - replacement.damage,
+      }));
+    }
   }
 
   // Apply damage to attacker
   if (result.damageToAttacker > 0) {
-    events.push({
-      type: 'DAMAGE_DEALT',
-      sourceId: targetId,
-      targetId: attackerInstanceId,
-      amount: result.damageToAttacker,
-    });
-    currentState = updateCardInState(
-      currentState,
-      attackerInstanceId,
-      card => ({
-        ...card,
-        currentHp: card.currentHp - result.damageToAttacker,
-      }),
-    );
+    const refreshedAttacker = findCard(currentState.players[_attackerPlayerId]!.zones, attackerInstanceId)?.card ?? attacker;
+    const replacement = applyReplacementToDamage(currentState, refreshedAttacker, result.damageToAttacker);
+    currentState = replacement.state;
+    events.push(...replacement.events);
+    if (replacement.damage > 0) {
+      events.push({
+        type: 'DAMAGE_DEALT',
+        sourceId: targetId,
+        targetId: attackerInstanceId,
+        amount: replacement.damage,
+      });
+      currentState = updateCardInState(
+        currentState,
+        attackerInstanceId,
+        card => ({
+          ...card,
+          currentHp: card.currentHp - replacement.damage,
+        }),
+      );
+    }
   }
 
   // Destroy defender if dead
@@ -219,4 +233,39 @@ function resolveCharacterAttack(
   }
 
   return { newState: currentState, events };
+}
+
+function applyReplacementToDamage(
+  state: GameState,
+  card: CardInstance,
+  amount: number,
+): { readonly state: GameState; readonly damage: number; readonly events: readonly GameEvent[] } {
+  const replacement = getActiveReplacementEffect(state, card, 'on_would_take_damage');
+  if (replacement === null) {
+    return { state, damage: amount, events: [] };
+  }
+
+  let currentState = replacement.effect.oncePerTurn === true
+    ? markReplacementEffectUsed(state, replacement.id)
+    : state;
+  const events: GameEvent[] = [];
+
+  for (const effect of replacement.effect.instead) {
+    const result = executeEffect(currentState, effect, {
+      sourceInstanceId: replacement.sourceInstanceId,
+      controllerId: replacement.controllerId,
+      triggerDepth: 0,
+    });
+    currentState = result.newState;
+    events.push(...result.events);
+  }
+
+  return {
+    state: currentState,
+    damage: replacement.effect.replaces.type === 'on_would_take_damage' &&
+      replacement.effect.replaces.reduction !== undefined
+      ? Math.max(0, amount - replacement.effect.replaces.reduction)
+      : 0,
+    events,
+  };
 }

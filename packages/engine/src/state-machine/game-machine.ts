@@ -32,6 +32,10 @@ import {
 import { applyMulligan } from '../setup/game-setup.js';
 import { applyPendingChoiceResponse, beginResponseChain } from './player-response.js';
 import { pushToStack } from '../stack/stack-resolver.js';
+import {
+  discardCardsFromHand,
+  normalizeGameState,
+} from '../state/index.js';
 
 export const gameMachine = setup({
   types: {
@@ -89,7 +93,8 @@ export const gameMachine = setup({
     }),
     drawResource: assign(({ context }) => {
       const result = drawResourceCard(context.gameState);
-      const resolved = resolveTriggeredEvents(result.state, result.events);
+      const normalized = normalizeGameState(result.state);
+      const resolved = resolveTriggeredEvents(normalized.state, [...result.events, ...normalized.events]);
       return {
         gameState: {
           ...resolved.state,
@@ -110,7 +115,8 @@ export const gameMachine = setup({
         pendingChoice: null,
       };
     }
-      const resolved = resolveTriggeredEvents(result.state, result.events);
+      const normalized = normalizeGameState(result.state);
+      const resolved = resolveTriggeredEvents(normalized.state, [...result.events, ...normalized.events]);
       const newState = {
         ...resolved.state,
         log: [...resolved.state.log, ...resolved.events],
@@ -125,15 +131,16 @@ export const gameMachine = setup({
     applyPlayerAction: assign(({ context, event }) => {
       if (event.type !== 'PLAYER_ACTION') return {};
       const result = executePlayerAction(context.gameState, event.action);
+      const normalized = normalizeGameState(result.state);
       const stackResult = result.stackItem === undefined
         ? null
         : beginResponseChain(
-          pushToStack(result.state, result.stackItem),
+          pushToStack(normalized.state, result.stackItem),
           context.gameState.activePlayerIndex,
-          result.events,
+          [...result.events, ...normalized.events],
         );
       const resolved = result.stackItem === undefined
-        ? resolveTriggeredEvents(result.state, result.events)
+        ? resolveTriggeredEvents(normalized.state, [...result.events, ...normalized.events])
         : {
             state: stackResult!.state,
             events: stackResult!.events,
@@ -170,7 +177,8 @@ export const gameMachine = setup({
     })),
     processStatuses: assign(({ context }) => {
       const result = processStatusTicks(context.gameState);
-      const resolved = resolveTriggeredEvents(result.state, result.events);
+      const normalized = normalizeGameState(result.state);
+      const resolved = resolveTriggeredEvents(normalized.state, [...result.events, ...normalized.events]);
       return {
         gameState: {
           ...resolved.state,
@@ -192,8 +200,9 @@ export const gameMachine = setup({
       // Decrement timers for next cycle
       currentState = decrementScheduledTimers(currentState);
       const allEvents = [...upkeepResult.events, ...turnStartResult.events];
+      const normalized = normalizeGameState(currentState);
       if (allEvents.length > 0) {
-        const resolved = resolveTriggeredEvents(currentState, allEvents);
+        const resolved = resolveTriggeredEvents(normalized.state, [...allEvents, ...normalized.events]);
         return {
           gameState: {
             ...resolved.state,
@@ -202,12 +211,13 @@ export const gameMachine = setup({
           pendingChoice: resolved.state.pendingChoice,
         };
       }
-      return { gameState: currentState };
+      return { gameState: normalized.state };
     }),
     processScheduledEndPhase: assign(({ context }) => {
       const result = processScheduledEffects(context.gameState, 'end_of_turn');
+      const normalized = normalizeGameState(result.state);
       if (result.events.length > 0) {
-        const resolved = resolveTriggeredEvents(result.state, result.events);
+        const resolved = resolveTriggeredEvents(normalized.state, [...result.events, ...normalized.events]);
         return {
           gameState: {
             ...resolved.state,
@@ -216,11 +226,12 @@ export const gameMachine = setup({
           pendingChoice: resolved.state.pendingChoice,
         };
       }
-      return { gameState: result.state };
+      return { gameState: normalized.state };
     }),
     expireModifiers: assign(({ context }) => {
       const result = expireEndOfTurnModifiers(context.gameState);
-      const resolved = resolveTriggeredEvents(result.state, result.events);
+      const normalized = normalizeGameState(result.state);
+      const resolved = resolveTriggeredEvents(normalized.state, [...result.events, ...normalized.events]);
       return {
         gameState: {
           ...resolved.state,
@@ -274,7 +285,8 @@ export const gameMachine = setup({
     clearPendingChoice: assign({ pendingChoice: null }),
     executeTurnPass: assign(({ context }) => {
       const newState = passTurn(context.gameState);
-      const resolved = resolveTriggeredEvents(newState, [
+      const normalized = normalizeGameState(newState);
+      const resolved = resolveTriggeredEvents(normalized.state, [
         {
           type: 'TURN_END' as const,
           playerId: context.gameState.activePlayerIndex,
@@ -285,6 +297,7 @@ export const gameMachine = setup({
           playerId: newState.activePlayerIndex,
           turnNumber: newState.turnNumber,
         },
+        ...normalized.events,
       ]);
       return {
         gameState: {
@@ -314,9 +327,10 @@ export const gameMachine = setup({
       const shouldResolveResponseEvents =
         responseResult.events.length > 0 &&
         responseResult.state.pendingChoice === null;
+      const normalized = normalizeGameState(responseResult.state);
       const resolved = shouldResolveResponseEvents
-        ? resolveTriggeredEvents(responseResult.state, responseResult.events)
-        : { state: responseResult.state, events: [] as readonly never[] };
+        ? resolveTriggeredEvents(normalized.state, [...responseResult.events, ...normalized.events])
+        : { state: normalized.state, events: [] as readonly never[] };
       return {
         gameState: {
           ...resolved.state,
@@ -331,7 +345,7 @@ export const gameMachine = setup({
 }).createMachine({
   id: 'aetherionGame',
   context: ({ input }) => {
-    const initializedState = registerInitialTriggers(input.gameState);
+    const initializedState = registerInitialTriggers(normalizeGameState(input.gameState).state);
     return {
       gameState: initializedState,
       pendingChoice: initializedState.pendingChoice,
@@ -528,25 +542,13 @@ export const gameMachine = setup({
               actions: [
                 assign(({ context, event }) => {
                   if (event.type !== 'PLAYER_RESPONSE') return {};
-                  const player = context.gameState.players[context.gameState.activePlayerIndex]!;
-                  const discardIds = event.response.selectedOptionIds;
-                  const discarded = player.hand.filter(c =>
-                    discardIds.includes(c.instanceId),
+                  const discarded = discardCardsFromHand(
+                    context.gameState,
+                    context.gameState.activePlayerIndex,
+                    event.response.selectedOptionIds,
                   );
-                  const remaining = player.hand.filter(
-                    c => !discardIds.includes(c.instanceId),
-                  );
-                  const newPlayers = [...context.gameState.players] as [
-                    typeof context.gameState.players[0],
-                    typeof context.gameState.players[1],
-                  ];
-                  newPlayers[context.gameState.activePlayerIndex] = {
-                    ...player,
-                    hand: remaining,
-                    discardPile: [...player.discardPile, ...discarded],
-                  };
                   return {
-                    gameState: { ...context.gameState, players: newPlayers },
+                    gameState: discarded.state,
                     pendingChoice: null,
                   };
                 }),

@@ -11,6 +11,10 @@ import type {
 } from '../types/game-state.js';
 import { getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 import { evaluateAmount } from './amount-evaluator.js';
+import {
+  cardHasActiveTrait,
+  isProtectedFromEnemyTargeting,
+} from '../state/runtime-card-helpers.js';
 
 export type ResolvedTargets =
   | { readonly resolved: true; readonly targetIds: readonly string[] }
@@ -59,7 +63,11 @@ export function resolveTargets(
       return resolveTargetSpell(state, context);
 
     case 'target_equipment':
+      return resolveTargetEquipment(state, target, context);
+
     case 'target_card_in_discard':
+      return resolveTargetCardInDiscard(state, target, context);
+
     case 'adjacent_to_self':
     case 'copy_of':
     case 'random':
@@ -204,6 +212,67 @@ function resolveTargetSpell(
   return { resolved: true, targetIds: [target.id] };
 }
 
+function resolveTargetEquipment(
+  state: GameState,
+  target: Extract<TargetExpr, { type: 'target_equipment' }>,
+  context: EffectContext,
+): ResolvedTargets {
+  if (context.selectedTargets !== undefined) {
+    return { resolved: true, targetIds: context.selectedTargets };
+  }
+
+  const players = getPlayersBySide(state, target.side, context);
+  const equipmentCards = players.flatMap(player =>
+    getAllCards(player.zones)
+      .flatMap(card => card.equipment === null ? [] : [card.equipment]),
+  );
+
+  if (equipmentCards.length === 0) {
+    return { resolved: true, targetIds: [] };
+  }
+
+  return {
+    resolved: false,
+    pendingChoice: {
+      type: 'select_targets',
+      playerId: context.controllerId,
+      options: equipmentCards.map(card => ({ id: card.instanceId, label: card.name, instanceId: card.instanceId })),
+      minSelections: 1,
+      maxSelections: 1,
+      context: 'Choose target equipment',
+    },
+  };
+}
+
+function resolveTargetCardInDiscard(
+  state: GameState,
+  target: Extract<TargetExpr, { type: 'target_card_in_discard' }>,
+  context: EffectContext,
+): ResolvedTargets {
+  if (context.selectedTargets !== undefined) {
+    return { resolved: true, targetIds: context.selectedTargets };
+  }
+
+  const players = getPlayersBySide(state, target.side, context);
+  const cards = players.flatMap(player => player.discardPile);
+  const filtered = applyFilter(cards, target.filter);
+  if (filtered.length === 0) {
+    return { resolved: true, targetIds: [] };
+  }
+
+  return {
+    resolved: false,
+    pendingChoice: {
+      type: 'select_targets',
+      playerId: context.controllerId,
+      options: filtered.map(card => ({ id: card.instanceId, label: card.name, instanceId: card.instanceId })),
+      minSelections: 1,
+      maxSelections: 1,
+      context: 'Choose a card in discard',
+    },
+  };
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function getCardsBySide(
@@ -235,7 +304,8 @@ export function applyFilter(
   if (filter === undefined) return cards;
   return cards.filter(c => {
     if (filter.excludeSelf === true && context !== undefined && c.instanceId === context.sourceInstanceId) return false;
-    if (filter.trait !== undefined && !c.traits.includes(filter.trait as never)) return false;
+    if (context !== undefined && c.owner !== context.controllerId && isProtectedFromEnemyTargeting(c)) return false;
+    if (filter.trait !== undefined && !cardHasActiveTrait(c, filter.trait as never)) return false;
     if (filter.tag !== undefined && !c.tags.includes(filter.tag)) return false;
     if (filter.cardType !== undefined && c.cardType !== filter.cardType) return false;
     const totalCost = c.cost.mana + c.cost.energy + c.cost.flexible;

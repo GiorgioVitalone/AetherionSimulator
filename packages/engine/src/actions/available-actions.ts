@@ -7,12 +7,19 @@ import type {
   PlayerState,
   CardInstance,
 } from '../types/game-state.js';
-import type { ResourceCost, ZoneType, Trait } from '../types/common.js';
+import type { ResourceCost, ZoneType } from '../types/common.js';
 import type { TriggeredAbilityDSL } from '../types/ability.js';
 import { getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 import { getValidAttackTargets, type AttackTarget } from '../zones/targeting.js';
-import { canAfford, computeMaxX } from './cost-checker.js';
+import { canAfford, computeMaxX, getReducedCardCost } from './cost-checker.js';
 import { computeSpellTargeting } from './spell-targeting.js';
+import {
+  cardHasActiveTrait,
+  cardHasStatus,
+  getMaxMovesPerTurn,
+  getRuntimeCardAbilities,
+  getRuntimeCardTraits,
+} from '../state/runtime-card-helpers.js';
 
 // ── Result Types ──────────────────────────────────────────────────────────────
 
@@ -20,6 +27,8 @@ export interface AvailableActions {
   readonly canDeploy: readonly DeployOption[];
   readonly canCastSpell: readonly CastSpellOption[];
   readonly canAttachEquipment: readonly EquipOption[];
+  readonly canRemoveEquipment: readonly RemoveEquipmentOption[];
+  readonly canTransferEquipment: readonly TransferEquipmentOption[];
   readonly canMove: readonly MoveOption[];
   readonly canActivateAbility: readonly ActivateOption[];
   readonly canActivateHeroAbility: readonly HeroActivateOption[];
@@ -46,6 +55,18 @@ export interface CastSpellOption {
 
 export interface EquipOption {
   readonly cardInstanceId: string;
+  readonly validTargets: readonly string[];
+  readonly cost: ResourceCost;
+}
+
+export interface RemoveEquipmentOption {
+  readonly cardInstanceId: string;
+  readonly equipmentInstanceId: string;
+}
+
+export interface TransferEquipmentOption {
+  readonly cardInstanceId: string;
+  readonly equipmentInstanceId: string;
   readonly validTargets: readonly string[];
   readonly cost: ResourceCost;
 }
@@ -82,6 +103,8 @@ export function computeAvailableActions(state: GameState): AvailableActions {
       canDeploy: [],
       canCastSpell: [],
       canAttachEquipment: [],
+      canRemoveEquipment: [],
+      canTransferEquipment: [],
       canMove: [],
       canActivateAbility: [],
       canActivateHeroAbility: [],
@@ -106,7 +129,9 @@ export function computeAvailableActions(state: GameState): AvailableActions {
     canDeploy: isStrategy ? computeDeployOptions(player) : [],
     canCastSpell: isStrategy ? computeSpellOptions(state, player) : [],
     canAttachEquipment: isStrategy ? computeEquipOptions(player) : [],
-    canMove: isStrategy ? computeMoveOptions(player) : [],
+    canRemoveEquipment: isStrategy ? computeRemoveEquipmentOptions(player) : [],
+    canTransferEquipment: isStrategy ? computeTransferEquipmentOptions(player) : [],
+    canMove: isStrategy ? computeMoveOptions(player, state.turnNumber) : [],
     canActivateAbility: isStrategy ? computeActivateOptions(player, state) : [],
     canActivateHeroAbility: isStrategy ? computeHeroActivateOptions(player, state) : [],
     canAttack: isAction && !firstPlayerAttackLock ? computeAttackOptions(player, opponent) : [],
@@ -123,12 +148,13 @@ function computeDeployOptions(player: PlayerState): readonly DeployOption[] {
 
   for (const card of player.hand) {
     if (card.cardType !== 'C') continue;
-    if (!canAfford(player, card.cost)) continue;
+    const reducedCost = getReducedCardCost(player, card);
+    if (!canAfford(player, reducedCost)) continue;
 
     const validSlots = [...getValidDeploySlots(player)];
-    if (allTraits(card).includes('elite')) {
+    if (cardHasActiveTrait(card, 'elite')) {
       const highGroundSlots = getOpenSlotIndices(player, 'high_ground');
-      if (highGroundSlots.length > 0 && canAfford(player, addFlexibleCost(card.cost, 2))) {
+      if (highGroundSlots.length > 0 && canAfford(player, addFlexibleCost(reducedCost, 2))) {
         validSlots.push({ zone: 'high_ground', slots: highGroundSlots });
       }
     }
@@ -137,9 +163,9 @@ function computeDeployOptions(player: PlayerState): readonly DeployOption[] {
       options.push({
         cardInstanceId: card.instanceId,
         validSlots,
-        cost: card.cost,
+        cost: reducedCost,
         isXCost,
-        maxX: isXCost ? computeMaxX(player, card.cost) : 0,
+        maxX: isXCost ? computeMaxX(player, reducedCost) : 0,
       });
     }
   }
@@ -192,7 +218,8 @@ function computeSpellOptions(
 
   for (const card of player.hand) {
     if (card.cardType !== 'S') continue;
-    if (!canAfford(player, card.cost)) continue;
+    const reducedCost = getReducedCardCost(player, card);
+    if (!canAfford(player, reducedCost)) continue;
 
     const { needsTarget, validTargets } = computeSpellTargeting(
       state,
@@ -202,7 +229,7 @@ function computeSpellOptions(
 
     options.push({
       cardInstanceId: card.instanceId,
-      cost: card.cost,
+      cost: reducedCost,
       needsTarget,
       validTargets,
     });
@@ -219,7 +246,8 @@ function computeEquipOptions(player: PlayerState): readonly EquipOption[] {
 
   for (const card of player.hand) {
     if (card.cardType !== 'E') continue;
-    if (!canAfford(player, card.cost)) continue;
+    const reducedCost = getReducedCardCost(player, card);
+    if (!canAfford(player, reducedCost)) continue;
 
     const targets = boardCharacters
       .filter(c => canAttachEquipmentToTarget(card, c))
@@ -229,9 +257,51 @@ function computeEquipOptions(player: PlayerState): readonly EquipOption[] {
       options.push({
         cardInstanceId: card.instanceId,
         validTargets: targets,
-        cost: card.cost,
+        cost: reducedCost,
       });
     }
+  }
+
+  return options;
+}
+
+function computeRemoveEquipmentOptions(player: PlayerState): readonly RemoveEquipmentOption[] {
+  return getAllCards(player.zones)
+    .filter(card => card.equipment !== null)
+    .map(card => ({
+      cardInstanceId: card.instanceId,
+      equipmentInstanceId: card.equipment!.instanceId,
+    }));
+}
+
+function computeTransferEquipmentOptions(player: PlayerState): readonly TransferEquipmentOption[] {
+  const boardCharacters = getAllCards(player.zones).filter(c => c.cardType === 'C');
+  const options: TransferEquipmentOption[] = [];
+
+  for (const card of boardCharacters) {
+    const equipment = card.equipment;
+    if (equipment === null || equipment.transferredThisTurn) {
+      continue;
+    }
+
+    const transferCost = getReducedCardCost(player, equipment);
+    if (!canAfford(player, transferCost)) {
+      continue;
+    }
+
+    const validTargets = boardCharacters
+      .filter(target => target.instanceId !== card.instanceId && canAttachEquipmentToTarget(equipment, target))
+      .map(target => target.instanceId);
+    if (validTargets.length === 0) {
+      continue;
+    }
+
+    options.push({
+      cardInstanceId: card.instanceId,
+      equipmentInstanceId: equipment.instanceId,
+      validTargets,
+      cost: transferCost,
+    });
   }
 
   return options;
@@ -245,18 +315,22 @@ const ADJACENT: ReadonlyMap<ZoneType, readonly ZoneType[]> = new Map([
   ['high_ground', ['frontline']],
 ]);
 
-function computeMoveOptions(player: PlayerState): readonly MoveOption[] {
+function computeMoveOptions(
+  player: PlayerState,
+  turnNumber: number,
+): readonly MoveOption[] {
   const options: MoveOption[] = [];
   const zones: readonly ZoneType[] = ['reserve', 'frontline', 'high_ground'];
 
   for (const zone of zones) {
     const cards = getCardsInZone(player.zones, zone);
     for (const card of cards) {
+      const maxMoves = getMaxMovesPerTurn(card, turnNumber);
       if (
         card.exhausted ||
         card.summoningSick ||
-        card.movedThisTurn ||
-        hasStatus(card, 'slowed')
+        card.movesThisTurn >= maxMoves ||
+        cardHasStatus(card, 'slowed')
       ) continue;
 
       const adjacentZones = ADJACENT.get(zone) ?? [];
@@ -290,8 +364,9 @@ function computeActivateOptions(
   const allCards = getAllCards(player.zones);
 
   for (const card of allCards) {
-    for (let i = 0; i < card.abilities.length; i++) {
-      const ability = card.abilities[i]!;
+    const abilities = getRuntimeCardAbilities(card);
+    for (let i = 0; i < abilities.length; i++) {
+      const ability = abilities[i]!;
       if (ability.type !== 'triggered') continue;
 
       const triggered = ability as TriggeredAbilityDSL;
@@ -377,7 +452,7 @@ function computeAttackOptions(
     for (const card of cards) {
       if (card.exhausted || card.summoningSick) continue;
 
-      const traits = allTraits(card);
+      const traits = getRuntimeCardTraits(card);
       // Haste bypasses summoning sickness (already handled by not being summoningSick)
 
       const targets = getValidAttackTargets(
@@ -398,12 +473,6 @@ function computeAttackOptions(
   return options;
 }
 
-function allTraits(card: CardInstance): readonly Trait[] {
-  return [
-    ...card.traits,
-    ...card.grantedTraits.map(g => g.trait),
-  ];
-}
 
 // ── Discard for Energy ────────────────────────────────────────────────────────
 
@@ -439,13 +508,6 @@ function computeCanTransform(state: GameState, player: PlayerState): boolean {
   const opponent = state.players[opponentIndex]!;
   const resourceGap = opponent.resourceBank.length - player.resourceBank.length;
   return resourceGap >= 5 && getAllCards(player.zones).length === 0;
-}
-
-function hasStatus(
-  card: CardInstance,
-  statusType: CardInstance['statusEffects'][number]['statusType'],
-): boolean {
-  return card.statusEffects.some(status => status.statusType === statusType);
 }
 
 function addFlexibleCost(cost: ResourceCost, amount: number): ResourceCost {

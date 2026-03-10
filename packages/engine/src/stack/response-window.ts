@@ -5,9 +5,10 @@ import type {
   GameState,
   PendingChoice,
 } from '../types/index.js';
-import { canAfford } from '../actions/cost-checker.js';
+import { canAfford, getReducedCardCost } from '../actions/cost-checker.js';
 import { getAllCards } from '../zones/zone-manager.js';
 import { resolveStack } from './stack-resolver.js';
+import { getRuntimeCardAbilities } from '../state/runtime-card-helpers.js';
 
 export function openResponseWindow(
   state: GameState,
@@ -92,7 +93,7 @@ export function computeAvailableResponses(
 
   for (const card of player.hand) {
     if (card.cardType !== 'S') continue;
-    if (!canAfford(player, card.cost)) continue;
+    if (!canAfford(player, getReducedCardCost(player, card))) continue;
     if (!isResponseSpell(card)) continue;
 
     options.push({
@@ -106,8 +107,9 @@ export function computeAvailableResponses(
   for (const card of getAllCards(player.zones)) {
     if (card.exhausted || card.summoningSick || card.abilitiesSuppressed) continue;
 
-    for (let i = 0; i < card.abilities.length; i++) {
-      const ability = card.abilities[i]!;
+    const abilities = getRuntimeCardAbilities(card);
+    for (let i = 0; i < abilities.length; i++) {
+      const ability = abilities[i]!;
       if (
         ability.type !== 'triggered' ||
         ability.trigger.type !== 'activated' ||
@@ -190,7 +192,7 @@ function buildResponseWindow(
 }
 
 function isResponseSpell(card: CardInstance): boolean {
-  return card.abilities.some(
+  return getRuntimeCardAbilities(card).some(
     ability =>
       ability.type === 'triggered' &&
       (ability.trigger.type === 'on_counter' || ability.trigger.type === 'on_flash'),
@@ -198,7 +200,7 @@ function isResponseSpell(card: CardInstance): boolean {
 }
 
 function describeResponseCard(card: CardInstance): string {
-  const hasCounter = card.abilities.some(
+  const hasCounter = getRuntimeCardAbilities(card).some(
     ability => ability.type === 'triggered' && ability.trigger.type === 'on_counter',
   );
   return hasCounter ? 'Counter' : 'Flash';
