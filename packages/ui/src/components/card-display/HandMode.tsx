@@ -1,5 +1,5 @@
 /**
- * HandMode — larger card display for the player's hand (120×170px).
+ * HandMode — larger card display for the player's hand (100×140px).
  * Shows name, cost, type badge, stats, and first ability (2-line clamp).
  * Grayed if unaffordable, gold border if playable.
  */

@@ -39,7 +39,9 @@ export function canAfford(
   const avail = getAvailableResources(player);
   const totalAvailable = avail.mana + avail.energy;
 
-  // Flexible flag: entire cost payable with any resource mix
+  // Flexible flag (0 or 1): when set, the total cost (mana + energy) can be
+  // paid with any mix of resources. E.g. {mana:0, energy:3, flexible:1} means
+  // 3 total cost payable with any combination of mana and energy.
   if (cost.flexible > 0) {
     const baseCost = cost.mana + cost.energy;
     return totalAvailable >= baseCost;
