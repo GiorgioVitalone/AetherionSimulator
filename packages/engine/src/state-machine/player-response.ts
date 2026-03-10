@@ -4,9 +4,14 @@ import type {
   GameState,
   PendingChoice,
   PlayerResponse,
+  CardInstance,
+  StackItem,
 } from '../types/game-state.js';
+import type { Effect } from '../types/effects.js';
 import { resumePendingResolution } from '../events/index.js';
-import { resolveStack } from '../stack/stack-resolver.js';
+import { resolveStack, pushToStack, counterStackItem } from '../stack/stack-resolver.js';
+import { canAfford, payCost } from '../actions/cost-checker.js';
+import { openResponseWindow } from '../stack/response-window.js';
 
 interface PlayerResponseResult {
   readonly state: GameState;
@@ -80,13 +85,95 @@ export function applyPendingChoiceResponse(
         events: [...resolved.events],
       };
     }
-    // Player selected a Counter/Flash card — for now resolve the stack
-    // Full counter chain (push counter to stack, open new window) is a future enhancement
-    const resolved = resolveStack({ ...state, pendingChoice: null });
+
+    // Player selected a Counter/Flash card — play it onto the stack
+    const respondingPlayerId = choice.playerId;
+    const player = state.players[respondingPlayerId]!;
+    const cardIndex = player.hand.findIndex(c => c.instanceId === selectedId);
+    if (cardIndex === -1) {
+      // Card not found, fall back to resolving the stack
+      const resolved = resolveStack({ ...state, pendingChoice: null });
+      return { state: resolved.state, pendingChoice: null, events: [...resolved.events] };
+    }
+
+    const card = player.hand[cardIndex]!;
+    if (!canAfford(player, card.cost)) {
+      const resolved = resolveStack({ ...state, pendingChoice: null });
+      return { state: resolved.state, pendingChoice: null, events: [...resolved.events] };
+    }
+
+    // Pay cost and remove from hand
+    const paidPlayer = payCost(player, card.cost);
+    const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
+    const newPlayer = {
+      ...paidPlayer,
+      hand: newHand,
+      discardPile: [...paidPlayer.discardPile, card],
+    };
+
+    const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+    newPlayers[respondingPlayerId] = newPlayer;
+    let nextState: GameState = { ...state, players: newPlayers, pendingChoice: null };
+
+    // Extract effects from counter/flash abilities
+    const responseEffects = extractResponseEffects(card);
+
+    // Check if this is a counter — mark the top stack item as countered
+    const isCounter = card.abilities.some(
+      a => a.type === 'triggered' && a.trigger.type === 'on_counter',
+    );
+    if (isCounter && choice.responseContext !== undefined) {
+      nextState = counterStackItem(nextState, choice.responseContext.stackItemId);
+    }
+
+    // Push counter/flash effects onto the stack
+    if (responseEffects.length > 0) {
+      const stackItem: StackItem = {
+        id: `response_${card.instanceId}`,
+        type: isCounter ? 'counter' : 'flash',
+        sourceInstanceId: card.instanceId,
+        controllerId: respondingPlayerId,
+        effects: responseEffects,
+        targets: [],
+      };
+      nextState = pushToStack(nextState, stackItem);
+    }
+
+    // Open response window for the other player
+    const otherPlayerId = respondingPlayerId === 0 ? 1 : 0;
+    const topStackItem = nextState.stack[nextState.stack.length - 1];
+    if (topStackItem !== undefined) {
+      const windowResult = openResponseWindow(
+        { ...nextState, activePlayerIndex: otherPlayerId as 0 | 1 },
+        topStackItem.id,
+      );
+      if (windowResult.pendingChoice !== undefined) {
+        // Other player has responses available
+        return {
+          state: windowResult.newState,
+          pendingChoice: windowResult.pendingChoice ?? null,
+          events: [{
+            type: 'SPELL_CAST',
+            cardInstanceId: card.instanceId,
+            playerId: respondingPlayerId,
+          }],
+        };
+      }
+    }
+
+    // No responses available — resolve the full stack
+    const resolved = resolveStack(nextState);
     return {
       state: resolved.state,
       pendingChoice: null,
-      events: [...resolved.events],
+      events: [
+        {
+          type: 'SPELL_CAST',
+          cardInstanceId: card.instanceId,
+          playerId: respondingPlayerId,
+        },
+        ...resolved.events,
+      ],
     };
   }
 
@@ -99,6 +186,16 @@ export function applyPendingChoiceResponse(
     pendingChoice: null,
     events: [],
   };
+}
+
+function extractResponseEffects(card: CardInstance): readonly Effect[] {
+  const effects: Effect[] = [];
+  for (const ability of card.abilities) {
+    if (ability.type !== 'triggered') continue;
+    if (ability.trigger.type !== 'on_counter' && ability.trigger.type !== 'on_flash') continue;
+    effects.push(...ability.effects);
+  }
+  return effects;
 }
 
 function getSelectedChoiceOptions(
