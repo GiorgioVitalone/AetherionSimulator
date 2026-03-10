@@ -11,7 +11,7 @@ import type { ResourceCost, ZoneType, Trait } from '../types/common.js';
 import type { TriggeredAbilityDSL } from '../types/ability.js';
 import { getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 import { getValidAttackTargets, type AttackTarget } from '../zones/targeting.js';
-import { canAfford } from './cost-checker.js';
+import { canAfford, computeMaxX } from './cost-checker.js';
 import { computeSpellTargeting } from './spell-targeting.js';
 
 // ── Result Types ──────────────────────────────────────────────────────────────
@@ -33,6 +33,8 @@ export interface DeployOption {
   readonly cardInstanceId: string;
   readonly validSlots: readonly { readonly zone: ZoneType; readonly slots: readonly number[] }[];
   readonly cost: ResourceCost;
+  readonly isXCost: boolean;
+  readonly maxX: number;
 }
 
 export interface CastSpellOption {
@@ -106,10 +108,13 @@ function computeDeployOptions(player: PlayerState): readonly DeployOption[] {
 
     const validSlots = getValidDeploySlots(player);
     if (validSlots.length > 0) {
+      const isXCost = card.cost.xMana === true || card.cost.xEnergy === true;
       options.push({
         cardInstanceId: card.instanceId,
         validSlots,
         cost: card.cost,
+        isXCost,
+        maxX: isXCost ? computeMaxX(player, card.cost) : 0,
       });
     }
   }

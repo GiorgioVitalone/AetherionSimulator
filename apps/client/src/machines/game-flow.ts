@@ -108,6 +108,7 @@ function mapActionToEvent(action: GameAction): GameMachineEvent | null {
           cardInstanceId: action.cardInstanceId,
           zone: action.zone,
           slotIndex: action.slotIndex,
+          xValue: action.xValue,
         },
       };
 

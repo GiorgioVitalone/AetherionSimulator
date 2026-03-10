@@ -18,6 +18,7 @@ export function useActionController() {
   const flowState = useActionFlowStore((s) => s.flowState);
   const selectCardFromHand = useActionFlowStore((s) => s.selectCardFromHand);
   const selectBattlefieldCard = useActionFlowStore((s) => s.selectBattlefieldCard);
+  const setAwaitingXValue = useActionFlowStore((s) => s.setAwaitingXValue);
   const setAwaitingZone = useActionFlowStore((s) => s.setAwaitingZone);
   const setAwaitingTarget = useActionFlowStore((s) => s.setAwaitingTarget);
   const cancel = useActionFlowStore((s) => s.cancel);
@@ -58,11 +59,15 @@ export function useActionController() {
 
       selectCard(instanceId);
 
-      // If only one action and it needs a zone, skip to awaiting_zone
+      // If only one action and it needs a zone, skip to awaiting_zone (or X value first)
       if (possibleActions.length === 1 && possibleActions[0] === 'deploy' && deployOption) {
         const validSlots = deployOption.validSlots.flatMap((vs) =>
           vs.slots.map((slotIndex) => ({ zone: vs.zone, slotIndex })),
         );
+        if (deployOption.isXCost) {
+          setAwaitingXValue(instanceId, deployOption.maxX, validSlots);
+          return;
+        }
         setAwaitingZone(instanceId, 'deploy', validSlots);
         return;
       }
@@ -190,7 +195,7 @@ export function useActionController() {
       const actionType = flowState.actionType;
 
       if (actionType === 'deploy') {
-        dispatch({ type: 'deploy_character', cardInstanceId: instanceId, zone, slotIndex });
+        dispatch({ type: 'deploy_character', cardInstanceId: instanceId, zone, slotIndex, xValue: flowState.xValue });
       } else if (actionType === 'move') {
         dispatch({
           type: 'move_character',
@@ -220,7 +225,11 @@ export function useActionController() {
             const validSlots = option.validSlots.flatMap((vs) =>
               vs.slots.map((s) => ({ zone: vs.zone, slotIndex: s })),
             );
-            setAwaitingZone(instanceId, 'deploy', validSlots);
+            if (option.isXCost) {
+              setAwaitingXValue(instanceId, option.maxX, validSlots);
+            } else {
+              setAwaitingZone(instanceId, 'deploy', validSlots);
+            }
           }
           break;
         }
@@ -289,11 +298,21 @@ export function useActionController() {
     [flowState, availableActions, dispatch, reset, selectCard, setAwaitingZone, setAwaitingTarget],
   );
 
+  // When the player selects an X value for an X-cost deploy
+  const handleXValueSelected = useCallback(
+    (xValue: number) => {
+      if (flowState.step !== 'awaiting_x_value') return;
+      setAwaitingZone(flowState.cardInstanceId, 'deploy', flowState.validSlots, xValue);
+    },
+    [flowState, setAwaitingZone],
+  );
+
   return {
     handleHandCardClick,
     handleBattlefieldCardClick,
     handleSlotClick,
     handleChooseAction,
+    handleXValueSelected,
     cancel: () => { cancel(); selectCard(null); },
   };
 }

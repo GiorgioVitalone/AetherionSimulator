@@ -112,7 +112,7 @@ export function GameScreen(): ReactNode {
         />
 
         {/* Action bar (conditional, between battlefield and player panel) */}
-        <ActionBar onChoose={controller.handleChooseAction} onCancel={controller.cancel} />
+        <ActionBar onChoose={controller.handleChooseAction} onCancel={controller.cancel} onXValueSelected={controller.handleXValueSelected} />
 
         {/* Player panel */}
         <PlayerPanel

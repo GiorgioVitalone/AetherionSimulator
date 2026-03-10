@@ -38,10 +38,17 @@ export type ActionFlowState =
       readonly possibleActions: readonly ActionIntent[];
     }
   | {
+      readonly step: 'awaiting_x_value';
+      readonly cardInstanceId: string;
+      readonly maxX: number;
+      readonly validSlots: readonly ValidSlot[];
+    }
+  | {
       readonly step: 'awaiting_zone';
       readonly cardInstanceId: string;
       readonly actionType: 'deploy' | 'move';
       readonly validSlots: readonly ValidSlot[];
+      readonly xValue?: number;
     }
   | {
       readonly step: 'awaiting_target';
@@ -63,10 +70,16 @@ interface ActionFlowStore {
     cardInstanceId: string,
     possibleActions: readonly ActionIntent[],
   ) => void;
+  readonly setAwaitingXValue: (
+    cardInstanceId: string,
+    maxX: number,
+    validSlots: readonly ValidSlot[],
+  ) => void;
   readonly setAwaitingZone: (
     cardInstanceId: string,
     actionType: 'deploy' | 'move',
     validSlots: readonly ValidSlot[],
+    xValue?: number,
   ) => void;
   readonly setAwaitingTarget: (
     cardInstanceId: string,
@@ -98,9 +111,15 @@ export const useActionFlowStore = create<ActionFlowStore>()(
         });
       },
 
-      setAwaitingZone: (cardInstanceId, actionType, validSlots) => {
+      setAwaitingXValue: (cardInstanceId, maxX, validSlots) => {
         set({
-          flowState: { step: 'awaiting_zone', cardInstanceId, actionType, validSlots },
+          flowState: { step: 'awaiting_x_value', cardInstanceId, maxX, validSlots },
+        });
+      },
+
+      setAwaitingZone: (cardInstanceId, actionType, validSlots, xValue) => {
+        set({
+          flowState: { step: 'awaiting_zone', cardInstanceId, actionType, validSlots, xValue },
         });
       },
 

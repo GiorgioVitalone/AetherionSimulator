@@ -28,14 +28,16 @@ export interface RegistryWithAbilities {
 }
 
 /**
- * Converts the engine's cost format (no xMana/xEnergy) from SimCard's cost
- * which includes the X-cost booleans the engine doesn't need.
+ * Converts SimCard's cost to the engine's ResourceCost format,
+ * preserving xMana/xEnergy flags for X-cost cards.
  */
 function toResourceCost(cost: SimCard['cost']): ResourceCost {
   return {
     mana: cost.mana,
     energy: cost.energy,
     flexible: cost.flexible,
+    ...(cost.xMana === true ? { xMana: true } : {}),
+    ...(cost.xEnergy === true ? { xEnergy: true } : {}),
   };
 }
 

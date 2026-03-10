@@ -14,6 +14,7 @@ export interface DeployCharacterAction {
   readonly cardInstanceId: string;
   readonly zone: ZoneType;
   readonly slotIndex: number;
+  readonly xValue?: number;
 }
 
 export interface CastSpellAction {

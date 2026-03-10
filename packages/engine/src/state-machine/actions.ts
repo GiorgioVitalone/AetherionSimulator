@@ -133,22 +133,36 @@ export function executePlayerAction(
 
 function executeDeploy(
   state: GameState,
-  action: { cardInstanceId: string; zone: import('../types/common.js').ZoneType; slotIndex: number },
+  action: { cardInstanceId: string; zone: import('../types/common.js').ZoneType; slotIndex: number; xValue?: number },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
   const player = state.players[state.activePlayerIndex]!;
   const cardIndex = player.hand.findIndex(c => c.instanceId === action.cardInstanceId);
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
-  if (!canAfford(player, card.cost)) return { state, events: [] };
-  const paidPlayer = payCost(player, card.cost);
+  const isXCost = card.cost.xMana === true || card.cost.xEnergy === true;
+  const xValue = isXCost ? (action.xValue ?? 0) : undefined;
+
+  if (!canAfford(player, card.cost, xValue)) return { state, events: [] };
+  const paidPlayer = payCost(player, card.cost, xValue);
 
   const hasHaste = card.traits.includes('haste');
+
+  // For X-cost characters with 0/0 base stats, X determines stats (X/X/0)
+  const xStatBonus = isXCost && xValue !== undefined ? xValue : 0;
+  const baseHp = card.baseHp === 0 && isXCost ? xStatBonus : card.baseHp;
+  const baseAtk = card.baseAtk === 0 && isXCost ? xStatBonus : card.baseAtk;
+
   const deployedCard: CardInstance = {
     ...card,
+    baseHp,
+    baseAtk,
+    currentHp: baseHp,
+    currentAtk: baseAtk,
     exhausted: !hasHaste,
     summoningSick: !hasHaste,
     owner: state.activePlayerIndex,
+    xValue,
   };
 
   const newZones = deployToZone(paidPlayer.zones, deployedCard, action.zone, action.slotIndex);
