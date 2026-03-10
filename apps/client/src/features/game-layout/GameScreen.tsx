@@ -63,7 +63,7 @@ export function GameScreen(): ReactNode {
     : null;
   const opponentHeroTargetToken = flowState.step === 'awaiting_target'
     ? getHeroTargetTokenForPlayer(flowState.validTargets, opponentPlayerId) ??
-      (flowState.validTargets.includes(HERO_ATTACK_TARGET) ? HERO_ATTACK_TARGET : null)
+      (flowState.validTargets.includes(HERO_ATTACK_TARGET) ? `hero_${String(opponentPlayerId)}` : null)
     : null;
 
   const handleHeroClick = useCallback((targetId: string) => {

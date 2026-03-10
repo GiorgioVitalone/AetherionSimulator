@@ -1,5 +1,5 @@
 /**
- * BattlefieldMode — compact card display for the game board (80×110px).
+ * BattlefieldMode — compact card display for the game board (72×96px).
  * Shows name (truncated), stat badges, faction border, and status indicators.
  */
 import type { ReactNode } from 'react';
@@ -26,7 +26,7 @@ export function BattlefieldMode(props: CardDisplayProps): ReactNode {
         transition-all duration-150
         hover:ring-1 hover:ring-[var(--card-faction-light)] hover:brightness-110
         ${selected ? 'ring-2 ring-[var(--color-accent)] ring-offset-1 ring-offset-[var(--color-bg)]' : ''}
-        ${highlighted ? 'shadow-[0_0_12px_var(--card-faction-light)]' : ''}
+        ${highlighted ? 'shadow-[0_0_12px_var(--card-faction-light)] ring-2 ring-amber-400 cursor-pointer' : ''}
       `}
       style={{
         borderColor: 'var(--card-faction-color)',
