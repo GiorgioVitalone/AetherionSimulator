@@ -278,7 +278,8 @@ function computeActivateOptions(
           e =>
             e.type === 'ABILITY_ACTIVATED' &&
             e.cardInstanceId === card.instanceId &&
-            e.abilityIndex === i,
+            e.abilityIndex === i &&
+            e.turnNumber === state.turnNumber,
         );
         if (alreadyUsed) continue;
       }
@@ -333,7 +334,8 @@ function computeHeroActivateOptions(
       const alreadyUsed = state.log.some(
         e =>
           e.type === 'HERO_ABILITY_ACTIVATED' &&
-          e.abilityIndex === i,
+          e.abilityIndex === i &&
+          e.turnNumber === state.turnNumber,
       );
       if (alreadyUsed) continue;
     }

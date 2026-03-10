@@ -356,11 +356,13 @@ export interface AbilityActivatedEvent {
   readonly type: 'ABILITY_ACTIVATED';
   readonly cardInstanceId: string;
   readonly abilityIndex: number;
+  readonly turnNumber: number;
 }
 export interface HeroAbilityActivatedEvent {
   readonly type: 'HERO_ABILITY_ACTIVATED';
   readonly playerId: 0 | 1;
   readonly abilityIndex: number;
+  readonly turnNumber: number;
 }
 export interface CharacterAttackedEvent {
   readonly type: 'CHARACTER_ATTACKED';

@@ -257,12 +257,15 @@ function executeAttachEquipment(
     }
   }
 
-  // Attach to target character and apply stat grants
+  // Attach to target character and apply stat grants (both base and current)
   const attachToCard = (c: CardInstance | null): CardInstance | null => {
     if (c === null || c.instanceId !== action.targetInstanceId) return c;
     return {
       ...c,
       equipment: equipCard,
+      baseAtk: c.baseAtk + atkBonus,
+      baseHp: c.baseHp + hpBonus,
+      baseArm: c.baseArm + armBonus,
       currentAtk: c.currentAtk + atkBonus,
       currentHp: c.currentHp + hpBonus,
       currentArm: c.currentArm + armBonus,
@@ -383,6 +386,7 @@ function executeActivateAbility(
     type: 'ABILITY_ACTIVATED',
     cardInstanceId: action.cardInstanceId,
     abilityIndex: action.abilityIndex,
+    turnNumber: state.turnNumber,
   }];
 
   // Extract and execute ability effects
@@ -448,6 +452,7 @@ function executeActivateHeroAbility(
     type: 'HERO_ABILITY_ACTIVATED',
     playerId: state.activePlayerIndex,
     abilityIndex: action.abilityIndex,
+    turnNumber: state.turnNumber,
   }];
 
   // Extract and execute ability effects

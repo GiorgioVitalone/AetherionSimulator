@@ -154,10 +154,11 @@ describe('executeActivateHeroAbility', () => {
     expect(actions.canActivateHeroAbility).toHaveLength(0);
   });
 
-  it('should emit HERO_ABILITY_ACTIVATED event', () => {
+  it('should emit HERO_ABILITY_ACTIVATED event with turnNumber', () => {
     const ability = makeActivatedAbility();
     state = mockGameState({
       phase: 'strategy',
+      turnNumber: 3,
       players: [
         mockPlayerState(0, {
           hero: mockHero({ abilities: [ability] }),
@@ -175,7 +176,72 @@ describe('executeActivateHeroAbility', () => {
       type: 'HERO_ABILITY_ACTIVATED',
       playerId: 0,
       abilityIndex: 0,
+      turnNumber: 3,
     });
+  });
+});
+
+describe('once-per-turn ability filtering by turn', () => {
+  function makeOncePerTurnAbility(): TriggeredAbilityDSL {
+    return {
+      type: 'triggered',
+      trigger: {
+        type: 'activated',
+        cost: ZERO_COST,
+        oncePerTurn: true,
+      },
+      effects: [{
+        type: 'deploy_token',
+        token: { name: 'Token', atk: 1, hp: 1 },
+        count: 1,
+      }],
+    };
+  }
+
+  it('should allow hero ability on turn 2 after being used on turn 1', () => {
+    const ability = makeOncePerTurnAbility();
+    state = mockGameState({
+      phase: 'strategy',
+      turnNumber: 2,
+      players: [
+        mockPlayerState(0, {
+          hero: mockHero({ abilities: [ability] }),
+        }),
+        mockPlayerState(1),
+      ],
+      log: [{
+        type: 'HERO_ABILITY_ACTIVATED',
+        playerId: 0,
+        abilityIndex: 0,
+        turnNumber: 1,
+      }],
+    });
+
+    const actions = computeAvailableActions(state);
+    expect(actions.canActivateHeroAbility).toHaveLength(1);
+  });
+
+  it('should block hero ability if already used on same turn', () => {
+    const ability = makeOncePerTurnAbility();
+    state = mockGameState({
+      phase: 'strategy',
+      turnNumber: 2,
+      players: [
+        mockPlayerState(0, {
+          hero: mockHero({ abilities: [ability] }),
+        }),
+        mockPlayerState(1),
+      ],
+      log: [{
+        type: 'HERO_ABILITY_ACTIVATED',
+        playerId: 0,
+        abilityIndex: 0,
+        turnNumber: 2,
+      }],
+    });
+
+    const actions = computeAvailableActions(state);
+    expect(actions.canActivateHeroAbility).toHaveLength(0);
   });
 });
 
