@@ -40,7 +40,7 @@ function makeActivatedAbility(overrides?: Partial<{
 }
 
 describe('executeActivateHeroAbility', () => {
-  it('should return effectWorkItem with ability effects', () => {
+  it('should return a queued stack item with ability effects', () => {
     const ability = makeActivatedAbility();
     state = mockGameState({
       phase: 'strategy',
@@ -57,9 +57,9 @@ describe('executeActivateHeroAbility', () => {
       abilityIndex: 0,
     });
 
-    expect(result.effectWorkItem).toBeDefined();
-    expect(result.effectWorkItem!.effects).toHaveLength(1);
-    expect(result.effectWorkItem!.effects[0]!.type).toBe('deploy_token');
+    expect(result.stackItem).toBeDefined();
+    expect(result.stackItem!.effects).toHaveLength(1);
+    expect(result.stackItem!.effects[0]!.type).toBe('deploy_token');
   });
 
   it('should set cooldown after activation', () => {
@@ -135,8 +135,8 @@ describe('executeActivateHeroAbility', () => {
     expect(actions.canActivateHeroAbility).toHaveLength(0);
   });
 
-  it('should not activate on the turn hero transforms', () => {
-    const ability = makeActivatedAbility();
+  it('should not allow an ultimate on the turn hero transforms', () => {
+    const ability = makeActivatedAbility({ oncePerGame: true });
     state = mockGameState({
       phase: 'strategy',
       players: [
@@ -154,7 +154,7 @@ describe('executeActivateHeroAbility', () => {
     expect(actions.canActivateHeroAbility).toHaveLength(0);
   });
 
-  it('should emit HERO_ABILITY_ACTIVATED event with turnNumber', () => {
+  it('should queue hero activation so the event is emitted on stack resolution', () => {
     const ability = makeActivatedAbility();
     state = mockGameState({
       phase: 'strategy',
@@ -172,11 +172,11 @@ describe('executeActivateHeroAbility', () => {
       abilityIndex: 0,
     });
 
-    expect(result.events).toContainEqual({
-      type: 'HERO_ABILITY_ACTIVATED',
-      playerId: 0,
+    expect(result.events).toEqual([]);
+    expect(result.stackItem).toMatchObject({
+      type: 'hero_ability',
+      controllerId: 0,
       abilityIndex: 0,
-      turnNumber: 3,
     });
   });
 });
@@ -205,16 +205,13 @@ describe('once-per-turn ability filtering by turn', () => {
       turnNumber: 2,
       players: [
         mockPlayerState(0, {
-          hero: mockHero({ abilities: [ability] }),
+          hero: mockHero({
+            abilities: [ability],
+            activatedAbilityTurns: new Map([[0, 1]]),
+          }),
         }),
         mockPlayerState(1),
       ],
-      log: [{
-        type: 'HERO_ABILITY_ACTIVATED',
-        playerId: 0,
-        abilityIndex: 0,
-        turnNumber: 1,
-      }],
     });
 
     const actions = computeAvailableActions(state);
@@ -228,16 +225,13 @@ describe('once-per-turn ability filtering by turn', () => {
       turnNumber: 2,
       players: [
         mockPlayerState(0, {
-          hero: mockHero({ abilities: [ability] }),
+          hero: mockHero({
+            abilities: [ability],
+            activatedAbilityTurns: new Map([[0, 2]]),
+          }),
         }),
         mockPlayerState(1),
       ],
-      log: [{
-        type: 'HERO_ABILITY_ACTIVATED',
-        playerId: 0,
-        abilityIndex: 0,
-        turnNumber: 2,
-      }],
     });
 
     const actions = computeAvailableActions(state);

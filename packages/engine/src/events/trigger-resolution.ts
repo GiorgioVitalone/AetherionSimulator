@@ -12,12 +12,14 @@ import type {
   ResolutionWorkItem,
   TriggerResolutionWorkItem,
 } from '../types/game-state.js';
+import type { TriggeredAbilityDSL } from '../types/ability.js';
 import type {
   ChooseOneEffect,
   DiscardEffect,
 } from '../types/effects.js';
 import { MAX_TRIGGER_DEPTH } from '../types/game-state.js';
 import { executeEffect } from '../effects/interpreter.js';
+import { resumeCounterSpellEffect } from '../effects/interpreter.js';
 import { evaluateCondition } from '../effects/condition-evaluator.js';
 import { findCard, getAllCards } from '../zones/zone-manager.js';
 import { findMatchingTriggers } from './trigger-matcher.js';
@@ -38,6 +40,13 @@ interface EffectRunResult {
   readonly pendingChoice?: PendingChoice;
 }
 
+interface ResolvableTrigger {
+  readonly sourceInstanceId: string;
+  readonly ownerPlayerId: 0 | 1;
+  readonly effects: TriggerResolutionWorkItem['effects'];
+  readonly condition?: TriggerResolutionWorkItem['condition'];
+}
+
 type ResumeInput =
   | {
       readonly kind: 'select_targets';
@@ -49,6 +58,10 @@ type ResumeInput =
     }
   | {
       readonly kind: 'choose_discard';
+      readonly selectedOptionIds: readonly string[];
+    }
+  | {
+      readonly kind: 'pay_unless';
       readonly selectedOptionIds: readonly string[];
     };
 
@@ -197,23 +210,22 @@ function drainResolutionQueue(
       currentState = applyEventSideEffects(currentState, item.event);
       events.push(item.event);
 
+      const activePlayerId = getEventActivePlayerId(item.event, currentState.activePlayerIndex);
       const matchingTriggers = findMatchingTriggers(
         getAllRegisteredTriggers(currentState),
         item.event,
-        getEventActivePlayerId(item.event, currentState.activePlayerIndex),
+        activePlayerId,
         instanceId => getCardInfo(currentState, instanceId),
       );
+      const eventScopedTriggers = getEventScopedTriggers(item.event);
 
       const triggerItems = item.triggerDepth >= MAX_TRIGGER_DEPTH
         ? []
-        : matchingTriggers.map<TriggerResolutionWorkItem>(trigger => ({
-          kind: 'trigger',
-          sourceInstanceId: trigger.sourceInstanceId,
-          controllerId: trigger.ownerPlayerId,
-          effects: trigger.effects,
-          condition: trigger.condition,
-          triggerDepth: item.triggerDepth + 1,
-        }));
+        : buildTriggerItems(
+          [...matchingTriggers, ...eventScopedTriggers],
+          activePlayerId,
+          item.triggerDepth + 1,
+        );
 
       queue = [...triggerItems, ...queue];
       continue;
@@ -341,6 +353,15 @@ function runEffectWorkItem(
         );
         currentState = discarded.state;
         generatedEvents.push(...discarded.events);
+        frame.index++;
+        pendingResume = undefined;
+        continue;
+      }
+
+      if (pendingResume.kind === 'pay_unless' && effect.type === 'counter_spell') {
+        const resumed = resumeCounterSpellEffect(currentState, effect, baseContext, pendingResume.selectedOptionIds[0]);
+        currentState = resumed.newState;
+        generatedEvents.push(...resumed.events);
         frame.index++;
         pendingResume = undefined;
         continue;
@@ -558,6 +579,64 @@ function getEventActivePlayerId(
   return fallback;
 }
 
+function buildTriggerItems(
+  triggers: readonly ResolvableTrigger[],
+  activePlayerId: 0 | 1,
+  triggerDepth: number,
+): readonly TriggerResolutionWorkItem[] {
+  const activeTriggers = triggers.filter(trigger => trigger.ownerPlayerId === activePlayerId);
+  const inactiveTriggers = triggers.filter(trigger => trigger.ownerPlayerId !== activePlayerId);
+  return [...activeTriggers, ...inactiveTriggers].map(trigger => ({
+    kind: 'trigger',
+    sourceInstanceId: trigger.sourceInstanceId,
+    controllerId: trigger.ownerPlayerId,
+    effects: trigger.effects,
+    condition: trigger.condition,
+    triggerDepth,
+  }));
+}
+
+function getEventScopedTriggers(
+  event: GameEvent,
+): readonly ResolvableTrigger[] {
+  if (event.type !== 'CARD_DESTROYED' || event.destroyedCard === undefined) {
+    return [];
+  }
+
+  return extractSelfDestroyTriggers(event.destroyedCard, event.playerId);
+}
+
+function extractSelfDestroyTriggers(
+  card: CardInstance,
+  ownerPlayerId: 0 | 1,
+): readonly ResolvableTrigger[] {
+  const triggers: ResolvableTrigger[] = [];
+
+  for (const ability of card.abilities) {
+    if (
+      ability.type !== 'triggered' ||
+      !isDestroyTriggeredAbility(ability)
+    ) {
+      continue;
+    }
+
+    triggers.push({
+      sourceInstanceId: card.instanceId,
+      ownerPlayerId,
+      effects: ability.effects,
+      condition: ability.condition,
+    });
+  }
+
+  return triggers;
+}
+
+function isDestroyTriggeredAbility(
+  ability: TriggeredAbilityDSL,
+): boolean {
+  return ability.trigger.type === 'on_destroy';
+}
+
 function clearPendingResolution(state: GameState): GameState {
   return {
     ...state,
@@ -584,6 +663,11 @@ function getResumeInput(
     case 'choose_discard':
       return {
         kind: 'choose_discard',
+        selectedOptionIds: response.selectedOptionIds,
+      };
+    case 'pay_unless':
+      return {
+        kind: 'pay_unless',
         selectedOptionIds: response.selectedOptionIds,
       };
     default:

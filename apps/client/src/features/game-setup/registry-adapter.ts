@@ -11,7 +11,9 @@ import type {
   HeroDefinition,
   CardDefinitionRegistry,
   AbilityDSL,
+  PrintedResourceType,
   ResourceCost,
+  Trait,
 } from '@aetherion-sim/engine';
 
 export interface AbilityMeta {
@@ -41,6 +43,59 @@ function toResourceCost(cost: SimCard['cost']): ResourceCost {
   };
 }
 
+function inferResourceTypes(
+  cost: ResourceCost,
+  abilities: readonly AbilityDSL[],
+): readonly PrintedResourceType[] {
+  const types = new Set<PrintedResourceType>();
+  if (cost.mana > 0 || cost.xMana === true) {
+    types.add('mana');
+  }
+  if (cost.energy > 0 || cost.xEnergy === true) {
+    types.add('energy');
+  }
+  for (const ability of abilities) {
+    if (ability.type !== 'triggered' || ability.trigger.type !== 'activated') {
+      continue;
+    }
+    if (ability.trigger.cost.mana > 0 || ability.trigger.cost.xMana === true) {
+      types.add('mana');
+    }
+    if (ability.trigger.cost.energy > 0 || ability.trigger.cost.xEnergy === true) {
+      types.add('energy');
+    }
+  }
+  return types.size === 0 ? ['mana'] : [...types];
+}
+
+function inferResourceCardType(card: SimCard): PrintedResourceType | undefined {
+  if (card.cardType !== 'R') {
+    return undefined;
+  }
+  return card.name.toLowerCase().includes('energy') ? 'energy' : 'mana';
+}
+
+function normalizeTraits(traits: readonly string[]): readonly Trait[] {
+  return traits.flatMap(trait => {
+    const normalized = trait.trim().toLowerCase().replace(/\s+/g, '_');
+    switch (normalized) {
+      case 'haste':
+      case 'rush':
+      case 'sniper':
+      case 'elite':
+      case 'flying':
+      case 'defender':
+      case 'stealth':
+      case 'recycle':
+      case 'swift':
+      case 'volatile':
+        return [normalized as Trait];
+      default:
+        return [];
+    }
+  });
+}
+
 /**
  * Creates a CardDefinitionRegistry from SimCard[], plus ability lookup maps.
  */
@@ -64,29 +119,40 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
       effect: a.effect,
     }));
 
-    if (card.cardType === 'H') {
+    if (card.cardType === 'H' || card.cardType === 'T') {
       // Hero cards: LP comes from stats.hp
       const lp = card.stats?.hp ?? 25;
+      const cost = toResourceCost(card.cost);
       heroMap.set(card.id, {
         id: card.id,
         name: card.name,
         lp,
+        rarity: card.rarity,
         alignment: card.alignment,
+        resourceTypes: inferResourceTypes(cost, dslAbilities),
+        transformsInto: card.transformsInto,
+        abilities: dslAbilities,
       });
       heroAbilityMap.set(card.id, dslAbilities);
       heroMetaMap.set(card.id, meta);
     } else {
       // All other card types
+      const cost = toResourceCost(card.cost);
       cardMap.set(card.id, {
         id: card.id,
         name: card.name,
         cardType: card.cardType,
-        cost: toResourceCost(card.cost),
+        rarity: card.rarity,
+        cost,
         stats: card.stats ?? undefined,
-        traits: card.traits,
-        tags: card.traits, // tags mapped from traits
+        traits: normalizeTraits(card.traits),
+        tags: card.traits,
         alignment: card.alignment,
+        resourceTypes: inferResourceTypes(cost, dslAbilities),
+        resourceType: inferResourceCardType(card),
         artUrl: card.artUrl,
+        transformsInto: card.transformsInto,
+        abilities: dslAbilities,
       });
       abilityMap.set(card.id, dslAbilities);
       metaMap.set(card.id, meta);

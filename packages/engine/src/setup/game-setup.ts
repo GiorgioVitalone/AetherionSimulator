@@ -7,12 +7,23 @@ import type {
   PlayerState,
   CardInstance,
   HeroState,
+  HeroTransformState,
   ResourceCard,
 } from '../types/game-state.js';
-import type { ResourceCost, CardTypeCode } from '../types/common.js';
+import type {
+  CardTypeCode,
+  PrintedResourceType,
+  Rarity,
+  ResourceCost,
+} from '../types/common.js';
+import type { AbilityDSL } from '../types/ability.js';
 import { createEmptyZoneState } from '../zones/zone-manager.js';
 import { createRng, shuffle, randomInt } from './rng.js';
-import { INITIAL_HAND_SIZE, MULLIGAN_HAND_SIZE } from '../types/game-state.js';
+import {
+  INITIAL_HAND_SIZE,
+  MULLIGAN_HAND_SIZE,
+  RESOURCE_DECK_SIZE,
+} from '../types/game-state.js';
 
 // ── Card Definition (minimal interface for setup) ─────────────────────────────
 
@@ -20,25 +31,35 @@ export interface CardDefinition {
   readonly id: number;
   readonly name: string;
   readonly cardType: CardTypeCode;
+  readonly rarity: Rarity;
   readonly cost: ResourceCost;
   readonly stats?: { readonly hp: number; readonly atk: number; readonly arm?: number };
   readonly traits?: readonly string[];
   readonly tags?: readonly string[];
   readonly alignment?: readonly string[];
+  readonly resourceTypes?: readonly PrintedResourceType[];
+  readonly resourceType?: PrintedResourceType;
   readonly artUrl?: string | null;
+  readonly transformsInto?: number | null;
+  readonly abilities?: readonly AbilityDSL[];
 }
 
 export interface HeroDefinition {
   readonly id: number;
   readonly name: string;
   readonly lp: number;
+  readonly rarity: Rarity;
   readonly alignment?: readonly string[];
+  readonly resourceTypes: readonly PrintedResourceType[];
+  readonly transformsInto?: number | null;
+  readonly abilities?: readonly AbilityDSL[];
 }
 
 export interface DeckSelection {
   readonly heroDefId: number;
   readonly mainDeckDefIds: readonly number[];
   readonly resourceDeckDefIds: readonly number[];
+  readonly primaryAlignment?: string;
 }
 
 export interface CardDefinitionRegistry {
@@ -70,6 +91,7 @@ function createCardInstance(
     cardDefId: def.id,
     name: def.name,
     cardType: def.cardType,
+    rarity: def.rarity,
     currentHp: def.stats?.hp ?? 0,
     currentAtk: def.stats?.atk ?? 0,
     currentArm: def.stats?.arm ?? 0,
@@ -82,7 +104,9 @@ function createCardInstance(
     attackedThisTurn: false,
     traits: (def.traits ?? []) as CardInstance['traits'],
     grantedTraits: [],
-    abilities: [],
+    abilities: def.abilities ?? [],
+    abilityCooldowns: new Map(),
+    activatedAbilityTurns: new Map(),
     registeredTriggers: [],
     modifiers: [],
     statusEffects: [],
@@ -90,29 +114,66 @@ function createCardInstance(
     isToken: false,
     tags: def.tags ?? [],
     cost: def.cost,
+    resourceTypes: def.resourceTypes ?? inferResourceTypes(def.cost),
     alignment: def.alignment ?? [],
     artUrl: def.artUrl ?? null,
     owner,
+    abilitiesSuppressed: false,
+    transferredThisTurn: false,
   };
 }
 
-function createHeroState(def: HeroDefinition): HeroState {
+function createHeroState(
+  def: HeroDefinition,
+  registry: CardDefinitionRegistry,
+): HeroState {
   return {
     cardDefId: def.id,
     name: def.name,
     currentLp: def.lp,
     maxLp: def.lp,
+    alignment: def.alignment ?? [],
+    resourceTypes: def.resourceTypes,
+    transformedCardDefId: def.transformsInto ?? null,
+    transformDefinition: createHeroTransformState(def, registry),
     transformed: false,
     canTransformThisGame: true,
     transformedThisTurn: false,
-    abilities: [],
+    abilities: def.abilities ?? [],
     cooldowns: new Map(),
+    activatedAbilityTurns: new Map(),
+    usedUltimateAbilityIndices: [],
+    modifiers: [],
+    statusEffects: [],
     registeredTriggers: [],
   };
 }
 
+function createHeroTransformState(
+  def: HeroDefinition,
+  registry: CardDefinitionRegistry,
+): HeroTransformState | null {
+  if (def.transformsInto === undefined || def.transformsInto === null) {
+    return null;
+  }
+
+  const transformedDef = registry.getHero(def.transformsInto);
+  if (transformedDef === undefined) {
+    return null;
+  }
+
+  return {
+    cardDefId: transformedDef.id,
+    name: transformedDef.name,
+    maxLp: transformedDef.lp,
+    alignment: transformedDef.alignment ?? [],
+    resourceTypes: transformedDef.resourceTypes,
+    abilities: transformedDef.abilities ?? [],
+  };
+}
+
 function createResourceCard(
-  resourceType: 'mana' | 'energy',
+  resourceType: PrintedResourceType,
 ): ResourceCard {
   return {
     instanceId: nextInstanceId(),
@@ -131,6 +192,8 @@ export function createGame(
 ): GameState {
   resetSetupInstanceCounter();
   const rng = createRng(seed ?? Date.now());
+  validateDeckSelection(player1, registry);
+  validateDeckSelection(player2, registry);
 
   const { player: p1, nextRng: rng1 } = buildPlayerState(
     player1,
@@ -145,15 +208,18 @@ export function createGame(
     rng1,
   );
 
-  // Determine first player randomly
-  const { value: firstPlayer, nextRng: rng3 } = randomInt(rng2, 0, 1);
+  const { value: firstPlayerChooser, nextRng: rng3 } = randomInt(rng2, 0, 1);
 
   return {
     players: [p1, p2],
-    activePlayerIndex: firstPlayer as 0 | 1,
+    activePlayerIndex: 0,
+    firstPlayerChooserId: firstPlayerChooser as 0 | 1,
+    firstPlayerId: null,
+    priorityPlayerId: null,
     turnNumber: 1,
     phase: 'mulligan',
     stack: [],
+    responseState: null,
     pendingChoice: {
       type: 'mulligan',
       playerId: 0,
@@ -191,7 +257,7 @@ function buildPlayerState(
   if (heroDef === undefined) {
     throw new Error(`Hero definition not found: ${String(deck.heroDefId)}`);
   }
-  const hero = createHeroState(heroDef);
+  const hero = createHeroState(heroDef, registry);
 
   // Load main deck cards
   const mainCards = deck.mainDeckDefIds.map(id => {
@@ -204,12 +270,8 @@ function buildPlayerState(
 
   // Load resource deck
   const resourceCards = deck.resourceDeckDefIds.map(id => {
-    // Determine resource type from card definition
     const def = registry.getCard(id);
-    const resourceType =
-      def !== undefined && def.cardType === 'R'
-        ? guessResourceType(def)
-        : 'mana';
+    const resourceType = def?.resourceType ?? 'mana';
     return createResourceCard(resourceType);
   });
 
@@ -229,6 +291,7 @@ function buildPlayerState(
     player: {
       hero,
       zones: createEmptyZoneState(),
+      auraZone: [],
       hand,
       mainDeck: remainingDeck,
       resourceDeck: shuffledResource,
@@ -245,15 +308,6 @@ function buildPlayerState(
     },
     nextRng: rng2,
   };
-}
-
-function guessResourceType(def: CardDefinition): 'mana' | 'energy' {
-  // If the card has a name suggesting energy, use energy
-  const lowerName = def.name.toLowerCase();
-  if (lowerName.includes('energy') || lowerName.includes('tech')) {
-    return 'energy';
-  }
-  return 'mana';
 }
 
 // ── Mulligan ──────────────────────────────────────────────────────────────────
@@ -317,7 +371,145 @@ function advanceMulligan(state: GameState, completedPlayerId: 0 | 1): GameState 
   // Both players done — transition to upkeep
   return {
     ...state,
-    phase: 'upkeep',
-    pendingChoice: null,
+    phase: 'setup',
+    pendingChoice: {
+      type: 'choose_first_player',
+      playerId: state.firstPlayerChooserId,
+      options: [
+        { id: 'player_0', label: 'Player 1 goes first' },
+        { id: 'player_1', label: 'Player 2 goes first' },
+      ],
+      minSelections: 1,
+      maxSelections: 1,
+      context: 'Choose which player takes the first turn.',
+    },
   };
+}
+
+const COPY_LIMITS: Readonly<Record<Rarity, number>> = {
+  Common: 3,
+  Ethereal: 2,
+  Mythic: 2,
+  Legendary: 1,
+};
+
+function validateDeckSelection(
+  deck: DeckSelection,
+  registry: CardDefinitionRegistry,
+): void {
+  const heroDef = registry.getHero(deck.heroDefId);
+  if (heroDef === undefined) {
+    throw new Error(`Hero definition not found: ${String(deck.heroDefId)}`);
+  }
+
+  if (deck.mainDeckDefIds.length < 40 || deck.mainDeckDefIds.length > 60) {
+    throw new Error('Main deck must contain between 40 and 60 cards.');
+  }
+  if (deck.resourceDeckDefIds.length !== RESOURCE_DECK_SIZE) {
+    throw new Error(`Resource deck must contain exactly ${String(RESOURCE_DECK_SIZE)} cards.`);
+  }
+
+  const mainCards = deck.mainDeckDefIds.map(id => {
+    const def = registry.getCard(id);
+    if (def === undefined) {
+      throw new Error(`Card definition not found: ${String(id)}`);
+    }
+    if (def.cardType === 'H' || def.cardType === 'T' || def.cardType === 'R') {
+      throw new Error(`Main deck cannot include ${def.cardType} cards (${def.name}).`);
+    }
+    return def;
+  });
+
+  for (const id of deck.resourceDeckDefIds) {
+    const def = registry.getCard(id);
+    if (def === undefined) {
+      throw new Error(`Card definition not found: ${String(id)}`);
+    }
+    if (def.cardType !== 'R') {
+      throw new Error(`Resource deck can only include resource cards (${def.name}).`);
+    }
+    if (def.resourceType !== undefined && !heroDef.resourceTypes.includes(def.resourceType)) {
+      throw new Error(`${def.name} does not match the Hero's resource type.`);
+    }
+  }
+
+  const copyCounts = new Map<number, number>();
+  for (const card of mainCards) {
+    const nextCount = (copyCounts.get(card.id) ?? 0) + 1;
+    copyCounts.set(card.id, nextCount);
+    if (nextCount > COPY_LIMITS[card.rarity]) {
+      throw new Error(`${card.name} exceeds the ${card.rarity} copy limit.`);
+    }
+  }
+
+  const heroAlignments = heroDef.alignment ?? [];
+  const primaryAlignment = inferPrimaryAlignment(deck, heroDef, mainCards);
+  const secondaryAlignment = heroAlignments.find(alignment => alignment !== primaryAlignment) ?? null;
+
+  for (const card of mainCards) {
+    if (card.alignment !== undefined && card.alignment.length > 0) {
+      const matchingAlignments = card.alignment.filter(alignment => heroAlignments.includes(alignment));
+      if (matchingAlignments.length === 0) {
+        throw new Error(`${card.name} does not match the Hero's alignment.`);
+      }
+      if (
+        secondaryAlignment !== null &&
+        matchingAlignments.includes(secondaryAlignment) &&
+        !matchingAlignments.includes(primaryAlignment) &&
+        (card.rarity === 'Mythic' || card.rarity === 'Legendary')
+      ) {
+        throw new Error(`${card.name} is too rare for the secondary alignment.`);
+      }
+    }
+
+    if (
+      card.resourceTypes !== undefined &&
+      card.resourceTypes.some(resourceType => !heroDef.resourceTypes.includes(resourceType))
+    ) {
+      throw new Error(`${card.name} does not match the Hero's resource type.`);
+    }
+  }
+}
+
+function inferPrimaryAlignment(
+  deck: DeckSelection,
+  heroDef: HeroDefinition,
+  mainCards: readonly CardDefinition[],
+): string {
+  const heroAlignments = heroDef.alignment ?? [];
+  if (heroAlignments.length <= 1) {
+    return heroAlignments[0] ?? '';
+  }
+  if (deck.primaryAlignment !== undefined && heroAlignments.includes(deck.primaryAlignment)) {
+    return deck.primaryAlignment;
+  }
+
+  for (const candidate of heroAlignments) {
+    const valid = mainCards.every(card => {
+      if (card.alignment === undefined || card.alignment.length === 0 || card.alignment.includes(candidate)) {
+        return true;
+      }
+      const intersectsHero = card.alignment.some(alignment => heroAlignments.includes(alignment));
+      if (!intersectsHero) {
+        return false;
+      }
+      return card.rarity === 'Common' || card.rarity === 'Ethereal';
+    });
+    if (valid) {
+      return candidate;
+    }
+  }
+
+  throw new Error('Deck does not satisfy dual-alignment restrictions.');
+}
+
+function inferResourceTypes(cost: ResourceCost): readonly PrintedResourceType[] {
+  const resourceTypes: PrintedResourceType[] = [];
+  if (cost.mana > 0 || cost.xMana === true) {
+    resourceTypes.push('mana');
+  }
+  if (cost.energy > 0 || cost.xEnergy === true) {
+    resourceTypes.push('energy');
+  }
+  return resourceTypes;
 }

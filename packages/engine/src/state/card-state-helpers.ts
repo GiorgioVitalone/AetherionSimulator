@@ -3,9 +3,9 @@
  * Centralizes find/update/remove/destroy/exile operations on cards in game state.
  */
 import type {
-  GameState,
-  GameEvent,
   CardInstance,
+  GameEvent,
+  GameState,
 } from '../types/game-state.js';
 import { findCard, removeFromZone } from '../zones/zone-manager.js';
 
@@ -95,7 +95,7 @@ export function resetCard(card: CardInstance): CardInstance {
 }
 
 /**
- * Centralized destruction: find card → remove from zones → add to discard
+ * Centralized destruction: find card → remove from zones → move to discard/exile
  * (skip for tokens) → handle attached equipment → emit events.
  */
 export function destroyCard(
@@ -103,39 +103,93 @@ export function destroyCard(
   instanceId: string,
   cause: 'combat' | 'effect' | 'sacrifice',
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const events: GameEvent[] = [];
   const card = findCardInState(state, instanceId);
-  if (card === null) return { state, events: [] };
+  if (card === null) {
+    return { state, events: [] };
+  }
+
+  const ownerPlayer = state.players[card.owner]!;
+  const { zones: newZones } = removeFromZone(ownerPlayer.zones, instanceId);
+  const discardPile = [...ownerPlayer.discardPile];
+  const exileZone = [...ownerPlayer.exileZone];
+  const events: GameEvent[] = [];
+
+  const destination = card.isToken || cardHasTrait(card, 'volatile')
+    ? 'exile'
+    : 'discard';
+  const destroyedCard = withoutEquipment(card);
 
   events.push({
     type: 'CARD_DESTROYED',
     cardInstanceId: instanceId,
     cause,
     playerId: card.owner,
+    destroyedCard,
   });
 
-  // Handle attached equipment — send to discard
+  if (!card.isToken) {
+    if (destination === 'exile') {
+      exileZone.push(destroyedCard);
+      events.push({
+        type: 'CARD_EXILED',
+        cardInstanceId: instanceId,
+        playerId: card.owner,
+      });
+    } else {
+      discardPile.push(destroyedCard);
+    }
+  }
+
+  events.push({
+    type: 'CARD_LEFT_BATTLEFIELD',
+    cardInstanceId: instanceId,
+    destination,
+    playerId: card.owner,
+  });
+
   if (card.equipment !== null) {
     events.push({
       type: 'CARD_DESTROYED',
       cardInstanceId: card.equipment.instanceId,
       cause: 'effect',
       playerId: card.owner,
+      destroyedCard: withoutEquipment(card.equipment),
     });
+    events.push({
+      type: 'CARD_LEFT_BATTLEFIELD',
+      cardInstanceId: card.equipment.instanceId,
+      destination: card.equipment.isToken ? 'exile' : 'discard',
+      playerId: card.owner,
+    });
+    if (!card.equipment.isToken) {
+      discardPile.push(withoutEquipment(card.equipment));
+    }
   }
 
-  let newState = removeCardFromState(state, instanceId);
+  const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+  newPlayers[card.owner] = {
+    ...ownerPlayer,
+    zones: newZones,
+    discardPile,
+    exileZone,
+  };
 
-  // Equipment goes to discard separately (removeCardFromState already handled the card)
-  if (card.equipment !== null && !card.equipment.isToken) {
-    const ownerPlayer = newState.players[card.owner]!;
-    const newPlayers = [...newState.players] as [typeof newState.players[0], typeof newState.players[1]];
-    newPlayers[card.owner] = {
-      ...ownerPlayer,
-      discardPile: [...ownerPlayer.discardPile, card.equipment],
-    };
-    newState = { ...newState, players: newPlayers };
-  }
+  return {
+    state: { ...state, players: newPlayers },
+    events,
+  };
+}
 
-  return { state: newState, events };
+function withoutEquipment(card: CardInstance): CardInstance {
+  return {
+    ...card,
+    equipment: null,
+  };
+}
+
+function cardHasTrait(
+  card: CardInstance,
+  trait: CardInstance['traits'][number],
+): boolean {
+  return card.traits.includes(trait) || card.grantedTraits.some(entry => entry.trait === trait);
 }

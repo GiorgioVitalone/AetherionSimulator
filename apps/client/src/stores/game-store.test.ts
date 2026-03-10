@@ -122,9 +122,17 @@ describe('Game Flow Integration', () => {
       keep: true,
     });
 
+    const afterMulligans = states[states.length - 1]!;
+    expect(afterMulligans.phase).toBe('setup');
+    expect(afterMulligans.pendingChoice?.type).toBe('choose_first_player');
+
+    controller!.dispatch({
+      type: 'player_response',
+      response: { selectedOptionIds: ['player_0'] },
+    });
+
     const latest = states[states.length - 1]!;
 
-    // After both mulligans, the game should transition through upkeep to strategy
     expect(['upkeep', 'strategy']).toContain(latest.phase);
     expect(latest.turnNumber).toBe(1);
   });
@@ -135,6 +143,10 @@ describe('Game Flow Integration', () => {
     // Both players keep
     controller!.dispatch({ type: 'mulligan_decision', playerId: 0, keep: true });
     controller!.dispatch({ type: 'mulligan_decision', playerId: 1, keep: true });
+    controller!.dispatch({
+      type: 'player_response',
+      response: { selectedOptionIds: ['player_0'] },
+    });
 
     // End strategy phase → should go to action phase
     controller!.dispatch({ type: 'end_phase' });

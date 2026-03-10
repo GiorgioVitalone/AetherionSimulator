@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { executePlayerAction } from '../../src/state-machine/actions.js';
+import { pushToStack, resolveStack } from '../../src/stack/stack-resolver.js';
 import type { GameState } from '../../src/types/game-state.js';
 import type { StatGrantDSL } from '../../src/types/ability.js';
 import {
@@ -57,8 +58,10 @@ describe('equipment stat application', () => {
       cardInstanceId: equip.instanceId,
       targetInstanceId: character.instanceId,
     });
+    expect(result.stackItem).toBeDefined();
+    const resolved = resolveStack(pushToStack(result.state, result.stackItem!));
 
-    const equipped = result.state.players[0]!.zones.frontline[0]!;
+    const equipped = resolved.state.players[0]!.zones.frontline[0]!;
     expect(equipped.baseHp).toBe(5);
     expect(equipped.currentHp).toBe(5);
   });
@@ -91,8 +94,10 @@ describe('equipment stat application', () => {
       cardInstanceId: equip.instanceId,
       targetInstanceId: character.instanceId,
     });
+    expect(result.stackItem).toBeDefined();
+    const resolved = resolveStack(pushToStack(result.state, result.stackItem!));
 
-    const equipped = result.state.players[0]!.zones.frontline[0]!;
+    const equipped = resolved.state.players[0]!.zones.frontline[0]!;
     // baseHp: 3 + 2 = 5, currentHp: 2 + 2 = 4, heal should cap at 5
     expect(equipped.baseHp).toBe(5);
     expect(equipped.currentHp).toBe(4);
@@ -128,8 +133,10 @@ describe('equipment stat application', () => {
       cardInstanceId: equip.instanceId,
       targetInstanceId: character.instanceId,
     });
+    expect(result.stackItem).toBeDefined();
+    const resolved = resolveStack(pushToStack(result.state, result.stackItem!));
 
-    const equipped = result.state.players[0]!.zones.frontline[0]!;
+    const equipped = resolved.state.players[0]!.zones.frontline[0]!;
     expect(equipped.baseAtk).toBe(4);
     expect(equipped.currentAtk).toBe(4);
     expect(equipped.baseHp).toBe(4);

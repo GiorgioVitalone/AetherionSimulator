@@ -67,8 +67,11 @@ export function getValidAttackTargets(
   // Reserve: cannot attack unless Sniper (targets enemy Frontline only)
   if (attackerZone === 'reserve') {
     if (!isSniper) return [];
-    return getCardsInZone(defenderZones, 'frontline').map(c =>
-      characterTarget(c.instanceId),
+    return applyDefenderPriority(
+      getCardsInZone(defenderZones, 'frontline'),
+      defenderZones,
+      isFlying,
+      false,
     );
   }
 

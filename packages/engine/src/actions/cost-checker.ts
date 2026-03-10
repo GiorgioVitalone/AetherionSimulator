@@ -93,7 +93,6 @@ export function payCost(
     return exhaustAnyResources(player, totalNeeded);
   }
 
-  // Standard payment: specific resources first
   let manaNeeded = cost.mana;
   let energyNeeded = cost.energy;
 

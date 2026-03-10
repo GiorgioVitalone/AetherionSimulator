@@ -16,6 +16,7 @@ const PHASE_LABELS: Record<GamePhase, string> = {
   setup: 'Setup',
   mulligan: 'Mulligan',
   upkeep: 'Upkeep',
+  transform: 'Transform',
   strategy: 'Strategy',
   action: 'Action',
   end: 'End',
@@ -26,6 +27,7 @@ const PHASE_DESCRIPTIONS: Record<GamePhase, string> = {
   setup: 'Game is being set up',
   mulligan: 'Choose to keep or redraw your opening hand',
   upkeep: 'Refresh cards, draw a resource, draw a card',
+  transform: 'Declare hero transformation before moving into strategy actions',
   strategy: 'Deploy characters, cast spells, equip items',
   action: 'Attack, move, activate abilities',
   end: 'End of turn cleanup',
@@ -36,7 +38,8 @@ export function PhaseIndicator({ phase, turnNumber, isMyTurn }: PhaseIndicatorPr
   const dispatch = useGameStore((s) => s.dispatch);
   const canEndPhase = useGameStore((s) => s.availableActions?.canEndPhase ?? false);
 
-  const showEndButton = isMyTurn && canEndPhase && (phase === 'strategy' || phase === 'action');
+  const showEndButton = isMyTurn && canEndPhase &&
+    (phase === 'transform' || phase === 'strategy' || phase === 'action');
 
   return (
     <div className="flex items-center gap-3">

@@ -198,7 +198,7 @@ describe('Available Actions', () => {
       expect(actions.canAttachEquipment[0]!.validTargets).toContain(character.instanceId);
     });
 
-    it('should exclude characters that already have equipment', () => {
+    it('should allow replacing equipment on an already equipped character', () => {
       const equipment = mockCard({
         name: 'Sword',
         cardType: 'E',
@@ -221,7 +221,8 @@ describe('Available Actions', () => {
       });
 
       const actions = computeAvailableActions(state);
-      expect(actions.canAttachEquipment).toHaveLength(0);
+      expect(actions.canAttachEquipment).toHaveLength(1);
+      expect(actions.canAttachEquipment[0]!.validTargets).toContain(equippedChar.instanceId);
     });
   });
 
@@ -392,20 +393,13 @@ describe('Available Actions', () => {
   describe('transform', () => {
     it('should allow transform when hero LP <= 10', () => {
       const state = mockGameState({
-        phase: 'strategy',
+        phase: 'transform',
         players: [
           mockPlayerState(0, {
             hero: {
-              cardDefId: 1,
-              name: 'Test Hero',
+              ...mockPlayerState(0).hero,
               currentLp: 10,
-              maxLp: 25,
-              transformed: false,
-              canTransformThisGame: true,
-              transformedThisTurn: false,
-              abilities: [],
-              cooldowns: new Map(),
-              registeredTriggers: [],
+              transformedCardDefId: 2,
             },
           }),
           mockPlayerState(1),
@@ -418,20 +412,14 @@ describe('Available Actions', () => {
 
     it('should not allow transform if already transformed', () => {
       const state = mockGameState({
-        phase: 'strategy',
+        phase: 'transform',
         players: [
           mockPlayerState(0, {
             hero: {
-              cardDefId: 1,
-              name: 'Test Hero',
+              ...mockPlayerState(0).hero,
               currentLp: 5,
-              maxLp: 25,
               transformed: true,
-              canTransformThisGame: true,
-              transformedThisTurn: false,
-              abilities: [],
-              cooldowns: new Map(),
-              registeredTriggers: [],
+              transformedCardDefId: 2,
             },
           }),
           mockPlayerState(1),
@@ -444,11 +432,13 @@ describe('Available Actions', () => {
   });
 
   describe('canEndPhase', () => {
-    it('should be true in strategy and action phases', () => {
+    it('should be true in transform, strategy, and action phases', () => {
+      const transformState = mockGameState({ phase: 'transform' });
       const strategyState = mockGameState({ phase: 'strategy' });
       const actionState = mockGameState({ phase: 'action' });
       const upkeepState = mockGameState({ phase: 'upkeep' });
 
+      expect(computeAvailableActions(transformState).canEndPhase).toBe(true);
       expect(computeAvailableActions(strategyState).canEndPhase).toBe(true);
       expect(computeAvailableActions(actionState).canEndPhase).toBe(true);
       expect(computeAvailableActions(upkeepState).canEndPhase).toBe(false);

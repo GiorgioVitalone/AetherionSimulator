@@ -82,7 +82,7 @@ describe('counter/flash response window', () => {
         type: 'spell',
         sourceInstanceId: 'original_spell',
         controllerId: 0,
-        effects: [{ type: 'damage', amount: 3, target: { type: 'target_character', side: 'enemy' } }],
+        effects: [],
         targets: [],
       }],
       pendingChoice: {
@@ -138,7 +138,7 @@ describe('counter/flash response window', () => {
         type: 'spell',
         sourceInstanceId: 'original_spell',
         controllerId: 0,
-        effects: [{ type: 'damage', amount: 3, target: { type: 'target_character', side: 'enemy' } }],
+        effects: [],
         targets: [],
       }],
       pendingChoice: {

@@ -6,8 +6,10 @@
 export type ZoneType = 'reserve' | 'frontline' | 'high_ground';
 export type Side = 'allied' | 'enemy' | 'any';
 export type ResourceType = 'mana' | 'energy' | 'flexible';
+export type PrintedResourceType = Exclude<ResourceType, 'flexible'>;
 export type CardTypeCode = 'C' | 'S' | 'E' | 'H' | 'T' | 'R';
 export type Stat = 'atk' | 'hp' | 'arm';
+export type Rarity = 'Common' | 'Ethereal' | 'Mythic' | 'Legendary';
 
 export type Trait =
   | 'haste'
@@ -19,8 +21,7 @@ export type Trait =
   | 'stealth'
   | 'recycle'
   | 'swift'
-  | 'volatile'
-  | 'first_strike';
+  | 'volatile';
 
 /**
  * Numeric expression that can be either a fixed value or a dynamic count.

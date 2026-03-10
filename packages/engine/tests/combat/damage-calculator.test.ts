@@ -43,18 +43,18 @@ describe('Damage Calculator', () => {
       expect(r.defenderDestroyed).toBe(true);
     });
 
-    describe('First Strike', () => {
-      it('attacker FS kills defender before counter-damage', () => {
+    describe('Simultaneous combat', () => {
+      it('still applies counter-damage even if the attacker would otherwise kill first', () => {
         const r = calculateCombatDamage(
           5, 0, 3, 10, 0, 4,
           ['first_strike'], [],
         );
         expect(r.defenderDestroyed).toBe(true);
-        expect(r.damageToAttacker).toBe(0); // Defender dies first
-        expect(r.attackerDestroyed).toBe(false);
+        expect(r.damageToAttacker).toBe(10);
+        expect(r.attackerDestroyed).toBe(true);
       });
 
-      it('attacker FS does not prevent counter if defender survives', () => {
+      it('remains simultaneous when the defender survives', () => {
         const r = calculateCombatDamage(
           2, 0, 3, 4, 0, 5,
           ['first_strike'], [],
@@ -64,14 +64,14 @@ describe('Damage Calculator', () => {
         expect(r.attackerDestroyed).toBe(true);
       });
 
-      it('defender FS kills attacker before damage dealt', () => {
+      it('still deals attacker damage even if the defender would otherwise kill first', () => {
         const r = calculateCombatDamage(
           10, 0, 3, 5, 0, 4,
           [], ['first_strike'],
         );
         expect(r.attackerDestroyed).toBe(true);
-        expect(r.damageToDefender).toBe(0);
-        expect(r.defenderDestroyed).toBe(false);
+        expect(r.damageToDefender).toBe(10);
+        expect(r.defenderDestroyed).toBe(true);
       });
 
       it('both FS cancels out — simultaneous', () => {

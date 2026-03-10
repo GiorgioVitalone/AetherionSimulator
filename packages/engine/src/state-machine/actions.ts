@@ -6,21 +6,22 @@ import type {
   GameState,
   PlayerState,
   CardInstance,
-  EffectResolutionWorkItem,
   GameEvent,
+  StackItem,
 } from '../types/game-state.js';
 import type { Effect } from '../types/effects.js';
 import type { PlayerAction } from './types.js';
-import { deployToZone, moveCard } from '../zones/zone-manager.js';
-import { resolveCombat } from '../combat/combat-resolver.js';
+import { computeAvailableActions } from '../actions/available-actions.js';
+import { deployToZone } from '../zones/zone-manager.js';
 import { canAfford, payCost } from '../actions/cost-checker.js';
 import { computeSpellTargeting } from '../actions/spell-targeting.js';
+import { registerHeroTriggers } from '../events/index.js';
 import { MAX_HAND_SIZE } from '../types/game-state.js';
 
 interface PlayerActionResult {
   readonly state: GameState;
   readonly events: readonly GameEvent[];
-  readonly effectWorkItem?: EffectResolutionWorkItem;
+  readonly stackItem?: StackItem;
 }
 
 // ── Upkeep Actions ──────────────────────────────────────────────────────────
@@ -39,12 +40,16 @@ export function refreshCards(state: GameState): GameState {
 
 function refreshCard(card: CardInstance | null): CardInstance | null {
   if (card === null) return null;
+  const isStunned = card.statusEffects.some(status => status.statusType === 'stunned');
   return {
     ...card,
-    exhausted: false,
+    exhausted: isStunned ? card.exhausted : false,
     summoningSick: false,
     movedThisTurn: false,
     attackedThisTurn: false,
+    abilitiesSuppressed: false,
+    transferredThisTurn: false,
+    abilityCooldowns: decrementAbilityCooldownMap(card.abilityCooldowns),
   };
 }
 
@@ -109,6 +114,14 @@ export function executePlayerAction(
   state: GameState,
   action: PlayerAction,
 ): PlayerActionResult {
+  if (state.pendingChoice !== null) {
+    return { state, events: [] };
+  }
+
+  if (!isActionLegal(state, action)) {
+    return { state, events: [] };
+  }
+
   switch (action.type) {
     case 'deploy':
       return executeDeploy(state, action);
@@ -127,7 +140,7 @@ export function executePlayerAction(
     case 'activate_hero_ability':
       return executeActivateHeroAbility(state, action);
     case 'declare_transform':
-      return { state, events: [] }; // Placeholder
+      return executeDeclareTransform(state);
   }
 }
 
@@ -142,11 +155,14 @@ function executeDeploy(
   const card = player.hand[cardIndex]!;
   const isXCost = card.cost.xMana === true || card.cost.xEnergy === true;
   const xValue = isXCost ? (action.xValue ?? 0) : undefined;
+  const deployCost = action.zone === 'high_ground'
+    ? addFlexibleCost(card.cost, 2)
+    : card.cost;
 
-  if (!canAfford(player, card.cost, xValue)) return { state, events: [] };
-  const paidPlayer = payCost(player, card.cost, xValue);
+  if (!canAfford(player, deployCost, xValue)) return { state, events: [] };
+  const paidPlayer = payCost(player, deployCost, xValue);
 
-  const hasHaste = card.traits.includes('haste');
+  const hasHaste = allTraits(card).includes('haste');
 
   // For X-cost characters with 0/0 base stats, X determines stats (X/X/0)
   const xStatBonus = isXCost && xValue !== undefined ? xValue : 0;
@@ -220,28 +236,17 @@ function executeCastSpell(
     },
   };
 
-  const spellEffects = getSpellCastEffects(card);
-  const allEvents: GameEvent[] = [{
-    type: 'SPELL_CAST',
-    cardInstanceId: card.instanceId,
-    playerId: state.activePlayerIndex,
-  }];
-
-  const nextState = setPlayer(state, state.activePlayerIndex, newPlayer);
-  if (spellEffects.length === 0) {
-    return { state: nextState, events: allEvents };
-  }
-
   return {
-    state: nextState,
-    events: allEvents,
-    effectWorkItem: {
-      kind: 'effect',
+    state: setPlayer(state, state.activePlayerIndex, newPlayer),
+    events: [],
+    stackItem: {
+      id: createStackItemId(state, 'spell', card.instanceId),
+      type: 'spell',
       sourceInstanceId: card.instanceId,
       controllerId: state.activePlayerIndex,
-      effects: spellEffects,
-      triggerDepth: 0,
-      selectedTargets: action.targetId !== undefined ? [action.targetId] : undefined,
+      effects: getSpellCastEffects(card),
+      targets: action.targetId !== undefined ? [action.targetId] : [],
+      cardSnapshot: card,
     },
   };
 }
@@ -249,7 +254,7 @@ function executeCastSpell(
 function executeAttachEquipment(
   state: GameState,
   action: { cardInstanceId: string; targetInstanceId: string },
-): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+): PlayerActionResult {
   const player = state.players[state.activePlayerIndex]!;
   const cardIndex = player.hand.findIndex(c => c.instanceId === action.cardInstanceId);
   if (cardIndex === -1) return { state, events: [] };
@@ -259,43 +264,15 @@ function executeAttachEquipment(
   const paidPlayer = payCost(player, equipCard.cost);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
 
-  // Compute stat bonuses from equipment's stat_grant abilities
-  let atkBonus = 0;
-  let hpBonus = 0;
-  let armBonus = 0;
-  for (const ability of equipCard.abilities) {
-    if (ability.type === 'stat_grant') {
-      atkBonus += ability.modifier.atk ?? 0;
-      hpBonus += ability.modifier.hp ?? 0;
-      armBonus += ability.modifier.arm ?? 0;
-    }
+  const target = getAllBattlefieldCards(paidPlayer).find(card => card.instanceId === action.targetInstanceId);
+  if (target === undefined || !canAttachEquipmentToTarget(equipCard, target)) {
+    return { state, events: [] };
   }
-
-  // Attach to target character and apply stat grants (both base and current)
-  const attachToCard = (c: CardInstance | null): CardInstance | null => {
-    if (c === null || c.instanceId !== action.targetInstanceId) return c;
-    return {
-      ...c,
-      equipment: equipCard,
-      baseAtk: c.baseAtk + atkBonus,
-      baseHp: c.baseHp + hpBonus,
-      baseArm: c.baseArm + armBonus,
-      currentAtk: c.currentAtk + atkBonus,
-      currentHp: c.currentHp + hpBonus,
-      currentArm: c.currentArm + armBonus,
-    };
-  };
-
-  const newZones = {
-    reserve: paidPlayer.zones.reserve.map(attachToCard),
-    frontline: paidPlayer.zones.frontline.map(attachToCard),
-    highGround: paidPlayer.zones.highGround.map(attachToCard),
-  };
 
   const newPlayer: PlayerState = {
     ...paidPlayer,
-    zones: newZones,
     hand: newHand,
+    discardPile: [...paidPlayer.discardPile, equipCard],
     turnCounters: {
       ...paidPlayer.turnCounters,
       equipmentPlayed: paidPlayer.turnCounters.equipmentPlayed + 1,
@@ -304,11 +281,16 @@ function executeAttachEquipment(
 
   return {
     state: setPlayer(state, state.activePlayerIndex, newPlayer),
-    events: [{
-      type: 'EQUIPMENT_ATTACHED',
-      equipmentId: equipCard.instanceId,
-      targetId: action.targetInstanceId,
-    }],
+    events: [],
+    stackItem: {
+      id: createStackItemId(state, 'equipment', equipCard.instanceId),
+      type: 'equipment',
+      sourceInstanceId: equipCard.instanceId,
+      controllerId: state.activePlayerIndex,
+      effects: [],
+      targets: [action.targetInstanceId],
+      cardSnapshot: equipCard,
+    },
   };
 }
 
@@ -319,31 +301,20 @@ function executeMove(
     toZone: import('../types/common.js').ZoneType;
     slotIndex: number;
   },
-): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const player = state.players[state.activePlayerIndex]!;
-  const newZones = moveCard(
-    player.zones,
-    action.cardInstanceId,
-    action.toZone,
-    action.slotIndex,
-  );
-
-  const fromLoc = (['reserve', 'frontline', 'high_ground'] as const)
-    .find(z => {
-      const arr = z === 'reserve' ? player.zones.reserve
-        : z === 'frontline' ? player.zones.frontline
-          : player.zones.highGround;
-      return arr.some(c => c?.instanceId === action.cardInstanceId);
-    });
-
+): PlayerActionResult {
   return {
-    state: setPlayer(state, state.activePlayerIndex, { ...player, zones: newZones }),
-    events: [{
-      type: 'CARD_MOVED',
-      cardInstanceId: action.cardInstanceId,
-      fromZone: fromLoc ?? 'frontline',
-      toZone: action.toZone,
-    }],
+    state,
+    events: [],
+    stackItem: {
+      id: createStackItemId(state, 'move', action.cardInstanceId),
+      type: 'move',
+      sourceInstanceId: action.cardInstanceId,
+      controllerId: state.activePlayerIndex,
+      effects: [],
+      targets: [],
+      zone: action.toZone,
+      slotIndex: action.slotIndex,
+    },
   };
 }
 
@@ -368,16 +339,29 @@ function executeActivateAbility(
 
   // Pay cost if the ability is an activated triggered ability
   let updatedPlayer = player;
+  let updatedCardCooldowns = new Map(card.abilityCooldowns);
+  const updatedActivatedTurns = new Map(card.activatedAbilityTurns);
   if (ability.type === 'triggered' && ability.trigger.type === 'activated') {
     const abilityCost = ability.trigger.cost;
     if (!canAfford(player, abilityCost)) return { state, events: [] };
     updatedPlayer = payCost(player, abilityCost);
+    const cooldown = ability.cooldown ?? ability.trigger.cooldown;
+    if (cooldown !== undefined && cooldown > 0) {
+      updatedCardCooldowns = new Map(card.abilityCooldowns);
+      updatedCardCooldowns.set(action.abilityIndex, cooldown);
+    }
   }
+  updatedActivatedTurns.set(action.abilityIndex, state.turnNumber);
 
   // Exhaust the card
   const exhaustCard = (c: CardInstance | null): CardInstance | null => {
     if (c === null || c.instanceId !== action.cardInstanceId) return c;
-    return { ...c, exhausted: true };
+    return {
+      ...c,
+      exhausted: true,
+      abilityCooldowns: updatedCardCooldowns,
+      activatedAbilityTurns: updatedActivatedTurns,
+    };
   };
 
   const newZones = {
@@ -395,30 +379,17 @@ function executeActivateAbility(
     },
   };
 
-  const nextState = setPlayer(state, state.activePlayerIndex, newPlayer);
-  const allEvents: GameEvent[] = [{
-    type: 'ABILITY_ACTIVATED',
-    cardInstanceId: action.cardInstanceId,
-    abilityIndex: action.abilityIndex,
-    turnNumber: state.turnNumber,
-  }];
-
-  // Extract and execute ability effects
-  const abilityEffects = getHeroAbilityEffects(ability);
-  if (abilityEffects.length === 0) {
-    return { state: nextState, events: allEvents };
-  }
-
   return {
-    state: nextState,
-    events: allEvents,
-    effectWorkItem: {
-      kind: 'effect',
+    state: setPlayer(state, state.activePlayerIndex, newPlayer),
+    events: [],
+    stackItem: {
+      id: createStackItemId(state, 'ability', action.cardInstanceId),
+      type: 'ability',
       sourceInstanceId: action.cardInstanceId,
       controllerId: state.activePlayerIndex,
-      effects: abilityEffects,
-      triggerDepth: 0,
-      selectedTargets: action.targetId !== undefined ? [action.targetId] : undefined,
+      effects: getHeroAbilityEffects(ability),
+      targets: action.targetId !== undefined ? [action.targetId] : [],
+      abilityIndex: action.abilityIndex,
     },
   };
 }
@@ -443,13 +414,26 @@ function executeActivateHeroAbility(
 
   // Update cooldown on the hero
   const newCooldowns = new Map(hero.cooldowns);
+  const activatedAbilityTurns = new Map(hero.activatedAbilityTurns);
+  const usedUltimateAbilityIndices = [...hero.usedUltimateAbilityIndices];
   if (ability.type === 'triggered' && ability.trigger.type === 'activated' && ability.trigger.cooldown !== undefined) {
     newCooldowns.set(action.abilityIndex, ability.trigger.cooldown);
   }
+  if (
+    ability.type === 'triggered' &&
+    ability.trigger.type === 'activated' &&
+    ability.trigger.oncePerGame === true &&
+    !usedUltimateAbilityIndices.includes(action.abilityIndex)
+  ) {
+    usedUltimateAbilityIndices.push(action.abilityIndex);
+  }
+  activatedAbilityTurns.set(action.abilityIndex, state.turnNumber);
 
   const newHero = {
     ...hero,
     cooldowns: newCooldowns,
+    activatedAbilityTurns,
+    usedUltimateAbilityIndices,
   };
 
   const newPlayer: PlayerState = {
@@ -461,30 +445,17 @@ function executeActivateHeroAbility(
     },
   };
 
-  const nextState = setPlayer(state, state.activePlayerIndex, newPlayer);
-  const allEvents: GameEvent[] = [{
-    type: 'HERO_ABILITY_ACTIVATED',
-    playerId: state.activePlayerIndex,
-    abilityIndex: action.abilityIndex,
-    turnNumber: state.turnNumber,
-  }];
-
-  // Extract and execute ability effects
-  const abilityEffects = getHeroAbilityEffects(ability);
-  if (abilityEffects.length === 0) {
-    return { state: nextState, events: allEvents };
-  }
-
   return {
-    state: nextState,
-    events: allEvents,
-    effectWorkItem: {
-      kind: 'effect',
+    state: setPlayer(state, state.activePlayerIndex, newPlayer),
+    events: [],
+    stackItem: {
+      id: createStackItemId(state, 'hero_ability', `hero_${String(state.activePlayerIndex)}`),
+      type: 'hero_ability',
       sourceInstanceId: `hero_${String(state.activePlayerIndex)}`,
       controllerId: state.activePlayerIndex,
-      effects: abilityEffects,
-      triggerDepth: 0,
-      selectedTargets: action.targetId !== undefined ? [action.targetId] : undefined,
+      effects: getHeroAbilityEffects(ability),
+      targets: action.targetId !== undefined ? [action.targetId] : [],
+      abilityIndex: action.abilityIndex,
     },
   };
 }
@@ -510,12 +481,7 @@ function executeDiscardForEnergy(
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
-
-  // Determine resource type from the card's cost structure:
-  // cards with more energy cost grant Energy, otherwise Mana.
-  // Flexible-only cards default to Mana.
-  const resourceType: import('../types/index.js').ResourceType =
-    card.cost.energy > card.cost.mana ? 'energy' : 'mana';
+  const resourceType = getPrimaryResourceType(card);
 
   const newPlayer: PlayerState = {
     ...player,
@@ -568,9 +534,19 @@ function getSpellCastEffects(card: CardInstance): readonly Effect[] {
 function executeDeclareAttack(
   state: GameState,
   action: { attackerInstanceId: string; targetId: string | 'hero' },
-): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const result = resolveCombat(state, action.attackerInstanceId, action.targetId);
-  return { state: result.newState, events: result.events };
+): PlayerActionResult {
+  return {
+    state,
+    events: [],
+    stackItem: {
+      id: createStackItemId(state, 'attack', action.attackerInstanceId),
+      type: 'attack',
+      sourceInstanceId: action.attackerInstanceId,
+      controllerId: state.activePlayerIndex,
+      effects: [],
+      targets: [action.targetId],
+    },
+  };
 }
 
 // ── End Phase Actions ───────────────────────────────────────────────────────
@@ -634,8 +610,16 @@ export function decrementHeroCooldowns(state: GameState): GameState {
 
 export function passTurn(state: GameState): GameState {
   const nextPlayer = state.activePlayerIndex === 0 ? 1 : 0;
+  const players = state.players.map(player => ({
+    ...player,
+    hero: {
+      ...player.hero,
+      transformedThisTurn: false,
+    },
+  })) as [PlayerState, PlayerState];
   return {
     ...state,
+    players,
     activePlayerIndex: nextPlayer as 0 | 1,
     turnNumber: state.turnNumber + 1,
     turnState: { discardedForEnergy: false, firstPlayerFirstTurn: false },
@@ -660,4 +644,156 @@ function updateActivePlayer(
 ): GameState {
   const player = state.players[state.activePlayerIndex]!;
   return setPlayer(state, state.activePlayerIndex, updater(player));
+}
+
+function isActionLegal(state: GameState, action: PlayerAction): boolean {
+  const available = computeAvailableActions(state);
+
+  switch (action.type) {
+    case 'deploy':
+      return available.canDeploy.some(option =>
+        option.cardInstanceId === action.cardInstanceId &&
+        option.validSlots.some(slot => slot.zone === action.zone && slot.slots.includes(action.slotIndex)) &&
+        (!option.isXCost || (action.xValue ?? 0) <= option.maxX),
+      );
+    case 'cast_spell':
+      return available.canCastSpell.some(option =>
+        option.cardInstanceId === action.cardInstanceId &&
+        (!option.needsTarget || (action.targetId !== undefined && option.validTargets.includes(action.targetId))),
+      );
+    case 'attach_equipment':
+      return available.canAttachEquipment.some(option =>
+        option.cardInstanceId === action.cardInstanceId &&
+        option.validTargets.includes(action.targetInstanceId),
+      );
+    case 'move':
+      return available.canMove.some(option =>
+        option.cardInstanceId === action.cardInstanceId &&
+        option.validSlots.some(slot => slot.zone === action.toZone && slot.slotIndex === action.slotIndex),
+      );
+    case 'activate_ability':
+      return available.canActivateAbility.some(option =>
+        option.cardInstanceId === action.cardInstanceId &&
+        option.abilityIndex === action.abilityIndex,
+      );
+    case 'activate_hero_ability':
+      return available.canActivateHeroAbility.some(option => option.abilityIndex === action.abilityIndex);
+    case 'discard_for_energy':
+      return available.canDiscardForEnergy &&
+        state.players[state.activePlayerIndex]!.hand.some(card => card.instanceId === action.cardInstanceId);
+    case 'declare_attack':
+      return available.canAttack.some(option =>
+        option.attackerInstanceId === action.attackerInstanceId &&
+        option.validTargets.some(target =>
+          action.targetId === 'hero'
+            ? target.type === 'hero'
+            : target.type === 'character' && target.instanceId === action.targetId,
+        ),
+      );
+    case 'declare_transform':
+      return available.canTransform;
+  }
+}
+
+function getPrimaryResourceType(card: CardInstance): 'mana' | 'energy' {
+  return card.resourceTypes[0] ?? 'mana';
+}
+
+function decrementAbilityCooldownMap(
+  cooldowns: ReadonlyMap<number, number>,
+): ReadonlyMap<number, number> {
+  if (cooldowns.size === 0) {
+    return cooldowns;
+  }
+  const nextCooldowns = new Map<number, number>();
+  for (const [abilityIndex, remaining] of cooldowns) {
+    const decremented = remaining - 1;
+    if (decremented > 0) {
+      nextCooldowns.set(abilityIndex, decremented);
+    }
+  }
+  return nextCooldowns;
+}
+
+function addFlexibleCost(cost: CardInstance['cost'], amount: number): CardInstance['cost'] {
+  return {
+    ...cost,
+    flexible: cost.flexible + amount,
+  };
+}
+
+function getAllBattlefieldCards(player: PlayerState): readonly CardInstance[] {
+  return [
+    ...player.zones.reserve.filter((card): card is CardInstance => card !== null),
+    ...player.zones.frontline.filter((card): card is CardInstance => card !== null),
+    ...player.zones.highGround.filter((card): card is CardInstance => card !== null),
+  ];
+}
+
+function allTraits(card: CardInstance): readonly string[] {
+  return [
+    ...card.traits,
+    ...card.grantedTraits.map(trait => trait.trait),
+  ];
+}
+
+function canAttachEquipmentToTarget(
+  equipment: CardInstance,
+  target: CardInstance,
+): boolean {
+  if (equipment.alignment.length > 0 && !equipment.alignment.some(alignment => target.alignment.includes(alignment))) {
+    return false;
+  }
+  if (equipment.resourceTypes.length > 0 && !equipment.resourceTypes.some(resourceType => target.resourceTypes.includes(resourceType))) {
+    return false;
+  }
+  return true;
+}
+
+function executeDeclareTransform(state: GameState): PlayerActionResult {
+  const player = state.players[state.activePlayerIndex]!;
+  const hero = player.hero;
+  const transformDefinition = hero.transformDefinition;
+  if (transformDefinition === null || hero.transformedCardDefId === null) {
+    return { state, events: [] };
+  }
+
+  const damageTaken = Math.max(0, hero.maxLp - hero.currentLp);
+  const transformedCurrentLp = Math.max(0, transformDefinition.maxLp - damageTaken);
+
+  const transformedHero = {
+    ...hero,
+    cardDefId: transformDefinition.cardDefId,
+    name: transformDefinition.name,
+    currentLp: transformedCurrentLp,
+    maxLp: transformDefinition.maxLp,
+    alignment: transformDefinition.alignment,
+    resourceTypes: transformDefinition.resourceTypes,
+    transformedCardDefId: null,
+    transformDefinition: null,
+    transformed: true,
+    canTransformThisGame: false,
+    transformedThisTurn: true,
+    abilities: transformDefinition.abilities,
+    cooldowns: new Map(),
+    registeredTriggers: [],
+  };
+
+  const updatedState = setPlayer(state, state.activePlayerIndex, {
+    ...player,
+    hero: transformedHero,
+  });
+
+  return {
+    state: registerHeroTriggers(updatedState, state.activePlayerIndex),
+    events: [],
+  };
+}
+
+function createStackItemId(
+  state: GameState,
+  type: StackItem['type'],
+  sourceInstanceId: string,
+): string {
+  return `${type}_${sourceInstanceId}_${String(state.turnNumber)}_${String(state.stack.length)}_${String(state.log.length)}`;
 }

@@ -7,6 +7,8 @@
 import type {
   AbilityDSL,
   CardTypeCode,
+  PrintedResourceType,
+  Rarity,
   ResourceCost,
   ResourceType,
   StatModifier,
@@ -22,9 +24,13 @@ import type { Trigger } from './triggers.js';
 export interface GameState {
   readonly players: readonly [PlayerState, PlayerState];
   readonly activePlayerIndex: 0 | 1;
+  readonly firstPlayerChooserId: 0 | 1;
+  readonly firstPlayerId: 0 | 1 | null;
+  readonly priorityPlayerId: 0 | 1 | null;
   readonly turnNumber: number;
   readonly phase: GamePhase;
   readonly stack: readonly StackItem[];
+  readonly responseState: ResponseState | null;
   readonly pendingChoice: PendingChoice | null;
   readonly pendingResolution: PendingResolution | null;
   readonly log: readonly GameEvent[];
@@ -38,6 +44,7 @@ export type GamePhase =
   | 'setup'
   | 'mulligan'
   | 'upkeep'
+  | 'transform'
   | 'strategy'
   | 'action'
   | 'end'
@@ -48,6 +55,7 @@ export type GamePhase =
 export interface PlayerState {
   readonly hero: HeroState;
   readonly zones: ZoneState;
+  readonly auraZone: readonly CardInstance[];
   readonly hand: readonly CardInstance[];
   readonly mainDeck: readonly CardInstance[];
   readonly resourceDeck: readonly ResourceCard[];
@@ -83,6 +91,7 @@ export interface CardInstance {
   readonly cardDefId: number;
   readonly name: string;
   readonly cardType: CardTypeCode;
+  readonly rarity: Rarity;
   readonly currentHp: number;
   readonly currentAtk: number;
   readonly currentArm: number;
@@ -96,6 +105,8 @@ export interface CardInstance {
   readonly traits: readonly Trait[];
   readonly grantedTraits: readonly GrantedTrait[];
   readonly abilities: readonly AbilityDSL[];
+  readonly abilityCooldowns: ReadonlyMap<number, number>;
+  readonly activatedAbilityTurns: ReadonlyMap<number, number>;
   readonly registeredTriggers: readonly RegisteredTrigger[];
   readonly modifiers: readonly ActiveModifier[];
   readonly statusEffects: readonly ActiveStatus[];
@@ -103,9 +114,12 @@ export interface CardInstance {
   readonly isToken: boolean;
   readonly tags: readonly string[];
   readonly cost: ResourceCost;
+  readonly resourceTypes: readonly PrintedResourceType[];
   readonly alignment: readonly string[];
   readonly artUrl: string | null;
   readonly owner: 0 | 1;
+  readonly abilitiesSuppressed: boolean;
+  readonly transferredThisTurn: boolean;
   readonly xValue?: number;
 }
 
@@ -143,12 +157,29 @@ export interface HeroState {
   readonly name: string;
   readonly currentLp: number;
   readonly maxLp: number;
+  readonly alignment: readonly string[];
+  readonly resourceTypes: readonly PrintedResourceType[];
+  readonly transformedCardDefId: number | null;
+  readonly transformDefinition: HeroTransformState | null;
   readonly transformed: boolean;
   readonly canTransformThisGame: boolean;
   readonly transformedThisTurn: boolean;
   readonly abilities: readonly AbilityDSL[];
   readonly cooldowns: ReadonlyMap<number, number>;
+  readonly activatedAbilityTurns: ReadonlyMap<number, number>;
+  readonly usedUltimateAbilityIndices: readonly number[];
+  readonly modifiers: readonly ActiveModifier[];
+  readonly statusEffects: readonly ActiveStatus[];
   readonly registeredTriggers: readonly RegisteredTrigger[];
+}
+
+export interface HeroTransformState {
+  readonly cardDefId: number;
+  readonly name: string;
+  readonly maxLp: number;
+  readonly alignment: readonly string[];
+  readonly resourceTypes: readonly PrintedResourceType[];
+  readonly abilities: readonly AbilityDSL[];
 }
 
 // ── Resource Card ────────────────────────────────────────────────────────────
@@ -230,6 +261,7 @@ export interface TriggerResolutionWorkItem {
 
 export type PendingChoiceType =
   | 'mulligan'
+  | 'choose_first_player'
   | 'select_targets'
   | 'reserve_exhaust'
   | 'discard_to_hand_limit'
@@ -237,6 +269,8 @@ export type PendingChoiceType =
   | 'choose_zone_slot'
   | 'choose_discard'
   | 'response_window'
+  | 'transform'
+  | 'pay_unless'
   | 'choose_x_value'
   | 'choose_flexible_split';
 
@@ -244,6 +278,8 @@ export interface ChoiceOption {
   readonly id: string;
   readonly label: string;
   readonly instanceId?: string;
+  readonly sourceType?: 'card' | 'card_ability' | 'hero_ability';
+  readonly abilityIndex?: number;
 }
 
 // ── Player Response (answer to PendingChoice) ────────────────────────────────
@@ -256,17 +292,35 @@ export interface PlayerResponse {
 
 export interface StackItem {
   readonly id: string;
-  readonly type: 'spell' | 'ability' | 'attack' | 'counter' | 'flash';
+  readonly type:
+    | 'spell'
+    | 'ability'
+    | 'hero_ability'
+    | 'attack'
+    | 'equipment'
+    | 'move'
+    | 'counter'
+    | 'flash';
   readonly sourceInstanceId: string;
   readonly controllerId: 0 | 1;
   readonly effects: readonly Effect[];
   readonly targets: readonly string[];
+  readonly cardSnapshot?: CardInstance;
+  readonly abilityIndex?: number;
+  readonly zone?: ZoneType;
+  readonly slotIndex?: number;
   readonly countered?: boolean;
 }
 
 export interface ResponseWindowContext {
   readonly respondingPlayerId: 0 | 1;
   readonly stackItemId: string;
+}
+
+export interface ResponseState {
+  readonly initiatorPlayerId: 0 | 1;
+  readonly passesInRow: number;
+  readonly bufferedEvents: readonly GameEvent[];
 }
 
 // ── Game Events (emitted during state transitions) ───────────────────────────
@@ -310,6 +364,7 @@ export interface CardDestroyedEvent {
   readonly cardInstanceId: string;
   readonly cause: 'combat' | 'effect' | 'sacrifice';
   readonly playerId: 0 | 1;
+  readonly destroyedCard?: CardInstance;
 }
 export interface CardBouncedEvent {
   readonly type: 'CARD_BOUNCED';

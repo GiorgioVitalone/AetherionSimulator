@@ -224,8 +224,8 @@ describe('Combat Resolver', () => {
     });
   });
 
-  describe('First Strike in combat', () => {
-    it('should prevent counter-damage when FS attacker kills', () => {
+  describe('Simultaneous combat', () => {
+    it('should still destroy the attacker when both sides deal lethal damage', () => {
       const state = gameWithCards(
         [{ currentAtk: 5, currentHp: 3, traits: ['first_strike'] }],
         [{ currentAtk: 10, currentHp: 4 }],
@@ -241,12 +241,11 @@ describe('Combat Resolver', () => {
           e => e.type === 'CARD_DESTROYED' && e.cardInstanceId === defender.instanceId,
         ),
       ).toBe(true);
-      // Attacker should NOT be destroyed
       expect(
         result.events.some(
           e => e.type === 'CARD_DESTROYED' && e.cardInstanceId === attacker.instanceId,
         ),
-      ).toBe(false);
+      ).toBe(true);
     });
   });
 });

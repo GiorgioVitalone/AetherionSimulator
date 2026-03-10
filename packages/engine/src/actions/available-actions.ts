@@ -77,11 +77,30 @@ export interface AttackOption {
 // ── Main Computation ──────────────────────────────────────────────────────────
 
 export function computeAvailableActions(state: GameState): AvailableActions {
+  if (state.pendingChoice !== null) {
+    return {
+      canDeploy: [],
+      canCastSpell: [],
+      canAttachEquipment: [],
+      canMove: [],
+      canActivateAbility: [],
+      canActivateHeroAbility: [],
+      canAttack: [],
+      canDiscardForEnergy: false,
+      canTransform: false,
+      canEndPhase: false,
+    };
+  }
+
   const player = state.players[state.activePlayerIndex]!;
   const opponentIndex = state.activePlayerIndex === 0 ? 1 : 0;
   const opponent = state.players[opponentIndex]!;
+  const isTransform = state.phase === 'transform';
   const isStrategy = state.phase === 'strategy';
   const isAction = state.phase === 'action';
+  const firstPlayerAttackLock =
+    state.turnState.firstPlayerFirstTurn &&
+    state.firstPlayerId === state.activePlayerIndex;
 
   return {
     canDeploy: isStrategy ? computeDeployOptions(player) : [],
@@ -90,10 +109,10 @@ export function computeAvailableActions(state: GameState): AvailableActions {
     canMove: isStrategy ? computeMoveOptions(player) : [],
     canActivateAbility: isStrategy ? computeActivateOptions(player, state) : [],
     canActivateHeroAbility: isStrategy ? computeHeroActivateOptions(player, state) : [],
-    canAttack: isAction ? computeAttackOptions(player, opponent) : [],
+    canAttack: isAction && !firstPlayerAttackLock ? computeAttackOptions(player, opponent) : [],
     canDiscardForEnergy: isStrategy && computeCanDiscardForEnergy(player, state),
-    canTransform: isStrategy && computeCanTransform(player),
-    canEndPhase: isStrategy || isAction,
+    canTransform: isTransform && computeCanTransform(state, player),
+    canEndPhase: isTransform || isStrategy || isAction,
   };
 }
 
@@ -106,7 +125,13 @@ function computeDeployOptions(player: PlayerState): readonly DeployOption[] {
     if (card.cardType !== 'C') continue;
     if (!canAfford(player, card.cost)) continue;
 
-    const validSlots = getValidDeploySlots(player);
+    const validSlots = [...getValidDeploySlots(player)];
+    if (allTraits(card).includes('elite')) {
+      const highGroundSlots = getOpenSlotIndices(player, 'high_ground');
+      if (highGroundSlots.length > 0 && canAfford(player, addFlexibleCost(card.cost, 2))) {
+        validSlots.push({ zone: 'high_ground', slots: highGroundSlots });
+      }
+    }
     if (validSlots.length > 0) {
       const isXCost = card.cost.xMana === true || card.cost.xEnergy === true;
       options.push({
@@ -196,9 +221,8 @@ function computeEquipOptions(player: PlayerState): readonly EquipOption[] {
     if (card.cardType !== 'E') continue;
     if (!canAfford(player, card.cost)) continue;
 
-    // Equipment can target own characters without existing equipment
     const targets = boardCharacters
-      .filter(c => c.equipment === null)
+      .filter(c => canAttachEquipmentToTarget(card, c))
       .map(c => c.instanceId);
 
     if (targets.length > 0) {
@@ -228,7 +252,12 @@ function computeMoveOptions(player: PlayerState): readonly MoveOption[] {
   for (const zone of zones) {
     const cards = getCardsInZone(player.zones, zone);
     for (const card of cards) {
-      if (card.exhausted || card.summoningSick || card.movedThisTurn) continue;
+      if (
+        card.exhausted ||
+        card.summoningSick ||
+        card.movedThisTurn ||
+        hasStatus(card, 'slowed')
+      ) continue;
 
       const adjacentZones = ADJACENT.get(zone) ?? [];
       const validSlots = adjacentZones.flatMap(destination =>
@@ -269,25 +298,12 @@ function computeActivateOptions(
       if (triggered.trigger.type !== 'activated') continue;
 
       const activatedTrigger = triggered.trigger;
+      if (card.exhausted || card.summoningSick || card.abilitiesSuppressed) continue;
 
-      // Check cooldown
-      if (activatedTrigger.cooldown !== undefined) {
-        // Check hero cooldowns if this is a hero ability
-        // For card abilities, cooldowns are tracked per-card
-        // Simplified: skip if on cooldown (tracked elsewhere in state machine)
-      }
+      const cooldown = card.abilityCooldowns.get(i);
+      if (cooldown !== undefined && cooldown > 0) continue;
 
-      // Check once-per-turn
-      if (activatedTrigger.oncePerTurn === true) {
-        const alreadyUsed = state.log.some(
-          e =>
-            e.type === 'ABILITY_ACTIVATED' &&
-            e.cardInstanceId === card.instanceId &&
-            e.abilityIndex === i &&
-            e.turnNumber === state.turnNumber,
-        );
-        if (alreadyUsed) continue;
-      }
+      if (card.activatedAbilityTurns.get(i) === state.turnNumber) continue;
 
       if (!canAfford(player, activatedTrigger.cost)) continue;
 
@@ -326,27 +342,13 @@ function computeHeroActivateOptions(
 
     // Check once-per-game
     if (activatedTrigger.oncePerGame === true) {
-      const everUsed = state.log.some(
-        e =>
-          e.type === 'HERO_ABILITY_ACTIVATED' &&
-          e.abilityIndex === i,
-      );
-      if (everUsed) continue;
+      if (hero.usedUltimateAbilityIndices.includes(i)) continue;
     }
 
-    // Check once-per-turn
-    if (activatedTrigger.oncePerTurn === true) {
-      const alreadyUsed = state.log.some(
-        e =>
-          e.type === 'HERO_ABILITY_ACTIVATED' &&
-          e.abilityIndex === i &&
-          e.turnNumber === state.turnNumber,
-      );
-      if (alreadyUsed) continue;
-    }
+    if (hero.activatedAbilityTurns.get(i) === state.turnNumber) continue;
 
     // Can't activate on the turn hero transforms
-    if (hero.transformedThisTurn) continue;
+    if (hero.transformedThisTurn && activatedTrigger.oncePerGame === true) continue;
 
     if (!canAfford(player, activatedTrigger.cost)) continue;
 
@@ -414,15 +416,60 @@ function computeCanDiscardForEnergy(
 
 // ── Transform ─────────────────────────────────────────────────────────────────
 
-function computeCanTransform(player: PlayerState): boolean {
+function computeCanTransform(state: GameState, player: PlayerState): boolean {
   const hero = player.hero;
 
-  if (hero.transformed || !hero.canTransformThisGame || hero.transformedThisTurn) {
+  if (
+    hero.transformed ||
+    !hero.canTransformThisGame ||
+    hero.transformedThisTurn ||
+    hero.transformedCardDefId === null
+  ) {
     return false;
   }
 
   // Standard transform condition: LP ≤ 10
   // OR: has ≥5 fewer resources than opponent AND no characters on board
   // Simplified to LP check for now — full check requires opponent state
-  return hero.currentLp <= 10;
+  if (hero.currentLp <= 10) {
+    return true;
+  }
+
+  const opponentIndex = state.activePlayerIndex === 0 ? 1 : 0;
+  const opponent = state.players[opponentIndex]!;
+  const resourceGap = opponent.resourceBank.length - player.resourceBank.length;
+  return resourceGap >= 5 && getAllCards(player.zones).length === 0;
+}
+
+function hasStatus(
+  card: CardInstance,
+  statusType: CardInstance['statusEffects'][number]['statusType'],
+): boolean {
+  return card.statusEffects.some(status => status.statusType === statusType);
+}
+
+function addFlexibleCost(cost: ResourceCost, amount: number): ResourceCost {
+  return {
+    ...cost,
+    flexible: cost.flexible + amount,
+  };
+}
+
+function canAttachEquipmentToTarget(
+  equipment: CardInstance,
+  target: CardInstance,
+): boolean {
+  if (
+    equipment.alignment.length > 0 &&
+    !equipment.alignment.some(alignment => target.alignment.includes(alignment))
+  ) {
+    return false;
+  }
+  if (
+    equipment.resourceTypes.length > 0 &&
+    !equipment.resourceTypes.some(resourceType => target.resourceTypes.includes(resourceType))
+  ) {
+    return false;
+  }
+  return true;
 }

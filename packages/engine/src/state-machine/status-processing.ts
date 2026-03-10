@@ -12,27 +12,25 @@ export function processStatusTicks(
   const events: GameEvent[] = [];
   let currentState = state;
 
-  for (let pi = 0; pi < 2; pi++) {
-    const player = currentState.players[pi]!;
-    const cards = getAllCards(player.zones);
+  const player = currentState.players[currentState.activePlayerIndex]!;
+  const cards = getAllCards(player.zones);
 
-    for (const card of cards) {
-      if (card.statusEffects.length === 0) continue;
+  for (const card of cards) {
+    if (card.statusEffects.length === 0) continue;
 
-      const { updatedCard, cardEvents, shouldDestroy } = tickCardStatuses(card);
-      events.push(...cardEvents);
+    const { updatedCard, cardEvents, shouldDestroy } = tickCardStatuses(card);
+    events.push(...cardEvents);
 
-      currentState = updateCardInState(
-        currentState,
-        card.instanceId,
-        () => updatedCard,
-      );
+    currentState = updateCardInState(
+      currentState,
+      card.instanceId,
+      () => updatedCard,
+    );
 
-      if (shouldDestroy) {
-        const destruction = destroyCard(currentState, card.instanceId, 'effect');
-        currentState = destruction.state;
-        events.push(...destruction.events);
-      }
+    if (shouldDestroy) {
+      const destruction = destroyCard(currentState, card.instanceId, 'effect');
+      currentState = destruction.state;
+      events.push(...destruction.events);
     }
   }
 
@@ -74,6 +72,15 @@ function tickCardStatuses(card: CardInstance): {
   // Decrement remaining turns and remove expired statuses
   const remainingStatuses = card.statusEffects
     .map(status => {
+      if (status.statusType === 'persistent' || status.statusType === 'regeneration') {
+        const nextValue = status.value - 1;
+        if (nextValue <= 0) return null;
+        return {
+          ...status,
+          value: nextValue,
+          remainingTurns: status.remainingTurns === null ? null : status.remainingTurns - 1,
+        };
+      }
       if (status.remainingTurns === null) return status;
       const remaining = status.remainingTurns - 1;
       if (remaining <= 0) return null;

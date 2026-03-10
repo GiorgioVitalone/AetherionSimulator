@@ -56,6 +56,8 @@ export function resolveTargets(
       return resolvePlayerTarget(target, context);
 
     case 'target_spell':
+      return resolveTargetSpell(state, context);
+
     case 'target_equipment':
     case 'target_card_in_discard':
     case 'adjacent_to_self':
@@ -182,6 +184,24 @@ function resolvePlayerTarget(
       ? `hero_${String(context.controllerId === 0 ? 1 : 0)}`
       : `hero_${String(context.controllerId)}`;
   return { resolved: true, targetIds: [id] };
+}
+
+function resolveTargetSpell(
+  state: GameState,
+  context: EffectContext,
+): ResolvedTargets {
+  if (context.selectedTargets !== undefined && context.selectedTargets.length > 0) {
+    return { resolved: true, targetIds: context.selectedTargets };
+  }
+
+  const target = [...state.stack]
+    .reverse()
+    .find(item => item.countered !== true);
+  if (target === undefined) {
+    return { resolved: true, targetIds: [] };
+  }
+
+  return { resolved: true, targetIds: [target.id] };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

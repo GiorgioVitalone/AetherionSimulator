@@ -4,6 +4,7 @@ import {
   resolveTriggeredEvents,
   resumePendingResolution,
 } from '../../src/events/index.js';
+import { destroyCard } from '../../src/state/index.js';
 import {
   mockCard,
   mockGameState,
@@ -134,6 +135,67 @@ describe('trigger resolution', () => {
     expect(resumed.state.players[1]!.zones.frontline[0]?.currentHp).toBe(1);
     expect(resumed.events.some(
       event => event.type === 'DAMAGE_DEALT' && event.targetId === target.instanceId,
+    )).toBe(true);
+  });
+
+  it('fires a destroyed card\'s own on_destroy ability after it leaves play', () => {
+    const martyr = mockCard({
+      owner: 0,
+      abilities: [{
+        type: 'triggered',
+        trigger: { type: 'on_destroy' },
+        effects: [{
+          type: 'gain_resource',
+          resourceType: 'mana',
+          amount: 1,
+        }],
+      }],
+    });
+
+    const state = registerInitialTriggers(mockGameState({
+      players: [
+        mockPlayerState(0, {
+          zones: deployToZone(emptyZones(), martyr, 'frontline', 0),
+        }),
+        mockPlayerState(1),
+      ],
+    }));
+
+    const destroyed = destroyCard(state, martyr.instanceId, 'effect');
+    const resolved = resolveTriggeredEvents(destroyed.state, destroyed.events);
+
+    expect(resolved.state.players[0]!.resourceBank).toHaveLength(1);
+    expect(resolved.events.some(
+      event => event.type === 'RESOURCE_GAINED' && event.playerId === 0,
+    )).toBe(true);
+  });
+
+  it('moves volatile destroyed characters to exile instead of discard', () => {
+    const volatileCard = mockCard({
+      owner: 0,
+      traits: ['volatile'],
+    });
+
+    const state = mockGameState({
+      players: [
+        mockPlayerState(0, {
+          zones: deployToZone(emptyZones(), volatileCard, 'frontline', 0),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+
+    const destroyed = destroyCard(state, volatileCard.instanceId, 'combat');
+
+    expect(destroyed.state.players[0]!.discardPile).toHaveLength(0);
+    expect(destroyed.state.players[0]!.exileZone).toHaveLength(1);
+    expect(destroyed.events.some(
+      event => event.type === 'CARD_EXILED' && event.cardInstanceId === volatileCard.instanceId,
+    )).toBe(true);
+    expect(destroyed.events.some(
+      event => event.type === 'CARD_LEFT_BATTLEFIELD' &&
+        event.cardInstanceId === volatileCard.instanceId &&
+        event.destination === 'exile',
     )).toBe(true);
   });
 });

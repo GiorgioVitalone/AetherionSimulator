@@ -41,6 +41,7 @@ function hydratePlayer(
   return {
     ...player,
     hero: hydrateHero(player.hero, getHeroAbilities),
+    auraZone: (player.auraZone ?? []).map(c => hydrateCard(c, getAbilities)),
     hand: player.hand.map(c => hydrateCard(c, getAbilities)),
     mainDeck: player.mainDeck.map(c => hydrateCard(c, getAbilities)),
     discardPile: player.discardPile.map(c => hydrateCard(c, getAbilities)),
@@ -63,6 +64,13 @@ function hydrateCard(card: CardInstance, getAbilities: AbilityLookup): CardInsta
 
 function hydrateHero(hero: HeroState, getHeroAbilities: AbilityLookup): HeroState {
   const abilities = getHeroAbilities(hero.cardDefId);
-  if (abilities.length === 0) return hero;
-  return { ...hero, abilities };
+  const transformSource = hero.transformDefinition;
+  const transformDefinition = transformSource == null
+    ? null
+    : {
+        ...transformSource,
+        abilities: getHeroAbilities(transformSource.cardDefId),
+      };
+  if (abilities.length === 0 && transformDefinition === hero.transformDefinition) return hero;
+  return { ...hero, abilities, transformDefinition };
 }

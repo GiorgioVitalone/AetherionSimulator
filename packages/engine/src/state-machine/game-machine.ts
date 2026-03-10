@@ -27,11 +27,11 @@ import {
 } from '../effects/scheduled-processor.js';
 import {
   registerInitialTriggers,
-  resolveEffectWorkItem,
   resolveTriggeredEvents,
 } from '../events/index.js';
 import { applyMulligan } from '../setup/game-setup.js';
-import { applyPendingChoiceResponse } from './player-response.js';
+import { applyPendingChoiceResponse, beginResponseChain } from './player-response.js';
+import { pushToStack } from '../stack/stack-resolver.js';
 
 export const gameMachine = setup({
   types: {
@@ -53,6 +53,32 @@ export const gameMachine = setup({
     },
     hasReserveExhaustChoice: ({ context }) =>
       context.pendingChoice?.type === 'reserve_exhaust',
+    canTransformThisTurn: ({ context }) =>
+      context.gameState.phase === 'transform' &&
+      context.gameState.pendingChoice === null &&
+      context.gameState.winner === null &&
+      context.gameState.players[context.gameState.activePlayerIndex] !== undefined &&
+      (() => {
+        const player = context.gameState.players[context.gameState.activePlayerIndex]!;
+        const hero = player.hero;
+        if (
+          hero.transformed ||
+          !hero.canTransformThisGame ||
+          hero.transformedThisTurn ||
+          hero.transformedCardDefId === null
+        ) {
+          return false;
+        }
+        if (hero.currentLp <= 10) {
+          return true;
+        }
+        const opponentIndex = context.gameState.activePlayerIndex === 0 ? 1 : 0;
+        const opponent = context.gameState.players[opponentIndex]!;
+        const resourceGap = opponent.resourceBank.length - player.resourceBank.length;
+        return resourceGap >= 5 && player.zones.reserve.every(card => card === null) &&
+          player.zones.frontline.every(card => card === null) &&
+          player.zones.highGround.every(card => card === null);
+      })(),
   },
   actions: {
     refreshAllCards: assign({
@@ -99,9 +125,22 @@ export const gameMachine = setup({
     applyPlayerAction: assign(({ context, event }) => {
       if (event.type !== 'PLAYER_ACTION') return {};
       const result = executePlayerAction(context.gameState, event.action);
-      const resolved = result.effectWorkItem !== undefined
-        ? resolveEffectWorkItem(result.state, result.effectWorkItem, result.events)
-        : resolveTriggeredEvents(result.state, result.events);
+      const stackResult = result.stackItem === undefined
+        ? null
+        : beginResponseChain(
+          pushToStack(result.state, result.stackItem),
+          context.gameState.activePlayerIndex,
+          result.events,
+        );
+      const resolved = result.stackItem === undefined
+        ? resolveTriggeredEvents(result.state, result.events)
+        : {
+            state: stackResult!.state,
+            events: stackResult!.events,
+          };
+      const nextPendingChoice = result.stackItem === undefined
+        ? resolved.state.pendingChoice
+        : stackResult!.pendingChoice;
       const newState = {
         ...resolved.state,
         log: [...resolved.state.log, ...resolved.events],
@@ -110,8 +149,8 @@ export const gameMachine = setup({
         gameState: newState,
         pendingChoice: newState.winner !== null
           ? null
-          : newState.pendingChoice !== undefined
-            ? newState.pendingChoice
+          : nextPendingChoice !== undefined
+            ? nextPendingChoice
             : context.pendingChoice,
       };
     }),
@@ -271,13 +310,21 @@ export const gameMachine = setup({
     })),
     applyPlayerResponse: assign(({ context, event }) => {
       if (event.type !== 'PLAYER_RESPONSE') return {};
-      const resolved = applyPendingChoiceResponse(context.gameState, event.response);
+      const responseResult = applyPendingChoiceResponse(context.gameState, event.response);
+      const shouldResolveResponseEvents =
+        responseResult.events.length > 0 &&
+        responseResult.state.pendingChoice === null;
+      const resolved = shouldResolveResponseEvents
+        ? resolveTriggeredEvents(responseResult.state, responseResult.events)
+        : { state: responseResult.state, events: [] as readonly never[] };
       return {
         gameState: {
           ...resolved.state,
           log: [...resolved.state.log, ...resolved.events],
         },
-        pendingChoice: resolved.pendingChoice,
+        pendingChoice: shouldResolveResponseEvents
+          ? resolved.state.pendingChoice
+          : responseResult.pendingChoice,
       };
     }),
   },
@@ -316,6 +363,24 @@ export const gameMachine = setup({
             }),
           },
         ],
+      },
+      always: [
+        {
+          target: 'chooseFirstPlayer',
+          guard: ({ context }) => context.gameState.phase === 'setup',
+        },
+        {
+          target: 'playing',
+          guard: ({ context }) => context.gameState.phase === 'upkeep',
+        },
+      ],
+    },
+
+    chooseFirstPlayer: {
+      on: {
+        PLAYER_RESPONSE: {
+          actions: 'applyPlayerResponse',
+        },
       },
       always: {
         target: 'playing',
@@ -372,14 +437,33 @@ export const gameMachine = setup({
           entry: 'checkReserveExhaust',
           always: [
             {
-              target: 'strategy',
+              target: 'transformWindow',
               guard: not('hasReserveExhaustChoice'),
             },
           ],
           on: {
             PLAYER_RESPONSE: {
-              target: 'strategy',
+              target: 'transformWindow',
               actions: ['applyPlayerResponse', 'clearPendingChoice'],
+            },
+          },
+        },
+
+        transformWindow: {
+          entry: { type: 'setPhase', params: { phase: 'transform' as const } },
+          always: [
+            {
+              target: 'strategy',
+              guard: not('canTransformThisTurn'),
+            },
+          ],
+          on: {
+            PLAYER_ACTION: {
+              target: 'strategy',
+              actions: 'applyPlayerAction',
+            },
+            END_PHASE: {
+              target: 'strategy',
             },
           },
         },
@@ -426,15 +510,13 @@ export const gameMachine = setup({
           entry: [
             { type: 'setPhase', params: { phase: 'end' as const } },
             'removeTemps',
-            'expireModifiers',
-            'processScheduledEndPhase',
           ],
           always: [
             {
               target: 'handSizeCheck',
               guard: { type: 'handExceedsLimit' },
             },
-            { target: 'passTurn' },
+            { target: 'resolveEndPhase' },
           ],
         },
 
@@ -442,7 +524,7 @@ export const gameMachine = setup({
           entry: 'setHandSizeChoice',
           on: {
             PLAYER_RESPONSE: {
-              target: 'passTurn',
+              target: 'resolveEndPhase',
               actions: [
                 assign(({ context, event }) => {
                   if (event.type !== 'PLAYER_RESPONSE') return {};
@@ -470,6 +552,16 @@ export const gameMachine = setup({
                 }),
               ],
             },
+          },
+        },
+
+        resolveEndPhase: {
+          entry: [
+            'expireModifiers',
+            'processScheduledEndPhase',
+          ],
+          always: {
+            target: 'passTurn',
           },
         },
 

@@ -266,7 +266,7 @@ describe('Game Setup', () => {
       ).toBe(40);
     });
 
-    it('should transition to upkeep after both players mulligan', () => {
+    it('should transition to first-player choice after both players mulligan', () => {
       const registry = createTestRegistry();
       let state = createGame(
         { heroDefId: 200, mainDeckDefIds: mainDeckIds, resourceDeckDefIds: resourceDeckIds },
@@ -279,8 +279,10 @@ describe('Game Setup', () => {
       expect(state.phase).toBe('mulligan');
 
       state = applyMulligan(state, 1, true);
-      expect(state.phase).toBe('upkeep');
-      expect(state.pendingChoice).toBeNull();
+      expect(state.phase).toBe('setup');
+      expect(state.firstPlayerId).toBeNull();
+      expect(state.pendingChoice?.type).toBe('choose_first_player');
+      expect(state.pendingChoice?.playerId).toBe(state.firstPlayerChooserId);
     });
   });
 });
