@@ -21,11 +21,6 @@ export function resolveTargets(
   target: TargetExpr,
   context: EffectContext,
 ): ResolvedTargets {
-  // If targets already selected via PendingChoice response, use those
-  if (context.selectedTargets !== undefined) {
-    return { resolved: true, targetIds: context.selectedTargets };
-  }
-
   switch (target.type) {
     case 'self':
       return { resolved: true, targetIds: [context.sourceInstanceId] };
@@ -125,6 +120,10 @@ function resolveTargetCharacter(
   target: Extract<TargetExpr, { type: 'target_character' }>,
   context: EffectContext,
 ): ResolvedTargets {
+  // If targets already selected via PendingChoice response, use those
+  if (context.selectedTargets !== undefined) {
+    return { resolved: true, targetIds: context.selectedTargets };
+  }
   const cards = getCardsBySide(state, target.side, context);
   const filtered = applyFilter(cards, target.filter);
   if (filtered.length === 0) {
@@ -148,6 +147,10 @@ function resolveUpTo(
   target: Extract<TargetExpr, { type: 'up_to' }>,
   context: EffectContext,
 ): ResolvedTargets {
+  // If targets already selected via PendingChoice response, use those
+  if (context.selectedTargets !== undefined) {
+    return { resolved: true, targetIds: context.selectedTargets };
+  }
   const cards = getCardsBySide(state, target.side, context);
   const filtered = applyFilter(cards, target.filter, context);
   if (filtered.length === 0) {
