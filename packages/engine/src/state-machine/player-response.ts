@@ -6,7 +6,9 @@ import type {
   PlayerResponse,
   CardInstance,
   StackItem,
+  TemporaryResource,
 } from '../types/game-state.js';
+import type { ResourceType } from '../types/common.js';
 import type { Effect } from '../types/effects.js';
 import { resumePendingResolution } from '../events/index.js';
 import { resolveStack, pushToStack, counterStackItem } from '../stack/stack-resolver.js';
@@ -33,8 +35,18 @@ export function applyPendingChoiceResponse(
     const selectedInstanceIds = getSelectedChoiceOptions(choice, response.selectedOptionIds)
       .flatMap(option => option.instanceId !== undefined ? [option.instanceId] : []);
     const selectedSet = new Set(selectedInstanceIds);
+    const events: GameEvent[] = [];
+    const generatedResources: TemporaryResource[] = [];
     const newReserve = player.zones.reserve.map(card => {
       if (card !== null && selectedSet.has(card.instanceId)) {
+        const resourceType = deriveReserveResourceType(card);
+        generatedResources.push({ resourceType, amount: 1 });
+        events.push({
+          type: 'RESOURCE_GAINED',
+          playerId: choice.playerId,
+          resourceType,
+          amount: 1,
+        });
         return { ...card, exhausted: true };
       }
       return card;
@@ -46,6 +58,10 @@ export function applyPendingChoiceResponse(
     newPlayers[choice.playerId] = {
       ...player,
       zones: { ...player.zones, reserve: newReserve },
+      temporaryResources: [
+        ...player.temporaryResources,
+        ...generatedResources,
+      ],
     };
 
     return {
@@ -56,7 +72,7 @@ export function applyPendingChoiceResponse(
         pendingResolution: null,
       },
       pendingChoice: null,
-      events: [],
+      events,
     };
   }
 
@@ -186,6 +202,10 @@ export function applyPendingChoiceResponse(
     pendingChoice: null,
     events: [],
   };
+}
+
+function deriveReserveResourceType(card: CardInstance): ResourceType {
+  return card.cost.energy > card.cost.mana ? 'energy' : 'mana';
 }
 
 function extractResponseEffects(card: CardInstance): readonly Effect[] {

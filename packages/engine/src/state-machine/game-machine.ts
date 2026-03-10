@@ -6,7 +6,7 @@
  * The machine holds GameState in context and transforms it via pure actions.
  * When player input is needed, a PendingChoice is stored in context.
  */
-import { setup, assign } from 'xstate';
+import { setup, assign, not } from 'xstate';
 import type { GameMachineContext, GameMachineEvent } from './types.js';
 import type { GameState, PendingChoice } from '../types/game-state.js';
 import { MAX_HAND_SIZE } from '../types/game-state.js';
@@ -51,6 +51,8 @@ export const gameMachine = setup({
       const player = context.gameState.players[context.gameState.activePlayerIndex]!;
       return player.mainDeck.length === 0;
     },
+    hasReserveExhaustChoice: ({ context }) =>
+      context.pendingChoice?.type === 'reserve_exhaust',
   },
   actions: {
     refreshAllCards: assign({
@@ -205,6 +207,31 @@ export const gameMachine = setup({
       };
       return { pendingChoice: choice };
     }),
+    checkReserveExhaust: assign(({ context }) => {
+      const player = context.gameState.players[context.gameState.activePlayerIndex]!;
+      const readyReserveCards = player.zones.reserve.filter(
+        (card): card is NonNullable<typeof card> => card !== null && !card.exhausted,
+      );
+      if (readyReserveCards.length === 0) {
+        return { pendingChoice: null };
+      }
+      const choice: PendingChoice = {
+        type: 'reserve_exhaust',
+        playerId: context.gameState.activePlayerIndex,
+        options: readyReserveCards.map(c => ({
+          id: c.instanceId,
+          label: c.name,
+          instanceId: c.instanceId,
+        })),
+        minSelections: 0,
+        maxSelections: readyReserveCards.length,
+        context: 'Exhaust reserve characters to generate resources.',
+      };
+      return {
+        gameState: { ...context.gameState, pendingChoice: choice },
+        pendingChoice: choice,
+      };
+    }),
     clearPendingChoice: assign({ pendingChoice: null }),
     executeTurnPass: assign(({ context }) => {
       const newState = passTurn(context.gameState);
@@ -321,7 +348,7 @@ export const gameMachine = setup({
           always: [
             {
               // First player first turn skips main draw
-              target: 'strategy',
+              target: 'reserveExhaust',
               guard: { type: 'isFirstPlayerFirstTurn' },
             },
             {
@@ -335,10 +362,26 @@ export const gameMachine = setup({
               })),
             },
             {
-              target: 'strategy',
+              target: 'reserveExhaust',
               actions: 'drawMainCard',
             },
           ],
+        },
+
+        reserveExhaust: {
+          entry: 'checkReserveExhaust',
+          always: [
+            {
+              target: 'strategy',
+              guard: not('hasReserveExhaustChoice'),
+            },
+          ],
+          on: {
+            PLAYER_RESPONSE: {
+              target: 'strategy',
+              actions: ['applyPlayerResponse', 'clearPendingChoice'],
+            },
+          },
         },
 
         strategy: {
