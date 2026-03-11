@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import type { DeckSelection } from '@aetherion-sim/engine';
+import type { SimCard } from '@aetherion-sim/cards';
 import { createRegistry, RARITY_COPY_LIMITS } from '@/features/game-setup';
 import { GameFlowController } from '@/machines/game-flow';
 import { MOCK_CARDS } from './__fixtures__/mock-cards';
@@ -219,5 +220,60 @@ describe('Registry Adapter', () => {
     const card = registry.getCard(100);
     expect(card?.cost).not.toHaveProperty('xMana');
     expect(card?.cost).not.toHaveProperty('xEnergy');
+  });
+
+  it('infers faction resource types for zero-cost heroes and cards', () => {
+    const cards: SimCard[] = [
+      {
+        id: 1,
+        name: 'Prototype Seedmind',
+        cardType: 'H',
+        rarity: 'Legendary',
+        alignment: ['Verdant'],
+        cost: { mana: 0, energy: 0, flexible: 0, xMana: false, xEnergy: false },
+        stats: { hp: 25, atk: 0, arm: 0 },
+        abilities: [],
+        traits: [],
+        artUrl: null,
+        flavorText: null,
+        setCode: 'TEST',
+        transformsInto: null,
+      },
+      {
+        id: 2,
+        name: 'Bio-Seedling',
+        cardType: 'C',
+        rarity: 'Common',
+        alignment: ['Verdant'],
+        cost: { mana: 0, energy: 0, flexible: 0, xMana: false, xEnergy: false },
+        stats: { hp: 1, atk: 1, arm: 0 },
+        abilities: [],
+        traits: [],
+        artUrl: null,
+        flavorText: null,
+        setCode: 'TEST',
+        transformsInto: null,
+      },
+      {
+        id: 3,
+        name: 'Growth Pulse',
+        cardType: 'S',
+        rarity: 'Common',
+        alignment: ['Verdant'],
+        cost: { mana: 0, energy: 1, flexible: 0, xMana: false, xEnergy: false },
+        stats: null,
+        abilities: [],
+        traits: [],
+        artUrl: null,
+        flavorText: null,
+        setCode: 'TEST',
+        transformsInto: null,
+      },
+    ];
+
+    const { registry } = createRegistry(cards);
+
+    expect(registry.getHero(1)?.resourceTypes).toEqual(['energy']);
+    expect(registry.getCard(2)?.resourceTypes).toEqual(['energy']);
   });
 });

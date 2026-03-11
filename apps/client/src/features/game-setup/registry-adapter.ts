@@ -43,7 +43,7 @@ function toResourceCost(cost: SimCard['cost']): ResourceCost {
   };
 }
 
-function inferResourceTypes(
+function inferExplicitResourceTypes(
   cost: ResourceCost,
   abilities: readonly AbilityDSL[],
 ): readonly PrintedResourceType[] {
@@ -65,7 +65,7 @@ function inferResourceTypes(
       types.add('energy');
     }
   }
-  return types.size === 0 ? ['mana'] : [...types];
+  return [...types];
 }
 
 function inferResourceCardType(card: SimCard): PrintedResourceType | undefined {
@@ -73,6 +73,96 @@ function inferResourceCardType(card: SimCard): PrintedResourceType | undefined {
     return undefined;
   }
   return card.name.toLowerCase().includes('energy') ? 'energy' : 'mana';
+}
+
+interface ParsedCardRecord {
+  readonly card: SimCard;
+  readonly dslAbilities: readonly AbilityDSL[];
+  readonly meta: readonly AbilityMeta[];
+}
+
+function buildAlignmentResourceTypeLookup(
+  cards: readonly ParsedCardRecord[],
+): ReadonlyMap<string, readonly PrintedResourceType[]> {
+  const resourceTypesByAlignment = new Map<string, Set<PrintedResourceType>>();
+
+  for (const { card, dslAbilities } of cards) {
+    const alignments = card.alignment ?? [];
+    if (alignments.length === 0) {
+      continue;
+    }
+
+    const explicitTypes = new Set(
+      inferExplicitResourceTypes(toResourceCost(card.cost), dslAbilities),
+    );
+    const resourceCardType = inferResourceCardType(card);
+    if (resourceCardType !== undefined) {
+      explicitTypes.add(resourceCardType);
+    }
+
+    for (const alignment of alignments) {
+      if (!resourceTypesByAlignment.has(alignment)) {
+        resourceTypesByAlignment.set(alignment, new Set());
+      }
+      const typeSet = resourceTypesByAlignment.get(alignment)!;
+      for (const resourceType of explicitTypes) {
+        typeSet.add(resourceType);
+      }
+    }
+  }
+
+  return new Map(
+    [...resourceTypesByAlignment.entries()].map(([alignment, resourceTypes]) => [
+      alignment,
+      [...resourceTypes] as readonly PrintedResourceType[],
+    ]),
+  );
+}
+
+function inferAlignedResourceTypes(
+  alignment: readonly string[] | undefined,
+  alignmentResourceTypes: ReadonlyMap<string, readonly PrintedResourceType[]>,
+): readonly PrintedResourceType[] {
+  if (alignment === undefined || alignment.length === 0) {
+    return [];
+  }
+
+  const resourceTypes = new Set<PrintedResourceType>();
+  for (const faction of alignment) {
+    for (const resourceType of alignmentResourceTypes.get(faction) ?? []) {
+      resourceTypes.add(resourceType);
+    }
+  }
+  return [...resourceTypes];
+}
+
+function resolveHeroResourceTypes(
+  card: SimCard,
+  cost: ResourceCost,
+  abilities: readonly AbilityDSL[],
+  alignmentResourceTypes: ReadonlyMap<string, readonly PrintedResourceType[]>,
+): readonly PrintedResourceType[] {
+  const explicitTypes = inferExplicitResourceTypes(cost, abilities);
+  if (explicitTypes.length > 0) {
+    return explicitTypes;
+  }
+
+  const alignedTypes = inferAlignedResourceTypes(card.alignment, alignmentResourceTypes);
+  return alignedTypes.length > 0 ? alignedTypes : ['mana'];
+}
+
+function resolveCardResourceTypes(
+  card: SimCard,
+  cost: ResourceCost,
+  abilities: readonly AbilityDSL[],
+  alignmentResourceTypes: ReadonlyMap<string, readonly PrintedResourceType[]>,
+): readonly PrintedResourceType[] {
+  const explicitTypes = inferExplicitResourceTypes(cost, abilities);
+  if (explicitTypes.length > 0) {
+    return explicitTypes;
+  }
+
+  return inferAlignedResourceTypes(card.alignment, alignmentResourceTypes);
 }
 
 function normalizeTraits(traits: readonly string[]): readonly Trait[] {
@@ -111,17 +201,24 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
   const metaMap = new Map<number, readonly AbilityMeta[]>();
   const heroMetaMap = new Map<number, readonly AbilityMeta[]>();
 
-  for (const card of cards) {
-    // Extract DSL abilities from the card data
+  const parsedCards: ParsedCardRecord[] = cards.map(card => {
     const dslAbilities = card.abilities
       .map(a => a.dsl as AbilityDSL | null)
       .filter((dsl): dsl is AbilityDSL => dsl !== null);
-
-    // Extract ability metadata (name + effect text)
     const meta: AbilityMeta[] = card.abilities.map(a => ({
       name: a.name,
       effect: a.effect,
     }));
+    return {
+      card,
+      dslAbilities,
+      meta,
+    };
+  });
+
+  const alignmentResourceTypes = buildAlignmentResourceTypeLookup(parsedCards);
+
+  for (const { card, dslAbilities, meta } of parsedCards) {
 
     if (card.cardType === 'H' || card.cardType === 'T') {
       // Hero cards: LP comes from stats.hp
@@ -133,7 +230,12 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
         lp,
         rarity: card.rarity,
         alignment: card.alignment,
-        resourceTypes: inferResourceTypes(cost, dslAbilities),
+        resourceTypes: resolveHeroResourceTypes(
+          card,
+          cost,
+          dslAbilities,
+          alignmentResourceTypes,
+        ),
         transformsInto: card.transformsInto,
         abilities: dslAbilities,
       });
@@ -152,7 +254,12 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
         traits: normalizeTraits(card.traits),
         tags: card.traits,
         alignment: card.alignment,
-        resourceTypes: inferResourceTypes(cost, dslAbilities),
+        resourceTypes: resolveCardResourceTypes(
+          card,
+          cost,
+          dslAbilities,
+          alignmentResourceTypes,
+        ),
         resourceType: inferResourceCardType(card),
         artUrl: card.artUrl,
         transformsInto: card.transformsInto,
