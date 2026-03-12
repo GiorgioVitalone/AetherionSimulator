@@ -67,23 +67,19 @@ describe('Cost Checker', () => {
       expect(canAfford(player, { mana: 2, energy: 0, flexible: 0 })).toBe(false);
     });
 
-    it('should use remaining resources for flexible cost', () => {
-      const bank = makeBank([
-        { type: 'mana' },
-        { type: 'mana' },
-        { type: 'energy' },
-        { type: 'energy' },
-      ]);
+    it('should allow flexible cost with any resource mix', () => {
+      // Flexible flag: total cost (mana+energy) is payable with any mix
+      const bank = makeBank([{ type: 'energy' }, { type: 'energy' }, { type: 'energy' }]);
       const player = playerWithResources(bank);
-      // 1 mana specific + 2 flexible = 3 total, leaving 1 mana + 2 energy = 3 remaining for flexible
-      expect(canAfford(player, { mana: 1, energy: 0, flexible: 2 })).toBe(true);
+      // Cost is energy:3, flexible:1 means pay 3 total with any resources
+      expect(canAfford(player, { mana: 0, energy: 3, flexible: 1 })).toBe(true);
     });
 
-    it('should return false when flexible exceeds remaining', () => {
-      const bank = makeBank([{ type: 'mana' }, { type: 'energy' }]);
+    it('should return false when total resources below flexible cost', () => {
+      const bank = makeBank([{ type: 'mana' }]);
       const player = playerWithResources(bank);
-      // 1 mana specific, leaves 1 energy for flexible, but need 2 flexible
-      expect(canAfford(player, { mana: 1, energy: 0, flexible: 2 })).toBe(false);
+      // Flexible: total cost = mana + energy = 3, player has 1 resource
+      expect(canAfford(player, { mana: 0, energy: 3, flexible: 1 })).toBe(false);
     });
 
     it('should handle zero cost', () => {
@@ -115,14 +111,15 @@ describe('Cost Checker', () => {
       expect(exhaustedCount).toBe(2);
     });
 
-    it('should exhaust flexible from remaining bank cards', () => {
+    it('should exhaust any resources for flexible cost', () => {
       const bank = makeBank([
         { type: 'mana' },
-        { type: 'energy' },
+        { type: 'mana' },
         { type: 'energy' },
       ]);
       const player = playerWithResources(bank);
-      const result = payCost(player, { mana: 0, energy: 1, flexible: 1 });
+      // Flexible flag: total cost = 0 + 2 = 2, pay with any 2 resources
+      const result = payCost(player, { mana: 0, energy: 2, flexible: 1 });
 
       const exhaustedCount = result.resourceBank.filter(r => r.exhausted).length;
       expect(exhaustedCount).toBe(2);

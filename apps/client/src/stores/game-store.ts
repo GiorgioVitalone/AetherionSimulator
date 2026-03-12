@@ -26,12 +26,14 @@ import { computeAvailableActions } from '@aetherion-sim/engine';
 import type { GameAction } from './actions';
 import type { GameConfig } from '@/features/game-setup/game-config';
 import { GameFlowController } from '@/machines/game-flow';
-import { createRegistry } from '@/features/game-setup/registry-adapter';
+import { createRegistry, type AbilityMeta } from '@/features/game-setup/registry-adapter';
 import { getAllCards } from '@/features/game-setup/deck-loader';
 
 // ── Module-level controller reference (not serializable → not in store) ────
 
 let gameFlowController: GameFlowController | null = null;
+let abilityMetaLookup: ((defId: number) => readonly AbilityMeta[]) | null = null;
+let heroAbilityMetaLookup: ((defId: number) => readonly AbilityMeta[]) | null = null;
 
 // ── Store Shape ─────────────────────────────────────────────────────────────
 
@@ -75,6 +77,8 @@ export const useGameStore = create<GameStore>()(
       _reset: () => {
         gameFlowController?.stop();
         gameFlowController = null;
+        abilityMetaLookup = null;
+        heroAbilityMetaLookup = null;
         set({
           state: null,
           availableActions: null,
@@ -99,6 +103,10 @@ export const useGameStore = create<GameStore>()(
           );
         }
         const registryWithAbilities = createRegistry(allCards);
+
+        // Store ability metadata lookups for UI components
+        abilityMetaLookup = registryWithAbilities.getAbilityMeta;
+        heroAbilityMetaLookup = registryWithAbilities.getHeroAbilityMeta;
 
         // Use provided deck selections
         const player1Deck = config.player1.deck;
@@ -186,4 +194,14 @@ export function selectCanAttack(store: GameStore): boolean {
 
 export function selectCanEndPhase(store: GameStore): boolean {
   return store.availableActions?.canEndPhase ?? false;
+}
+
+// ── Ability Metadata Getters ──────────────────────────────────────────────
+
+export function getAbilityMeta(defId: number): readonly AbilityMeta[] {
+  return abilityMetaLookup?.(defId) ?? [];
+}
+
+export function getHeroAbilityMeta(defId: number): readonly AbilityMeta[] {
+  return heroAbilityMetaLookup?.(defId) ?? [];
 }

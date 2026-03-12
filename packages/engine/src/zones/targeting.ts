@@ -5,6 +5,7 @@
 import type { CardInstance, ZoneState } from '../types/game-state.js';
 import type { Trait, ZoneType } from '../types/common.js';
 import { getCardsInZone } from './zone-manager.js';
+import { cardHasActiveTrait } from '../state/runtime-card-helpers.js';
 
 // ── Attack Target ────────────────────────────────────────────────────────────
 
@@ -28,8 +29,7 @@ function hasTrait(traits: readonly Trait[], trait: Trait): boolean {
 }
 
 function cardHasTrait(card: CardInstance, trait: Trait): boolean {
-  return hasTrait(card.traits, trait) ||
-    card.grantedTraits.some(g => g.trait === trait);
+  return cardHasActiveTrait(card, trait);
 }
 
 // ── Board State Queries ──────────────────────────────────────────────────────
@@ -67,8 +67,11 @@ export function getValidAttackTargets(
   // Reserve: cannot attack unless Sniper (targets enemy Frontline only)
   if (attackerZone === 'reserve') {
     if (!isSniper) return [];
-    return getCardsInZone(defenderZones, 'frontline').map(c =>
-      characterTarget(c.instanceId),
+    return applyDefenderPriority(
+      getCardsInZone(defenderZones, 'frontline'),
+      defenderZones,
+      isFlying,
+      false,
     );
   }
 

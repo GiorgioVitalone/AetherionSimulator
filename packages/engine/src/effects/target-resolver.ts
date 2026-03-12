@@ -11,6 +11,10 @@ import type {
 } from '../types/game-state.js';
 import { getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 import { evaluateAmount } from './amount-evaluator.js';
+import {
+  cardHasActiveTrait,
+  isProtectedFromEnemyTargeting,
+} from '../state/runtime-card-helpers.js';
 
 export type ResolvedTargets =
   | { readonly resolved: true; readonly targetIds: readonly string[] }
@@ -21,11 +25,6 @@ export function resolveTargets(
   target: TargetExpr,
   context: EffectContext,
 ): ResolvedTargets {
-  // If targets already selected via PendingChoice response, use those
-  if (context.selectedTargets !== undefined) {
-    return { resolved: true, targetIds: context.selectedTargets };
-  }
-
   switch (target.type) {
     case 'self':
       return { resolved: true, targetIds: [context.sourceInstanceId] };
@@ -61,8 +60,14 @@ export function resolveTargets(
       return resolvePlayerTarget(target, context);
 
     case 'target_spell':
+      return resolveTargetSpell(state, context);
+
     case 'target_equipment':
+      return resolveTargetEquipment(state, target, context);
+
     case 'target_card_in_discard':
+      return resolveTargetCardInDiscard(state, target, context);
+
     case 'adjacent_to_self':
     case 'copy_of':
     case 'random':
@@ -125,6 +130,10 @@ function resolveTargetCharacter(
   target: Extract<TargetExpr, { type: 'target_character' }>,
   context: EffectContext,
 ): ResolvedTargets {
+  // If targets already selected via PendingChoice response, use those
+  if (context.selectedTargets !== undefined) {
+    return { resolved: true, targetIds: context.selectedTargets };
+  }
   const cards = getCardsBySide(state, target.side, context);
   const filtered = applyFilter(cards, target.filter);
   if (filtered.length === 0) {
@@ -135,7 +144,7 @@ function resolveTargetCharacter(
     pendingChoice: {
       type: 'select_targets',
       playerId: context.controllerId,
-      options: filtered.map(c => ({ id: c.instanceId, label: c.name })),
+      options: filtered.map(c => ({ id: c.instanceId, label: c.name, instanceId: c.instanceId })),
       minSelections: 1,
       maxSelections: 1,
       context: 'Choose a target character',
@@ -148,6 +157,10 @@ function resolveUpTo(
   target: Extract<TargetExpr, { type: 'up_to' }>,
   context: EffectContext,
 ): ResolvedTargets {
+  // If targets already selected via PendingChoice response, use those
+  if (context.selectedTargets !== undefined) {
+    return { resolved: true, targetIds: context.selectedTargets };
+  }
   const cards = getCardsBySide(state, target.side, context);
   const filtered = applyFilter(cards, target.filter, context);
   if (filtered.length === 0) {
@@ -161,7 +174,7 @@ function resolveUpTo(
     pendingChoice: {
       type: 'select_targets',
       playerId: context.controllerId,
-      options: filtered.map(c => ({ id: c.instanceId, label: c.name })),
+      options: filtered.map(c => ({ id: c.instanceId, label: c.name, instanceId: c.instanceId })),
       minSelections: 0,
       maxSelections: Math.min(count, filtered.length),
       context: `Choose up to ${String(count)} targets`,
@@ -179,6 +192,85 @@ function resolvePlayerTarget(
       ? `hero_${String(context.controllerId === 0 ? 1 : 0)}`
       : `hero_${String(context.controllerId)}`;
   return { resolved: true, targetIds: [id] };
+}
+
+function resolveTargetSpell(
+  state: GameState,
+  context: EffectContext,
+): ResolvedTargets {
+  if (context.selectedTargets !== undefined && context.selectedTargets.length > 0) {
+    return { resolved: true, targetIds: context.selectedTargets };
+  }
+
+  const target = [...state.stack]
+    .reverse()
+    .find(item => item.countered !== true);
+  if (target === undefined) {
+    return { resolved: true, targetIds: [] };
+  }
+
+  return { resolved: true, targetIds: [target.id] };
+}
+
+function resolveTargetEquipment(
+  state: GameState,
+  target: Extract<TargetExpr, { type: 'target_equipment' }>,
+  context: EffectContext,
+): ResolvedTargets {
+  if (context.selectedTargets !== undefined) {
+    return { resolved: true, targetIds: context.selectedTargets };
+  }
+
+  const players = getPlayersBySide(state, target.side, context);
+  const equipmentCards = players.flatMap(player =>
+    getAllCards(player.zones)
+      .flatMap(card => card.equipment === null ? [] : [card.equipment]),
+  );
+
+  if (equipmentCards.length === 0) {
+    return { resolved: true, targetIds: [] };
+  }
+
+  return {
+    resolved: false,
+    pendingChoice: {
+      type: 'select_targets',
+      playerId: context.controllerId,
+      options: equipmentCards.map(card => ({ id: card.instanceId, label: card.name, instanceId: card.instanceId })),
+      minSelections: 1,
+      maxSelections: 1,
+      context: 'Choose target equipment',
+    },
+  };
+}
+
+function resolveTargetCardInDiscard(
+  state: GameState,
+  target: Extract<TargetExpr, { type: 'target_card_in_discard' }>,
+  context: EffectContext,
+): ResolvedTargets {
+  if (context.selectedTargets !== undefined) {
+    return { resolved: true, targetIds: context.selectedTargets };
+  }
+
+  const players = getPlayersBySide(state, target.side, context);
+  const cards = players.flatMap(player => player.discardPile);
+  const filtered = applyFilter(cards, target.filter);
+  if (filtered.length === 0) {
+    return { resolved: true, targetIds: [] };
+  }
+
+  return {
+    resolved: false,
+    pendingChoice: {
+      type: 'select_targets',
+      playerId: context.controllerId,
+      options: filtered.map(card => ({ id: card.instanceId, label: card.name, instanceId: card.instanceId })),
+      minSelections: 1,
+      maxSelections: 1,
+      context: 'Choose a card in discard',
+    },
+  };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -204,7 +296,7 @@ function getPlayersBySide(
   }
 }
 
-function applyFilter(
+export function applyFilter(
   cards: readonly CardInstance[],
   filter: { trait?: string; maxCost?: number; minCost?: number; maxHp?: number; maxAtk?: number; cardType?: string; tag?: string; excludeSelf?: boolean } | undefined,
   context?: EffectContext,
@@ -212,7 +304,8 @@ function applyFilter(
   if (filter === undefined) return cards;
   return cards.filter(c => {
     if (filter.excludeSelf === true && context !== undefined && c.instanceId === context.sourceInstanceId) return false;
-    if (filter.trait !== undefined && !c.traits.includes(filter.trait as never)) return false;
+    if (context !== undefined && c.owner !== context.controllerId && isProtectedFromEnemyTargeting(c)) return false;
+    if (filter.trait !== undefined && !cardHasActiveTrait(c, filter.trait as never)) return false;
     if (filter.tag !== undefined && !c.tags.includes(filter.tag)) return false;
     if (filter.cardType !== undefined && c.cardType !== filter.cardType) return false;
     const totalCost = c.cost.mana + c.cost.energy + c.cost.flexible;

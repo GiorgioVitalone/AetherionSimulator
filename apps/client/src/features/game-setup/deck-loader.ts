@@ -96,12 +96,42 @@ export function buildStarterDeck(faction: string): DeckSelection {
     copyCounts.set(card.id, currentCopies + copiesToAdd);
   }
 
-  // Build resource deck from faction's resource cards
-  const resourceCards = getCardsByFaction(faction).filter(c => c.cardType === 'R');
+  // Resource cards are faction-neutral (alignment: []) — fetch from full card pool
+  const allCards = getAllCards();
+  const resourceCards = allCards.filter(c => c.cardType === 'R');
   const resourceDeckDefIds: number[] = [];
 
-  // Fill to 15 by cycling through available resource cards
-  if (resourceCards.length > 0) {
+  // Compute resource affinity from the faction's card costs
+  const manaCard = resourceCards.find(c => c.name.toLowerCase().includes('mana'));
+  const energyCard = resourceCards.find(c => c.name.toLowerCase().includes('energy'));
+
+  if (manaCard && energyCard) {
+    let totalMana = 0;
+    let totalEnergy = 0;
+    for (const c of factionCards) {
+      totalMana += c.cost.mana;
+      totalEnergy += c.cost.energy;
+    }
+
+    let manaCount: number;
+    if (totalMana + totalEnergy === 0) {
+      manaCount = RESOURCE_DECK_SIZE; // Fallback to all mana
+    } else if (totalEnergy === 0) {
+      manaCount = RESOURCE_DECK_SIZE; // Pure mana faction
+    } else if (totalMana === 0) {
+      manaCount = 0; // Pure energy faction
+    } else {
+      // Proportional split, rounded, with at least 2 of the minority type
+      const manaRatio = totalMana / (totalMana + totalEnergy);
+      manaCount = Math.round(manaRatio * RESOURCE_DECK_SIZE);
+      manaCount = Math.max(2, Math.min(RESOURCE_DECK_SIZE - 2, manaCount));
+    }
+    const energyCount = RESOURCE_DECK_SIZE - manaCount;
+
+    for (let i = 0; i < manaCount; i++) resourceDeckDefIds.push(manaCard.id);
+    for (let i = 0; i < energyCount; i++) resourceDeckDefIds.push(energyCard.id);
+  } else if (resourceCards.length > 0) {
+    // Fallback: cycle through whatever resource cards exist
     let idx = 0;
     while (resourceDeckDefIds.length < RESOURCE_DECK_SIZE) {
       resourceDeckDefIds.push(resourceCards[idx % resourceCards.length]!.id);

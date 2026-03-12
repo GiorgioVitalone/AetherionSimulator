@@ -21,8 +21,11 @@ export type PlayerAction =
   | DeployAction
   | CastSpellAction
   | AttachEquipmentAction
+  | RemoveEquipmentAction
+  | TransferEquipmentAction
   | MoveAction
   | ActivateAbilityAction
+  | ActivateHeroAbilityAction
   | DeclareAttackAction
   | DiscardForEnergyAction
   | DeclareTransformAction;
@@ -32,11 +35,13 @@ export interface DeployAction {
   readonly cardInstanceId: string;
   readonly zone: ZoneType;
   readonly slotIndex: number;
+  readonly xValue?: number;
 }
 
 export interface CastSpellAction {
   readonly type: 'cast_spell';
   readonly cardInstanceId: string;
+  readonly targetId?: string;
 }
 
 export interface AttachEquipmentAction {
@@ -45,10 +50,22 @@ export interface AttachEquipmentAction {
   readonly targetInstanceId: string;
 }
 
+export interface RemoveEquipmentAction {
+  readonly type: 'remove_equipment';
+  readonly cardInstanceId: string;
+}
+
+export interface TransferEquipmentAction {
+  readonly type: 'transfer_equipment';
+  readonly cardInstanceId: string;
+  readonly targetInstanceId: string;
+}
+
 export interface MoveAction {
   readonly type: 'move';
   readonly cardInstanceId: string;
   readonly toZone: ZoneType;
+  readonly slotIndex: number;
 }
 
 export interface ActivateAbilityAction {
@@ -66,6 +83,12 @@ export interface DeclareAttackAction {
 export interface DiscardForEnergyAction {
   readonly type: 'discard_for_energy';
   readonly cardInstanceId: string;
+}
+
+export interface ActivateHeroAbilityAction {
+  readonly type: 'activate_hero_ability';
+  readonly abilityIndex: number;
+  readonly targetId?: string;
 }
 
 export interface DeclareTransformAction {

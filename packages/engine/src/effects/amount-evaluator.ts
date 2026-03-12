@@ -15,8 +15,7 @@ export function evaluateAmount(
     case 'fixed':
       return amount.value;
     case 'x_cost':
-      // X cost is determined at cast time — stored in context
-      return 0; // Placeholder: resolved by cost-payment system
+      return context.xValue ?? 0;
     case 'event_value':
       // Event-derived value — resolved by event context
       return 0; // Placeholder: resolved by event system

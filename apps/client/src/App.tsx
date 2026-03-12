@@ -1,13 +1,19 @@
+import { useGameStore } from '@/stores/game-store';
+import { GameSetupScreen } from '@/features/game-setup/GameSetupScreen';
+import { GameScreen } from '@/features/game-layout/GameScreen';
+import { ErrorBoundary } from '@/features/shared/ErrorBoundary';
+import { QaFaultTrigger } from '@/testing/qa-faults';
+
 export function App() {
+  const isStarted = useGameStore((s) => s.isStarted);
+  const reset = useGameStore((s) => s._reset);
+
   return (
-    <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] flex items-center justify-center">
-      <div className="text-center space-y-6">
-        <h1 className="text-4xl font-black tracking-normal">Aetherion Simulator</h1>
-        <p className="font-body text-[var(--color-text-secondary)] text-lg">
-          Game engine initializing...
-        </p>
-        <div className="w-16 h-0.5 bg-accent mx-auto opacity-60" />
+    <ErrorBoundary onReset={reset}>
+      <QaFaultTrigger />
+      <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)]">
+        {isStarted ? <GameScreen /> : <GameSetupScreen />}
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }

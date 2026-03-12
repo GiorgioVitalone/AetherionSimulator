@@ -108,6 +108,7 @@ function mapActionToEvent(action: GameAction): GameMachineEvent | null {
           cardInstanceId: action.cardInstanceId,
           zone: action.zone,
           slotIndex: action.slotIndex,
+          xValue: action.xValue,
         },
       };
 
@@ -117,6 +118,7 @@ function mapActionToEvent(action: GameAction): GameMachineEvent | null {
         action: {
           type: 'cast_spell',
           cardInstanceId: action.cardInstanceId,
+          targetId: action.targetId,
         },
       };
 
@@ -130,6 +132,25 @@ function mapActionToEvent(action: GameAction): GameMachineEvent | null {
         },
       };
 
+    case 'remove_equipment':
+      return {
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'remove_equipment',
+          cardInstanceId: action.cardInstanceId,
+        },
+      };
+
+    case 'transfer_equipment':
+      return {
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'transfer_equipment',
+          cardInstanceId: action.cardInstanceId,
+          targetInstanceId: action.targetInstanceId,
+        },
+      };
+
     case 'move_character':
       return {
         type: 'PLAYER_ACTION',
@@ -137,6 +158,7 @@ function mapActionToEvent(action: GameAction): GameMachineEvent | null {
           type: 'move',
           cardInstanceId: action.cardInstanceId,
           toZone: action.toZone,
+          slotIndex: action.slotIndex,
         },
       };
 
@@ -146,6 +168,15 @@ function mapActionToEvent(action: GameAction): GameMachineEvent | null {
         action: {
           type: 'activate_ability',
           cardInstanceId: action.cardInstanceId,
+          abilityIndex: action.abilityIndex,
+        },
+      };
+
+    case 'activate_hero_ability':
+      return {
+        type: 'PLAYER_ACTION',
+        action: {
+          type: 'activate_hero_ability',
           abilityIndex: action.abilityIndex,
         },
       };

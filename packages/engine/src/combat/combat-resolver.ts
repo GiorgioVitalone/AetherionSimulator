@@ -14,6 +14,13 @@ import {
   calculateCombatDamage,
   calculateHeroDamage,
 } from './damage-calculator.js';
+import { updateCardInState, destroyCard } from '../state/index.js';
+import { getRuntimeCardTraits } from '../state/runtime-card-helpers.js';
+import {
+  getActiveReplacementEffect,
+  markReplacementEffectUsed,
+} from '../effects/replacement-handler.js';
+import { executeEffect } from '../effects/interpreter.js';
 
 export interface CombatResult {
   readonly newState: GameState;
@@ -21,73 +28,7 @@ export interface CombatResult {
 }
 
 function allTraits(card: CardInstance): readonly Trait[] {
-  return [
-    ...card.traits,
-    ...card.grantedTraits.map(g => g.trait),
-  ];
-}
-
-// ── Updaters (immutable) ─────────────────────────────────────────────────────
-
-function updateCardInZones(
-  state: GameState,
-  instanceId: string,
-  updater: (card: CardInstance) => CardInstance,
-): GameState {
-  return {
-    ...state,
-    players: state.players.map(player => ({
-      ...player,
-      zones: {
-        reserve: player.zones.reserve.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        frontline: player.zones.frontline.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        highGround: player.zones.highGround.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-      },
-    })) as unknown as readonly [typeof state.players[0], typeof state.players[1]],
-  };
-}
-
-function removeCardFromZones(
-  state: GameState,
-  instanceId: string,
-): { state: GameState; removedFrom: 0 | 1; card: CardInstance } | null {
-  for (let pi = 0; pi < 2; pi++) {
-    const player = state.players[pi]!;
-    const location = findCard(player.zones, instanceId);
-    if (location !== null) {
-      const newZones = {
-        reserve: player.zones.reserve.map(c =>
-          c?.instanceId === instanceId ? null : c,
-        ),
-        frontline: player.zones.frontline.map(c =>
-          c?.instanceId === instanceId ? null : c,
-        ),
-        highGround: player.zones.highGround.map(c =>
-          c?.instanceId === instanceId ? null : c,
-        ),
-      };
-      const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
-      newPlayers[pi] = {
-        ...player,
-        zones: newZones,
-        discardPile: location.card.isToken
-          ? player.discardPile
-          : [...player.discardPile, location.card],
-      };
-      return {
-        state: { ...state, players: newPlayers },
-        removedFrom: pi as 0 | 1,
-        card: location.card,
-      };
-    }
-  }
-  return null;
+  return getRuntimeCardTraits(card);
 }
 
 // ── Core Resolution ──────────────────────────────────────────────────────────
@@ -128,7 +69,7 @@ export function resolveCombat(
   }
 
   // 3. Exhaust attacker
-  let currentState = updateCardInZones(state, attackerInstanceId, card => ({
+  let currentState = updateCardInState(state, attackerInstanceId, card => ({
     ...card,
     exhausted: true,
     attackedThisTurn: true,
@@ -200,8 +141,8 @@ function resolveCharacterAttack(
   attackerInstanceId: string,
   targetId: string,
   events: GameEvent[],
-  attackerPlayerId: 0 | 1 = state.activePlayerIndex,
-  defenderPlayerId: 0 | 1 = (state.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
+  _attackerPlayerId: 0 | 1 = state.activePlayerIndex,
+  _defenderPlayerId: 0 | 1 = (state.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
 ): CombatResult {
   // Find defender in either player's zones
   let defender: CardInstance | null = null;
@@ -231,34 +172,45 @@ function resolveCharacterAttack(
 
   // Apply damage to defender
   if (result.damageToDefender > 0) {
-    events.push({
-      type: 'DAMAGE_DEALT',
-      sourceId: attackerInstanceId,
-      targetId,
-      amount: result.damageToDefender,
-    });
-    currentState = updateCardInZones(currentState, targetId, card => ({
-      ...card,
-      currentHp: card.currentHp - result.damageToDefender,
-    }));
+    const replacement = applyReplacementToDamage(currentState, defender, result.damageToDefender);
+    currentState = replacement.state;
+    events.push(...replacement.events);
+    if (replacement.damage > 0) {
+      events.push({
+        type: 'DAMAGE_DEALT',
+        sourceId: attackerInstanceId,
+        targetId,
+        amount: replacement.damage,
+      });
+      currentState = updateCardInState(currentState, targetId, card => ({
+        ...card,
+        currentHp: card.currentHp - replacement.damage,
+      }));
+    }
   }
 
   // Apply damage to attacker
   if (result.damageToAttacker > 0) {
-    events.push({
-      type: 'DAMAGE_DEALT',
-      sourceId: targetId,
-      targetId: attackerInstanceId,
-      amount: result.damageToAttacker,
-    });
-    currentState = updateCardInZones(
-      currentState,
-      attackerInstanceId,
-      card => ({
-        ...card,
-        currentHp: card.currentHp - result.damageToAttacker,
-      }),
-    );
+    const refreshedAttacker = findCard(currentState.players[_attackerPlayerId]!.zones, attackerInstanceId)?.card ?? attacker;
+    const replacement = applyReplacementToDamage(currentState, refreshedAttacker, result.damageToAttacker);
+    currentState = replacement.state;
+    events.push(...replacement.events);
+    if (replacement.damage > 0) {
+      events.push({
+        type: 'DAMAGE_DEALT',
+        sourceId: targetId,
+        targetId: attackerInstanceId,
+        amount: replacement.damage,
+      });
+      currentState = updateCardInState(
+        currentState,
+        attackerInstanceId,
+        card => ({
+          ...card,
+          currentHp: card.currentHp - replacement.damage,
+        }),
+      );
+    }
   }
 
   // Destroy defender if dead
@@ -268,31 +220,52 @@ function resolveCharacterAttack(
       attackerId: attackerInstanceId,
       targetId,
     });
-    events.push({
-      type: 'CARD_DESTROYED',
-      cardInstanceId: targetId,
-      cause: 'combat',
-      playerId: defenderPlayerId,
-    });
-    const removal = removeCardFromZones(currentState, targetId);
-    if (removal !== null) {
-      currentState = removal.state;
-    }
+    const defenderDestroy = destroyCard(currentState, targetId, 'combat');
+    currentState = defenderDestroy.state;
+    events.push(...defenderDestroy.events);
   }
 
   // Destroy attacker if dead
   if (result.attackerDestroyed) {
-    events.push({
-      type: 'CARD_DESTROYED',
-      cardInstanceId: attackerInstanceId,
-      cause: 'combat',
-      playerId: attackerPlayerId,
-    });
-    const removal = removeCardFromZones(currentState, attackerInstanceId);
-    if (removal !== null) {
-      currentState = removal.state;
-    }
+    const attackerDestroy = destroyCard(currentState, attackerInstanceId, 'combat');
+    currentState = attackerDestroy.state;
+    events.push(...attackerDestroy.events);
   }
 
   return { newState: currentState, events };
+}
+
+function applyReplacementToDamage(
+  state: GameState,
+  card: CardInstance,
+  amount: number,
+): { readonly state: GameState; readonly damage: number; readonly events: readonly GameEvent[] } {
+  const replacement = getActiveReplacementEffect(state, card, 'on_would_take_damage');
+  if (replacement === null) {
+    return { state, damage: amount, events: [] };
+  }
+
+  let currentState = replacement.effect.oncePerTurn === true
+    ? markReplacementEffectUsed(state, replacement.id)
+    : state;
+  const events: GameEvent[] = [];
+
+  for (const effect of replacement.effect.instead) {
+    const result = executeEffect(currentState, effect, {
+      sourceInstanceId: replacement.sourceInstanceId,
+      controllerId: replacement.controllerId,
+      triggerDepth: 0,
+    });
+    currentState = result.newState;
+    events.push(...result.events);
+  }
+
+  return {
+    state: currentState,
+    damage: replacement.effect.replaces.type === 'on_would_take_damage' &&
+      replacement.effect.replaces.reduction !== undefined
+      ? Math.max(0, amount - replacement.effect.replaces.reduction)
+      : 0,
+    events,
+  };
 }

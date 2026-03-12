@@ -5,6 +5,10 @@
 import type { CardInstance, ZoneState } from '../types/game-state.js';
 import type { ZoneType } from '../types/common.js';
 import { ZONE_SLOTS } from '../types/game-state.js';
+import {
+  getFreeMoveAllowance,
+  getMaxMovesPerTurn,
+} from '../state/runtime-card-helpers.js';
 
 // ── Zone Accessors ───────────────────────────────────────────────────────────
 
@@ -162,24 +166,46 @@ export function moveCard(
   zones: ZoneState,
   instanceId: string,
   toZone: ZoneType,
+  slotIndex?: number,
+  turnNumber?: number,
 ): ZoneState {
   const location = findCard(zones, instanceId);
   if (location === null) {
     throw new Error(`Card ${instanceId} not found in any zone`);
+  }
+  if (location.card.exhausted) {
+    throw new Error(`Card ${instanceId} is exhausted`);
   }
   if (!isAdjacentZone(location.zone, toZone)) {
     throw new Error(
       `Cannot move directly from ${location.zone} to ${toZone}`,
     );
   }
-  const targetSlot = firstOpenSlot(zones, toZone);
+  const targetSlot = slotIndex ?? firstOpenSlot(zones, toZone);
   if (targetSlot === -1) {
     throw new Error(`No open slot in ${toZone}`);
   }
+  if (targetSlot < 0 || targetSlot >= getZoneSlots(toZone)) {
+    throw new Error(`Slot ${String(targetSlot)} out of range for ${toZone}`);
+  }
+  if (getZoneArray(zones, toZone)[targetSlot] !== null) {
+    throw new Error(`Slot ${String(targetSlot)} in ${toZone} is occupied`);
+  }
+  const freeMoveAllowance = turnNumber === undefined
+    ? 0
+    : getFreeMoveAllowance(location.card, turnNumber);
+  const maxMoves = turnNumber === undefined
+    ? 1
+    : getMaxMovesPerTurn(location.card, turnNumber);
+  if (location.card.movesThisTurn >= maxMoves) {
+    throw new Error(`Card ${instanceId} has no remaining moves this turn`);
+  }
+  const shouldExhaust = location.card.movesThisTurn >= freeMoveAllowance;
   const movedCard: CardInstance = {
     ...location.card,
-    exhausted: true,
+    exhausted: shouldExhaust ? true : location.card.exhausted,
     movedThisTurn: true,
+    movesThisTurn: location.card.movesThisTurn + 1,
   };
   const cleared = setZoneSlot(zones, location.zone, location.slotIndex, null);
   return setZoneSlot(cleared, toZone, targetSlot, movedCard);

@@ -116,12 +116,16 @@ export function triggerMatchesEvent(
       // Side filtering requires card ownership lookup — accept all for now
       return true;
 
+    case 'on_counter':
+      return false;
+
+    case 'on_flash':
+      return false;
+
     // These are not event-reactive — they're checked differently
     case 'while':
     case 'activated':
     case 'on_cast':
-    case 'on_counter':
-    case 'on_flash':
       return false;
   }
 }

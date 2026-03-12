@@ -14,36 +14,26 @@ import type {
 import { resolveTargets } from './target-resolver.js';
 import { evaluateAmount } from './amount-evaluator.js';
 import { evaluateCondition } from './condition-evaluator.js';
-import { findCard, removeFromZone, deployToZone } from '../zones/zone-manager.js';
+import { findCard, deployToZone, moveCard } from '../zones/zone-manager.js';
 import { ZONE_SLOTS } from '../types/game-state.js';
 import type { ZoneType } from '../types/common.js';
+import {
+  updateCardInState,
+  findCardInState,
+  removeCardFromState,
+  resetCard,
+  destroyCard,
+} from '../state/index.js';
+import { registerScheduledEffect } from './scheduled-processor.js';
+import { counterStackItem } from '../stack/stack-resolver.js';
+import { canAfford, payCost } from '../actions/cost-checker.js';
+import {
+  getActiveReplacementEffect,
+  markReplacementEffectUsed,
+} from './replacement-handler.js';
 
 function unchanged(state: GameState): EffectResult {
   return { newState: state, events: [] };
-}
-
-function updateCardInState(
-  state: GameState,
-  instanceId: string,
-  updater: (card: CardInstance) => CardInstance,
-): GameState {
-  return {
-    ...state,
-    players: state.players.map(player => ({
-      ...player,
-      zones: {
-        reserve: player.zones.reserve.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        frontline: player.zones.frontline.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        highGround: player.zones.highGround.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-      },
-    })) as unknown as readonly [typeof state.players[0], typeof state.players[1]],
-  };
 }
 
 export function executeEffect(
@@ -68,20 +58,27 @@ export function executeEffect(
     case 'composite': return executeComposite(state, effect, context);
     case 'conditional': return executeConditional(state, effect, context);
     case 'choose_one': return executeChooseOne(state, effect, context);
-    // Phase 2 primitives — stub for now
-    case 'scry':
+    case 'scheduled': {
+      const newState = registerScheduledEffect(state, effect, context);
+      return { newState, events: [] };
+    }
     case 'counter_spell':
-    case 'return_from_discard':
+      return executeCounterSpell(state, effect, context);
+    // Phase 2 primitives — stub for now
     case 'cost_reduction':
+      return executeCostReduction(state, effect, context);
     case 'grant_ability':
+      return executeGrantAbility(state, effect, context);
     case 'replacement':
+      return executeReplacement(state, effect, context);
+    case 'scry':
+    case 'return_from_discard':
     case 'cleanse':
     case 'search_deck':
     case 'shuffle_into_deck':
     case 'copy_card':
     case 'deploy_from_deck':
     case 'attach_as_equipment':
-    case 'scheduled':
       return unchanged(state);
   }
 }
@@ -114,20 +111,84 @@ function executeDealDamage(
         currentState = { ...currentState, winner: opponentId };
       }
     } else {
-      events.push({ type: 'DAMAGE_DEALT', sourceId: context.sourceInstanceId, targetId, amount });
-      currentState = updateCardInState(currentState, targetId, c => ({
-        ...c, currentHp: c.currentHp - amount,
-      }));
+      const targetCard = findCardInState(currentState, targetId);
+      if (targetCard === null) {
+        continue;
+      }
+      const damageResult = applyReplacementToDamage(
+        currentState,
+        targetCard,
+        Math.max(0, amount - targetCard.currentArm),
+      );
+      currentState = damageResult.state;
+      const actualDamage = damageResult.damage;
+      events.push(...damageResult.events);
+      if (actualDamage > 0) {
+        events.push({ type: 'DAMAGE_DEALT', sourceId: context.sourceInstanceId, targetId, amount: actualDamage });
+        currentState = updateCardInState(currentState, targetId, c => ({
+          ...c, currentHp: c.currentHp - actualDamage,
+        }));
+      }
       // Check destruction
       const cardCheck = findCardInState(currentState, targetId);
       if (cardCheck !== null && cardCheck.currentHp <= 0) {
-        events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'effect', playerId: cardCheck.owner });
-        currentState = removeCardFromState(currentState, targetId);
+        const destruction = destroyCard(currentState, targetId, 'effect');
+        currentState = destruction.state;
+        events.push(...destruction.events);
       }
     }
   }
 
   return { newState: currentState, events };
+}
+
+function applyReplacementToDamage(
+  state: GameState,
+  card: CardInstance,
+  amount: number,
+): { readonly state: GameState; readonly damage: number; readonly events: readonly GameEvent[] } {
+  if (amount <= 0) {
+    return { state, damage: 0, events: [] };
+  }
+
+  const replacement = getActiveReplacementEffect(state, card, 'on_would_take_damage');
+  if (replacement === null) {
+    return { state, damage: amount, events: [] };
+  }
+
+  let currentState = replacement.effect.oncePerTurn === true
+    ? markReplacementEffectUsed(state, replacement.id)
+    : state;
+  const events: GameEvent[] = [];
+
+  for (const effect of replacement.effect.instead) {
+    const result = executeEffect(currentState, effect, {
+      sourceInstanceId: replacement.sourceInstanceId,
+      controllerId: replacement.controllerId,
+      triggerDepth: 0,
+    });
+    currentState = result.newState;
+    events.push(...result.events);
+  }
+
+  if (
+    replacement.effect.replaces.type === 'on_would_take_damage' &&
+    replacement.effect.replaces.reduction !== undefined
+  ) {
+    return {
+      state: currentState,
+      damage: replacement.effect.replaces.type === 'on_would_take_damage'
+        ? Math.max(0, amount - (replacement.effect.replaces.reduction ?? 0))
+        : 0,
+      events,
+    };
+  }
+
+  return {
+    state: currentState,
+    damage: replacement.effect.instead.length === 0 ? 0 : 0,
+    events,
+  };
 }
 
 function executeHeal(
@@ -173,7 +234,6 @@ function executeModifyStats(
   context: EffectContext,
 ): EffectResult {
   // Dynamic modifier requires runtime evaluation — stub for now
-  if (effect.dynamicModifier !== undefined) return unchanged(state);
 
   const resolved = resolveTargets(state, effect.target, context);
   if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
@@ -181,17 +241,103 @@ function executeModifyStats(
   const events: GameEvent[] = [];
   let currentState = state;
 
+  const modifiedTargets: string[] = [];
   for (const targetId of resolved.targetIds) {
-    events.push({ type: 'STAT_MODIFIED', cardInstanceId: targetId, modifier: effect.modifier });
-    currentState = updateCardInState(currentState, targetId, c => ({
-      ...c,
-      currentAtk: c.currentAtk + (effect.modifier.atk ?? 0),
-      currentHp: c.currentHp + (effect.modifier.hp ?? 0),
-      currentArm: c.currentArm + (effect.modifier.arm ?? 0),
-    }));
+    const targetCard = findCardInState(currentState, targetId);
+    if (targetCard === null) {
+      continue;
+    }
+
+    const modifier = effect.dynamicModifier === undefined
+      ? effect.modifier
+      : resolveDynamicModifier(currentState, effect, targetCard, context);
+    events.push({ type: 'STAT_MODIFIED', cardInstanceId: targetId, modifier });
+    currentState = updateCardInState(currentState, targetId, c => {
+      const updatedCard: CardInstance = {
+        ...c,
+        currentAtk: c.currentAtk + (modifier.atk ?? 0),
+        currentHp: Math.max(0, c.currentHp + (modifier.hp ?? 0)),
+        currentArm: c.currentArm + (modifier.arm ?? 0),
+      };
+
+      if (effect.duration.type === 'permanent') {
+        return {
+          ...updatedCard,
+          baseAtk: c.baseAtk + (modifier.atk ?? 0),
+          baseHp: c.baseHp + (modifier.hp ?? 0),
+          baseArm: c.baseArm + (modifier.arm ?? 0),
+        };
+      }
+
+      if (effect.duration.type === 'until_end_of_turn' || effect.duration.type === 'until_next_upkeep') {
+        return {
+          ...updatedCard,
+          modifiers: [
+            ...c.modifiers,
+            {
+              id: `modifier:${context.sourceInstanceId}:${targetId}:${String(c.modifiers.length)}`,
+              sourceInstanceId: context.sourceInstanceId,
+              modifier,
+              duration: effect.duration.type === 'until_end_of_turn'
+                ? { type: 'until_end_of_turn' }
+                : { type: 'until_next_upkeep' },
+            },
+          ],
+        };
+      }
+
+      return updatedCard;
+    });
+    modifiedTargets.push(targetId);
+  }
+
+  // Stat-reduction destruction check: if HP reduced to 0, destroy
+  for (const targetId of modifiedTargets) {
+    const card = findCardInState(currentState, targetId);
+    if (card !== null && card.currentHp <= 0) {
+      const destruction = destroyCard(currentState, targetId, 'effect');
+      currentState = destruction.state;
+      events.push(...destruction.events);
+    }
   }
 
   return { newState: currentState, events };
+}
+
+function resolveDynamicModifier(
+  state: GameState,
+  effect: Extract<Effect, { type: 'modify_stats' }>,
+  targetCard: CardInstance,
+  context: EffectContext,
+): Extract<Effect, { type: 'modify_stats' }>['modifier'] {
+  if (effect.dynamicModifier === undefined) {
+    return effect.modifier;
+  }
+
+  switch (effect.dynamicModifier.type) {
+    case 'equals_stat': {
+      const statValue = effect.dynamicModifier.sourceRef === 'atk'
+        ? targetCard.currentAtk
+        : effect.dynamicModifier.sourceRef === 'hp'
+          ? targetCard.currentHp
+          : targetCard.currentArm;
+      return {
+        ...effect.modifier,
+        [effect.dynamicModifier.stat]: statValue,
+      };
+    }
+    case 'x_cost': {
+      const sourceCard = context.sourceInstanceId.startsWith('hero_')
+        ? null
+        : findCardInState(state, context.sourceInstanceId);
+      return {
+        ...effect.modifier,
+        [effect.dynamicModifier.stat]: sourceCard?.xValue ?? context.xValue ?? 0,
+      };
+    }
+    default:
+      return effect.modifier;
+  }
 }
 
 function executeDrawCards(
@@ -205,6 +351,15 @@ function executeDrawCards(
     : context.controllerId;
 
   const player = state.players[playerIdx]!;
+  if (count > player.mainDeck.length) {
+    return {
+      newState: {
+        ...state,
+        winner: (playerIdx === 0 ? 1 : 0) as 0 | 1,
+      },
+      events: [],
+    };
+  }
   const drawCount = Math.min(count, player.mainDeck.length);
   if (drawCount === 0) return unchanged(state);
 
@@ -252,6 +407,7 @@ function executeDeployToken(
       cardDefId: 0,
       name: effect.token.name,
       cardType: 'C',
+      rarity: 'Common',
       currentHp: effect.token.hp,
       currentAtk: effect.token.atk,
       currentArm: effect.token.arm ?? 0,
@@ -262,18 +418,29 @@ function executeDeployToken(
       summoningSick: true,
       movedThisTurn: false,
       attackedThisTurn: false,
+      movesThisTurn: 0,
+      deployedTurn: state.turnNumber,
+      stealthBroken: false,
       traits: [...(effect.token.traits ?? [])],
       grantedTraits: [],
       abilities: [],
+      grantedAbilities: [],
+      abilityCooldowns: new Map(),
+      activatedAbilityTurns: new Map(),
       registeredTriggers: [],
       modifiers: [],
       statusEffects: [],
+      replacementEffects: [],
       equipment: null,
       isToken: true,
       tags: [...(effect.token.tags ?? [])],
       cost: { mana: 0, energy: 0, flexible: 0 },
+      resourceTypes: ['mana'],
       alignment: [],
+      artUrl: null,
       owner: context.controllerId,
+      abilitiesSuppressed: false,
+      transferredThisTurn: false,
     };
 
     const newZones = deployToZone(player.zones, token, zone, openSlot);
@@ -297,10 +464,9 @@ function executeDestroy(
   const events: GameEvent[] = [];
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    const card = findCardInState(currentState, targetId);
-    if (card === null) continue;
-    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'effect', playerId: card.owner });
-    currentState = removeCardFromState(currentState, targetId);
+    const destruction = destroyCard(currentState, targetId, 'effect');
+    currentState = destruction.state;
+    events.push(...destruction.events);
   }
   return { newState: currentState, events };
 }
@@ -355,11 +521,10 @@ function executeSacrifice(
   const events: GameEvent[] = [];
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    const card = findCardInState(currentState, targetId);
-    if (card === null) continue;
     events.push({ type: 'CARD_SACRIFICED', cardInstanceId: targetId });
-    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'sacrifice', playerId: card.owner });
-    currentState = removeCardFromState(currentState, targetId);
+    const destruction = destroyCard(currentState, targetId, 'sacrifice');
+    currentState = destruction.state;
+    events.push(...destruction.events);
   }
   return { newState: currentState, events };
 }
@@ -449,17 +614,154 @@ function executeApplyStatus(
   for (const targetId of resolved.targetIds) {
     currentState = updateCardInState(currentState, targetId, c => ({
       ...c,
-      statusEffects: [
-        ...c.statusEffects,
+      statusEffects: mergeStatusEffect(
+        c.statusEffects,
         {
           statusType: effect.status,
           value: effect.value ?? 1,
           remainingTurns: effect.durationTurns ?? null,
         },
-      ],
+      ),
     }));
   }
   return { newState: currentState, events: [] };
+}
+
+function executeCostReduction(
+  state: GameState,
+  effect: Extract<Effect, { type: 'cost_reduction' }>,
+  context: EffectContext,
+): EffectResult {
+  const player = state.players[context.controllerId]!;
+  const players = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+  players[context.controllerId] = {
+    ...player,
+    activeCostReductions: [
+      ...player.activeCostReductions,
+      {
+        id: `cost_reduction:${context.sourceInstanceId}:${String(player.activeCostReductions.length)}`,
+        sourceInstanceId: context.sourceInstanceId,
+        reduction: effect.reduction,
+        appliesTo: effect.appliesTo,
+        duration: effect.duration.type === 'until_end_of_turn'
+          ? { type: 'until_end_of_turn' }
+          : effect.duration.type === 'until_next_upkeep'
+            ? { type: 'until_next_upkeep' }
+            : effect.duration.type === 'while_in_play'
+              ? { type: 'while_in_play', sourceId: context.sourceInstanceId }
+              : { type: 'permanent' },
+      },
+    ],
+  };
+  return { newState: { ...state, players }, events: [] };
+}
+
+function executeGrantAbility(
+  state: GameState,
+  effect: Extract<Effect, { type: 'grant_ability' }>,
+  context: EffectContext,
+): EffectResult {
+  const resolved = resolveTargets(state, effect.target, context);
+  if (!resolved.resolved) {
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  }
+
+  let currentState = state;
+  for (const targetId of resolved.targetIds) {
+    currentState = updateCardInState(currentState, targetId, card => ({
+      ...card,
+      grantedAbilities: [
+        ...card.grantedAbilities,
+        {
+          sourceInstanceId: context.sourceInstanceId,
+          ability: { type: 'triggered', ...effect.ability },
+          duration: effect.duration.type === 'until_end_of_turn'
+            ? { type: 'until_end_of_turn' }
+            : effect.duration.type === 'until_next_upkeep'
+              ? { type: 'until_next_upkeep' }
+              : effect.duration.type === 'while_in_play'
+                ? { type: 'while_in_play', sourceId: context.sourceInstanceId }
+                : { type: 'permanent' },
+        },
+      ],
+    }));
+  }
+
+  return { newState: currentState, events: [] };
+}
+
+function executeReplacement(
+  state: GameState,
+  effect: Extract<Effect, { type: 'replacement' }>,
+  context: EffectContext,
+): EffectResult {
+  const targetIds = context.selectedTargets !== undefined && context.selectedTargets.length > 0
+    ? context.selectedTargets
+    : resolveReplacementTargets(state, context.sourceInstanceId);
+  if (targetIds.length === 0) {
+    return unchanged(state);
+  }
+
+  let currentState = state;
+  for (const targetId of targetIds) {
+    currentState = updateCardInState(currentState, targetId, card => ({
+      ...card,
+      replacementEffects: [
+        ...card.replacementEffects,
+        {
+          id: `replacement:${context.sourceInstanceId}:${String(card.replacementEffects.length)}`,
+          sourceInstanceId: context.sourceInstanceId,
+          controllerId: context.controllerId,
+          effect,
+          duration: { type: 'until_end_of_turn' },
+        },
+      ],
+    }));
+  }
+
+  return { newState: currentState, events: [] };
+}
+
+function resolveReplacementTargets(
+  state: GameState,
+  sourceInstanceId: string,
+): readonly string[] {
+  const equippedTarget = resolveTargets(state, { type: 'equipped_character' }, {
+    sourceInstanceId,
+    controllerId: 0,
+    triggerDepth: 0,
+  });
+  if (equippedTarget.resolved && equippedTarget.targetIds.length > 0) {
+    return equippedTarget.targetIds;
+  }
+  return sourceInstanceId.startsWith('hero_') ? [] : [sourceInstanceId];
+}
+
+function mergeStatusEffect(
+  statuses: readonly CardInstance['statusEffects'][number][],
+  nextStatus: CardInstance['statusEffects'][number],
+): readonly CardInstance['statusEffects'][number][] {
+  const existing = statuses.find(status => status.statusType === nextStatus.statusType);
+  if (existing === undefined) {
+    return [...statuses, nextStatus];
+  }
+
+  if (nextStatus.statusType === 'persistent' || nextStatus.statusType === 'regeneration') {
+    if (nextStatus.value <= existing.value) {
+      return statuses;
+    }
+  }
+
+  return [
+    ...statuses.filter(status => status.statusType !== nextStatus.statusType),
+    {
+      ...existing,
+      ...nextStatus,
+      remainingTurns: existing.remainingTurns === null
+        ? nextStatus.remainingTurns
+        : Math.max(existing.remainingTurns, nextStatus.remainingTurns ?? 0),
+    },
+  ];
 }
 
 function executeDiscard(
@@ -481,7 +783,7 @@ function executeDiscard(
     pendingChoice: {
       type: 'choose_discard',
       playerId: targetPlayerId,
-      options: player.hand.map(c => ({ id: c.instanceId, label: c.name })),
+      options: player.hand.map(c => ({ id: c.instanceId, label: c.name, instanceId: c.instanceId })),
       minSelections: Math.min(effect.count, player.hand.length),
       maxSelections: Math.min(effect.count, player.hand.length),
       context: `Discard ${String(effect.count)} card(s)`,
@@ -515,10 +817,8 @@ function executeMove(
       const toZone = effect.destination;
       if (fromZone === toZone) break;
 
-      const { zones: clearedZones } = removeFromZone(player.zones, targetId);
-      const movedCard: CardInstance = { ...location.card, movedThisTurn: true };
       try {
-        const newZones = deployToZone(clearedZones, movedCard, toZone);
+        const newZones = moveCard(player.zones, targetId, toZone, undefined, state.turnNumber);
         const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
         newPlayers[pi] = { ...player, zones: newZones };
         currentState = { ...currentState, players: newPlayers };
@@ -599,44 +899,118 @@ function executeChooseOne(
   };
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function findCardInState(state: GameState, instanceId: string): CardInstance | null {
-  for (const player of state.players) {
-    const loc = findCard(player.zones, instanceId);
-    if (loc !== null) return loc.card;
-  }
-  return null;
-}
-
-function removeCardFromState(state: GameState, instanceId: string): GameState {
-  const newPlayers = state.players.map(player => {
-    const { zones, removed } = removeFromZone(player.zones, instanceId);
+function executeCounterSpell(
+  state: GameState,
+  effect: Extract<Effect, { type: 'counter_spell' }>,
+  context: EffectContext,
+): EffectResult {
+  const targetItem = resolveCounterTargetItem(state, effect, context);
+  if ('pendingChoice' in targetItem) {
     return {
-      ...player,
-      zones,
-      discardPile: removed !== null && !removed.isToken
-        ? [...player.discardPile, removed]
-        : player.discardPile,
+      newState: state,
+      events: [],
+      pendingChoice: targetItem.pendingChoice,
     };
-  }) as unknown as readonly [typeof state.players[0], typeof state.players[1]];
-  return { ...state, players: newPlayers };
+  }
+  if (targetItem.item === null) {
+    return unchanged(state);
+  }
+
+  if (effect.unlessPay !== undefined) {
+    const targetPlayer = state.players[targetItem.item.controllerId]!;
+    if (canAfford(targetPlayer, effect.unlessPay)) {
+      return {
+        newState: state,
+        events: [],
+        pendingChoice: {
+          type: 'pay_unless',
+          playerId: targetItem.item.controllerId,
+          options: [
+            { id: 'pay', label: `Pay ${formatCost(effect.unlessPay)}` },
+            { id: 'dont_pay', label: 'Do not pay' },
+          ],
+          minSelections: 1,
+          maxSelections: 1,
+          context: 'Pay to prevent this spell from being countered.',
+        },
+      };
+    }
+  }
+
+  return applyCounterToStackItem(state, targetItem.item.id, targetItem.item.sourceInstanceId);
 }
 
-function resetCard(card: CardInstance): CardInstance {
+export function resumeCounterSpellEffect(
+  state: GameState,
+  effect: Extract<Effect, { type: 'counter_spell' }>,
+  context: EffectContext,
+  selectedOptionId: string | undefined,
+): EffectResult {
+  const targetItem = resolveCounterTargetItem(state, effect, context);
+  if ('pendingChoice' in targetItem || targetItem.item === null) {
+    return unchanged(state);
+  }
+
+  if (selectedOptionId === 'pay' && effect.unlessPay !== undefined) {
+    const player = state.players[targetItem.item.controllerId]!;
+    if (canAfford(player, effect.unlessPay)) {
+      return {
+        newState: setPlayer(state, targetItem.item.controllerId, payCost(player, effect.unlessPay)),
+        events: [],
+      };
+    }
+  }
+
+  return applyCounterToStackItem(state, targetItem.item.id, targetItem.item.sourceInstanceId);
+}
+
+function resolveCounterTargetItem(
+  state: GameState,
+  effect: Extract<Effect, { type: 'counter_spell' }>,
+  context: EffectContext,
+): { readonly item: GameState['stack'][number] | null } | { readonly pendingChoice: EffectResult['pendingChoice'] } {
+  const resolved = resolveTargets(state, effect.target, context);
+  if (!resolved.resolved) {
+    return { pendingChoice: resolved.pendingChoice };
+  }
+
+  const targetItemId = resolved.targetIds[0];
+  if (targetItemId === undefined) {
+    return { item: null };
+  }
+
+  const targetItem = state.stack.find(item => item.id === targetItemId && item.countered !== true);
+  return { item: targetItem ?? null };
+}
+
+function applyCounterToStackItem(
+  state: GameState,
+  stackItemId: string,
+  sourceInstanceId: string,
+): EffectResult {
   return {
-    ...card,
-    currentHp: card.baseHp,
-    currentAtk: card.baseAtk,
-    currentArm: card.baseArm,
-    exhausted: false,
-    summoningSick: false,
-    movedThisTurn: false,
-    attackedThisTurn: false,
-    grantedTraits: [],
-    modifiers: [],
-    statusEffects: [],
-    registeredTriggers: [],
-    equipment: null,
+    newState: counterStackItem(state, stackItemId),
+    events: [{ type: 'SPELL_COUNTERED', cardInstanceId: sourceInstanceId }],
   };
 }
+
+function formatCost(cost: Extract<Effect, { type: 'counter_spell' }>['unlessPay']): string {
+  if (cost === undefined) return '0';
+  const parts = [
+    cost.mana > 0 ? `${String(cost.mana)}M` : '',
+    cost.energy > 0 ? `${String(cost.energy)}E` : '',
+    cost.flexible > 0 ? `${String(cost.flexible)}F` : '',
+  ].filter(Boolean);
+  return parts.join(' ') || '0';
+}
+
+function setPlayer(
+  state: GameState,
+  playerId: 0 | 1,
+  player: typeof state.players[0],
+): GameState {
+  const players = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+  players[playerId] = player;
+  return { ...state, players };
+}
+

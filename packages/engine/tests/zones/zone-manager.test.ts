@@ -214,6 +214,13 @@ describe('Zone Manager', () => {
       expect(found?.card.movedThisTurn).toBe(true);
     });
 
+    it('should move to a requested open slot', () => {
+      const card = mockCard();
+      let zones = deployToZone(emptyZones(), card, 'frontline');
+      zones = moveCard(zones, card.instanceId, 'high_ground', 1);
+      expect(findCard(zones, card.instanceId)?.slotIndex).toBe(1);
+    });
+
     it('should throw for non-adjacent move (reserve → high_ground)', () => {
       const card = mockCard();
       const zones = deployToZone(emptyZones(), card, 'reserve');

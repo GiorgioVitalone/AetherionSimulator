@@ -44,8 +44,12 @@ export {
   triggerMatchesEvent,
   findMatchingTriggers,
   registerCardTriggers,
+  registerHeroTriggers,
+  registerInitialTriggers,
   unregisterCardTriggers,
   getAllRegisteredTriggers,
+  resolveTriggeredEvents,
+  resumePendingResolution,
 } from './events/index.js';
 
 // ── Effects ─────────────────────────────────────────────────────────────────
@@ -61,14 +65,18 @@ export {
   canAfford,
   payCost,
   getAvailableResources,
+  computeMaxX,
 } from './actions/index.js';
 export type {
   AvailableActions,
   DeployOption,
   CastSpellOption,
   EquipOption,
+  RemoveEquipmentOption,
+  TransferEquipmentOption,
   MoveOption,
   ActivateOption,
+  HeroActivateOption,
   AttackOption,
 } from './actions/index.js';
 

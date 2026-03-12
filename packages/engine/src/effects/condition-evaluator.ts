@@ -4,6 +4,7 @@
 import type { Condition } from '../types/conditions.js';
 import type { GameState, EffectContext, CardInstance } from '../types/game-state.js';
 import { findCard, getAllCards, getCardsInZone } from '../zones/zone-manager.js';
+import { cardHasActiveTrait } from '../state/runtime-card-helpers.js';
 
 export function evaluateCondition(
   state: GameState,
@@ -149,8 +150,7 @@ function evaluateHasTrait(
 ): boolean {
   const card = getSourceCard(state, context);
   if (card === null) return false;
-  return card.traits.includes(cond.trait) ||
-    card.grantedTraits.some(g => g.trait === cond.trait);
+  return cardHasActiveTrait(card, cond.trait);
 }
 
 function evaluateCostCheck(
@@ -240,7 +240,7 @@ function evaluateControlsCharacter(
     : getAllCards(player.zones);
 
   return cards.some(c => {
-    if (cond.trait !== undefined && !c.traits.includes(cond.trait)) return false;
+    if (cond.trait !== undefined && !cardHasActiveTrait(c, cond.trait)) return false;
     if (cond.tag !== undefined && !c.tags.includes(cond.tag)) return false;
     return true;
   });

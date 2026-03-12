@@ -18,11 +18,12 @@ export function resetInstanceCounter(): void {
 
 export function mockCard(overrides?: Partial<CardInstance>): CardInstance {
   instanceCounter++;
-  return {
+  const baseCard: CardInstance = {
     instanceId: `card_${String(instanceCounter)}`,
     cardDefId: instanceCounter,
     name: `Test Card ${String(instanceCounter)}`,
     cardType: 'C' as CardTypeCode,
+    rarity: 'Common',
     currentHp: 3,
     currentAtk: 2,
     currentArm: 0,
@@ -33,19 +34,39 @@ export function mockCard(overrides?: Partial<CardInstance>): CardInstance {
     summoningSick: false,
     movedThisTurn: false,
     attackedThisTurn: false,
+    movesThisTurn: 0,
+    deployedTurn: null,
+    stealthBroken: false,
     traits: [],
     grantedTraits: [],
     abilities: [],
+    grantedAbilities: [],
+    abilityCooldowns: new Map(),
+    activatedAbilityTurns: new Map(),
     registeredTriggers: [],
     modifiers: [],
     statusEffects: [],
+    replacementEffects: [],
     equipment: null,
     isToken: false,
     tags: [],
     cost: { mana: 1, energy: 0, flexible: 0 },
+    resourceTypes: ['mana'],
     alignment: ['Onyx'],
+    artUrl: null,
     owner: 0,
+    abilitiesSuppressed: false,
+    transferredThisTurn: false,
+  };
+
+  const mergedCard: CardInstance = {
+    ...baseCard,
     ...overrides,
+  };
+
+  return {
+    ...mergedCard,
+    resourceTypes: overrides?.resourceTypes ?? inferResourceTypesFromCost(mergedCard.cost),
   };
 }
 
@@ -62,11 +83,19 @@ export function mockHero(overrides?: Partial<HeroState>): HeroState {
     name: 'Test Hero',
     currentLp: 25,
     maxLp: 25,
+    alignment: ['Onyx'],
+    resourceTypes: ['mana'],
+    transformedCardDefId: null,
+    transformDefinition: null,
     transformed: false,
     canTransformThisGame: true,
     transformedThisTurn: false,
     abilities: [],
     cooldowns: new Map(),
+    activatedAbilityTurns: new Map(),
+    usedUltimateAbilityIndices: [],
+    modifiers: [],
+    statusEffects: [],
     registeredTriggers: [],
     ...overrides,
   };
@@ -98,14 +127,25 @@ export function mockGameState(overrides?: Partial<GameState>): GameState {
   return {
     players: [mockPlayerState(0), mockPlayerState(1)],
     activePlayerIndex: 0,
+    firstPlayerChooserId: 0,
+    firstPlayerId: 0,
+    priorityPlayerId: null,
     turnNumber: 1,
     phase: 'action',
     stack: [],
+    responseState: null,
     pendingChoice: null,
+    pendingResolution: null,
     log: [],
     winner: null,
     rng: { seed: 42, counter: 0 },
-    turnState: { discardedForEnergy: false, firstPlayerFirstTurn: false },
+    turnState: {
+      discardedForEnergy: false,
+      firstPlayerFirstTurn: false,
+      usedReplacementEffectIds: [],
+    },
+    scheduledEffects: [],
+    deferredTriggerQueue: [],
     ...overrides,
   };
 }
@@ -114,12 +154,15 @@ export function mockPlayerState(owner: 0 | 1, overrides?: Partial<PlayerState>):
   return {
     hero: mockHero(),
     zones: emptyZones(),
+    auraZone: [],
     hand: [],
     mainDeck: [],
     resourceDeck: [],
     resourceBank: [],
     discardPile: [],
+    exileZone: [],
     temporaryResources: [],
+    activeCostReductions: [],
     turnCounters: {
       spellsCast: 0,
       equipmentPlayed: 0,
@@ -128,4 +171,20 @@ export function mockPlayerState(owner: 0 | 1, overrides?: Partial<PlayerState>):
     },
     ...overrides,
   };
+}
+
+function inferResourceTypesFromCost(cost: ResourceCost): CardInstance['resourceTypes'] {
+  if (cost.energy > 0 && cost.mana === 0) {
+    return ['energy'];
+  }
+  if (cost.mana > 0 && cost.energy === 0) {
+    return ['mana'];
+  }
+  if (cost.energy > cost.mana) {
+    return ['energy', 'mana'];
+  }
+  if (cost.energy > 0) {
+    return ['mana', 'energy'];
+  }
+  return ['mana'];
 }
