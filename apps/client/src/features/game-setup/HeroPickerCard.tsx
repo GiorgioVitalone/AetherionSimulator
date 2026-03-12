@@ -11,6 +11,7 @@ interface HeroPickerCardProps {
   readonly selected: boolean;
   readonly disabled: boolean;
   readonly onSelect: () => void;
+  readonly testId?: string;
 }
 
 export function HeroPickerCard({
@@ -18,6 +19,7 @@ export function HeroPickerCard({
   selected,
   disabled,
   onSelect,
+  testId,
 }: HeroPickerCardProps): ReactNode {
   const faction = getFaction(hero.alignment);
   const lp = hero.stats?.hp ?? 30;
@@ -29,6 +31,9 @@ export function HeroPickerCard({
       type="button"
       onClick={onSelect}
       disabled={disabled}
+      data-testid={testId}
+      data-hero-id={String(hero.id)}
+      data-hero-name={hero.name}
       data-faction={faction}
       className={`
         relative w-full text-left rounded-[var(--radius-lg)] border-2 p-4

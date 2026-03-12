@@ -49,6 +49,9 @@ export function TurnHandoffOverlay(): ReactNode {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
           className="fixed inset-0 flex items-center justify-center text-[var(--color-text)]"
+          data-testid="turn-handoff-overlay"
+          data-active-player={String(displayPlayer)}
+          data-turn-number={String(turnNumber)}
           style={{
             zIndex: 'var(--z-modal)',
             backgroundColor: 'var(--color-surface-overlay)',

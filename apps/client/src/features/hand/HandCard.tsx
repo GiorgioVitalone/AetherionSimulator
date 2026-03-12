@@ -37,6 +37,13 @@ export function HandCard({ card, onClick }: HandCardProps): ReactNode {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.2 }}
+      data-testid="hand-card"
+      data-instance-id={card.instanceId}
+      data-card-name={card.name}
+      data-card-type={card.cardType}
+      data-playable={displayProps.playable === true ? 'true' : 'false'}
+      data-x-cost={card.cost.xMana === true || card.cost.xEnergy === true ? 'true' : 'false'}
+      data-has-haste={card.traits.some((trait) => trait.toLowerCase() === 'haste') ? 'true' : 'false'}
     >
       <CardDisplay {...displayProps} />
     </motion.div>

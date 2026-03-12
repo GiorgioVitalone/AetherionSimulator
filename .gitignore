@@ -28,3 +28,7 @@ Thumbs.db
 
 # Coverage
 coverage/
+
+# Playwright
+playwright-report/
+test-results/

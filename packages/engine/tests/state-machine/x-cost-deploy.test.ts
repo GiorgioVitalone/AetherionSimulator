@@ -99,12 +99,14 @@ describe('X-cost deployment', () => {
     expect(exhausted).toHaveLength(3);
   });
 
-  it('should include isXCost and maxX in DeployOption', () => {
+  it('should include isXCost, minX, and maxX in DeployOption', () => {
     const xCostCard = mockCard({
       owner: 0,
       cardType: 'C',
       baseHp: 0,
       currentHp: 0,
+      baseAtk: 0,
+      currentAtk: 0,
       cost: { mana: 0, energy: 0, flexible: 0, xEnergy: true },
     });
 
@@ -126,10 +128,11 @@ describe('X-cost deployment', () => {
     const actions = computeAvailableActions(state);
     expect(actions.canDeploy).toHaveLength(1);
     expect(actions.canDeploy[0]!.isXCost).toBe(true);
+    expect(actions.canDeploy[0]!.minX).toBe(1);
     expect(actions.canDeploy[0]!.maxX).toBe(3);
   });
 
-  it('should deploy with X=0 producing a 0/0', () => {
+  it('should reject X=0 when an X-cost character has no printed stats', () => {
     const xCostCard = mockCard({
       owner: 0,
       cardType: 'C',
@@ -159,9 +162,8 @@ describe('X-cost deployment', () => {
       xValue: 0,
     });
 
-    const deployed = result.state.players[0]!.zones.frontline[0]!;
-    expect(deployed.baseHp).toBe(0);
-    expect(deployed.baseAtk).toBe(0);
+    expect(result.state.players[0]!.zones.frontline[0]).toBeNull();
+    expect(result.state.players[0]!.hand).toHaveLength(1);
   });
 
   it('should mark non-X-cost cards with isXCost=false', () => {
@@ -188,6 +190,7 @@ describe('X-cost deployment', () => {
     const actions = computeAvailableActions(state);
     expect(actions.canDeploy).toHaveLength(1);
     expect(actions.canDeploy[0]!.isXCost).toBe(false);
+    expect(actions.canDeploy[0]!.minX).toBe(0);
     expect(actions.canDeploy[0]!.maxX).toBe(0);
   });
 });

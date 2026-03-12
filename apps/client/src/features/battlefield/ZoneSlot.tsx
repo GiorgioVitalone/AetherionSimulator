@@ -11,6 +11,9 @@ import { BattlefieldCard } from './BattlefieldCard';
 
 interface ZoneSlotProps {
   readonly card: CardInstance | null;
+  readonly battlefieldSide: 'player' | 'opponent';
+  readonly zone: string;
+  readonly slotIndex: number;
   readonly highlighted: boolean;
   readonly highlightLabel?: string;
   readonly onSlotClick: () => void;
@@ -19,25 +22,43 @@ interface ZoneSlotProps {
 
 export function ZoneSlot({
   card,
+  battlefieldSide,
+  zone,
+  slotIndex,
   highlighted,
   highlightLabel,
   onSlotClick,
   onCardClick,
 }: ZoneSlotProps): ReactNode {
   return (
-    <div className="w-[72px] h-[96px] relative">
+    <div
+      className="w-[72px] h-[96px] relative"
+      data-testid={`${battlefieldSide}-${zone}-slot-${String(slotIndex)}`}
+      data-battlefield-side={battlefieldSide}
+      data-zone={zone}
+      data-slot-index={String(slotIndex)}
+      data-occupied={card ? 'true' : 'false'}
+      data-highlighted={highlighted ? 'true' : 'false'}
+    >
       <AnimatePresence mode="wait">
         {card ? (
-          <BattlefieldCard
+          <div
             key={card.instanceId}
-            card={card}
-            highlighted={highlighted}
-            onClick={() => onCardClick?.(card.instanceId)}
-          />
+            data-testid="battlefield-slot-card"
+            data-card-name={card.name}
+            data-card-type={card.cardType}
+          >
+            <BattlefieldCard
+              card={card}
+              highlighted={highlighted}
+              onClick={() => onCardClick?.(card.instanceId)}
+            />
+          </div>
         ) : (
           <div
             key="empty"
             onClick={onSlotClick}
+            data-testid="battlefield-empty-slot"
             className={`
               w-[72px] h-[96px] rounded-[var(--radius-md)]
               border-2 border-dashed flex items-center justify-center

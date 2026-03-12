@@ -271,6 +271,96 @@ describe('Rulebook compliance regressions', () => {
     };
     expect(computeAvailableActions(expiredRushState).canMove).toHaveLength(0);
   });
+
+  it('does not allow a freshly deployed non-haste character to move that turn', () => {
+    const deployedCard = mockCard({
+      owner: 0,
+      cost: { mana: 1, energy: 0, flexible: 0 },
+      exhausted: false,
+      summoningSick: false,
+    });
+
+    const state = mockGameState({
+      phase: 'strategy',
+      players: [
+        mockPlayerState(0, {
+          hand: [deployedCard],
+          resourceBank: makeBank(['mana']),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+
+    const result = executePlayerAction(state, {
+      type: 'deploy',
+      cardInstanceId: deployedCard.instanceId,
+      zone: 'frontline',
+      slotIndex: 0,
+    });
+
+    const deployed = result.state.players[0]!.zones.frontline[0]!;
+    expect(deployed.exhausted).toBe(true);
+    expect(deployed.summoningSick).toBe(true);
+    expect(
+      computeAvailableActions(result.state).canMove.some(
+        option => option.cardInstanceId === deployed.instanceId,
+      ),
+    ).toBe(false);
+  });
+
+  it('requires a positive X when an X-cost character has no printed stats', () => {
+    const xCharacter = mockCard({
+      owner: 0,
+      alignment: ['Verdant'],
+      resourceTypes: ['energy'],
+      cost: { mana: 0, energy: 0, flexible: 0, xEnergy: true },
+      baseHp: 0,
+      currentHp: 0,
+      baseAtk: 0,
+      currentAtk: 0,
+    });
+
+    const state = mockGameState({
+      phase: 'strategy',
+      players: [
+        mockPlayerState(0, {
+          hand: [xCharacter],
+          resourceBank: makeBank(['energy']),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+
+    const deployOption = computeAvailableActions(state).canDeploy.find(
+      option => option.cardInstanceId === xCharacter.instanceId,
+    );
+    expect(deployOption).toBeDefined();
+    expect(deployOption?.minX).toBe(1);
+    expect(deployOption?.maxX).toBe(1);
+
+    const illegalDeploy = executePlayerAction(state, {
+      type: 'deploy',
+      cardInstanceId: xCharacter.instanceId,
+      zone: 'frontline',
+      slotIndex: 0,
+      xValue: 0,
+    });
+    expect(illegalDeploy.state.players[0]!.zones.frontline[0]).toBeNull();
+    expect(illegalDeploy.state.players[0]!.hand).toHaveLength(1);
+
+    const legalDeploy = executePlayerAction(state, {
+      type: 'deploy',
+      cardInstanceId: xCharacter.instanceId,
+      zone: 'frontline',
+      slotIndex: 0,
+      xValue: 1,
+    });
+    const deployed = legalDeploy.state.players[0]!.zones.frontline[0]!;
+    expect(deployed.currentHp).toBe(1);
+    expect(deployed.currentAtk).toBe(1);
+    expect(deployed.baseHp).toBe(1);
+    expect(deployed.baseAtk).toBe(1);
+  });
 });
 
 function deployFrontline(card: CardInstance) {

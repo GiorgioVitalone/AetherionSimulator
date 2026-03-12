@@ -47,6 +47,9 @@ export function HeroPanel({
   return (
     <div
       data-faction={faction}
+      data-testid="hero-panel"
+      data-hero-name={hero.name}
+      data-player-index={String(playerIndex)}
       className="rounded-[var(--radius-lg)] border-2 p-3 space-y-2"
       style={{
         borderColor: 'var(--card-faction-color)',
@@ -71,6 +74,7 @@ export function HeroPanel({
           <button
             type="button"
             onClick={onTransform}
+            data-testid="transform-button"
             className="text-[8px] uppercase tracking-widest font-semibold text-[var(--color-accent)] bg-[var(--color-accent-subtle)] px-1.5 py-0.5 rounded-sm animate-pulse cursor-pointer hover:bg-[var(--color-accent-muted)]"
           >
             Transform

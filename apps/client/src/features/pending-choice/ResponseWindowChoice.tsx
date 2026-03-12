@@ -34,6 +34,8 @@ export function ResponseWindowChoice({ choice }: ResponseWindowChoiceProps): Rea
   return (
     <div
       className="fixed inset-0 flex items-center justify-center"
+      data-testid="pending-choice-modal"
+      data-choice-type={choice.type}
       style={{
         zIndex: 'var(--z-modal)',
         backgroundColor: 'var(--color-surface-overlay)',
@@ -61,6 +63,7 @@ export function ResponseWindowChoice({ choice }: ResponseWindowChoiceProps): Rea
                 key={option.id}
                 type="button"
                 onClick={() => setSelected(option.id === selected ? null : option.id)}
+                data-testid={`response-option-${option.id}`}
                 className={`
                   text-left px-3 py-2 rounded-[var(--radius-md)] border-2 text-sm font-body
                   transition-colors duration-150 cursor-pointer
@@ -80,6 +83,7 @@ export function ResponseWindowChoice({ choice }: ResponseWindowChoiceProps): Rea
             <button
               type="button"
               onClick={handlePlay}
+              data-testid="response-play-button"
               className="flex-1 px-4 py-2 rounded-[var(--radius-md)] font-semibold text-sm font-body bg-[var(--color-accent)] text-[var(--color-text-inverse)] hover:brightness-110 cursor-pointer transition-all duration-150"
             >
               Play Response
@@ -88,6 +92,7 @@ export function ResponseWindowChoice({ choice }: ResponseWindowChoiceProps): Rea
           <button
             type="button"
             onClick={handlePass}
+            data-testid="response-pass-button"
             className={`
               ${selected !== null ? 'flex-1' : 'w-full'}
               px-4 py-2 rounded-[var(--radius-md)] font-semibold text-sm font-body

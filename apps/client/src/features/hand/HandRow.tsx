@@ -15,7 +15,9 @@ interface HandRowProps {
 export function HandRow({ cards, onCardClick }: HandRowProps): ReactNode {
   if (cards.length === 0) {
     return (
-      <div className="h-[156px] flex items-center justify-center border-t border-[var(--color-border)] shrink-0"
+      <div
+        className="h-[156px] flex items-center justify-center border-t border-[var(--color-border)] shrink-0"
+        data-testid="hand-row"
         style={{ backgroundColor: 'var(--color-surface)' }}
       >
         <span className="text-[var(--color-text-faint)] text-sm font-body">No cards in hand</span>
@@ -26,6 +28,7 @@ export function HandRow({ cards, onCardClick }: HandRowProps): ReactNode {
   return (
     <div
       className="border-t border-[var(--color-border)] px-4 py-2 overflow-x-auto shrink-0"
+      data-testid="hand-row"
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
       <div className="flex gap-2 justify-center min-w-min">

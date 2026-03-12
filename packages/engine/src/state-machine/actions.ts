@@ -166,6 +166,10 @@ function executeDeploy(
   const card = player.hand[cardIndex]!;
   const isXCost = card.cost.xMana === true || card.cost.xEnergy === true;
   const xValue = isXCost ? (action.xValue ?? 0) : undefined;
+  const requiresPositiveX = isXCost && card.baseHp === 0 && card.baseAtk === 0;
+  if (requiresPositiveX && (xValue ?? 0) <= 0) {
+    return { state, events: [] };
+  }
   const baseDeployCost = getReducedCardCost(player, card);
   const deployCost = action.zone === 'high_ground'
     ? addFlexibleCost(baseDeployCost, 2)
@@ -763,7 +767,14 @@ function isActionLegal(state: GameState, action: PlayerAction): boolean {
       return available.canDeploy.some(option =>
         option.cardInstanceId === action.cardInstanceId &&
         option.validSlots.some(slot => slot.zone === action.zone && slot.slots.includes(action.slotIndex)) &&
-        (!option.isXCost || (action.xValue ?? 0) <= option.maxX),
+        (
+          !option.isXCost ||
+          (
+            action.xValue !== undefined &&
+            action.xValue >= option.minX &&
+            action.xValue <= option.maxX
+          )
+        ),
       );
     case 'cast_spell':
       return available.canCastSpell.some(option =>

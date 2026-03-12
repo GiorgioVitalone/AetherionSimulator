@@ -34,6 +34,7 @@ export function SeedInput({ value, onChange }: SeedInputProps): ReactNode {
         value={value}
         onChange={handleChange}
         placeholder="Random"
+        data-testid="seed-input"
         className="
           w-32 px-3 py-2 rounded-[var(--radius-md)] border-2 font-mono text-sm
           bg-[var(--color-surface-alt)] text-[var(--color-text)]

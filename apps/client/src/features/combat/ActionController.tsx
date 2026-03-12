@@ -65,7 +65,7 @@ export function useActionController() {
           vs.slots.map((slotIndex) => ({ zone: vs.zone, slotIndex })),
         );
         if (deployOption.isXCost) {
-          setAwaitingXValue(instanceId, deployOption.maxX, validSlots);
+          setAwaitingXValue(instanceId, deployOption.minX, deployOption.maxX, validSlots);
           return;
         }
         setAwaitingZone(instanceId, 'deploy', validSlots);
@@ -235,7 +235,7 @@ export function useActionController() {
               vs.slots.map((s) => ({ zone: vs.zone, slotIndex: s })),
             );
             if (option.isXCost) {
-              setAwaitingXValue(instanceId, option.maxX, validSlots);
+              setAwaitingXValue(instanceId, option.minX, option.maxX, validSlots);
             } else {
               setAwaitingZone(instanceId, 'deploy', validSlots);
             }

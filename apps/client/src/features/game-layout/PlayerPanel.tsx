@@ -39,6 +39,8 @@ export function PlayerPanel({
   return (
     <div
       className="flex items-start gap-4 px-4 py-2 border-t border-[var(--color-border)] shrink-0"
+      data-testid="player-panel"
+      data-player-index={String(playerIndex)}
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
       {/* Hero panel */}

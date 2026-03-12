@@ -20,6 +20,8 @@ export function MulliganChoice({ choice, hand }: MulliganChoiceProps): ReactNode
   return (
     <div
       className="fixed inset-0 flex flex-col items-center justify-center"
+      data-testid="pending-choice-modal"
+      data-choice-type={choice.type}
       style={{
         zIndex: 'var(--z-modal)',
         backgroundColor: 'var(--color-surface-overlay)',
@@ -45,6 +47,7 @@ export function MulliganChoice({ choice, hand }: MulliganChoiceProps): ReactNode
         <button
           type="button"
           onClick={() => dispatch({ type: 'mulligan_decision', playerId, keep: true })}
+          data-testid="mulligan-keep-button"
           className="
             px-6 py-2.5 rounded-[var(--radius-md)] font-semibold text-sm font-body
             bg-[var(--color-accent)] text-[var(--color-text-inverse)]
@@ -56,6 +59,7 @@ export function MulliganChoice({ choice, hand }: MulliganChoiceProps): ReactNode
         <button
           type="button"
           onClick={() => dispatch({ type: 'mulligan_decision', playerId, keep: false })}
+          data-testid="mulligan-redraw-button"
           className="
             px-6 py-2.5 rounded-[var(--radius-md)] font-semibold text-sm font-body
             border-2 border-[var(--color-border-strong)] text-[var(--color-text)]

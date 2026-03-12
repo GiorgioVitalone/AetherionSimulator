@@ -42,7 +42,7 @@ export function PhaseIndicator({ phase, turnNumber, isMyTurn }: PhaseIndicatorPr
     (phase === 'transform' || phase === 'strategy' || phase === 'action');
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3" data-testid="phase-indicator" data-phase={phase}>
       {/* Phase name */}
       <Tooltip content={PHASE_DESCRIPTIONS[phase]}>
         <span className="text-[9px] uppercase tracking-widest font-semibold text-[var(--color-accent-light)] font-body">
@@ -60,6 +60,7 @@ export function PhaseIndicator({ phase, turnNumber, isMyTurn }: PhaseIndicatorPr
         <button
           type="button"
           onClick={() => dispatch({ type: 'end_phase' })}
+          data-testid="end-phase-button"
           className="
             px-3 py-1 rounded-[var(--radius-md)] text-[11px] font-semibold font-body
             bg-[var(--color-accent)] text-[var(--color-text-inverse)]

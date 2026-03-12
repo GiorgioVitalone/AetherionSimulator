@@ -94,7 +94,13 @@ export function GameScreen(): ReactNode {
 
   return (
     <ErrorBoundary onReset={reset}>
-      <div className="h-screen min-w-[1280px] flex flex-col bg-[var(--color-bg)] overflow-hidden">
+      <div
+        className="h-screen min-w-[1280px] flex flex-col bg-[var(--color-bg)] overflow-hidden"
+        data-testid="game-screen"
+        data-phase={phase}
+        data-turn-number={String(turnNumber)}
+        data-viewing-player={String(viewingPlayer)}
+      >
         {/* Opponent panel (top) */}
         <OpponentPanel
           player={opponentState}

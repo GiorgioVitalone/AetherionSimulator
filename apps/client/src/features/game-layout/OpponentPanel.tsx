@@ -39,7 +39,10 @@ export function OpponentPanel({ player, playerIndex, onHeroClick, heroHighlighte
   }, [currentAnim, playerIndex]);
 
   return (
-    <div className="flex items-center gap-4 px-4 py-2 border-b border-[var(--color-border)]"
+    <div
+      className="flex items-center gap-4 px-4 py-2 border-b border-[var(--color-border)]"
+      data-testid="opponent-panel"
+      data-player-index={String(playerIndex)}
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
       {/* Hero summary — clickable when highlighted as a valid attack/spell target */}

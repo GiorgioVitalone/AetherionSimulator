@@ -24,6 +24,8 @@ export function PlayerBattlefield({
   onSlotClick,
   onCardClick,
 }: PlayerBattlefieldProps): ReactNode {
+  const battlefieldSide = isOpponent ? 'opponent' : 'player';
+
   // Order: opponent shows reserve→frontline→HG (top→bottom, HG near divider)
   //        player shows HG→frontline→reserve (top→bottom, HG near divider)
   const zoneOrder: { zone: ZoneType; slots: readonly (import('@aetherion-sim/engine').CardInstance | null)[] }[] = isOpponent
@@ -44,6 +46,7 @@ export function PlayerBattlefield({
         <ZoneRow
           key={zone}
           zone={zone}
+          battlefieldSide={battlefieldSide}
           slots={slots}
           highlightedSlots={highlightedSlots.get(zone) ?? new Set()}
           highlightLabel={highlightLabel}

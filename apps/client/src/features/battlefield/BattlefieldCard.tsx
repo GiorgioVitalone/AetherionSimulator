@@ -67,6 +67,13 @@ export function BattlefieldCard({
       exit={{ opacity: 0, scale: 0.7 }}
       transition={{ duration: isAttacking ? 0.3 : 0.2 }}
       className="relative"
+      data-testid="battlefield-card"
+      data-instance-id={card.instanceId}
+      data-card-name={card.name}
+      data-card-type={card.cardType}
+      data-exhausted={card.exhausted ? 'true' : 'false'}
+      data-summoning-sick={card.summoningSick ? 'true' : 'false'}
+      data-has-haste={card.traits.some((trait) => trait.toLowerCase() === 'haste') ? 'true' : 'false'}
     >
       <CardDisplay {...displayProps} />
       <DamagePopup value={damageValue} type="damage" />

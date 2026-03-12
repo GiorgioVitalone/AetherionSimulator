@@ -49,6 +49,8 @@ export function ReserveExhaustChoice({ choice }: ReserveExhaustChoiceProps): Rea
   return (
     <div
       className="fixed inset-0 flex flex-col items-center justify-center"
+      data-testid="pending-choice-modal"
+      data-choice-type={choice.type}
       style={{
         zIndex: 'var(--z-modal)',
         backgroundColor: 'var(--color-surface-overlay)',
@@ -121,6 +123,7 @@ export function ReserveExhaustChoice({ choice }: ReserveExhaustChoiceProps): Rea
         type="button"
         disabled={!canSubmit}
         onClick={() => dispatch({ type: 'player_response', response: { selectedOptionIds: [...selected] } })}
+        data-testid="reserve-exhaust-confirm"
         className={`
           px-6 py-2.5 rounded-[var(--radius-md)] font-semibold text-sm font-body
           transition-all duration-150

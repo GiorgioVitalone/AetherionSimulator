@@ -38,6 +38,8 @@ export function TargetOverlay({ onCancel }: TargetOverlayProps): ReactNode {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
           className="fixed inset-0"
+          data-testid="target-overlay"
+          data-action-type={flowState.actionType}
           style={{
             zIndex: 'var(--z-overlay)',
             backgroundColor: 'rgba(15,14,11,0.5)',
@@ -52,6 +54,7 @@ export function TargetOverlay({ onCancel }: TargetOverlayProps): ReactNode {
             <button
               type="button"
               onClick={onCancel}
+              data-testid="target-overlay-cancel"
               className="
                 px-5 py-2 rounded-[var(--radius-md)] font-semibold text-sm font-body
                 border-2 border-[var(--color-border-strong)] text-[var(--color-text)]

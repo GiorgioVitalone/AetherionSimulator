@@ -40,7 +40,10 @@ export function GameSetupScreen(): ReactNode {
   }, [p1Hero, p2Hero, seed, startGame]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-6 py-10">
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-6 py-10"
+      data-testid="game-setup-screen"
+    >
       {/* Title */}
       <div className="text-center mb-10">
         <h1 className="text-4xl font-black tracking-normal mb-2">
@@ -54,7 +57,7 @@ export function GameSetupScreen(): ReactNode {
       {/* Two-column hero pickers */}
       <div className="flex gap-10 w-full max-w-5xl mb-8">
         {/* Player 1 */}
-        <div className="flex-1">
+        <div className="flex-1" data-testid="hero-picker-player-0">
           <h2 className="text-sm font-semibold font-body text-[var(--color-text-muted)] uppercase tracking-widest mb-4">
             Player 1
           </h2>
@@ -66,6 +69,7 @@ export function GameSetupScreen(): ReactNode {
                 selected={p1Hero?.id === hero.id}
                 disabled={p2Hero?.id === hero.id}
                 onSelect={() => setP1Hero(hero)}
+                testId={`hero-picker-player-0-card-${String(hero.id)}`}
               />
             ))}
           </div>
@@ -75,7 +79,7 @@ export function GameSetupScreen(): ReactNode {
         <div className="w-px bg-[var(--color-border)] self-stretch" />
 
         {/* Player 2 */}
-        <div className="flex-1">
+        <div className="flex-1" data-testid="hero-picker-player-1">
           <h2 className="text-sm font-semibold font-body text-[var(--color-text-muted)] uppercase tracking-widest mb-4">
             Player 2
           </h2>
@@ -87,6 +91,7 @@ export function GameSetupScreen(): ReactNode {
                 selected={p2Hero?.id === hero.id}
                 disabled={p1Hero?.id === hero.id}
                 onSelect={() => setP2Hero(hero)}
+                testId={`hero-picker-player-1-card-${String(hero.id)}`}
               />
             ))}
           </div>
@@ -100,6 +105,7 @@ export function GameSetupScreen(): ReactNode {
           type="button"
           disabled={!canStart}
           onClick={handleStart}
+          data-testid="start-game-button"
           className={`
             px-6 py-2.5 rounded-[var(--radius-md)] font-semibold text-sm font-body
             transition-all duration-200

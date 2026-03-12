@@ -8,6 +8,7 @@ import { ZoneSlot } from './ZoneSlot';
 
 interface ZoneRowProps {
   readonly zone: ZoneType;
+  readonly battlefieldSide: 'player' | 'opponent';
   readonly slots: readonly (CardInstance | null)[];
   readonly highlightedSlots: ReadonlySet<number>;
   readonly highlightLabel?: string;
@@ -23,6 +24,7 @@ const ZONE_LABELS: Record<ZoneType, string> = {
 
 export function ZoneRow({
   zone,
+  battlefieldSide,
   slots,
   highlightedSlots,
   highlightLabel,
@@ -30,7 +32,12 @@ export function ZoneRow({
   onCardClick,
 }: ZoneRowProps): ReactNode {
   return (
-    <div className="flex items-center gap-2">
+    <div
+      className="flex items-center gap-2"
+      data-testid={`${battlefieldSide}-${zone}-row`}
+      data-battlefield-side={battlefieldSide}
+      data-zone={zone}
+    >
       {/* Zone label */}
       <span className="w-16 text-[8px] uppercase tracking-widest font-semibold text-[var(--color-text-faint)] text-right font-body shrink-0">
         {ZONE_LABELS[zone]}
@@ -42,6 +49,9 @@ export function ZoneRow({
           <ZoneSlot
             key={`${zone}-${index}`}
             card={card}
+            battlefieldSide={battlefieldSide}
+            zone={zone}
+            slotIndex={index}
             highlighted={highlightedSlots.has(index)}
             highlightLabel={highlightLabel}
             onSlotClick={() => onSlotClick(zone, index)}

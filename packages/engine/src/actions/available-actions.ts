@@ -43,6 +43,7 @@ export interface DeployOption {
   readonly validSlots: readonly { readonly zone: ZoneType; readonly slots: readonly number[] }[];
   readonly cost: ResourceCost;
   readonly isXCost: boolean;
+  readonly minX: number;
   readonly maxX: number;
 }
 
@@ -160,12 +161,19 @@ function computeDeployOptions(player: PlayerState): readonly DeployOption[] {
     }
     if (validSlots.length > 0) {
       const isXCost = card.cost.xMana === true || card.cost.xEnergy === true;
+      const requiresPositiveX = isXCost && card.baseHp === 0 && card.baseAtk === 0;
+      const maxX = isXCost ? computeMaxX(player, reducedCost) : 0;
+      const minX = requiresPositiveX ? 1 : 0;
+      if (isXCost && maxX < minX) {
+        continue;
+      }
       options.push({
         cardInstanceId: card.instanceId,
         validSlots,
         cost: reducedCost,
         isXCost,
-        maxX: isXCost ? computeMaxX(player, reducedCost) : 0,
+        minX,
+        maxX,
       });
     }
   }

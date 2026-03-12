@@ -90,6 +90,8 @@ function GenericChoiceModal({ choice, onSubmit }: GenericChoiceModalProps): Reac
   return (
     <div
       className="fixed inset-0 flex items-center justify-center"
+      data-testid="pending-choice-modal"
+      data-choice-type={choice.type}
       style={{
         zIndex: 'var(--z-modal)',
         backgroundColor: 'var(--color-surface-overlay)',
@@ -123,6 +125,7 @@ function GenericChoiceModal({ choice, onSubmit }: GenericChoiceModalProps): Reac
               key={option.id}
               type="button"
               onClick={() => toggleOption(option.id)}
+              data-testid={`choice-option-${option.id}`}
               className={`
                 text-left px-3 py-2 rounded-[var(--radius-md)] border-2 text-sm font-body
                 transition-colors duration-150 cursor-pointer
@@ -141,6 +144,7 @@ function GenericChoiceModal({ choice, onSubmit }: GenericChoiceModalProps): Reac
           type="button"
           disabled={!canSubmit}
           onClick={() => onSubmit([...selected])}
+          data-testid="pending-choice-confirm"
           className={`
             w-full px-4 py-2 rounded-[var(--radius-md)] font-semibold text-sm font-body
             transition-all duration-150

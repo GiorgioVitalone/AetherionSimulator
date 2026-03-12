@@ -42,6 +42,7 @@ export type ActionFlowState =
   | {
       readonly step: 'awaiting_x_value';
       readonly cardInstanceId: string;
+      readonly minX: number;
       readonly maxX: number;
       readonly validSlots: readonly ValidSlot[];
     }
@@ -74,6 +75,7 @@ interface ActionFlowStore {
   ) => void;
   readonly setAwaitingXValue: (
     cardInstanceId: string,
+    minX: number,
     maxX: number,
     validSlots: readonly ValidSlot[],
   ) => void;
@@ -113,9 +115,9 @@ export const useActionFlowStore = create<ActionFlowStore>()(
         });
       },
 
-      setAwaitingXValue: (cardInstanceId, maxX, validSlots) => {
+      setAwaitingXValue: (cardInstanceId, minX, maxX, validSlots) => {
         set({
-          flowState: { step: 'awaiting_x_value', cardInstanceId, maxX, validSlots },
+          flowState: { step: 'awaiting_x_value', cardInstanceId, minX, maxX, validSlots },
         });
       },
 

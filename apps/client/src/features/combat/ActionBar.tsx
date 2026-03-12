@@ -28,13 +28,22 @@ export function ActionBar({ onChoose, onCancel, onXValueSelected }: ActionBarPro
   const flowState = useActionFlowStore((s) => s.flowState);
 
   if (flowState.step === 'awaiting_x_value') {
-    return <XValueBar maxX={flowState.maxX} onSelect={onXValueSelected} onCancel={onCancel} />;
+    return (
+      <XValueBar
+        minX={flowState.minX}
+        maxX={flowState.maxX}
+        onSelect={onXValueSelected}
+        onCancel={onCancel}
+      />
+    );
   }
 
   if (flowState.step === 'awaiting_zone') {
     return (
       <div
         className="flex items-center justify-center gap-3 px-4 py-2 border-t shrink-0 relative z-10"
+        data-testid="action-bar"
+        data-action-bar-state="awaiting-zone"
         style={{
           backgroundColor: 'var(--color-surface-raised)',
           borderColor: 'var(--color-border)',
@@ -46,6 +55,7 @@ export function ActionBar({ onChoose, onCancel, onXValueSelected }: ActionBarPro
         <button
           type="button"
           onClick={onCancel}
+          data-testid="action-bar-cancel"
           className="
             px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold font-body
             border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-alt)]
@@ -63,6 +73,8 @@ export function ActionBar({ onChoose, onCancel, onXValueSelected }: ActionBarPro
   return (
     <div
       className="flex items-center justify-center gap-2 px-4 py-2 border-t shrink-0 relative z-10"
+      data-testid="action-bar"
+      data-action-bar-state="card-selected"
       style={{
         backgroundColor: 'var(--color-surface-raised)',
         borderColor: 'var(--color-border)',
@@ -76,6 +88,7 @@ export function ActionBar({ onChoose, onCancel, onXValueSelected }: ActionBarPro
           key={action}
           type="button"
           onClick={() => onChoose(action)}
+          data-testid={`action-bar-button-${action}`}
           className="
             px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold font-body
             border-2 border-[var(--color-border-strong)] text-[var(--color-text)]
@@ -90,6 +103,7 @@ export function ActionBar({ onChoose, onCancel, onXValueSelected }: ActionBarPro
       <button
         type="button"
         onClick={onCancel}
+        data-testid="action-bar-cancel"
         className="
           px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold font-body
           border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-alt)]
@@ -105,19 +119,24 @@ export function ActionBar({ onChoose, onCancel, onXValueSelected }: ActionBarPro
 // ── X Value Chooser ─────────────────────────────────────────────────────────
 
 function XValueBar({
+  minX,
   maxX,
   onSelect,
   onCancel,
 }: {
+  readonly minX: number;
   readonly maxX: number;
   readonly onSelect?: (xValue: number) => void;
   readonly onCancel: () => void;
 }): ReactNode {
-  const [xValue, setXValue] = useState(Math.min(1, maxX));
+  const initialX = Math.min(maxX, Math.max(minX, 1));
+  const [xValue, setXValue] = useState(initialX);
 
   return (
     <div
       className="flex items-center justify-center gap-3 px-4 py-2 border-t shrink-0 relative z-10"
+      data-testid="action-bar"
+      data-action-bar-state="awaiting-x-value"
       style={{
         backgroundColor: 'var(--color-surface-raised)',
         borderColor: 'var(--color-border)',
@@ -130,8 +149,9 @@ function XValueBar({
       <div className="flex items-center gap-2">
         <button
           type="button"
-          disabled={xValue <= 0}
-          onClick={() => setXValue(v => Math.max(0, v - 1))}
+          disabled={xValue <= minX}
+          onClick={() => setXValue(v => Math.max(minX, v - 1))}
+          data-testid="x-value-decrement"
           className="
             w-6 h-6 rounded-[var(--radius-md)] text-[13px] font-bold font-body
             border border-[var(--color-border-strong)] text-[var(--color-text)]
@@ -146,6 +166,7 @@ function XValueBar({
 
         <span
           className="text-lg font-bold font-display min-w-[2ch] text-center"
+          data-testid="x-value-current"
           style={{ color: 'var(--color-accent-light)' }}
         >
           {xValue}
@@ -155,6 +176,7 @@ function XValueBar({
           type="button"
           disabled={xValue >= maxX}
           onClick={() => setXValue(v => Math.min(maxX, v + 1))}
+          data-testid="x-value-increment"
           className="
             w-6 h-6 rounded-[var(--radius-md)] text-[13px] font-bold font-body
             border border-[var(--color-border-strong)] text-[var(--color-text)]
@@ -169,12 +191,13 @@ function XValueBar({
       </div>
 
       <span className="text-[9px] text-[var(--color-text-faint)] font-body">
-        (max {maxX})
+        ({minX === maxX ? `fixed ${maxX}` : `min ${minX}, max ${maxX}`})
       </span>
 
       <button
         type="button"
         onClick={() => onSelect?.(xValue)}
+        data-testid="x-value-confirm"
         className="
           px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold font-body
           border-2 border-[var(--color-accent-muted)] text-[var(--color-accent-light)]
@@ -188,6 +211,7 @@ function XValueBar({
       <button
         type="button"
         onClick={onCancel}
+        data-testid="action-bar-cancel"
         className="
           px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold font-body
           border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-alt)]

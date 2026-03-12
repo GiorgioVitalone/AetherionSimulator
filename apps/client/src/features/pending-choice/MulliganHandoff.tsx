@@ -14,6 +14,7 @@ export function MulliganHandoff({ onReady }: MulliganHandoffProps): ReactNode {
   return (
     <div
       className="fixed inset-0 flex flex-col items-center justify-center"
+      data-testid="mulligan-handoff"
       style={{
         zIndex: 'var(--z-modal)',
         backgroundColor: 'var(--color-surface-overlay)',
@@ -28,6 +29,7 @@ export function MulliganHandoff({ onReady }: MulliganHandoffProps): ReactNode {
       <button
         type="button"
         onClick={onReady}
+        data-testid="mulligan-handoff-ready"
         className="
           px-8 py-3 rounded-[var(--radius-md)] font-semibold text-sm font-body
           bg-[var(--color-accent)] text-[var(--color-text-inverse)]
