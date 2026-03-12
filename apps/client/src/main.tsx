@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
 import { ArtProvider } from '@aetherion-sim/ui';
 import { initCardData } from '@/features/game-setup/deck-loader';
+import { applyQaFixture, readQaFixtureId } from '@/testing/qa-fixtures';
 import type { SimCard } from '@aetherion-sim/cards';
 import './index.css';
 
@@ -57,6 +58,10 @@ async function bootstrap(): Promise<void> {
   }
 
   initCardData(cards);
+  const qaFixtureId = readQaFixtureId();
+  if (qaFixtureId !== null) {
+    applyQaFixture(qaFixtureId, cards);
+  }
 
   createRoot(root).render(
     <StrictMode>

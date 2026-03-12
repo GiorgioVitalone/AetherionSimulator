@@ -15,6 +15,9 @@ export function DamagePopup({ value, type }: DamagePopupProps): ReactNode {
     <AnimatePresence>
       {value !== null && (
         <motion.div
+          data-testid="damage-popup"
+          data-animation-type={type}
+          data-popup-value={String(value)}
           initial={{ opacity: 1, y: 0 }}
           animate={{ opacity: 0, y: -24 }}
           exit={{ opacity: 0 }}

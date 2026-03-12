@@ -6,6 +6,7 @@
 import { type ReactNode, useMemo } from 'react';
 import type { PlayerState } from '@aetherion-sim/engine';
 import { LpBar, CardBack } from '@aetherion-sim/ui';
+import { AuraZonePanel } from '@/features/hero/AuraZonePanel';
 import { ResourceBank } from '@/features/hero/ResourceBank';
 import { DamagePopup } from '@/features/battlefield/DamagePopup';
 import { useUiStore } from '@/stores/ui-store';
@@ -46,30 +47,33 @@ export function OpponentPanel({ player, playerIndex, onHeroClick, heroHighlighte
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
       {/* Hero summary — clickable when highlighted as a valid attack/spell target */}
-      <div
-        className={`flex-1 min-w-0 ${heroHighlighted ? 'cursor-pointer ring-2 ring-[var(--color-error)] rounded-md p-1 -m-1' : ''}`}
-        onClick={heroHighlighted ? onHeroClick : undefined}
-      >
-        <div className="flex items-center gap-2 mb-1">
-          <h3 className="text-sm font-bold truncate" style={{ fontFamily: 'var(--font-display)' }}>
-            {hero.name}
-          </h3>
-          {hero.transformed && (
-            <span className="text-[7px] uppercase tracking-widest font-semibold text-[var(--color-accent-light)] bg-[var(--color-accent-subtle)] px-1 py-0.5 rounded-sm shrink-0">
-              Transformed
-            </span>
-          )}
-          {heroHighlighted && (
-            <span className="text-[8px] uppercase tracking-widest font-semibold text-[var(--color-error)] shrink-0">
-              Target
-            </span>
-          )}
+      <div className="flex-1 min-w-0 space-y-2">
+        <div
+          className={heroHighlighted ? 'cursor-pointer ring-2 ring-[var(--color-error)] rounded-md p-1 -m-1' : ''}
+          onClick={heroHighlighted ? onHeroClick : undefined}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-sm font-bold truncate" style={{ fontFamily: 'var(--font-display)' }}>
+              {hero.name}
+            </h3>
+            {hero.transformed && (
+              <span className="text-[7px] uppercase tracking-widest font-semibold text-[var(--color-accent-light)] bg-[var(--color-accent-subtle)] px-1 py-0.5 rounded-sm shrink-0">
+                Transformed
+              </span>
+            )}
+            {heroHighlighted && (
+              <span className="text-[8px] uppercase tracking-widest font-semibold text-[var(--color-error)] shrink-0">
+                Target
+              </span>
+            )}
+          </div>
+          <div className="w-48 relative">
+            <LpBar current={hero.currentLp} max={hero.maxLp} size="sm" />
+            <DamagePopup value={heroDamageValue} type="damage" />
+            <DamagePopup value={heroHealValue} type="heal" />
+          </div>
         </div>
-        <div className="w-48 relative">
-          <LpBar current={hero.currentLp} max={hero.maxLp} size="sm" />
-          <DamagePopup value={heroDamageValue} type="damage" />
-          <DamagePopup value={heroHealValue} type="heal" />
-        </div>
+        <AuraZonePanel cards={player.auraZone} playerIndex={playerIndex} compact />
       </div>
 
       {/* Resources */}

@@ -54,6 +54,7 @@ export function HeroAbilityButton({
 
   const content = (
     <div
+      data-testid={`hero-ability-button-${String(abilityIndex)}`}
       className={`
         text-[10px] rounded-[var(--radius-sm)] p-1.5 border
         transition-colors duration-150

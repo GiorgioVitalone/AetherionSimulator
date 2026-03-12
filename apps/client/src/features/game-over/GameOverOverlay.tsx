@@ -28,6 +28,7 @@ export function GameOverOverlay(): ReactNode {
   return (
     <div
       className="fixed inset-0 flex items-center justify-center"
+      data-testid="game-over-overlay"
       style={{
         zIndex: 'var(--z-modal)',
         backgroundColor: 'var(--color-surface-overlay)',
@@ -36,6 +37,7 @@ export function GameOverOverlay(): ReactNode {
       <div className="flex flex-col items-center gap-6">
         <h1
           className="text-6xl font-black tracking-tight"
+          data-testid="game-over-title"
           style={{ color: titleColor }}
         >
           {title}
@@ -55,6 +57,7 @@ export function GameOverOverlay(): ReactNode {
           <button
             type="button"
             onClick={reset}
+            data-testid="game-over-play-again"
             className="
               px-6 py-2.5 rounded-[var(--radius-md)] font-semibold text-sm font-body
               bg-[var(--color-accent)] text-[var(--color-text-inverse)]
@@ -66,6 +69,7 @@ export function GameOverOverlay(): ReactNode {
           <button
             type="button"
             onClick={toggleGameLog}
+            data-testid="game-over-toggle-log"
             className="
               px-6 py-2.5 rounded-[var(--radius-md)] font-semibold text-sm font-body
               border-2 border-[var(--color-border-strong)] text-[var(--color-text)]

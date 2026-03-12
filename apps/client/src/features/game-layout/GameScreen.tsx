@@ -26,6 +26,7 @@ import { TargetOverlay } from '@/features/combat/TargetOverlay';
 import { ErrorBoundary } from '@/features/shared/ErrorBoundary';
 import { CardDetailModal } from '@/features/shared/CardDetailModal';
 import { getHeroTargetTokenForPlayer, HERO_ATTACK_TARGET } from '@/features/combat/target-tokens';
+import { QaFixtureControls } from '@/testing/QaFixtureControls';
 
 export function GameScreen(): ReactNode {
   const state = useGameStore((s) => s.state);
@@ -47,6 +48,8 @@ export function GameScreen(): ReactNode {
   const hoveredCard = useMemo(() => {
     if (!hoveredCardId || !state) return null;
     for (const p of state.players) {
+      const inAuraZone = p.auraZone.find(c => c.instanceId === hoveredCardId);
+      if (inAuraZone) return inAuraZone;
       const inHand = p.hand.find(c => c.instanceId === hoveredCardId);
       if (inHand) return inHand;
       for (const zone of [p.zones.reserve, p.zones.frontline, p.zones.highGround]) {
@@ -145,6 +148,7 @@ export function GameScreen(): ReactNode {
         <TurnHandoffOverlay />
         <GameOverOverlay />
         <GameLog />
+        <QaFixtureControls />
         {hoveredCard && (
           <CardDetailModal card={hoveredCard} onClose={() => hoverCard(null)} />
         )}

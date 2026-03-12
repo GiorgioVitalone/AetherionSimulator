@@ -18,6 +18,7 @@ export function CardDetailModal({ card, onClose: _onClose }: CardDetailModalProp
 
   return (
     <div
+      data-testid="card-detail-modal"
       className="fixed inset-0 flex items-start justify-end p-6"
       style={{
         zIndex: 'var(--z-popover)',

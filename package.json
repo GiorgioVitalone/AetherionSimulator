@@ -8,6 +8,8 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
+    "qa:baseline": "node ./scripts/qa/run-release-gate.mjs",
+    "qa:release": "node ./scripts/qa/run-release-gate.mjs",
     "generate:cards": "turbo run generate:cards",
     "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\""
   },

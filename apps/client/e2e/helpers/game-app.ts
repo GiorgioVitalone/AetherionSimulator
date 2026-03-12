@@ -10,10 +10,14 @@ export const HERO_NAMES = {
 export const TEST_SEEDS = {
   verdantXCostOpening: 8,
   onyxHasteOpening: 35,
+  verdantEquipmentOpening: 9,
+  verdantSapphireResponse: 2,
 } as const;
 
 type ChoiceType = 'mulligan' | 'choose_first_player' | 'response_window';
 type PhaseName = 'transform' | 'strategy' | 'action';
+type QaFixtureId = 'transform-ready' | 'response-window' | 'aura-zone' | 'animation-preview' | 'game-over';
+type QaFaultId = 'render-error-once';
 
 export class GameApp {
   constructor(private readonly page: Page) {}
@@ -21,6 +25,18 @@ export class GameApp {
   async goto(): Promise<void> {
     await this.page.goto('/');
     await expect(this.page.getByTestId('game-setup-screen')).toBeVisible();
+  }
+
+  async gotoQaFixture(fixtureId: QaFixtureId): Promise<void> {
+    await this.page.addInitScript(({ id }) => {
+      window.__AETHERION_QA_FIXTURE__ = id;
+    }, { id: fixtureId });
+    await this.page.goto(`/?qaFixture=${fixtureId}`);
+    await expect(this.page.getByTestId('game-screen')).toBeVisible();
+  }
+
+  async gotoQaFault(faultId: QaFaultId): Promise<void> {
+    await this.page.goto(`/?qaFault=${faultId}`);
   }
 
   async startGame(options: {
@@ -90,6 +106,35 @@ export class GameApp {
       .click();
   }
 
+  async clickHeroAbilityButton(abilityIndex = 0, playerIndex?: 0 | 1): Promise<void> {
+    const index = playerIndex ?? Number(await this.page.getByTestId('game-screen').getAttribute('data-viewing-player')) as 0 | 1;
+    await this.page
+      .locator(`[data-testid="hero-panel"][data-player-index="${String(index)}"] [data-testid="hero-ability-button-${String(abilityIndex)}"]`)
+      .first()
+      .click();
+  }
+
+  async endCurrentTurn(): Promise<void> {
+    let phase = await this.waitForActionablePhase();
+    let guard = 0;
+
+    while (phase !== 'action' && guard < 3) {
+      await this.page.getByTestId('end-phase-button').click();
+      await this.waitForPendingChoiceToClear();
+      phase = await this.waitForActionablePhase();
+      guard++;
+    }
+
+    if (phase !== 'action') {
+      throw new Error(`Expected to reach action phase before ending the turn, received ${phase}.`);
+    }
+
+    await this.page.getByTestId('end-phase-button').click();
+    await this.waitForPendingChoiceToClear();
+    await this.waitForTurnHandoffToFinish();
+    await this.waitForActionablePhase();
+  }
+
   async waitForResponseWindow(): Promise<void> {
     const modal = await this.expectPendingChoice('response_window');
     await expect(modal).toBeVisible();
@@ -115,7 +160,14 @@ export class GameApp {
   }
 
   async waitForPendingChoiceToClear(): Promise<void> {
-    await expect(this.page.getByTestId('pending-choice-modal')).toBeHidden({ timeout: 3_000 });
+    const modal = this.page.getByTestId('pending-choice-modal');
+    if (await modal.isVisible().catch(() => false)) {
+      const choiceType = await modal.getAttribute('data-choice-type');
+      if (choiceType === 'reserve_exhaust') {
+        await this.page.getByTestId('reserve-exhaust-confirm').click();
+      }
+    }
+    await expect(modal).toBeHidden({ timeout: 3_000 });
   }
 
   handCards(): Locator {

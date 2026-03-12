@@ -11,7 +11,10 @@ export default defineConfig({
   expect: {
     timeout: 5_000,
   },
-  fullyParallel: true,
+  // Keep browser QA stable on the hot-seat simulator. Unbounded per-test
+  // parallelism caused false negatives on gameplay flows in local release runs.
+  fullyParallel: false,
+  workers: process.env.CI === 'true' ? 2 : 4,
   forbidOnly: process.env.CI === 'true',
   retries: process.env.CI === 'true' ? 2 : 0,
   reporter: [

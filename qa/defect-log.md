@@ -1,0 +1,12 @@
+# Defect Log
+
+Severity:
+- `Sev-1`: crash, stuck game, corrupted state, illegal action allowed, legal action impossible, wrong winner
+- `Sev-2`: major UX break, misleading UI, wrong phase affordance, broken overlay flow
+- `Sev-3`: low-impact polish, copy, or cosmetic issue
+
+| ID | Severity | Area | Build or Commit | Repro Steps | Expected | Actual | Rulebook Ref | Owner | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| DEF-001 | Sev-2 | QA Automation / Release Gate | `3730f30` (dirty worktree) | Original repro on 2026-03-12: run `pnpm qa:release` or `pnpm --filter @aetherion-sim/client e2e` with the old Playwright config (`fullyParallel: true`, no worker cap). Observe timeouts in `apps/client/e2e/gameplay-regressions.spec.ts`. | The configured Playwright release gate should pass deterministically under its default settings. | Fixed on 2026-03-12 by capping Playwright workers and disabling `fullyParallel` in `apps/client/playwright.config.ts`. Reverified with `pnpm qa:release` passing end-to-end. | N/A | Codex | Closed |
+| DEF-002 | Sev-2 | Browser UI / Auras | `3730f30` (dirty worktree) | Load any game state containing cards in `player.auraZone` or cast an aura spell. Before the fix, client state hydration included `auraZone`, but no React component rendered an aura zone or aura card surface in the browser UI. | Aura spells that remain in play should be visible near the hero and clear enough to verify persistence or cleanup in browser QA. | Fixed on 2026-03-12 by rendering Aura Zone panels beside both hero summaries, wiring aura cards into hovered-card lookup, and exposing card-detail hover evidence through `apps/client/e2e/aura-zone.spec.ts`. Reverified with `pnpm qa:release` passing end-to-end. | `Documentation/game/Rulebook.md` Section 3 `Spell Cards` (`Aura Spells`) | Codex | Closed |
+| DEF-003 | Sev-3 | Game Log / Hand Interaction | `3730f30` (dirty worktree) | Start a seeded game (`seed=8`, `RIA-09` vs `Shieldbearer Seraphina`), open `Game Log`, and inspect the right side of the hand row at 1440x1200. Before the fix, Playwright geometry check showed the log rect overlapping the `Sanctuary` hand card, and a DOM hit-test at the card center resolved to the `Game Log` button. | Opening the game log should not cover or intercept interaction on hand cards. | Fixed on 2026-03-12 by offsetting the fixed game log above the hand row and adding browser regression coverage in `apps/client/e2e/ui-polish.spec.ts`. Reverified with `pnpm qa:release` passing end-to-end. | N/A | Codex | Closed |

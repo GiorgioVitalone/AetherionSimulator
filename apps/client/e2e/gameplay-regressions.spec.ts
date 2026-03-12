@@ -141,3 +141,70 @@ test('ending the turn hands the UI over to the opponent', async ({ page }) => {
 
   await expect(page.getByTestId('game-screen')).toHaveAttribute('data-viewing-player', '1');
 });
+
+test('equipment can be attached and removed through the board UI', async ({ page }) => {
+  const app = new GameApp(page);
+
+  await app.startGame({
+    player1Hero: HERO_NAMES.verdant,
+    player2Hero: HERO_NAMES.radiant,
+    seed: TEST_SEEDS.verdantEquipmentOpening,
+    firstPlayerOptionId: 'player_0',
+  });
+
+  await app.ensurePhase('strategy');
+  const deployedCardName = await app.deployHandCard(
+    page.locator('[data-testid="hand-card"][data-card-type="C"][data-playable="true"]').first(),
+  );
+  await app.expectCardInPlayerBattlefield(deployedCardName);
+
+  await app.endCurrentTurn();
+  await app.endCurrentTurn();
+  await app.ensurePhase('strategy');
+
+  const equipmentCard = page
+    .locator('[data-testid="hand-card"][data-card-type="E"][data-playable="true"]')
+    .first();
+
+  await expect(equipmentCard).toBeVisible();
+  await equipmentCard.click();
+  await page.getByTestId('action-bar-button-attach_equipment').click();
+  await expect(page.getByTestId('target-overlay')).toHaveAttribute('data-action-type', 'attach_equipment');
+  await app.clickPlayerBattlefieldCard(deployedCardName);
+
+  await app.clickPlayerBattlefieldCard(deployedCardName);
+  await expect(page.getByTestId('action-bar-button-remove_equipment')).toBeVisible();
+  await page.getByTestId('action-bar-button-remove_equipment').click();
+
+  await app.clickPlayerBattlefieldCard(deployedCardName);
+  await expect(page.getByTestId('action-bar-button-remove_equipment')).toHaveCount(0);
+});
+
+test('a live response window opens when the defending player has a response spell in hand', async ({ page }) => {
+  const app = new GameApp(page);
+
+  await app.startGame({
+    player1Hero: HERO_NAMES.verdant,
+    player2Hero: HERO_NAMES.sapphire,
+    seed: TEST_SEEDS.verdantSapphireResponse,
+    firstPlayerOptionId: 'player_1',
+  });
+
+  await app.ensurePhase('strategy');
+  await app.endCurrentTurn();
+  await app.endCurrentTurn();
+  await app.endCurrentTurn();
+  await app.ensurePhase('strategy');
+
+  const playableSpell = page
+    .locator('[data-testid="hand-card"][data-card-type="S"][data-playable="true"]')
+    .first();
+
+  await expect(playableSpell).toBeVisible();
+  await playableSpell.click();
+  await page.getByTestId('action-bar-button-cast_spell').click();
+  await app.waitForResponseWindow();
+  await expect(page.getByTestId('response-pass-button')).toBeVisible();
+  await page.getByTestId('response-pass-button').click();
+  await app.waitForPendingChoiceToClear();
+});

@@ -9,6 +9,7 @@ import { formatGameEvent } from './formatGameEvent';
 import { GameLogEntry } from './GameLogEntry';
 
 const MAX_VISIBLE_EVENTS = 15;
+const HAND_ROW_OFFSET_PX = 156;
 
 export function GameLog(): ReactNode {
   const log = useGameStore((s) => s.state?.log ?? []);
@@ -33,13 +34,18 @@ export function GameLog(): ReactNode {
 
   return (
     <div
-      className="fixed bottom-0 right-0 w-80"
-      style={{ zIndex: 'var(--z-dropdown)' }}
+      className="fixed right-0 w-80"
+      data-testid="game-log"
+      style={{
+        zIndex: 'var(--z-dropdown)',
+        bottom: `${String(HAND_ROW_OFFSET_PX)}px`,
+      }}
     >
       {/* Toggle button */}
       <button
         type="button"
         onClick={toggleGameLog}
+        data-testid="game-log-toggle"
         className="
           w-full px-3 py-1.5 text-left text-[9px] font-semibold uppercase tracking-widest
           font-body cursor-pointer transition-colors duration-150
@@ -60,6 +66,7 @@ export function GameLog(): ReactNode {
       {showGameLog && (
         <div
           ref={scrollRef}
+          data-testid="game-log-panel"
           className="max-h-60 overflow-y-auto p-2 border-l"
           style={{
             backgroundColor: 'var(--color-surface)',
