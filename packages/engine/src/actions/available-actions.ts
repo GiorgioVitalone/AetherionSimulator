@@ -11,7 +11,9 @@ import type { ResourceCost, ZoneType, Trait } from '../types/common.js';
 import type { TriggeredAbilityDSL } from '../types/ability.js';
 import { hasOpenSlot, getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 import { getValidAttackTargets, type AttackTarget } from '../zones/targeting.js';
-import { canAfford } from './cost-checker.js';
+import { canAfford, effectiveCost } from './cost-checker.js';
+import { meetsEquipRequirement } from './equip-eligibility.js';
+import { evaluateCondition } from '../effects/condition-evaluator.js';
 
 // ── Result Types ──────────────────────────────────────────────────────────────
 
@@ -29,8 +31,16 @@ export interface AvailableActions {
 
 export interface DeployOption {
   readonly cardInstanceId: string;
-  readonly validSlots: readonly { readonly zone: ZoneType; readonly slots: readonly number[] }[];
+  readonly validSlots: readonly DeploySlotGroup[];
   readonly cost: ResourceCost;
+}
+
+/** A deployable zone with its open slot indices and any cost surcharge (Elite pays
+ * +2 to deploy directly to High Ground — Rulebook 16). `surcharge` is 0 normally. */
+export interface DeploySlotGroup {
+  readonly zone: ZoneType;
+  readonly slots: readonly number[];
+  readonly surcharge: number;
 }
 
 export interface CastSpellOption {
@@ -71,28 +81,36 @@ export function computeAvailableActions(state: GameState): AvailableActions {
   const isAction = state.phase === 'action';
 
   return {
-    canDeploy: isStrategy ? computeDeployOptions(player) : [],
+    canDeploy: isStrategy ? computeDeployOptions(player, state) : [],
     canCastSpell: isStrategy ? computeSpellOptions(player) : [],
     canAttachEquipment: isStrategy ? computeEquipOptions(player) : [],
     canMove: isStrategy ? computeMoveOptions(player) : [],
     canActivateAbility: isStrategy ? computeActivateOptions(player, state) : [],
-    canAttack: isAction ? computeAttackOptions(player, opponent) : [],
+    canAttack: isAction ? computeAttackOptions(player, opponent, state) : [],
     canDiscardForEnergy: isStrategy && computeCanDiscardForEnergy(player, state),
-    canTransform: isStrategy && computeCanTransform(player),
+    canTransform: isStrategy && computeCanTransform(state, player, opponent),
     canEndPhase: isStrategy || isAction,
   };
 }
 
 // ── Deploy ────────────────────────────────────────────────────────────────────
 
-function computeDeployOptions(player: PlayerState): readonly DeployOption[] {
+/** Elite characters may deploy directly to High Ground for +2 resources (Rulebook 16). */
+export const ELITE_HIGH_GROUND_SURCHARGE = 2;
+
+function computeDeployOptions(player: PlayerState, state: GameState): readonly DeployOption[] {
   const options: DeployOption[] = [];
 
   for (const card of player.hand) {
     if (card.cardType !== 'C') continue;
-    if (!canAfford(player, card.cost)) continue;
+    const baseCost = effectiveCost(player, card);
+    if (!canAfford(player, baseCost)) continue;
 
-    const validSlots = getValidDeploySlots(player);
+    // Only offer a slot group the player can actually pay for (the High-Ground
+    // group carries the Elite +2 surcharge and may be unaffordable).
+    const validSlots = getValidDeploySlots(player, card, state).filter(g =>
+      canAfford(player, withSurcharge(baseCost, g.surcharge)),
+    );
     if (validSlots.length > 0) {
       options.push({
         cardInstanceId: card.instanceId,
@@ -105,21 +123,43 @@ function computeDeployOptions(player: PlayerState): readonly DeployOption[] {
   return options;
 }
 
+function withSurcharge(cost: ResourceCost, surcharge: number): ResourceCost {
+  return surcharge > 0 ? { ...cost, flexible: cost.flexible + surcharge } : cost;
+}
+
 function getValidDeploySlots(
   player: PlayerState,
-): readonly { readonly zone: ZoneType; readonly slots: readonly number[] }[] {
-  const result: { readonly zone: ZoneType; readonly slots: readonly number[] }[] = [];
+  card: CardInstance,
+  state: GameState,
+): readonly DeploySlotGroup[] {
+  const result: DeploySlotGroup[] = [];
 
-  // Characters deploy to Frontline or Reserve
+  // Characters deploy to Frontline or Reserve at no surcharge.
   const deployZones: readonly ZoneType[] = ['frontline', 'reserve'];
   for (const zone of deployZones) {
     const slots = getOpenSlotIndices(player, zone);
     if (slots.length > 0) {
-      result.push({ zone, slots });
+      result.push({ zone, slots, surcharge: 0 });
+    }
+  }
+
+  // High-Ground deploy. Default: only Elite, for +2 (Rulebook 16) — other characters
+  // must move there from the Frontline. DESIGN-SWEEP (config.directHighGroundDeploy):
+  // ANY character may deploy directly to High Ground at NO surcharge.
+  const directHg = state.config?.directHighGroundDeploy === true;
+  if (hasElite(card) || directHg) {
+    const hgSlots = getOpenSlotIndices(player, 'high_ground');
+    if (hgSlots.length > 0) {
+      const surcharge = directHg ? 0 : ELITE_HIGH_GROUND_SURCHARGE;
+      result.push({ zone: 'high_ground', slots: hgSlots, surcharge });
     }
   }
 
   return result;
+}
+
+function hasElite(card: CardInstance): boolean {
+  return card.traits.includes('elite') || card.grantedTraits.some(g => g.trait === 'elite');
 }
 
 function getOpenSlotIndices(
@@ -146,7 +186,7 @@ function computeSpellOptions(player: PlayerState): readonly CastSpellOption[] {
 
   for (const card of player.hand) {
     if (card.cardType !== 'S') continue;
-    if (!canAfford(player, card.cost)) continue;
+    if (!canAfford(player, effectiveCost(player, card))) continue;
     options.push({ cardInstanceId: card.instanceId, cost: card.cost });
   }
 
@@ -161,11 +201,14 @@ function computeEquipOptions(player: PlayerState): readonly EquipOption[] {
 
   for (const card of player.hand) {
     if (card.cardType !== 'E') continue;
-    if (!canAfford(player, card.cost)) continue;
+    if (!canAfford(player, effectiveCost(player, card))) continue;
 
-    // Equipment can target own characters without existing equipment
+    // Equipment may attach to any eligible character (Rulebook 13). A character that
+    // already holds equipment is still a legal target — the old piece is destroyed
+    // before the new one attaches (handled at execution). Eligibility honors the
+    // equipment's alignment/Tag requirement.
     const targets = boardCharacters
-      .filter(c => c.equipment === null)
+      .filter(c => meetsEquipRequirement(card, c))
       .map(c => c.instanceId);
 
     if (targets.length > 0) {
@@ -195,7 +238,10 @@ function computeMoveOptions(player: PlayerState): readonly MoveOption[] {
   for (const zone of zones) {
     const cards = getCardsInZone(player.zones, zone);
     for (const card of cards) {
-      if (card.exhausted || card.movedThisTurn) continue;
+      // Swift / Rush X grants free moves that ignore the exhaust / once-per-turn
+      // gates (Rulebook 16). A character with free moves left may always move.
+      const hasFreeMove = (card.freeMovesRemaining ?? 0) > 0;
+      if (!hasFreeMove && (card.exhausted || card.movedThisTurn)) continue;
 
       const adjacentZones = ADJACENT.get(zone) ?? [];
       const validDests = adjacentZones.filter(z => hasOpenSlot(player.zones, z));
@@ -220,11 +266,21 @@ function computeActivateOptions(
   state: GameState,
 ): readonly ActivateOption[] {
   const options: ActivateOption[] = [];
-  const allCards = getAllCards(player.zones);
+  // Battlefield cards plus the Hero — Hero (Trigger/Ultimate) abilities are
+  // activatable in the Strategy Phase and addressed via a `hero_<cardDefId>` id.
+  // The Hero is never summoning-sick/exhausted; characters are gated below.
+  const sources: readonly { id: string; abilities: readonly import('../types/ability.js').AbilityDSL[]; card?: CardInstance }[] = [
+    { id: heroInstanceId(player), abilities: player.hero.abilities },
+    ...getAllCards(player.zones).map(c => ({ id: c.instanceId, abilities: c.abilities, card: c })),
+  ];
 
-  for (const card of allCards) {
-    for (let i = 0; i < card.abilities.length; i++) {
-      const ability = card.abilities[i]!;
+  for (const src of sources) {
+    // Summoning sickness gates activated abilities just like attacks (Rulebook 3):
+    // a sick or exhausted character cannot use an activated ability. A character
+    // exhausted for Reserve Energy has all abilities disabled (Rulebook 8 step 4).
+    if (src.card !== undefined && !canActivateFrom(src.card)) continue;
+    for (let i = 0; i < src.abilities.length; i++) {
+      const ability = src.abilities[i]!;
       if (ability.type !== 'triggered') continue;
 
       const triggered = ability as TriggeredAbilityDSL;
@@ -232,28 +288,31 @@ function computeActivateOptions(
 
       const activatedTrigger = triggered.trigger;
 
-      // Check cooldown
-      if (activatedTrigger.cooldown !== undefined) {
-        // Check hero cooldowns if this is a hero ability
-        // For card abilities, cooldowns are tracked per-card
-        // Simplified: skip if on cooldown (tracked elsewhere in state machine)
+      // Once-per-game: a single prior activation (anywhere in the log) locks it out
+      // for the rest of the game (e.g. transformed-Hero Ultimates ids 3/41/103).
+      if (activatedTrigger.oncePerGame === true && activatedAnyTime(state, src.id, i)) {
+        continue;
       }
 
-      // Check once-per-turn
-      if (activatedTrigger.oncePerTurn === true) {
-        const alreadyUsed = state.log.some(
-          e =>
-            e.type === 'ABILITY_ACTIVATED' &&
-            e.cardInstanceId === card.instanceId &&
-            e.abilityIndex === i,
-        );
-        if (alreadyUsed) continue;
+      // Once-per-turn — honored both at the trigger level (Activated.oncePerTurn) and
+      // at the DSL top level (TriggeredAbilityDSL.oncePerTurn, e.g. Sapphire Lens id 100).
+      if (
+        (activatedTrigger.oncePerTurn === true || triggered.oncePerTurn === true) &&
+        activatedThisTurn(state, src.id, i)
+      ) {
+        continue;
       }
+
+      // Check cooldown — after activating, the ability is unusable for N of this
+      // player's turns (Rulebook: "Cooldown N … N of your turns after the turn
+      // you activated it"). It becomes available once N of this player's
+      // TURN_STARTs have elapsed since the last activation.
+      if (onCooldown(state, src.id, i, activatedTrigger.cooldown)) continue;
 
       if (!canAfford(player, activatedTrigger.cost)) continue;
 
       options.push({
-        cardInstanceId: card.instanceId,
+        cardInstanceId: src.id,
         abilityIndex: i,
         cost: activatedTrigger.cost,
       });
@@ -263,12 +322,103 @@ function computeActivateOptions(
   return options;
 }
 
+/** Whether a battlefield character may use an activated ability right now: not
+ * summoning-sick, not exhausted, and not exhausted for Reserve Energy (Rulebook 3/8).
+ * Non-character permanents (Equipment auras live on their host) are unrestricted. */
+function canActivateFrom(card: CardInstance): boolean {
+  if (card.cardType !== 'C') return true;
+  return !card.summoningSick && !card.exhausted && card.reserveEnergyExhausted !== true;
+}
+
+/** True if `sourceId`'s ability `abilityIndex` was activated anywhere in the log. */
+function activatedAnyTime(state: GameState, sourceId: string, abilityIndex: number): boolean {
+  return state.log.some(
+    e =>
+      e.type === 'ABILITY_ACTIVATED' &&
+      e.cardInstanceId === sourceId &&
+      e.abilityIndex === abilityIndex,
+  );
+}
+
+/** True if `sourceId`'s ability `abilityIndex` was activated since the most recent
+ * TURN_START — i.e. during the current turn (once-per-turn reads only this turn). */
+function activatedThisTurn(state: GameState, sourceId: string, abilityIndex: number): boolean {
+  let turnStart = 0;
+  for (let i = state.log.length - 1; i >= 0; i--) {
+    if (state.log[i]!.type === 'TURN_START') {
+      turnStart = i;
+      break;
+    }
+  }
+  for (let i = turnStart; i < state.log.length; i++) {
+    const e = state.log[i]!;
+    if (
+      e.type === 'ABILITY_ACTIVATED' &&
+      e.cardInstanceId === sourceId &&
+      e.abilityIndex === abilityIndex
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * True if the ability at `abilityIndex` on `sourceId` is still on cooldown for the
+ * active player. Cooldown N means: after the last activation, the ability stays
+ * unusable until N of this player's turns have elapsed. We count the active
+ * player's TURN_START events logged after the most recent activation; the ability
+ * is available again once that count reaches the authored cooldown. cooldown 0 /
+ * undefined imposes no restriction. Transformation naturally resets cooldowns: the
+ * transformed Hero has a new `hero_<cardDefId>` id, so no prior activations match.
+ */
+function onCooldown(
+  state: GameState,
+  sourceId: string,
+  abilityIndex: number,
+  cooldown: number | undefined,
+): boolean {
+  if (cooldown === undefined || cooldown <= 0) return false;
+
+  let lastActivationIdx = -1;
+  for (let idx = state.log.length - 1; idx >= 0; idx--) {
+    const e = state.log[idx]!;
+    if (
+      e.type === 'ABILITY_ACTIVATED' &&
+      e.cardInstanceId === sourceId &&
+      e.abilityIndex === abilityIndex
+    ) {
+      lastActivationIdx = idx;
+      break;
+    }
+  }
+  if (lastActivationIdx === -1) return false;
+
+  let ownTurnsElapsed = 0;
+  for (let idx = lastActivationIdx + 1; idx < state.log.length; idx++) {
+    const e = state.log[idx]!;
+    if (e.type === 'TURN_START' && e.playerId === state.activePlayerIndex) {
+      ownTurnsElapsed++;
+    }
+  }
+  return ownTurnsElapsed < cooldown;
+}
+
+/** Stable pseudo-instance id for a player's Hero (used to address Hero abilities). */
+export function heroInstanceId(player: PlayerState): string {
+  return `hero_${String(player.hero.cardDefId)}`;
+}
+
 // ── Attack ────────────────────────────────────────────────────────────────────
 
 function computeAttackOptions(
   player: PlayerState,
   opponent: PlayerState,
+  state: GameState,
 ): readonly AttackOption[] {
+  // The first player cannot declare attacks on their first turn (Rulebook 7).
+  if (state.turnState.firstPlayerFirstTurn) return [];
+
   const options: AttackOption[] = [];
   const zones: readonly ZoneType[] = ['reserve', 'frontline', 'high_ground'];
 
@@ -284,6 +434,8 @@ function computeAttackOptions(
         zone,
         traits,
         opponent.zones,
+        state.config,
+        state.activePlayerIndex,
       );
 
       if (targets.length > 0) {
@@ -316,7 +468,11 @@ function computeCanDiscardForEnergy(
 
 // ── Transform ─────────────────────────────────────────────────────────────────
 
-function computeCanTransform(player: PlayerState): boolean {
+function computeCanTransform(
+  state: GameState,
+  player: PlayerState,
+  opponent: PlayerState,
+): boolean {
   const hero = player.hero;
 
   if (hero.transformed || !hero.canTransformThisGame || hero.transformedThisTurn) {
@@ -324,7 +480,33 @@ function computeCanTransform(player: PlayerState): boolean {
   }
 
   // Standard transform condition: LP ≤ 10
-  // OR: has ≥5 fewer resources than opponent AND no characters on board
-  // Simplified to LP check for now — full check requires opponent state
-  return hero.currentLp <= 10;
+  if (hero.currentLp <= 10) return true;
+
+  // OR: ≥5 fewer resource cards than opponent AND no characters on board.
+  const myResources = player.resourceBank.length;
+  const oppResources = opponent.resourceBank.length;
+  const noCharacters = getAllCards(player.zones).filter(c => c.cardType === 'C').length === 0;
+  if (noCharacters && oppResources - myResources >= 5) return true;
+
+  // OR (termination knob): once this player's Resource Deck is empty, transform
+  // becomes available unconditionally — a comeback enabler that ends stalled games.
+  if (state.config?.terminationMode === 'resource_deck_empty_transform'
+    && player.resourceDeck.length === 0) {
+    return true;
+  }
+
+  // OR: a Hero's own PRINTED Transformation Trigger condition (kept rare).
+  return matchesPrintedTransformTrigger(state, hero);
+}
+
+function matchesPrintedTransformTrigger(
+  state: GameState,
+  hero: PlayerState['hero'],
+): boolean {
+  if (hero.transformTrigger === undefined) return false;
+  return evaluateCondition(state, hero.transformTrigger, {
+    sourceInstanceId: `hero_${String(hero.cardDefId)}`,
+    controllerId: state.activePlayerIndex,
+    triggerDepth: 0,
+  });
 }

@@ -116,7 +116,10 @@ export function deployToZone(
   if (idx === -1) {
     throw new Error(`No open slot in ${zone}`);
   }
-  if (idx < 0 || idx >= getZoneSlots(zone)) {
+  // Range against the ACTUAL zone-array length (the live capacity) rather than the
+  // ZONE_SLOTS default, so a design-sweep zone-capacity override (longer/shorter
+  // arrays) validates correctly. Default 3/2 arrays ⇒ identical to getZoneSlots.
+  if (idx < 0 || idx >= getZoneArray(zones, zone).length) {
     throw new Error(`Slot ${String(idx)} out of range for ${zone}`);
   }
   const existing = getZoneArray(zones, zone)[idx];
@@ -176,11 +179,15 @@ export function moveCard(
   if (targetSlot === -1) {
     throw new Error(`No open slot in ${toZone}`);
   }
-  const movedCard: CardInstance = {
-    ...location.card,
-    exhausted: true,
-    movedThisTurn: true,
-  };
+  // Swift / Rush X (Rulebook 16): a character with free moves remaining is NOT
+  // exhausted by the move and does not consume its once-per-turn normal move;
+  // instead one free move is spent. Once free moves run out, moving exhausts as
+  // normal and sets movedThisTurn.
+  const freeMoves = location.card.freeMovesRemaining ?? 0;
+  const movedCard: CardInstance =
+    freeMoves > 0
+      ? { ...location.card, freeMovesRemaining: freeMoves - 1 }
+      : { ...location.card, exhausted: true, movedThisTurn: true };
   const cleared = setZoneSlot(zones, location.zone, location.slotIndex, null);
   return setZoneSlot(cleared, toZone, targetSlot, movedCard);
 }

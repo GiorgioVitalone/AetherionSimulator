@@ -12,6 +12,7 @@ import type {
 import type { ResourceCost, CardTypeCode } from '../types/common.js';
 import { createEmptyZoneState } from '../zones/zone-manager.js';
 import { createRng, shuffle, randomInt } from './rng.js';
+import { normalizeTraits } from './trait-normalizer.js';
 import { INITIAL_HAND_SIZE, MULLIGAN_HAND_SIZE } from '../types/game-state.js';
 
 // ── Card Definition (minimal interface for setup) ─────────────────────────────
@@ -64,7 +65,10 @@ function createCardInstance(
   def: CardDefinition,
   owner: 0 | 1,
 ): CardInstance {
+  const { traits, statusEffects, rushValue, recycleValue } = normalizeTraits(def.traits);
   return {
+    ...(rushValue !== undefined ? { rushValue } : {}),
+    ...(recycleValue !== undefined ? { recycleValue } : {}),
     instanceId: nextInstanceId(),
     cardDefId: def.id,
     name: def.name,
@@ -79,12 +83,12 @@ function createCardInstance(
     summoningSick: false,
     movedThisTurn: false,
     attackedThisTurn: false,
-    traits: (def.traits ?? []) as CardInstance['traits'],
+    traits,
     grantedTraits: [],
     abilities: [],
     registeredTriggers: [],
     modifiers: [],
-    statusEffects: [],
+    statusEffects,
     equipment: null,
     isToken: false,
     tags: def.tags ?? [],
@@ -98,13 +102,13 @@ function createHeroState(def: HeroDefinition): HeroState {
   return {
     cardDefId: def.id,
     name: def.name,
+    currentArm: 0,
     currentLp: def.lp,
     maxLp: def.lp,
     transformed: false,
     canTransformThisGame: true,
     transformedThisTurn: false,
     abilities: [],
-    cooldowns: new Map(),
     registeredTriggers: [],
   };
 }

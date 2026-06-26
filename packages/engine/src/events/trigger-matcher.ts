@@ -42,6 +42,24 @@ export function triggerMatchesEvent(
     case 'on_destroy':
       return event.type === 'CARD_DESTROYED' && event.cardInstanceId === sourceInstanceId;
 
+    case 'on_dies':
+      // Combat-only kill (Rulebook 16 tier 1): CARD_DESTROYED with cause 'combat'.
+      return (
+        event.type === 'CARD_DESTROYED' &&
+        event.cardInstanceId === sourceInstanceId &&
+        event.cause === 'combat'
+      );
+
+    case 'on_leaves_battlefield':
+      // Broadest (tier 3): destroyed, exiled, or bounced. A combat/effect kill emits
+      // CARD_DESTROYED (and possibly CARD_EXILED) — matching the former suffices.
+      return (
+        (event.type === 'CARD_DESTROYED' ||
+          event.type === 'CARD_EXILED' ||
+          event.type === 'CARD_BOUNCED') &&
+        event.cardInstanceId === sourceInstanceId
+      );
+
     case 'on_turn_start':
       return event.type === 'TURN_START' && event.playerId === ownerPlayerId;
 
@@ -75,6 +93,27 @@ export function triggerMatchesEvent(
         getCardInfo?.(event.cardInstanceId) ?? null,
       );
 
+    case 'on_ally_dies':
+      // Tier 1 ally scope: a friendly character killed by combat damage.
+      if (event.type !== 'CARD_DESTROYED' || event.cause !== 'combat') return false;
+      if (event.cardInstanceId === sourceInstanceId) return false;
+      if (event.playerId !== ownerPlayerId) return false;
+      return matchesFilter(trigger.filter, getCardInfo?.(event.cardInstanceId) ?? null);
+
+    case 'on_ally_leaves_battlefield': {
+      // Tier 3 ally scope: a friendly character destroyed, exiled, or bounced.
+      if (
+        event.type !== 'CARD_DESTROYED' &&
+        event.type !== 'CARD_EXILED' &&
+        event.type !== 'CARD_BOUNCED'
+      ) {
+        return false;
+      }
+      if (event.cardInstanceId === sourceInstanceId) return false;
+      if (event.playerId !== ownerPlayerId) return false;
+      return matchesFilter(trigger.filter, getCardInfo?.(event.cardInstanceId) ?? null);
+    }
+
     case 'on_spell_cast': {
       if (event.type !== 'SPELL_CAST') return false;
       const sideFilter = trigger.side;
@@ -102,8 +141,7 @@ export function triggerMatchesEvent(
       return event.type === 'DAMAGE_DEALT' && event.sourceId === sourceInstanceId;
 
     case 'on_block':
-      // Block events not yet emitted — placeholder
-      return false;
+      return event.type === 'CHARACTER_BLOCKED' && event.blockerId === sourceInstanceId;
 
     case 'on_gain_resource':
       if (event.type !== 'RESOURCE_GAINED') return false;
@@ -111,10 +149,17 @@ export function triggerMatchesEvent(
       if (trigger.resourceType !== undefined && event.resourceType !== trigger.resourceType) return false;
       return true;
 
-    case 'on_stat_modified':
+    case 'on_stat_modified': {
       if (event.type !== 'STAT_MODIFIED') return false;
-      // Side filtering requires card ownership lookup — accept all for now
+      // Honor the side filter when the event carries the modified card's owner.
+      // (Biotech Engineer side=allied draws only on FRIENDLY buffs.) When the owner
+      // is absent the filter cannot be applied and we accept permissively.
+      const side = trigger.side;
+      if (side === undefined || event.playerId === undefined) return true;
+      if (side === 'allied') return event.playerId === ownerPlayerId;
+      if (side === 'enemy') return event.playerId !== ownerPlayerId;
       return true;
+    }
 
     // These are not event-reactive — they're checked differently
     case 'while':

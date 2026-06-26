@@ -12,12 +12,20 @@ import type { GameState, PendingChoice } from '../types/game-state.js';
 import { MAX_HAND_SIZE } from '../types/game-state.js';
 import {
   refreshCards,
+  tickUpkeepStatuses,
+  generateReserveEnergy,
   drawResourceCard,
   drawMainDeckCard,
   executePlayerAction,
+  executeReactiveResponse,
+  executePriorityPass,
   removeTemporaryResources,
   passTurn,
+  runScheduledEffects,
+  expireUpkeepModifiers,
+  expireEndOfTurnModifiers,
 } from './actions.js';
+import type { ScheduledTiming } from '../types/effects.js';
 import { applyMulligan } from '../setup/game-setup.js';
 
 export const gameMachine = setup({
@@ -34,6 +42,8 @@ export const gameMachine = setup({
       return player.hand.length > MAX_HAND_SIZE;
     },
     hasWinner: ({ context }) => context.gameState.winner !== null,
+    windowOpen: ({ context }) =>
+      context.gameState.pendingPriority != null,
     mainDeckEmpty: ({ context }) => {
       const player = context.gameState.players[context.gameState.activePlayerIndex]!;
       return player.mainDeck.length === 0;
@@ -42,6 +52,30 @@ export const gameMachine = setup({
   actions: {
     refreshAllCards: assign({
       gameState: ({ context }) => refreshCards(context.gameState),
+    }),
+    tickStatuses: assign(({ context }) => {
+      const result = tickUpkeepStatuses(context.gameState);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+      };
+    }),
+    expireUpkeepMods: assign({
+      gameState: ({ context }) => expireUpkeepModifiers(context.gameState),
+    }),
+    expireEndOfTurnMods: assign({
+      gameState: ({ context }) => expireEndOfTurnModifiers(context.gameState),
+    }),
+    reserveEnergy: assign(({ context }) => {
+      const result = generateReserveEnergy(context.gameState);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+      };
     }),
     drawResource: assign(({ context }) => {
       const result = drawResourceCard(context.gameState);
@@ -82,6 +116,27 @@ export const gameMachine = setup({
         pendingChoice: result.state.winner !== null ? null : context.pendingChoice,
       };
     }),
+    applyReactiveAction: assign(({ context, event }) => {
+      if (event.type !== 'REACTIVE_ACTION') return {};
+      const result = executeReactiveResponse(context.gameState, event.action);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+        pendingChoice: result.state.winner !== null ? null : context.pendingChoice,
+      };
+    }),
+    applyPriorityPass: assign(({ context }) => {
+      const result = executePriorityPass(context.gameState);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+        pendingChoice: result.state.winner !== null ? null : context.pendingChoice,
+      };
+    }),
     setPhase: assign(({ context }, params: { readonly phase: GameState['phase'] }) => ({
       gameState: {
         ...context.gameState,
@@ -99,6 +154,17 @@ export const gameMachine = setup({
     removeTemps: assign({
       gameState: ({ context }) => removeTemporaryResources(context.gameState),
     }),
+    fireScheduled: assign(
+      ({ context }, params: { readonly timing: ScheduledTiming['type'] }) => {
+        const result = runScheduledEffects(context.gameState, params.timing);
+        return {
+          gameState: {
+            ...result.state,
+            log: [...result.state.log, ...result.events],
+          },
+        };
+      },
+    ),
     setHandSizeChoice: assign(({ context }) => {
       const player = context.gameState.players[context.gameState.activePlayerIndex]!;
       const excess = player.hand.length - MAX_HAND_SIZE;
@@ -198,7 +264,11 @@ export const gameMachine = setup({
         upkeep: {
           entry: [
             { type: 'setPhase', params: { phase: 'upkeep' as const } },
+            'expireUpkeepMods',
             'refreshAllCards',
+            'tickStatuses',
+            { type: 'fireScheduled', params: { timing: 'next_turn_start' as const } },
+            { type: 'fireScheduled', params: { timing: 'next_upkeep' as const } },
             'drawResource',
           ],
           always: [
@@ -215,7 +285,7 @@ export const gameMachine = setup({
           always: [
             {
               // First player first turn skips main draw
-              target: 'strategy',
+              target: 'reserveEnergy',
               guard: { type: 'isFirstPlayerFirstTurn' },
             },
             {
@@ -229,10 +299,17 @@ export const gameMachine = setup({
               })),
             },
             {
-              target: 'strategy',
+              target: 'reserveEnergy',
               actions: 'drawMainCard',
             },
           ],
+        },
+
+        // Upkeep step 4 — Reserve Energy Generation (Rulebook 8). Runs after the
+        // draws (steps 2/3) and before the Strategy Phase.
+        reserveEnergy: {
+          entry: 'reserveEnergy',
+          always: { target: 'strategy' },
         },
 
         strategy: {
@@ -245,10 +322,41 @@ export const gameMachine = setup({
               target: 'action',
             },
           },
-          always: {
-            target: '#aetherionGame.gameOver',
-            guard: { type: 'hasWinner' },
+          always: [
+            {
+              target: '#aetherionGame.gameOver',
+              guard: { type: 'hasWinner' },
+            },
+            {
+              target: 'priorityWindow',
+              guard: { type: 'windowOpen' },
+            },
+          ],
+        },
+
+        // Reactive response window (Rulebook 14). The responder casts a Counter/
+        // Flash (REACTIVE_ACTION) or passes (PRIORITY_PASS); two passes close the
+        // window and resolve the chain LIFO, clearing pendingPriority. Then we
+        // return to strategy so the active player continues their turn.
+        priorityWindow: {
+          on: {
+            REACTIVE_ACTION: {
+              actions: 'applyReactiveAction',
+            },
+            PRIORITY_PASS: {
+              actions: 'applyPriorityPass',
+            },
           },
+          always: [
+            {
+              target: '#aetherionGame.gameOver',
+              guard: { type: 'hasWinner' },
+            },
+            {
+              target: 'strategy',
+              guard: ({ context }) => context.gameState.pendingPriority == null,
+            },
+          ],
         },
 
         action: {
@@ -270,7 +378,9 @@ export const gameMachine = setup({
         endPhase: {
           entry: [
             { type: 'setPhase', params: { phase: 'end' as const } },
+            { type: 'fireScheduled', params: { timing: 'end_of_turn' as const } },
             'removeTemps',
+            'expireEndOfTurnMods',
           ],
           always: [
             {

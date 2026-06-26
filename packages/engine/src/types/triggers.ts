@@ -11,6 +11,8 @@ import type { Condition } from './conditions.js';
 export type Trigger =
   | OnDeploy
   | OnDestroy
+  | OnDies
+  | OnLeavesBattlefield
   | OnTurnStart
   | OnTurnEnd
   | OnAttack
@@ -20,6 +22,8 @@ export type Trigger =
   | OnBlock
   | OnAllyDeployed
   | OnAllyDestroyed
+  | OnAllyDies
+  | OnAllyLeavesBattlefield
   | OnSpellCast
   | OnSacrifice
   | OnHealed
@@ -36,8 +40,20 @@ export type Trigger =
 export interface OnDeploy {
   readonly type: 'on_deploy';
 }
+/** Destroyed by ANY means: combat, spell/ability, or sacrifice (Rulebook 16,
+ * Destruction Hierarchy tier 2). Encompasses "dies". Drives Last Breath. */
 export interface OnDestroy {
   readonly type: 'on_destroy';
+}
+/** Combat-only kill — HP reduced to 0 by combat damage (Rulebook 16, tier 1, the
+ * narrowest). "when this dies." Does NOT fire on spell/ability/sacrifice removal. */
+export interface OnDies {
+  readonly type: 'on_dies';
+}
+/** Left the battlefield by ANY means: destroyed, exiled, bounced, or returned to
+ * hand (Rulebook 16, tier 3, the broadest). Encompasses "destroyed". */
+export interface OnLeavesBattlefield {
+  readonly type: 'on_leaves_battlefield';
 }
 export interface OnTurnStart {
   readonly type: 'on_turn_start';
@@ -66,6 +82,18 @@ export interface OnAllyDeployed {
 }
 export interface OnAllyDestroyed {
   readonly type: 'on_ally_destroyed';
+  readonly side?: Side;
+  readonly filter?: TriggerFilter;
+}
+/** An allied character dies in combat (Destruction Hierarchy tier 1, ally scope). */
+export interface OnAllyDies {
+  readonly type: 'on_ally_dies';
+  readonly side?: Side;
+  readonly filter?: TriggerFilter;
+}
+/** An allied character leaves the battlefield by any means (tier 3, ally scope). */
+export interface OnAllyLeavesBattlefield {
+  readonly type: 'on_ally_leaves_battlefield';
   readonly side?: Side;
   readonly filter?: TriggerFilter;
 }

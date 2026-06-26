@@ -38,9 +38,9 @@ export function evaluateCondition(
     case 'compare_to_opponent':
       return evaluateCompareToOpponent(state, condition, context);
     case 'event_context':
-      return false; // Stub — requires runtime event context tracking
+      return evaluateEventContext(state, condition, context);
     case 'triggering_card_cost':
-      return false; // Stub — requires triggering card reference
+      return evaluateTriggeringCardCost(condition, context);
     case 'and':
       return condition.conditions.every(c => evaluateCondition(state, c, context));
     case 'or':
@@ -48,6 +48,40 @@ export function evaluateCondition(
     case 'not':
       return !evaluateCondition(state, condition.condition, context);
   }
+}
+
+/**
+ * Event-context flags threaded onto the EffectContext / TurnState by the runtime.
+ * `used_temporary_resource` — the action that fired this trigger (e.g. a deploy)
+ * paid with a Temporary Resource (RIA-09 Symbiotic Expansion). Read per-event from
+ * context. `gained_temporary_resource_this_turn` — the controller gained a Temporary
+ * Resource earlier this turn (RIA-09 Biotech Harvest); read from TurnState.
+ */
+function evaluateEventContext(
+  state: GameState,
+  cond: Extract<Condition, { type: 'event_context' }>,
+  context: EffectContext,
+): boolean {
+  if (cond.check === 'used_temporary_resource') {
+    return context.usedTemporaryResource === true;
+  }
+  return state.turnState.gainedTemporaryResource?.[context.controllerId] === true;
+}
+
+/**
+ * Compare the triggering card's cost (threaded onto the context by dispatch) to the
+ * reference. `relativeTo: triggering_spell` references the spell whose cast fired the
+ * ability — which IS the triggering card — so the comparison is against itself; the
+ * net effect is that the ability is gated only on a triggering card being present
+ * (Lyria Archmage Arcane Convergence: previously a permanent-false stub). Returns
+ * false when no triggering card is known.
+ */
+function evaluateTriggeringCardCost(
+  cond: Extract<Condition, { type: 'triggering_card_cost' }>,
+  context: EffectContext,
+): boolean {
+  if (context.triggeringCardCost === undefined) return false;
+  return compare(context.triggeringCardCost, cond.comparison, context.triggeringCardCost);
 }
 
 function compare(

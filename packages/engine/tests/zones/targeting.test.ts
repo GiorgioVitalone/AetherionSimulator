@@ -238,5 +238,126 @@ describe('Targeting', () => {
         expect(targets[0]?.instanceId).toBe(sniperDefender.instanceId);
       });
     });
+
+    describe('EC-004 defenderForceCap', () => {
+      const cap1 = { terminationMode: 'turn_cap' as const, defenderForceCap: 1 };
+
+      it('a Defender below its cap still forces (no flow-around)', () => {
+        const defender = mockCardWithTraits(['defender']); // forcedAttacksThisTurn = 0
+        const nonDefender = mockCard();
+        const zones = zonesWithCards({ frontline: [defender, nonDefender, null] });
+        const targets = getValidAttackTargets('frontline', [], zones, cap1);
+        // Still must target the (under-cap) Defender.
+        expect(targets).toHaveLength(1);
+        expect(targets[0]?.instanceId).toBe(defender.instanceId);
+      });
+
+      it('a capped-out Defender stops forcing — attackers flow around the wall', () => {
+        // Defender already forced once this turn ⇒ at its cap of 1.
+        const cappedDefender = mockCard({ traits: ['defender'], forcedAttacksThisTurn: 1 });
+        const nonDefender = mockCard();
+        const zones = zonesWithCards({ frontline: [cappedDefender, nonDefender, null] });
+        const targets = getValidAttackTargets('frontline', [], zones, cap1);
+        // No forcing: both bodies are legal targets (the capped Defender remains
+        // targetable, but is no longer mandatory).
+        const ids = targets.map(t => t.instanceId);
+        expect(ids).toContain(nonDefender.instanceId);
+        expect(ids).toContain(cappedDefender.instanceId);
+        expect(targets).toHaveLength(2);
+      });
+
+      it('a high-ground attacker reaches the hero once the Defender caps out', () => {
+        const cappedDefender = mockCard({ traits: ['defender'], forcedAttacksThisTurn: 1 });
+        const zones = zonesWithCards({ frontline: [cappedDefender, null, null] });
+        const targets = getValidAttackTargets('high_ground', [], zones, cap1);
+        // Wall is down ⇒ hero is now reachable from high ground.
+        expect(targets.some(t => t.type === 'hero')).toBe(true);
+      });
+
+      it('with one capped and one fresh Defender, only the fresh one forces', () => {
+        const capped = mockCard({ traits: ['defender'], forcedAttacksThisTurn: 1 });
+        const fresh = mockCardWithTraits(['defender']); // 0 forced
+        const zones = zonesWithCards({ frontline: [capped, fresh, null] });
+        const targets = getValidAttackTargets('frontline', [], zones, cap1);
+        // Still a Defender forcing ⇒ must target the fresh one only.
+        expect(targets).toHaveLength(1);
+        expect(targets[0]?.instanceId).toBe(fresh.instanceId);
+      });
+
+      it('cap=2 keeps forcing until two attacks have been forced', () => {
+        const cap2 = { terminationMode: 'turn_cap' as const, defenderForceCap: 2 };
+        const onceForced = mockCard({ traits: ['defender'], forcedAttacksThisTurn: 1 });
+        const nonDefender = mockCard();
+        const zones = zonesWithCards({ frontline: [onceForced, nonDefender, null] });
+        // 1 < 2 ⇒ still forcing.
+        const targets = getValidAttackTargets('frontline', [], zones, cap2);
+        expect(targets).toHaveLength(1);
+        expect(targets[0]?.instanceId).toBe(onceForced.instanceId);
+      });
+
+      it('default (no cap) forces regardless of forcedAttacksThisTurn (no-op)', () => {
+        // Even a body that has been "forced" many times keeps forcing when uncapped.
+        const defender = mockCard({ traits: ['defender'], forcedAttacksThisTurn: 99 });
+        const nonDefender = mockCard();
+        const zones = zonesWithCards({ frontline: [defender, nonDefender, null] });
+        const targets = getValidAttackTargets('frontline', [], zones); // no config
+        expect(targets).toHaveLength(1);
+        expect(targets[0]?.instanceId).toBe(defender.instanceId);
+      });
+    });
+
+    describe('EC-007 defenderHighGroundOnly', () => {
+      const on = { terminationMode: 'turn_cap' as const, defenderHighGroundOnly: true };
+
+      it('a Defender in HIGH GROUND forces under the toggle', () => {
+        const hgDefender = mockCardWithTraits(['defender']);
+        const flNonDefender = mockCard();
+        const zones = zonesWithCards({
+          frontline: [flNonDefender, null, null],
+          highGround: [hgDefender, null],
+        });
+        // A Frontline attacker reaches both zones; under EC-007 it must target the
+        // High Ground Defender (which now forces).
+        const targets = getValidAttackTargets('frontline', [], zones, on);
+        expect(targets).toHaveLength(1);
+        expect(targets[0]?.instanceId).toBe(hgDefender.instanceId);
+      });
+
+      it('a Defender in FRONTLINE does NOT force under the toggle', () => {
+        const flDefender = mockCardWithTraits(['defender']);
+        const flNonDefender = mockCard();
+        const zones = zonesWithCards({
+          frontline: [flDefender, flNonDefender, null],
+        });
+        // No High Ground Defender ⇒ no forcing; both bodies are free targets.
+        const targets = getValidAttackTargets('frontline', [], zones, on);
+        const ids = targets.map(t => t.instanceId);
+        expect(ids).toContain(flDefender.instanceId);
+        expect(ids).toContain(flNonDefender.instanceId);
+        expect(targets).toHaveLength(2);
+      });
+
+      it('a Frontline Defender no longer walls the hero from a High Ground attacker', () => {
+        const flDefender = mockCardWithTraits(['defender']);
+        const zones = zonesWithCards({ frontline: [flDefender, null, null] });
+        // Under EC-007 the Frontline Defender does not force ⇒ hero is reachable.
+        const targets = getValidAttackTargets('high_ground', [], zones, on);
+        expect(targets.some(t => t.type === 'hero')).toBe(true);
+      });
+
+      it('OFF (default) keeps Frontline forcing, High Ground Defenders do NOT force', () => {
+        const flDefender = mockCardWithTraits(['defender']);
+        const hgDefender = mockCardWithTraits(['defender']);
+        const flNonDefender = mockCard();
+        const zones = zonesWithCards({
+          frontline: [flDefender, flNonDefender, null],
+          highGround: [hgDefender, null],
+        });
+        // No config ⇒ engine default: only the FRONTLINE Defender forces.
+        const targets = getValidAttackTargets('frontline', [], zones);
+        expect(targets).toHaveLength(1);
+        expect(targets[0]?.instanceId).toBe(flDefender.instanceId);
+      });
+    });
   });
 });

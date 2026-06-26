@@ -4,7 +4,12 @@
  * Payment priority: specific resources first (mana pays mana, energy pays energy),
  * then flexible resources cover any remaining shortfall from either type.
  */
-import type { PlayerState, ResourceCard } from '../types/game-state.js';
+import type {
+  PlayerState,
+  ResourceCard,
+  CardInstance,
+  ActiveCostReduction,
+} from '../types/game-state.js';
 import type { ResourceCost } from '../types/common.js';
 
 /** Total available resources (permanent bank + temporary). */
@@ -28,6 +33,61 @@ export function getAvailableResources(player: PlayerState): {
   }
 
   return { mana, energy };
+}
+
+/** Does a cost reduction's filter match the card being played? A reduction with
+ * no cardType/tag constraints matches any card. `firstPerTurn` reductions only
+ * match while unused this turn. */
+function reductionMatches(red: ActiveCostReduction, card: CardInstance): boolean {
+  const f = red.appliesTo;
+  if (f.firstPerTurn === true && red.usedThisTurn) return false;
+  if (f.cardType !== undefined && f.cardType !== card.cardType) return false;
+  if (f.tag !== undefined && !card.tags.includes(f.tag)) return false;
+  return true;
+}
+
+/** Total generic discount the player's active reductions grant for `card`. */
+function totalReduction(player: PlayerState, card: CardInstance): number {
+  let sum = 0;
+  for (const red of player.costReductions ?? []) {
+    if (reductionMatches(red, card)) sum += red.reduction;
+  }
+  return sum;
+}
+
+/** Apply a generic discount to a cost. The discount lowers the loosest part of
+ * the cost first (flexible → energy → mana) and never goes below zero. */
+function discountCost(cost: ResourceCost, reduction: number): ResourceCost {
+  let left = reduction;
+  const take = (n: number): number => {
+    const d = Math.min(n, left);
+    left -= d;
+    return n - d;
+  };
+  const flexible = take(cost.flexible);
+  const energy = take(cost.energy);
+  const mana = take(cost.mana);
+  return { mana, energy, flexible };
+}
+
+/** The effective cost of playing `card` after the player's active reductions. */
+export function effectiveCost(player: PlayerState, card: CardInstance): ResourceCost {
+  return discountCost(card.cost, totalReduction(player, card));
+}
+
+/** Mark `firstPerTurn` reductions that matched `card` as used this turn. Pure. */
+export function consumeReductions(player: PlayerState, card: CardInstance): PlayerState {
+  const reductions = player.costReductions;
+  if (reductions === undefined || reductions.length === 0) return player;
+  let changed = false;
+  const next = reductions.map(red => {
+    if (red.appliesTo.firstPerTurn === true && !red.usedThisTurn && reductionMatches(red, card)) {
+      changed = true;
+      return { ...red, usedThisTurn: true };
+    }
+    return red;
+  });
+  return changed ? { ...player, costReductions: next } : player;
 }
 
 /** Can the player afford the given cost? */

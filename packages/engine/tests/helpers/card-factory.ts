@@ -60,13 +60,13 @@ export function mockHero(overrides?: Partial<HeroState>): HeroState {
   return {
     cardDefId: 100,
     name: 'Test Hero',
+    currentArm: 0,
     currentLp: 25,
     maxLp: 25,
     transformed: false,
     canTransformThisGame: true,
     transformedThisTurn: false,
     abilities: [],
-    cooldowns: new Map(),
     registeredTriggers: [],
     ...overrides,
   };
