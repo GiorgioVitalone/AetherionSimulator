@@ -112,12 +112,12 @@ function scoreEffect(
       // `removalWeight`); a non-lethal hit is just the chip damage dealt. AoE
       // (all_characters) thus scores its full board impact, not one target.
       const value = victims.reduce(
-        (sum, v) => sum + (dmg >= effectiveHp(v)
+        (sum, v) => sum + (dmg >= spellTargetHp(v)
           ? bodyValue(v, gameplan) * gameplan.removalWeight
-          : Math.min(dmg, effectiveHp(v))),
+          : Math.min(dmg, spellTargetHp(v))),
         0,
       );
-      return { value, isRemoval: victims.some(v => dmg >= effectiveHp(v)) };
+      return { value, isRemoval: victims.some(v => dmg >= spellTargetHp(v)) };
     }
     case 'modify_stats': {
       if (isEnemyTarget(effect.target)) return ZERO; // debuffs handled as chip via dmg path
@@ -271,8 +271,13 @@ function bodyValue(card: CardInstance, gameplan: Gameplan): number {
   return offense + wall;
 }
 
-function effectiveHp(card: CardInstance): number {
-  return card.currentHp + card.currentArm;
+// HP a direct-damage spell must overcome. Spell `deal_damage` applies straight to
+// HP and does NOT subtract ARM — ARM mitigates COMBAT damage only (see
+// combat-resolver). Counting ARM here made the bot treat armored bodies as far
+// tankier than they are versus burn, so it scored genuine lethal removal as mere
+// chip (isRemoval=false) and declined it.
+function spellTargetHp(card: CardInstance): number {
+  return card.currentHp;
 }
 
 const ZERO: SpellScore = { value: 0, isRemoval: false };

@@ -173,7 +173,10 @@ function castFoundForFree(
       const ids = result.pendingChoice.options
         .map(o => o.instanceId ?? o.id)
         .filter((x): x is string => typeof x === 'string');
-      const want = Math.min(ids.length, Math.max(result.pendingChoice.minSelections, 1));
+      // Honor the choice's real minimum: an optional target (up_to ⇒ minSelections 0)
+      // must be allowed to resolve with NO target chosen, not forced to fire on a body
+      // the player would decline. Capped at the number of legal options.
+      const want = Math.min(ids.length, result.pendingChoice.minSelections);
       result = executeEffect(current, eff, { ...castContext, selectedTargets: ids.slice(0, want) });
     }
     current = result.newState;

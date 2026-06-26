@@ -120,7 +120,11 @@ export function tickUpkeepStatuses(state: GameState): {
 } {
   const triggerPool = getAllRegisteredTriggers(state);
   const ticked = tickStatusEffects(state, state.activePlayerIndex);
-  if (ticked.events.length === 0) return { state, events: [] };
+  // No events means no triggers to dispatch and no aura-relevant change, but the
+  // tick may still have advanced silent durations (Slowed/Stunned countdown,
+  // Regeneration value decrement on a full-HP card). Return the ticked state so
+  // those decrements persist — returning the pre-tick `state` would drop them.
+  if (ticked.events.length === 0) return { state: ticked.state, events: [] };
   const dispatched = dispatchTriggers(ticked.state, ticked.events, 0, triggerPool);
   const finalState = recomputeAuras(dispatched.newState);
   return { state: finalState, events: [...ticked.events, ...dispatched.events] };
