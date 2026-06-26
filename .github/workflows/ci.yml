@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Test
+        # Includes the engine balance-sim suite, which runs the committed starter
+        # decks (packages/engine/sim-data) and asserts runHash determinism.
+        run: pnpm test
+
+  lint:
+    name: lint (non-blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        # Non-blocking: surfaces the ~280 pre-existing strict-type-checked ESLint
+        # violations in this job's log without failing the check (step-level
+        # continue-on-error keeps the job green). Drop this once the debt is burned
+        # down so lint gates alongside build + test.
+        run: pnpm lint
+        continue-on-error: true
