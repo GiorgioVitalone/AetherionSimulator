@@ -33,9 +33,6 @@ jobs:
   lint:
     name: lint (non-blocking)
     runs-on: ubuntu-latest
-    # Pre-existing strict-type-checked ESLint debt across the codebase; surfaced
-    # here but not yet gating. Remove continue-on-error once the debt is burned down.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -46,4 +43,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Lint
+        # Non-blocking: surfaces the ~280 pre-existing strict-type-checked ESLint
+        # violations in this job's log without failing the check (step-level
+        # continue-on-error keeps the job green). Drop this once the debt is burned
+        # down so lint gates alongside build + test.
         run: pnpm lint
+        continue-on-error: true
