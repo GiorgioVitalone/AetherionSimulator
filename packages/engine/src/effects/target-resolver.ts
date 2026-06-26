@@ -319,7 +319,7 @@ function getCardsBySide(
  * Both remain targetable by their own controller's effects, so only cards owned by
  * the OTHER player are filtered.
  */
-function excludeUntargetable(
+export function excludeUntargetable(
   cards: readonly CardInstance[],
   controllerId: 0 | 1,
 ): readonly CardInstance[] {

@@ -149,7 +149,10 @@ function accumulateFirstInstanceStripped(
   const stripped = Math.min(Math.max(0, rawAtk), Math.max(0, card.currentArm));
   if (stripped <= 0) return;
   diag.armFirstInstanceStripped[side] += stripped;
-  diag.armFirstInstanceGangHits![side] += 1;
+  // armFirstInstanceGangHits is independently optional on DiagCounters — guard it
+  // directly rather than asserting non-null off the *Stripped check above, so a diag
+  // that supplies only one of the pair cannot crash combat mid-resolution.
+  if (diag.armFirstInstanceGangHits !== undefined) diag.armFirstInstanceGangHits[side] += 1;
 }
 
 // ── EC-003: first-instance-only shield (config.shieldFirstInstanceOnly) ───────
@@ -491,7 +494,11 @@ function resolveCharacterAttack(
         const stripped = raw - would.amount;
         if (stripped > 0) {
           diag.shieldFirstInstanceStripped[holderPlayerId] += stripped;
-          diag.shieldFirstInstanceGangHits![holderPlayerId] += 1;
+          // Guard the independently-optional GangHits field directly (see the ARM
+          // counterpart) instead of a non-null assertion off the *Stripped check.
+          if (diag.shieldFirstInstanceGangHits !== undefined) {
+            diag.shieldFirstInstanceGangHits[holderPlayerId] += 1;
+          }
         }
       }
       return raw;

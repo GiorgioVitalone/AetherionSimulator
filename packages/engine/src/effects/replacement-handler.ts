@@ -61,6 +61,10 @@ export function applyDamageReplacements(
   const consumedIds: string[] = [];
   let current = amount;
   for (const repl of card.activeReplacements ?? []) {
+    // Stop once there is no damage left to replace: a shield that absorbs nothing
+    // must not be consumed (it stays available for a later hit this turn). This
+    // also skips every shield when the incoming amount is already 0.
+    if (current <= 0) break;
     if (repl.replaces.type !== 'on_would_take_damage') continue;
     if (repl.oncePerTurn && repl.usedThisTurn) continue;
     const reduction = repl.replaces.reduction ?? current; // no reduction value ⇒ prevent all

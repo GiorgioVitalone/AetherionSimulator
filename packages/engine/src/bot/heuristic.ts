@@ -18,7 +18,7 @@ import { scoreSpell } from './spell-eval.js';
 import { chooseSpellTargets } from './target-select.js';
 import { planGangAttack } from './combat-plan.js';
 import { simulateCombatExchange, asSimBody } from './combat-sim.js';
-import { gameplanFor } from './gameplan.js';
+import { gameplanFor, type Gameplan } from './gameplan.js';
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -96,6 +96,10 @@ function spellThreat(
   const responder = state.players[responderId]!;
   const card = caster.discardPile.find(c => c.instanceId === item.sourceInstanceId)
     ?? handCard(caster, item.sourceInstanceId);
+  // Threat is scored on the NEUTRAL baseline: scoreSpell conflates the caster's
+  // removal/face preference with the responder's valuation of the bodies at risk,
+  // so neither seat's gameplan is a clean weight for a counter decision. Keep this
+  // reactive estimate unpiloted (original behavior) rather than bake in a murky model.
   const base = card !== null ? scoreSpell(caster, responder, card, item.xPaid ?? 0).value : 0;
   let face = 0;
   for (const eff of item.effects) {
@@ -138,7 +142,7 @@ function chooseStrategyAction(
   acts: ReturnType<typeof computeAvailableActions>,
 ): PlayerAction | null {
   const opponent = state.players[state.activePlayerIndex === 0 ? 1 : 0]!;
-  const best = bestSpell(player, opponent, acts);
+  const best = bestSpell(player, opponent, acts, gameplanForSeat(state.config, state.activePlayerIndex));
 
   // 1. Transform when eligible and beneficial (gains new abilities / Ultimate).
   if (acts.canTransform && player.hero.transformData !== undefined) {
@@ -195,13 +199,14 @@ function bestSpell(
   player: PlayerState,
   opponent: PlayerState,
   acts: ReturnType<typeof computeAvailableActions>,
+  gameplan: Gameplan,
 ): ScoredSpell | null {
   const ranked = acts.canCastSpell
     .map(opt => {
       const card = handCard(player, opt.cardInstanceId);
       if (card === null) return null;
       const xValue = chooseXValue(player, card);
-      const score = scoreSpell(player, opponent, card, xValue);
+      const score = scoreSpell(player, opponent, card, xValue, gameplan);
       const selectedTargetIds = chooseSpellTargets(player, opponent, card);
       const action: PlayerAction = {
         type: 'cast_spell',
@@ -429,7 +434,12 @@ function chooseCombatAction(
   // worth the bodies spent, take the next swing of that gang even though it is an
   // individual down-trade. Compared on the same power-point scale as the greedy
   // best, so face lethal and clean trades still win when they are bigger.
-  const gang = planGangAttack(ready, opponent, state.config);
+  const gang = planGangAttack(
+    ready,
+    opponent,
+    state.config,
+    gameplanForSeat(state.config, state.activePlayerIndex).gangAggression,
+  );
   if (gang !== null && (best === null || gang.value > best.value)) {
     best = { action: gang.action, value: gang.value };
   }
@@ -452,6 +462,13 @@ function bestHeroAttack(
     value: dmg * faceWeight,
     action: id => ({ type: 'declare_attack', attackerInstanceId: id, targetId: 'hero' }),
   };
+}
+
+// The active seat's gameplan, falling back to NEUTRAL when no per-seat gameplan is
+// supplied on the config. Absent botGameplan ⇒ NEUTRAL ⇒ byte-identical no-op
+// (preserves the v10 runHash), since NEUTRAL's weights equal the hardcoded constants.
+function gameplanForSeat(config: GameConfig | undefined, seat: 0 | 1): Gameplan {
+  return config?.botGameplan?.[seat] ?? gameplanFor('Neutral');
 }
 
 // Face damage value per point of LP removed: the active seat's gameplan faceWeight,

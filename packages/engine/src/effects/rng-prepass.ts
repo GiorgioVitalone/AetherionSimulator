@@ -17,7 +17,7 @@ import type { TargetExpr } from '../types/targets.js';
 import type { GameState, EffectContext, CardInstance } from '../types/game-state.js';
 import { randomInt } from '../setup/rng.js';
 import { getAllCards } from '../zones/zone-manager.js';
-import { applyFilter } from './target-resolver.js';
+import { applyFilter, excludeUntargetable } from './target-resolver.js';
 
 export interface RngPrepassResult {
   readonly state: GameState;
@@ -75,7 +75,14 @@ function pickRandomTargets(
   count: number,
 ): { readonly ids: readonly string[]; readonly nextRng: GameState['rng'] } {
   const pool = randomPool(state, target, context);
-  const filtered = applyFilter(pool, target.filter, context);
+  // Random targeting must honor the same legality as explicit targeting: a hexproof
+  // or unacted-stealth enemy body cannot be hit by the opponent's effects (it is
+  // excluded on the normal path via getCardsBySide). Filter battlefield pools the
+  // same way; hand pools (random discard) are left alone since those keywords govern
+  // being targeted in play, not hand cards.
+  const eligible =
+    target.zone === 'hand' ? pool : excludeUntargetable(pool, context.controllerId);
+  const filtered = applyFilter(eligible, target.filter, context);
   const ids = filtered.map(c => c.instanceId);
   const picks: string[] = [];
   let rng = state.rng;

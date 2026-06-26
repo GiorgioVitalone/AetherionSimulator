@@ -226,11 +226,34 @@ function applyArmBuffMaxRule(state: GameState): GameState {
     }
     if (count < 2) return card;
     if (measure && diag !== undefined) {
-      diag.armBuffsStackedEvents![card.owner]++;
-      diag.armBuffsStackedShaved![card.owner] += sum - max;
+      // Guard each counter directly — both are independently optional on
+      // DiagCounters, so a diag supplying one without the other must not crash
+      // (same pattern as the combat-resolver diag guards). Under `measure` the
+      // events guard is always true; it just drops the non-null assertions.
+      if (diag.armBuffsStackedEvents !== undefined) diag.armBuffsStackedEvents[card.owner]++;
+      if (diag.armBuffsStackedShaved !== undefined) diag.armBuffsStackedShaved[card.owner] += sum - max;
     }
     if (!takeMax) return card;
-    return { ...card, currentArm: card.currentArm - sum + max };
+    // Shave the redundant (sum − max) ARM, but record it as an aura-tagged
+    // compensating modifier rather than only lowering the scalar. The buffs stay in
+    // `card.modifiers` at full value, so the next recompute's stripAuras subtracts
+    // their full sum from currentArm; tagging the −shave modifier `aura_` means it is
+    // stripped in the same pass, cancelling exactly the over-subtraction. Without it,
+    // strip removes the full sum from an already-collapsed currentArm and ARM drifts
+    // down by (sum − max) every recompute (unbounded for unequal aura buffs).
+    const shave = sum - max;
+    if (shave === 0) return card;
+    const compensator: ActiveModifier = {
+      id: `${AURA_PREFIX}armmax_${card.instanceId}`,
+      sourceInstanceId: card.instanceId,
+      modifier: { atk: 0, hp: 0, arm: -shave },
+      duration: { type: 'while_in_play', sourceId: card.instanceId },
+    };
+    return {
+      ...card,
+      currentArm: card.currentArm - shave,
+      modifiers: [...card.modifiers, compensator],
+    };
   };
 
   return {
