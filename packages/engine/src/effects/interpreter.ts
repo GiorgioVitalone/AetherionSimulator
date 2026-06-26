@@ -3,47 +3,54 @@
  * Dispatches Effect types to primitive handlers.
  */
 import type { Effect } from '../types/effects.js';
+import type { Duration } from '../types/durations.js';
 import type {
   GameState,
   GameEvent,
   EffectContext,
   EffectResult,
   CardInstance,
+  PlayerState,
   ResourceCard,
+  RegisteredTrigger,
+  ActiveModifier,
+  GrantedDuration,
+  ZoneState,
 } from '../types/game-state.js';
+import type { TriggeredAbilityDSL } from '../types/ability.js';
 import { resolveTargets } from './target-resolver.js';
-import { evaluateAmount } from './amount-evaluator.js';
+import { evaluateAmount, evaluateDynamicStat } from './amount-evaluator.js';
+import type { StatModifier } from '../types/common.js';
 import { evaluateCondition } from './condition-evaluator.js';
-import { findCard, removeFromZone, deployToZone } from '../zones/zone-manager.js';
-import { ZONE_SLOTS } from '../types/game-state.js';
+import { findCard, removeFromZone, deployToZone, getZoneArray } from '../zones/zone-manager.js';
+import { updateCardInState, findCardInState, removeCardFromState } from './state-helpers.js';
+import { isExiledOnDestruction } from './destruction-destination.js';
+import {
+  executeReturnFromDiscard,
+  executeSearchDeck,
+  executeShuffleIntoDeck,
+  executeCleanse,
+  executeDeployFromDeck,
+  executeCopyCard,
+} from './discard-deck-handlers.js';
+import { executeScry } from './scry-handler.js';
+import { executeCounterSpell } from './counter-handler.js';
+import { triggerRateLimits } from '../events/trigger-registry.js';
+import {
+  executeReplacement,
+  applyDamageReplacements,
+  findDestructionReplacement,
+  markReplacementsUsed,
+} from './replacement-handler.js';
+import { executeCostReduction } from './cost-reduction-handler.js';
+import { executeScheduled } from './scheduled-handler.js';
+import { executeAttachAsEquipment } from './attach-handler.js';
+import { rngPrepass } from './rng-prepass.js';
+import type { ActiveReplacement } from '../types/game-state.js';
 import type { ZoneType } from '../types/common.js';
 
 function unchanged(state: GameState): EffectResult {
   return { newState: state, events: [] };
-}
-
-function updateCardInState(
-  state: GameState,
-  instanceId: string,
-  updater: (card: CardInstance) => CardInstance,
-): GameState {
-  return {
-    ...state,
-    players: state.players.map(player => ({
-      ...player,
-      zones: {
-        reserve: player.zones.reserve.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        frontline: player.zones.frontline.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        highGround: player.zones.highGround.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-      },
-    })) as unknown as readonly [typeof state.players[0], typeof state.players[1]],
-  };
 }
 
 export function executeEffect(
@@ -51,38 +58,77 @@ export function executeEffect(
   effect: Effect,
   context: EffectContext,
 ): EffectResult {
+  // DIAGNOSTIC ABLATION: no-op any effect type the config disables (e.g. to
+  // neutralize value-loop/recursion mechanics generically). Default: no-op set
+  // is absent => normal resolution.
+  if (state.config?.disableEffectTypes?.includes(effect.type) === true) {
+    return unchanged(state);
+  }
+  // RNG pre-pass: roll `dice` amounts and resolve `random` targets once via the
+  // seeded RNG (advancing the counter on `state`), threading the results onto the
+  // context so the handlers consume them deterministically.
+  const prepped = rngPrepass(state, effect, context);
+  state = prepped.state;
+  context = prepped.context;
   switch (effect.type) {
-    case 'deal_damage': return executeDealDamage(state, effect, context);
-    case 'heal': return executeHeal(state, effect, context);
-    case 'modify_stats': return executeModifyStats(state, effect, context);
-    case 'draw_cards': return executeDrawCards(state, effect, context);
-    case 'deploy_token': return executeDeployToken(state, effect, context);
-    case 'destroy': return executeDestroy(state, effect, context);
-    case 'bounce': return executeBounce(state, effect, context);
-    case 'sacrifice': return executeSacrifice(state, effect, context);
-    case 'gain_resource': return executeGainResource(state, effect, context);
-    case 'grant_trait': return executeGrantTrait(state, effect, context);
-    case 'apply_status': return executeApplyStatus(state, effect, context);
-    case 'discard': return executeDiscard(state, effect, context);
-    case 'move': return executeMove(state, effect, context);
-    case 'composite': return executeComposite(state, effect, context);
-    case 'conditional': return executeConditional(state, effect, context);
-    case 'choose_one': return executeChooseOne(state, effect, context);
-    // Phase 2 primitives — stub for now
-    case 'scry':
-    case 'counter_spell':
+    case 'deal_damage':
+      return executeDealDamage(state, effect, context);
+    case 'heal':
+      return executeHeal(state, effect, context);
+    case 'modify_stats':
+      return executeModifyStats(state, effect, context);
+    case 'draw_cards':
+      return executeDrawCards(state, effect, context);
+    case 'deploy_token':
+      return executeDeployToken(state, effect, context);
+    case 'destroy':
+      return executeDestroy(state, effect, context);
+    case 'bounce':
+      return executeBounce(state, effect, context);
+    case 'sacrifice':
+      return executeSacrifice(state, effect, context);
+    case 'gain_resource':
+      return executeGainResource(state, effect, context);
+    case 'grant_trait':
+      return executeGrantTrait(state, effect, context);
+    case 'apply_status':
+      return executeApplyStatus(state, effect, context);
+    case 'discard':
+      return executeDiscard(state, effect, context);
+    case 'move':
+      return executeMove(state, effect, context);
+    case 'composite':
+      return executeComposite(state, effect, context);
+    case 'conditional':
+      return executeConditional(state, effect, context);
+    case 'choose_one':
+      return executeChooseOne(state, effect, context);
     case 'return_from_discard':
-    case 'cost_reduction':
-    case 'grant_ability':
-    case 'replacement':
-    case 'cleanse':
+      return executeReturnFromDiscard(state, effect, context);
+    case 'scry':
+      return executeScry(state, effect, context);
     case 'search_deck':
+      return executeSearchDeck(state, effect, context);
     case 'shuffle_into_deck':
-    case 'copy_card':
+      return executeShuffleIntoDeck(state, effect, context);
+    case 'cleanse':
+      return executeCleanse(state, effect, context);
     case 'deploy_from_deck':
-    case 'attach_as_equipment':
+      return executeDeployFromDeck(state, effect, context);
+    case 'copy_card':
+      return executeCopyCard(state, effect, context);
+    case 'grant_ability':
+      return executeGrantAbility(state, effect, context);
+    case 'counter_spell':
+      return executeCounterSpell(state, effect, context);
+    case 'replacement':
+      return executeReplacement(state, effect, context);
+    case 'cost_reduction':
+      return executeCostReduction(state, effect, context);
     case 'scheduled':
-      return unchanged(state);
+      return executeScheduled(state, effect, context);
+    case 'attach_as_equipment':
+      return executeAttachAsEquipment(state, effect, context);
   }
 }
 
@@ -94,39 +140,126 @@ function executeDealDamage(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const amount = evaluateAmount(state, effect.amount, context);
   const events: GameEvent[] = [];
   let currentState = state;
 
+  // DIAGNOSTIC ABLATION (default absent ⇒ no-op): config.disableHeroReachBySeat
+  // makes the controlling seat unable to reduce the ENEMY Hero's LP via a direct
+  // damage effect. Self-targeted hero damage (the controller's own hero) is
+  // unaffected. Default (absent / both false) leaves this path byte-identical.
+  const heroReachDisabled =
+    currentState.config?.disableHeroReachBySeat?.[context.controllerId] === true;
+
   for (const targetId of resolved.targetIds) {
     if (targetId.startsWith('hero_')) {
       const playerId = Number(targetId.split('_')[1]) as 0 | 1;
-      const hero = currentState.players[playerId]!.hero;
+      if (heroReachDisabled && playerId !== context.controllerId) continue;
+      const hero = currentState.players[playerId].hero;
       const newLp = Math.max(0, hero.currentLp - amount);
       events.push({ type: 'HERO_DAMAGED', playerId, amount, sourceId: context.sourceInstanceId });
-      const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
-      newPlayers[playerId] = { ...currentState.players[playerId]!, hero: { ...hero, currentLp: newLp } };
+      const newPlayers = [...currentState.players] as [
+        (typeof currentState.players)[0],
+        (typeof currentState.players)[1],
+      ];
+      newPlayers[playerId] = {
+        ...currentState.players[playerId],
+        hero: { ...hero, currentLp: newLp },
+      };
       currentState = { ...currentState, players: newPlayers };
       if (newLp <= 0) {
-        const opponentId = (playerId === 0 ? 1 : 0) as 0 | 1;
+        const opponentId = playerId === 0 ? 1 : 0;
         currentState = { ...currentState, winner: opponentId };
       }
     } else {
-      events.push({ type: 'DAMAGE_DEALT', sourceId: context.sourceInstanceId, targetId, amount });
-      currentState = updateCardInState(currentState, targetId, c => ({
-        ...c, currentHp: c.currentHp - amount,
+      const target = findCardInState(currentState, targetId);
+      if (target === null) continue;
+      // Replacement hook: reduce/prevent incoming damage before HP is reduced.
+      const dmg = applyDamageReplacements(target, amount);
+      currentState = markReplacementsUsed(currentState, targetId, dmg.consumedIds);
+      events.push({
+        type: 'DAMAGE_DEALT',
+        sourceId: context.sourceInstanceId,
+        targetId,
+        amount: dmg.amount,
+      });
+      currentState = updateCardInState(currentState, targetId, (c) => ({
+        ...c,
+        currentHp: c.currentHp - dmg.amount,
       }));
-      // Check destruction
+      // Check destruction (subject to "would be destroyed" replacement).
       const cardCheck = findCardInState(currentState, targetId);
       if (cardCheck !== null && cardCheck.currentHp <= 0) {
-        events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'effect', playerId: cardCheck.owner });
-        currentState = removeCardFromState(currentState, targetId);
+        const destruction = destroyOrReplace(currentState, cardCheck, 'effect', context);
+        currentState = destruction.newState;
+        events.push(...destruction.events);
       }
     }
   }
 
+  return { newState: currentState, events };
+}
+
+/**
+ * Destroy a card, or run its "would be destroyed" replacement instead.
+ * Returns the new state plus the events produced. Pure.
+ */
+function destroyOrReplace(
+  state: GameState,
+  card: CardInstance,
+  cause: 'combat' | 'effect' | 'sacrifice',
+  context: EffectContext,
+): EffectResult {
+  const replacement = findDestructionReplacement(card);
+  if (replacement === null) {
+    const destroyed: GameEvent = {
+      type: 'CARD_DESTROYED',
+      cardInstanceId: card.instanceId,
+      cause,
+      playerId: card.owner,
+    };
+    // A Volatile non-token unit is destroyed (Last Breath still fires) but its body
+    // is exiled rather than discarded — emit CARD_EXILED for the destination.
+    const events: GameEvent[] =
+      !card.isToken && isExiledOnDestruction(card)
+        ? [
+            destroyed,
+            { type: 'CARD_EXILED', cardInstanceId: card.instanceId, playerId: card.owner },
+          ]
+        : [destroyed];
+    // The holder's equipment follows it to the discard pile (Rulebook 13). Emit its
+    // own CARD_DESTROYED so discard-recursion watchers can see it (mirrors bounce).
+    if (card.equipment !== null) {
+      events.push({
+        type: 'CARD_DESTROYED',
+        cardInstanceId: card.equipment.instanceId,
+        cause: 'effect',
+        playerId: card.owner,
+      });
+    }
+    return { newState: removeCardFromState(state, card.instanceId), events };
+  }
+  return runDestructionReplacement(state, card, replacement, context);
+}
+
+/** Mark the replacement used, then run its `instead` effects in place of destruction. */
+function runDestructionReplacement(
+  state: GameState,
+  card: CardInstance,
+  replacement: ActiveReplacement,
+  context: EffectContext,
+): EffectResult {
+  let currentState = markReplacementsUsed(state, card.instanceId, [replacement.id]);
+  const events: GameEvent[] = [];
+  const insteadContext: EffectContext = { ...context, sourceInstanceId: card.instanceId };
+  for (const subEffect of replacement.instead) {
+    const result = executeEffect(currentState, subEffect, insteadContext);
+    currentState = result.newState;
+    events.push(...result.events);
+  }
   return { newState: currentState, events };
 }
 
@@ -136,29 +269,67 @@ function executeHeal(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
-  const amount = evaluateAmount(state, effect.amount, context);
+  // DIAGNOSTIC ABLATION: scale every heal by config.healScale (default 1).
+  const scale = state.config?.healScale ?? 1;
+  const amount = Math.round(evaluateAmount(state, effect.amount, context) * scale);
   const events: GameEvent[] = [];
   let currentState = state;
+
+  // DIAGNOSTIC INSTRUMENTATION (no-op for game logic): tag each realized heal with
+  // its SOURCE instance id (`hero_<defId>` for hero abilities, else the card id) so
+  // an offline read can split realized healing by source. Optional event field.
+  const srcId = context.sourceInstanceId;
+
+  // EC-005 (config.disableHeroHealing): nullify any heal whose realized target is a
+  // HERO; character healing below is untouched. Default OFF ⇒ this branch is skipped
+  // and the heal path is byte-identical to the v10 baseline.
+  const disableHeroHealing = currentState.config?.disableHeroHealing === true;
+  const diag = currentState.config?.diag;
 
   for (const targetId of resolved.targetIds) {
     if (targetId.startsWith('hero_')) {
       const playerId = Number(targetId.split('_')[1]) as 0 | 1;
-      const hero = currentState.players[playerId]!.hero;
+      const hero = currentState.players[playerId].hero;
+      if (disableHeroHealing) {
+        // Tally the LP the rule removed (capped by live headroom), then no-op the heal.
+        if (diag?.heroHealRemoved) {
+          diag.heroHealRemoved[playerId] += Math.min(amount, hero.maxLp - hero.currentLp);
+        }
+        continue;
+      }
       const healed = Math.min(amount, hero.maxLp - hero.currentLp);
       if (healed > 0) {
-        events.push({ type: 'HERO_HEALED', playerId, amount: healed });
-        const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
-        newPlayers[playerId] = { ...currentState.players[playerId]!, hero: { ...hero, currentLp: hero.currentLp + healed } };
+        events.push({ type: 'HERO_HEALED', playerId, amount: healed, sourceId: srcId });
+        const newPlayers = [...currentState.players] as [
+          (typeof currentState.players)[0],
+          (typeof currentState.players)[1],
+        ];
+        newPlayers[playerId] = {
+          ...currentState.players[playerId],
+          hero: { ...hero, currentLp: hero.currentLp + healed },
+        };
         currentState = { ...currentState, players: newPlayers };
       }
     } else {
-      currentState = updateCardInState(currentState, targetId, c => {
+      // DESIGN-SWEEP (config.noOverheal): healing already clamps currentHp to baseHp;
+      // when set, also suppress the CHARACTER_OVERHEALED signal so no `on_overheal`
+      // trigger pays off. Default OFF ⇒ the overheal event still fires (no-op).
+      const noOverheal = currentState.config?.noOverheal === true;
+      currentState = updateCardInState(currentState, targetId, (c) => {
         const healed = Math.min(amount, c.baseHp - c.currentHp);
-        if (healed > 0) events.push({ type: 'CHARACTER_HEALED', cardInstanceId: targetId, amount: healed });
+        if (healed > 0)
+          events.push({
+            type: 'CHARACTER_HEALED',
+            cardInstanceId: targetId,
+            amount: healed,
+            sourceId: srcId,
+          });
         const excess = amount - (c.baseHp - c.currentHp);
-        if (excess > 0) events.push({ type: 'CHARACTER_OVERHEALED', cardInstanceId: targetId, excess });
+        if (excess > 0 && !noOverheal)
+          events.push({ type: 'CHARACTER_OVERHEALED', cardInstanceId: targetId, excess });
         return { ...c, currentHp: Math.min(c.baseHp, c.currentHp + amount) };
       });
     }
@@ -167,31 +338,97 @@ function executeHeal(
   return { newState: currentState, events };
 }
 
+function combineStatMods(a: StatModifier, b: StatModifier): StatModifier {
+  return {
+    atk: (a.atk ?? 0) + (b.atk ?? 0),
+    hp: (a.hp ?? 0) + (b.hp ?? 0),
+    arm: (a.arm ?? 0) + (b.arm ?? 0),
+  };
+}
+
+// Timed modify_stats record an ActiveModifier tagged with a turn/upkeep boundary
+// so the state machine can strip them (and undo their stat contribution) when the
+// boundary is reached. Permanent/instant/while_in_play/for_combat durations apply
+// straight to current stats and never expire here. Returns the tracking duration
+// to record, or null to skip tracking.
+function timedDuration(d: Duration): ActiveModifier['duration'] | null {
+  if (d.type === 'until_end_of_turn') return { type: 'until_end_of_turn' };
+  if (d.type === 'until_next_upkeep') return { type: 'until_next_upkeep' };
+  return null;
+}
+
 function executeModifyStats(
   state: GameState,
   effect: Extract<Effect, { type: 'modify_stats' }>,
   context: EffectContext,
 ): EffectResult {
-  // Dynamic modifier requires runtime evaluation — stub for now
-  if (effect.dynamicModifier !== undefined) return unchanged(state);
-
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
+  const tracked = timedDuration(effect.duration);
+
+  // DIAGNOSTIC ABLATION (default absent ⇒ no-op): config.ablateBulwark zeroes the
+  // ARM component of any `until_next_upkeep` modify_stats — uniquely Seraphina's
+  // "Protector's Bulwark" +1 frontline ARM (the only such ARM buff in the field;
+  // the Valkyrie transform's until_next_upkeep mod is ATK-only and is untouched).
+  if (
+    state.config?.ablateBulwark === true &&
+    effect.duration.type === 'until_next_upkeep' &&
+    (effect.modifier.arm ?? 0) !== 0
+  ) {
+    effect = { ...effect, modifier: { ...effect.modifier, arm: 0 } };
+  }
 
   for (const targetId of resolved.targetIds) {
-    events.push({ type: 'STAT_MODIFIED', cardInstanceId: targetId, modifier: effect.modifier });
-    currentState = updateCardInState(currentState, targetId, c => ({
+    // Dynamic modifiers depend on the target's live stats / live game state, so
+    // they are resolved per target rather than from the static `modifier`.
+    const dyn =
+      effect.dynamicModifier !== undefined
+        ? dynamicModForTarget(currentState, effect.dynamicModifier, targetId, context)
+        : {};
+    const total = combineStatMods(effect.modifier, dyn);
+    const owner = findCardInState(currentState, targetId)?.owner;
+    events.push({
+      type: 'STAT_MODIFIED',
+      cardInstanceId: targetId,
+      modifier: total,
+      ...(owner !== undefined ? { playerId: owner } : {}),
+    });
+    currentState = updateCardInState(currentState, targetId, (c) => ({
       ...c,
-      currentAtk: c.currentAtk + (effect.modifier.atk ?? 0),
-      currentHp: c.currentHp + (effect.modifier.hp ?? 0),
-      currentArm: c.currentArm + (effect.modifier.arm ?? 0),
+      currentAtk: c.currentAtk + (total.atk ?? 0),
+      currentHp: c.currentHp + (total.hp ?? 0),
+      currentArm: c.currentArm + (total.arm ?? 0),
+      modifiers:
+        tracked === null
+          ? c.modifiers
+          : [
+              ...c.modifiers,
+              {
+                id: `mod_${context.sourceInstanceId}_${targetId}_${String(c.modifiers.length)}`,
+                sourceInstanceId: context.sourceInstanceId,
+                modifier: total,
+                duration: tracked,
+              },
+            ],
     }));
   }
 
   return { newState: currentState, events };
+}
+
+function dynamicModForTarget(
+  state: GameState,
+  dynamic: NonNullable<Extract<Effect, { type: 'modify_stats' }>['dynamicModifier']>,
+  targetId: string,
+  context: EffectContext,
+): StatModifier {
+  const target = findCardInState(state, targetId);
+  if (target === null) return {};
+  return evaluateDynamicStat(state, dynamic, target, context);
 }
 
 function executeDrawCards(
@@ -200,18 +437,17 @@ function executeDrawCards(
   context: EffectContext,
 ): EffectResult {
   const count = evaluateAmount(state, effect.count, context);
-  const playerIdx = effect.player === 'enemy'
-    ? (context.controllerId === 0 ? 1 : 0) as 0 | 1
-    : context.controllerId;
+  const playerIdx =
+    effect.player === 'enemy' ? (context.controllerId === 0 ? 1 : 0) : context.controllerId;
 
-  const player = state.players[playerIdx]!;
+  const player = state.players[playerIdx];
   const drawCount = Math.min(count, player.mainDeck.length);
   if (drawCount === 0) return unchanged(state);
 
   const drawn = player.mainDeck.slice(0, drawCount);
   const remaining = player.mainDeck.slice(drawCount);
 
-  const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+  const newPlayers = [...state.players] as [(typeof state.players)[0], (typeof state.players)[1]];
   newPlayers[playerIdx] = {
     ...player,
     hand: [...player.hand, ...drawn],
@@ -233,16 +469,23 @@ function executeDeployToken(
   const events: GameEvent[] = [];
   let currentState = state;
 
-  const count = effect.inEachEmpty === true
-    ? ZONE_SLOTS[zone]
-    : (effect.count ?? 1);
+  // `inEachEmpty` fills every empty slot: bound iterations by the live zone-array
+  // length (the deploy loop already breaks once no open slot remains). Identical to
+  // ZONE_SLOTS under the default 3/2 board; respects a zone-capacity override.
+  const count =
+    effect.inEachEmpty === true
+      ? getZoneArray(state.players[context.controllerId].zones, zone).length
+      : effect.count;
 
   for (let i = 0; i < count; i++) {
-    const player = currentState.players[context.controllerId]!;
-    const zoneArr = zone === 'reserve' ? player.zones.reserve
-      : zone === 'frontline' ? player.zones.frontline
-      : player.zones.highGround;
-    const openSlot = zoneArr.findIndex(s => s === null);
+    const player = currentState.players[context.controllerId];
+    const zoneArr =
+      zone === 'reserve'
+        ? player.zones.reserve
+        : zone === 'frontline'
+          ? player.zones.frontline
+          : player.zones.highGround;
+    const openSlot = zoneArr.findIndex((s) => s === null);
     if (openSlot === -1) break;
 
     const tokenId = currentState.rng.counter + 1;
@@ -277,10 +520,18 @@ function executeDeployToken(
     };
 
     const newZones = deployToZone(player.zones, token, zone, openSlot);
-    const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
+    const newPlayers = [...currentState.players] as [
+      (typeof currentState.players)[0],
+      (typeof currentState.players)[1],
+    ];
     newPlayers[context.controllerId] = { ...player, zones: newZones };
     currentState = { ...currentState, players: newPlayers };
-    events.push({ type: 'CARD_DEPLOYED', cardInstanceId: token.instanceId, zone, playerId: context.controllerId });
+    events.push({
+      type: 'CARD_DEPLOYED',
+      cardInstanceId: token.instanceId,
+      zone,
+      playerId: context.controllerId,
+    });
   }
 
   return { newState: currentState, events };
@@ -292,15 +543,17 @@ function executeDestroy(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
   for (const targetId of resolved.targetIds) {
     const card = findCardInState(currentState, targetId);
     if (card === null) continue;
-    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'effect', playerId: card.owner });
-    currentState = removeCardFromState(currentState, targetId);
+    const destruction = destroyOrReplace(currentState, card, 'effect', context);
+    currentState = destruction.newState;
+    events.push(...destruction.events);
   }
   return { newState: currentState, events };
 }
@@ -311,32 +564,38 @@ function executeBounce(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
   for (const targetId of resolved.targetIds) {
     const card = findCardInState(currentState, targetId);
     if (card === null) continue;
-    events.push({ type: 'CARD_BOUNCED', cardInstanceId: targetId });
+    events.push({ type: 'CARD_BOUNCED', cardInstanceId: targetId, playerId: card.owner });
+    // removeCardFromState sends the holder (and, separately, its detached equipment)
+    // to the discard pile. For a bounce the holder belongs in HAND, not discard, so
+    // pull it back out; the detached equipment stays in discard (Rulebook 13).
     currentState = removeCardFromState(currentState, targetId);
     if (!card.isToken) {
-      // Return to owner's hand (and remove from discard pile where removeCardFromState put it)
-      const ownerState = currentState.players[card.owner]!;
-      // If the card had equipment, send it to discard separately
-      const equipmentToDiscard = card.equipment !== null ? [card.equipment] : [];
-      const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
+      const ownerState = currentState.players[card.owner];
+      const newPlayers = [...currentState.players] as [
+        (typeof currentState.players)[0],
+        (typeof currentState.players)[1],
+      ];
       newPlayers[card.owner] = {
         ...ownerState,
-        discardPile: [
-          ...ownerState.discardPile.filter(c => c.instanceId !== card.instanceId),
-          ...equipmentToDiscard,
-        ],
+        discardPile: ownerState.discardPile.filter((c) => c.instanceId !== card.instanceId),
         hand: [...ownerState.hand, resetCard(card)],
       };
       currentState = { ...currentState, players: newPlayers };
       if (card.equipment !== null) {
-        events.push({ type: 'CARD_DESTROYED', cardInstanceId: card.equipment.instanceId, cause: 'effect', playerId: card.owner });
+        events.push({
+          type: 'CARD_DESTROYED',
+          cardInstanceId: card.equipment.instanceId,
+          cause: 'effect',
+          playerId: card.owner,
+        });
       }
     }
     // Tokens are removed from game when bounced
@@ -350,7 +609,8 @@ function executeSacrifice(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
@@ -358,7 +618,15 @@ function executeSacrifice(
     const card = findCardInState(currentState, targetId);
     if (card === null) continue;
     events.push({ type: 'CARD_SACRIFICED', cardInstanceId: targetId });
-    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'sacrifice', playerId: card.owner });
+    events.push({
+      type: 'CARD_DESTROYED',
+      cardInstanceId: targetId,
+      cause: 'sacrifice',
+      playerId: card.owner,
+    });
+    if (!card.isToken && isExiledOnDestruction(card)) {
+      events.push({ type: 'CARD_EXILED', cardInstanceId: targetId, playerId: card.owner });
+    }
     currentState = removeCardFromState(currentState, targetId);
   }
   return { newState: currentState, events };
@@ -369,8 +637,8 @@ function executeGainResource(
   effect: Extract<Effect, { type: 'gain_resource' }>,
   context: EffectContext,
 ): EffectResult {
-  const player = state.players[context.controllerId]!;
-  const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+  const player = state.players[context.controllerId];
+  const newPlayers = [...state.players] as [(typeof state.players)[0], (typeof state.players)[1]];
 
   if (effect.temporary === true) {
     newPlayers[context.controllerId] = {
@@ -378,6 +646,27 @@ function executeGainResource(
       temporaryResources: [
         ...player.temporaryResources,
         { resourceType: effect.resourceType, amount: effect.amount },
+      ],
+    };
+    // Flag this player as having gained a Temporary Resource this turn so the
+    // `event_context: gained_temporary_resource_this_turn` Condition (RIA-09
+    // Biotech Harvest) reads true. Reset at the player's turn start.
+    const prior = state.turnState.gainedTemporaryResource ?? [false, false];
+    const flags: [boolean, boolean] = [prior[0], prior[1]];
+    flags[context.controllerId] = true;
+    return {
+      newState: {
+        ...state,
+        players: newPlayers,
+        turnState: { ...state.turnState, gainedTemporaryResource: flags },
+      },
+      events: [
+        {
+          type: 'RESOURCE_GAINED',
+          playerId: context.controllerId,
+          resourceType: effect.resourceType,
+          amount: effect.amount,
+        },
       ],
     };
   } else {
@@ -398,13 +687,19 @@ function executeGainResource(
   }
 
   return {
-    newState: { ...state, players: newPlayers, rng: { ...state.rng, counter: state.rng.counter + effect.amount } },
-    events: [{
-      type: 'RESOURCE_GAINED',
-      playerId: context.controllerId,
-      resourceType: effect.resourceType,
-      amount: effect.amount,
-    }],
+    newState: {
+      ...state,
+      players: newPlayers,
+      rng: { ...state.rng, counter: state.rng.counter + effect.amount },
+    },
+    events: [
+      {
+        type: 'RESOURCE_GAINED',
+        playerId: context.controllerId,
+        resourceType: effect.resourceType,
+        amount: effect.amount,
+      },
+    ],
   };
 }
 
@@ -414,27 +709,97 @@ function executeGrantTrait(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
+  const duration = grantedTraitDuration(effect.duration, context.sourceInstanceId);
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    currentState = updateCardInState(currentState, targetId, c => ({
+    currentState = updateCardInState(currentState, targetId, (c) => ({
       ...c,
       grantedTraits: [
         ...c.grantedTraits,
-        {
-          trait: effect.trait,
-          sourceInstanceId: context.sourceInstanceId,
-          duration: effect.duration.type === 'permanent'
-            ? { type: 'permanent' as const }
-            : effect.duration.type === 'until_end_of_turn'
-              ? { type: 'until_end_of_turn' as const }
-              : { type: 'permanent' as const },
-        },
+        { trait: effect.trait, sourceInstanceId: context.sourceInstanceId, duration },
       ],
     }));
   }
   return { newState: currentState, events: [] };
+}
+
+// Map a grant_trait Duration onto the trait's tracking GrantedDuration (Rulebook 16).
+// until_end_of_turn / until_next_upkeep expire at their boundary (stripped by the
+// state machine). for_combat has no combat-end tick, so it collapses to the nearest
+// expiring boundary, end of turn. while_in_play ties to the granting source so it is
+// removed when that source leaves. permanent/instant persist.
+function grantedTraitDuration(d: Duration, sourceId: string): GrantedDuration {
+  switch (d.type) {
+    case 'until_end_of_turn':
+    case 'for_combat':
+      return { type: 'until_end_of_turn' };
+    case 'until_next_upkeep':
+      return { type: 'until_next_upkeep' };
+    case 'while_in_play':
+      return { type: 'while_in_play', sourceId };
+    case 'permanent':
+    case 'instant':
+      return { type: 'permanent' };
+    default: {
+      const _exhaustive: never = d;
+      return _exhaustive;
+    }
+  }
+}
+
+function executeGrantAbility(
+  state: GameState,
+  effect: Extract<Effect, { type: 'grant_ability' }>,
+  context: EffectContext,
+): EffectResult {
+  const resolved = resolveTargets(state, effect.target, context);
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+
+  let currentState = state;
+  for (const targetId of resolved.targetIds) {
+    currentState = updateCardInState(currentState, targetId, (card) =>
+      grantAbilityToCard(card, effect.ability, context.sourceInstanceId),
+    );
+  }
+  return { newState: currentState, events: [] };
+}
+
+/**
+ * Append a granted triggered ability to a card and register its trigger so the
+ * dispatch runtime fires it (e.g. an equipped character's "on destroy" ability).
+ * The trigger id is derived deterministically from source + target + index.
+ */
+function grantAbilityToCard(
+  card: CardInstance,
+  ref: Extract<Effect, { type: 'grant_ability' }>['ability'],
+  sourceInstanceId: string,
+): CardInstance {
+  const ability: TriggeredAbilityDSL = {
+    type: 'triggered',
+    trigger: ref.trigger,
+    effects: ref.effects,
+    condition: ref.condition,
+  };
+  const abilityIndex = card.abilities.length;
+  const registered: RegisteredTrigger = {
+    id: `granted_${sourceInstanceId}_${card.instanceId}_${String(abilityIndex)}`,
+    sourceInstanceId: card.instanceId,
+    ownerPlayerId: card.owner,
+    trigger: ref.trigger,
+    effects: ref.effects,
+    condition: ref.condition,
+    abilityIndex,
+    ...triggerRateLimits(ability),
+  };
+  return {
+    ...card,
+    abilities: [...card.abilities, ability],
+    registeredTriggers: [...card.registeredTriggers, registered],
+  };
 }
 
 function executeApplyStatus(
@@ -443,11 +808,12 @@ function executeApplyStatus(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    currentState = updateCardInState(currentState, targetId, c => ({
+    currentState = updateCardInState(currentState, targetId, (c) => ({
       ...c,
       statusEffects: [
         ...c.statusEffects,
@@ -467,26 +833,163 @@ function executeDiscard(
   effect: Extract<Effect, { type: 'discard' }>,
   context: EffectContext,
 ): EffectResult {
-  // Resolve target player from effect.target
-  const targetPlayerId = 'side' in effect.target && effect.target.side === 'enemy'
-    ? (context.controllerId === 0 ? 1 : 0) as 0 | 1
-    : context.controllerId;
+  // `random` target: the RNG pre-pass already picked specific cards (selectedTargets)
+  // — discard them directly, no player choice (Ruinous Imp: opponent discards a
+  // random card).
+  if (effect.target.type === 'random') {
+    return discardSpecificCards(state, context.selectedTargets ?? []);
+  }
 
-  const player = state.players[targetPlayerId]!;
+  // `each_player`: BOTH players discard (Soulflay Necromancer). The non-active
+  // discard is resolved deterministically (first `count` cards) so the symmetric
+  // effect actually hits the opponent; the active player's choice is offered as a
+  // PendingChoice. Resolved-active discards arrive via selectedTargets.
+  if (effect.target.type === 'each_player') {
+    return discardEachPlayer(state, effect, context);
+  }
+
+  const targetPlayerId =
+    'side' in effect.target && effect.target.side === 'enemy'
+      ? context.controllerId === 0
+        ? 1
+        : 0
+      : context.controllerId;
+  const player = state.players[targetPlayerId];
   if (player.hand.length === 0) return unchanged(state);
-
+  if (context.selectedTargets !== undefined) {
+    return discardSpecificCards(state, context.selectedTargets);
+  }
   return {
     newState: state,
     events: [],
     pendingChoice: {
       type: 'choose_discard',
       playerId: targetPlayerId,
-      options: player.hand.map(c => ({ id: c.instanceId, label: c.name })),
+      options: player.hand.map((c) => ({ id: c.instanceId, label: c.name })),
       minSelections: Math.min(effect.count, player.hand.length),
       maxSelections: Math.min(effect.count, player.hand.length),
       context: `Discard ${String(effect.count)} card(s)`,
     },
   };
+}
+
+/** Both players discard `count` cards (Soulflay Necromancer). The opponent's cards
+ * are taken deterministically (first `count`); the controller is offered a choice
+ * (its selection arrives via selectedTargets on re-entry). */
+function discardEachPlayer(
+  state: GameState,
+  effect: Extract<Effect, { type: 'discard' }>,
+  context: EffectContext,
+): EffectResult {
+  // Re-entry (the controller's choice was resolved): discard only those cards. The
+  // opponent was already discarded on the first pass.
+  if (context.selectedTargets !== undefined) {
+    return discardSpecificCards(state, context.selectedTargets);
+  }
+  const opponentId = context.controllerId === 0 ? 1 : 0;
+  const opponent = state.players[opponentId];
+  const oppPicks = opponent.hand.slice(0, effect.count).map((c) => c.instanceId);
+  const afterOpp = discardSpecificCards(state, oppPicks);
+
+  const controller = afterOpp.newState.players[context.controllerId];
+  if (controller.hand.length === 0) return afterOpp;
+  return {
+    newState: afterOpp.newState,
+    events: afterOpp.events,
+    pendingChoice: {
+      type: 'choose_discard',
+      playerId: context.controllerId,
+      options: controller.hand.map((c) => ({ id: c.instanceId, label: c.name })),
+      minSelections: Math.min(effect.count, controller.hand.length),
+      maxSelections: Math.min(effect.count, controller.hand.length),
+      context: `Discard ${String(effect.count)} card(s)`,
+    },
+  };
+}
+
+/** Move specific cards from their owners' hands to their discard piles. Used by the
+ * `random` discard path (cards already selected by the RNG pre-pass). */
+function discardSpecificCards(state: GameState, cardIds: readonly string[]): EffectResult {
+  let currentState = state;
+  const events: GameEvent[] = [];
+  for (const cardId of cardIds) {
+    for (let pi = 0; pi < 2; pi++) {
+      const player = currentState.players[pi]!;
+      const card = player.hand.find((c) => c.instanceId === cardId);
+      if (card === undefined) continue;
+      const newPlayers = [...currentState.players] as [
+        (typeof currentState.players)[0],
+        (typeof currentState.players)[1],
+      ];
+      newPlayers[pi] = {
+        ...player,
+        hand: player.hand.filter((c) => c.instanceId !== cardId),
+        discardPile: [...player.discardPile, card],
+      };
+      currentState = { ...currentState, players: newPlayers };
+      events.push({ type: 'CARD_DISCARDED', cardInstanceId: cardId, playerId: pi as 0 | 1 });
+      // Recycle X: drawing X on discard-from-hand (Rulebook 16). Inert for every
+      // current card (none carries the recycle trait), so this is a no-op default.
+      const recycle = recycleDraw(currentState, card, pi as 0 | 1);
+      currentState = recycle.newState;
+      events.push(...recycle.events);
+      break;
+    }
+  }
+  return { newState: currentState, events };
+}
+
+/** Apply a discarded card's Recycle X: its owner draws X from the top of their main
+ * deck (capped by deck size). Returns the card's events untouched when it has no
+ * recycle trait/value, so existing decks are byte-identical. */
+function recycleDraw(state: GameState, card: CardInstance, playerId: 0 | 1): EffectResult {
+  const x = card.traits.includes('recycle') ? (card.recycleValue ?? 1) : 0;
+  if (x <= 0) return { newState: state, events: [] };
+
+  const player = state.players[playerId];
+  const count = Math.min(x, player.mainDeck.length);
+  if (count === 0) return { newState: state, events: [] };
+
+  const drawn = player.mainDeck.slice(0, count);
+  const newPlayers = [...state.players] as [PlayerState, PlayerState];
+  newPlayers[playerId] = {
+    ...player,
+    mainDeck: player.mainDeck.slice(count),
+    hand: [...player.hand, ...drawn],
+  };
+  return {
+    newState: { ...state, players: newPlayers },
+    events: [{ type: 'CARD_DRAWN', playerId, count }],
+  };
+}
+
+const MOVE_ADJACENT: Record<ZoneType, readonly ZoneType[]> = {
+  reserve: ['frontline'],
+  frontline: ['reserve', 'high_ground'],
+  high_ground: ['frontline'],
+};
+
+const ALL_ZONES: readonly ZoneType[] = ['reserve', 'frontline', 'high_ground'];
+
+/** Resolve the concrete destination zone for a move whose authored destination is
+ * `any` or `adjacent_to_current`: the first candidate zone (other than the current)
+ * that has an open slot. Returns null when none is available. */
+function resolveMoveDestination(
+  zones: ZoneState,
+  fromZone: ZoneType,
+  destination: ZoneType | 'any' | 'adjacent_to_current',
+): ZoneType | null {
+  if (destination !== 'any' && destination !== 'adjacent_to_current') return destination;
+  const candidates =
+    destination === 'adjacent_to_current'
+      ? MOVE_ADJACENT[fromZone]
+      : ALL_ZONES.filter((z) => z !== fromZone);
+  for (const z of candidates) {
+    const arr =
+      z === 'reserve' ? zones.reserve : z === 'frontline' ? zones.frontline : zones.highGround;
+    if (arr.some((s) => s === null)) return z;
+  }
+  return null;
 }
 
 function executeMove(
@@ -495,12 +998,8 @@ function executeMove(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
-
-  if (effect.destination === 'any' || effect.destination === 'adjacent_to_current') {
-    // Requires player choice — not yet implemented
-    return unchanged(state);
-  }
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
@@ -512,14 +1011,17 @@ function executeMove(
       if (location === null) continue;
 
       const fromZone = location.zone;
-      const toZone = effect.destination;
-      if (fromZone === toZone) break;
+      const toZone = resolveMoveDestination(player.zones, fromZone, effect.destination);
+      if (toZone === null || fromZone === toZone) break;
 
       const { zones: clearedZones } = removeFromZone(player.zones, targetId);
       const movedCard: CardInstance = { ...location.card, movedThisTurn: true };
       try {
         const newZones = deployToZone(clearedZones, movedCard, toZone);
-        const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
+        const newPlayers = [...currentState.players] as [
+          (typeof currentState.players)[0],
+          (typeof currentState.players)[1],
+        ];
         newPlayers[pi] = { ...player, zones: newZones };
         currentState = { ...currentState, players: newPlayers };
         events.push({ type: 'CARD_MOVED', cardInstanceId: targetId, fromZone, toZone });
@@ -600,28 +1102,6 @@ function executeChooseOne(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function findCardInState(state: GameState, instanceId: string): CardInstance | null {
-  for (const player of state.players) {
-    const loc = findCard(player.zones, instanceId);
-    if (loc !== null) return loc.card;
-  }
-  return null;
-}
-
-function removeCardFromState(state: GameState, instanceId: string): GameState {
-  const newPlayers = state.players.map(player => {
-    const { zones, removed } = removeFromZone(player.zones, instanceId);
-    return {
-      ...player,
-      zones,
-      discardPile: removed !== null && !removed.isToken
-        ? [...player.discardPile, removed]
-        : player.discardPile,
-    };
-  }) as unknown as readonly [typeof state.players[0], typeof state.players[1]];
-  return { ...state, players: newPlayers };
-}
 
 function resetCard(card: CardInstance): CardInstance {
   return {

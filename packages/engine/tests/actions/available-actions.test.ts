@@ -166,7 +166,7 @@ describe('Available Actions', () => {
       expect(actions.canAttachEquipment[0]!.validTargets).toContain(character.instanceId);
     });
 
-    it('should exclude characters that already have equipment', () => {
+    it('should still target characters that already have equipment (replacement, Rulebook 13)', () => {
       const equipment = mockCard({
         name: 'Sword',
         cardType: 'E',
@@ -189,7 +189,8 @@ describe('Available Actions', () => {
       });
 
       const actions = computeAvailableActions(state);
-      expect(actions.canAttachEquipment).toHaveLength(0);
+      expect(actions.canAttachEquipment).toHaveLength(1);
+      expect(actions.canAttachEquipment[0]!.validTargets).toContain(equippedChar.instanceId);
     });
   });
 
@@ -371,7 +372,6 @@ describe('Available Actions', () => {
               canTransformThisGame: true,
               transformedThisTurn: false,
               abilities: [],
-              cooldowns: new Map(),
               registeredTriggers: [],
             },
           }),
@@ -397,7 +397,6 @@ describe('Available Actions', () => {
               canTransformThisGame: true,
               transformedThisTurn: false,
               abilities: [],
-              cooldowns: new Map(),
               registeredTriggers: [],
             },
           }),

@@ -1,0 +1,101 @@
+/**
+ * Stack Resolver — drives the reactive priority window + LIFO chain resolution
+ * (Rulebook Section 14). A spell cast pushes a `spell` StackItem and opens a
+ * response window for the non-active player; once both players pass, the chain
+ * resolves last-in-first-out. A Counter on the chain removes its target before
+ * that target resolves (executeCounterSpell, reused unchanged).
+ *
+ * Minimal-faithful slice: only spell casts open windows; non-spell base actions
+ * resolve through their existing code paths.
+ */
+import type {
+  GameState,
+  GameEvent,
+  PendingPriority,
+  StackItem,
+} from '../types/game-state.js';
+import { runAbilityEffects } from './effect-runner.js';
+import { computeReactiveActions } from '../actions/reactive-actions.js';
+
+export interface StackResult {
+  readonly state: GameState;
+  readonly events: readonly GameEvent[];
+}
+
+/**
+ * After a spell is pushed onto the stack, either open a window (non-active player
+ * has a legal Counter/Flash) or resolve the chain immediately. Resolving inline
+ * when nobody can respond keeps non-reactive games byte-identical to the old
+ * resolve-on-cast behavior.
+ */
+export function openWindowOrResolve(state: GameState, baseStackItemId: string): {
+  readonly state: GameState;
+  readonly events: readonly GameEvent[];
+} {
+  const responderId = state.activePlayerIndex === 0 ? 1 : 0;
+  if (computeReactiveActions(state, responderId).length === 0) {
+    return resolveStack(state);
+  }
+  const pendingPriority: PendingPriority = {
+    type: 'priority',
+    toRespondPlayerId: responderId,
+    window: 'cast',
+    baseStackItemId,
+    passes: 0,
+  };
+  return { state: { ...state, pendingPriority }, events: [] };
+}
+
+/**
+ * Record a pass in the open window. Two consecutive passes close the window and
+ * resolve the chain; one pass flips priority to the other player.
+ */
+export function passPriority(state: GameState): StackResult {
+  const pp = state.pendingPriority;
+  if (pp === null || pp === undefined) return { state, events: [] };
+  if (pp.passes >= 1) {
+    return resolveStack({ ...state, pendingPriority: null });
+  }
+  const other = pp.toRespondPlayerId === 0 ? 1 : 0;
+  const next: PendingPriority = { ...pp, toRespondPlayerId: other, passes: pp.passes + 1 };
+  return { state: { ...state, pendingPriority: next }, events: [] };
+}
+
+/**
+ * Resolve the stack LIFO: pop the top item, run its effects, repeat to empty. A
+ * countered item is already absent (removed by executeCounterSpell), so it is
+ * simply skipped. Returns to no open window.
+ */
+export function resolveStack(state: GameState): StackResult {
+  let current: GameState = { ...state, pendingPriority: null };
+  const events: GameEvent[] = [];
+  // Bound the loop defensively; a chain is hand-limited in practice.
+  let guard = 0;
+  while (current.stack.length > 0 && guard++ < 64) {
+    const top = current.stack[current.stack.length - 1]!;
+    const popped: readonly StackItem[] = current.stack.slice(0, -1);
+    const beforeResolve: GameState = { ...current, stack: popped };
+    // SPELL_CAST fires on RESOLUTION, not at cast-push: a countered spell is removed
+    // from the stack before reaching here, so its on_spell_cast watchers never fire
+    // (Rulebook 14). Emitted before the effects so the watcher sees the cast.
+    if (top.type === 'spell') {
+      events.push({
+        type: 'SPELL_CAST',
+        cardInstanceId: top.sourceInstanceId,
+        playerId: top.controllerId,
+      });
+    }
+    const ran = runAbilityEffects(
+      beforeResolve,
+      top.sourceInstanceId,
+      top.effects,
+      top.controllerId,
+      top.xPaid,
+      top.targets.length > 0 ? top.targets : undefined,
+    );
+    current = ran.state;
+    events.push(...ran.events);
+    if (current.winner !== null) break;
+  }
+  return { state: current, events };
+}

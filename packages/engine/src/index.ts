@@ -48,6 +48,10 @@ export {
   getAllRegisteredTriggers,
 } from './events/index.js';
 
+// ── Runtime (dispatch + auras) ───────────────────────────────────────────────
+export { dispatchTriggers, recomputeAuras } from './runtime/index.js';
+export type { DispatchResult } from './runtime/index.js';
+
 // ── Effects ─────────────────────────────────────────────────────────────────
 export { executeEffect } from './effects/index.js';
 export { resolveTargets } from './effects/index.js';
@@ -58,6 +62,7 @@ export { evaluateAmount } from './effects/index.js';
 // ── Actions ─────────────────────────────────────────────────────────────────
 export {
   computeAvailableActions,
+  computeReactiveActions,
   canAfford,
   payCost,
   getAvailableResources,
@@ -70,6 +75,7 @@ export type {
   MoveOption,
   ActivateOption,
   AttackOption,
+  ReactiveOption,
 } from './actions/index.js';
 
 // ── Setup ───────────────────────────────────────────────────────────────────
@@ -105,3 +111,11 @@ export {
   discardCards,
   passTurn,
 } from './state-machine/index.js';
+
+// ── Bot (heuristic policy) ───────────────────────────────────────────────────
+export {
+  chooseAction,
+  chooseReactiveAction,
+  chooseChoiceResponse,
+  shouldKeepHand,
+} from './bot/index.js';

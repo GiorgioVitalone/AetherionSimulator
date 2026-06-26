@@ -47,21 +47,21 @@ export const useUiStore = create<UiStore>()((set) => ({
   showGameLog: false,
   viewingPlayer: 0,
 
-  selectCard: (id) => set({ selectedCardId: id }),
+  selectCard: (id) => { set({ selectedCardId: id }); },
 
-  hoverCard: (id) => set({ hoveredCardId: id }),
+  hoverCard: (id) => { set({ hoveredCardId: id }); },
 
-  hoverZone: (zone, slot) => set({ hoveredZone: { zone, slot } }),
+  hoverZone: (zone, slot) => { set({ hoveredZone: { zone, slot } }); },
 
-  clearHoveredZone: () => set({ hoveredZone: null }),
+  clearHoveredZone: () => { set({ hoveredZone: null }); },
 
-  toggleGameLog: () => set((s) => ({ showGameLog: !s.showGameLog })),
+  toggleGameLog: () => { set((s) => ({ showGameLog: !s.showGameLog })); },
 
-  setViewingPlayer: (id) => set({ viewingPlayer: id }),
+  setViewingPlayer: (id) => { set({ viewingPlayer: id }); },
 
   enqueueAnimation: (event) =>
-    set((s) => ({ animationQueue: [...s.animationQueue, event] })),
+    { set((s) => ({ animationQueue: [...s.animationQueue, event] })); },
 
   dequeueAnimation: () =>
-    set((s) => ({ animationQueue: s.animationQueue.slice(1) })),
+    { set((s) => ({ animationQueue: s.animationQueue.slice(1) })); },
 }));

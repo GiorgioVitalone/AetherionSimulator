@@ -32,15 +32,15 @@ export function evaluateCondition(
     case 'turn_count':
       return evaluateTurnCount(state, condition, context);
     case 'is_transformed':
-      return state.players[context.controllerId]!.hero.transformed;
+      return state.players[context.controllerId].hero.transformed;
     case 'controls_character':
       return evaluateControlsCharacter(state, condition, context);
     case 'compare_to_opponent':
       return evaluateCompareToOpponent(state, condition, context);
     case 'event_context':
-      return false; // Stub — requires runtime event context tracking
+      return evaluateEventContext(state, condition, context);
     case 'triggering_card_cost':
-      return false; // Stub — requires triggering card reference
+      return evaluateTriggeringCardCost(condition, context);
     case 'and':
       return condition.conditions.every(c => evaluateCondition(state, c, context));
     case 'or':
@@ -48,6 +48,40 @@ export function evaluateCondition(
     case 'not':
       return !evaluateCondition(state, condition.condition, context);
   }
+}
+
+/**
+ * Event-context flags threaded onto the EffectContext / TurnState by the runtime.
+ * `used_temporary_resource` — the action that fired this trigger (e.g. a deploy)
+ * paid with a Temporary Resource (RIA-09 Symbiotic Expansion). Read per-event from
+ * context. `gained_temporary_resource_this_turn` — the controller gained a Temporary
+ * Resource earlier this turn (RIA-09 Biotech Harvest); read from TurnState.
+ */
+function evaluateEventContext(
+  state: GameState,
+  cond: Extract<Condition, { type: 'event_context' }>,
+  context: EffectContext,
+): boolean {
+  if (cond.check === 'used_temporary_resource') {
+    return context.usedTemporaryResource === true;
+  }
+  return state.turnState.gainedTemporaryResource?.[context.controllerId] === true;
+}
+
+/**
+ * Compare the triggering card's cost (threaded onto the context by dispatch) to the
+ * reference. `relativeTo: triggering_spell` references the spell whose cast fired the
+ * ability — which IS the triggering card — so the comparison is against itself; the
+ * net effect is that the ability is gated only on a triggering card being present
+ * (Lyria Archmage Arcane Convergence: previously a permanent-false stub). Returns
+ * false when no triggering card is known.
+ */
+function evaluateTriggeringCardCost(
+  cond: Extract<Condition, { type: 'triggering_card_cost' }>,
+  context: EffectContext,
+): boolean {
+  if (context.triggeringCardCost === undefined) return false;
+  return compare(context.triggeringCardCost, cond.comparison, context.triggeringCardCost);
 }
 
 function compare(
@@ -101,7 +135,7 @@ function evaluateCardCount(
   cond: Extract<Condition, { type: 'card_count' }>,
   context: EffectContext,
 ): boolean {
-  const player = state.players[context.controllerId]!;
+  const player = state.players[context.controllerId];
   let count: number;
   if (cond.tag !== undefined) {
     // Tag-filtered counting — iterate cards instead of using .length
@@ -179,7 +213,7 @@ function evaluateResourceCheck(
   cond: Extract<Condition, { type: 'resource_check' }>,
   context: EffectContext,
 ): boolean {
-  const player = state.players[context.controllerId]!;
+  const player = state.players[context.controllerId];
   const available = player.resourceBank.filter(
     r => !r.exhausted && (cond.resourceType === 'flexible' || r.resourceType === cond.resourceType),
   ).length;
@@ -195,7 +229,7 @@ function evaluateTurnCount(
   cond: Extract<Condition, { type: 'turn_count' }>,
   context: EffectContext,
 ): boolean {
-  const counters = state.players[context.controllerId]!.turnCounters;
+  const counters = state.players[context.controllerId].turnCounters;
   let count: number;
   switch (cond.action) {
     case 'spell_cast': count = counters.spellsCast; break;
@@ -211,9 +245,9 @@ function evaluateCompareToOpponent(
   cond: Extract<Condition, { type: 'compare_to_opponent' }>,
   context: EffectContext,
 ): boolean {
-  const player = state.players[context.controllerId]!;
+  const player = state.players[context.controllerId];
   const opponentIdx = context.controllerId === 0 ? 1 : 0;
-  const opponent = state.players[opponentIdx]!;
+  const opponent = state.players[opponentIdx];
   let playerValue: number;
   let opponentValue: number;
   switch (cond.metric) {
@@ -234,7 +268,7 @@ function evaluateControlsCharacter(
   cond: Extract<Condition, { type: 'controls_character' }>,
   context: EffectContext,
 ): boolean {
-  const player = state.players[context.controllerId]!;
+  const player = state.players[context.controllerId];
   const cards = cond.zone !== undefined
     ? getCardsInZone(player.zones, cond.zone)
     : getAllCards(player.zones);

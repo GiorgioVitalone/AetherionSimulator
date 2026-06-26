@@ -12,12 +12,20 @@ import type { GameState, PendingChoice } from '../types/game-state.js';
 import { MAX_HAND_SIZE } from '../types/game-state.js';
 import {
   refreshCards,
+  tickUpkeepStatuses,
+  generateReserveEnergy,
   drawResourceCard,
   drawMainDeckCard,
   executePlayerAction,
+  executeReactiveResponse,
+  executePriorityPass,
   removeTemporaryResources,
   passTurn,
+  runScheduledEffects,
+  expireUpkeepModifiers,
+  expireEndOfTurnModifiers,
 } from './actions.js';
+import type { ScheduledTiming } from '../types/effects.js';
 import { applyMulligan } from '../setup/game-setup.js';
 
 export const gameMachine = setup({
@@ -27,21 +35,45 @@ export const gameMachine = setup({
     input: {} as { readonly gameState: GameState },
   },
   guards: {
-    isFirstPlayerFirstTurn: ({ context }) =>
-      context.gameState.turnState.firstPlayerFirstTurn,
+    isFirstPlayerFirstTurn: ({ context }) => context.gameState.turnState.firstPlayerFirstTurn,
     handExceedsLimit: ({ context }) => {
-      const player = context.gameState.players[context.gameState.activePlayerIndex]!;
+      const player = context.gameState.players[context.gameState.activePlayerIndex];
       return player.hand.length > MAX_HAND_SIZE;
     },
     hasWinner: ({ context }) => context.gameState.winner !== null,
+    windowOpen: ({ context }) => context.gameState.pendingPriority != null,
     mainDeckEmpty: ({ context }) => {
-      const player = context.gameState.players[context.gameState.activePlayerIndex]!;
+      const player = context.gameState.players[context.gameState.activePlayerIndex];
       return player.mainDeck.length === 0;
     },
   },
   actions: {
     refreshAllCards: assign({
       gameState: ({ context }) => refreshCards(context.gameState),
+    }),
+    tickStatuses: assign(({ context }) => {
+      const result = tickUpkeepStatuses(context.gameState);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+      };
+    }),
+    expireUpkeepMods: assign({
+      gameState: ({ context }) => expireUpkeepModifiers(context.gameState),
+    }),
+    expireEndOfTurnMods: assign({
+      gameState: ({ context }) => expireEndOfTurnModifiers(context.gameState),
+    }),
+    reserveEnergy: assign(({ context }) => {
+      const result = generateReserveEnergy(context.gameState);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+      };
     }),
     drawResource: assign(({ context }) => {
       const result = drawResourceCard(context.gameState);
@@ -58,7 +90,7 @@ export const gameMachine = setup({
         return {
           gameState: {
             ...context.gameState,
-            winner: (context.gameState.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
+            winner: context.gameState.activePlayerIndex === 0 ? 1 : 0,
           },
           pendingChoice: null,
         };
@@ -74,6 +106,27 @@ export const gameMachine = setup({
     applyPlayerAction: assign(({ context, event }) => {
       if (event.type !== 'PLAYER_ACTION') return {};
       const result = executePlayerAction(context.gameState, event.action);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+        pendingChoice: result.state.winner !== null ? null : context.pendingChoice,
+      };
+    }),
+    applyReactiveAction: assign(({ context, event }) => {
+      if (event.type !== 'REACTIVE_ACTION') return {};
+      const result = executeReactiveResponse(context.gameState, event.action);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+        pendingChoice: result.state.winner !== null ? null : context.pendingChoice,
+      };
+    }),
+    applyPriorityPass: assign(({ context }) => {
+      const result = executePriorityPass(context.gameState);
       return {
         gameState: {
           ...result.state,
@@ -99,13 +152,22 @@ export const gameMachine = setup({
     removeTemps: assign({
       gameState: ({ context }) => removeTemporaryResources(context.gameState),
     }),
+    fireScheduled: assign(({ context }, params: { readonly timing: ScheduledTiming['type'] }) => {
+      const result = runScheduledEffects(context.gameState, params.timing);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+      };
+    }),
     setHandSizeChoice: assign(({ context }) => {
-      const player = context.gameState.players[context.gameState.activePlayerIndex]!;
+      const player = context.gameState.players[context.gameState.activePlayerIndex];
       const excess = player.hand.length - MAX_HAND_SIZE;
       const choice: PendingChoice = {
         type: 'discard_to_hand_limit',
         playerId: context.gameState.activePlayerIndex,
-        options: player.hand.map(c => ({
+        options: player.hand.map((c) => ({
           id: c.instanceId,
           label: c.name,
           instanceId: c.instanceId,
@@ -144,7 +206,7 @@ export const gameMachine = setup({
       return {
         gameState: {
           ...context.gameState,
-          winner: (event.playerId === 0 ? 1 : 0) as 0 | 1,
+          winner: event.playerId === 0 ? 1 : 0,
         },
       };
     }),
@@ -173,11 +235,7 @@ export const gameMachine = setup({
           {
             // After player 1 decides, transition based on game state
             actions: assign(({ context, event }) => {
-              const newState = applyMulligan(
-                context.gameState,
-                event.playerId,
-                event.keep,
-              );
+              const newState = applyMulligan(context.gameState, event.playerId, event.keep);
               return {
                 gameState: newState,
                 pendingChoice: newState.pendingChoice,
@@ -198,7 +256,11 @@ export const gameMachine = setup({
         upkeep: {
           entry: [
             { type: 'setPhase', params: { phase: 'upkeep' as const } },
+            'expireUpkeepMods',
             'refreshAllCards',
+            'tickStatuses',
+            { type: 'fireScheduled', params: { timing: 'next_turn_start' as const } },
+            { type: 'fireScheduled', params: { timing: 'next_upkeep' as const } },
             'drawResource',
           ],
           always: [
@@ -215,7 +277,7 @@ export const gameMachine = setup({
           always: [
             {
               // First player first turn skips main draw
-              target: 'strategy',
+              target: 'reserveEnergy',
               guard: { type: 'isFirstPlayerFirstTurn' },
             },
             {
@@ -224,15 +286,22 @@ export const gameMachine = setup({
               actions: assign(({ context }) => ({
                 gameState: {
                   ...context.gameState,
-                  winner: (context.gameState.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
+                  winner: context.gameState.activePlayerIndex === 0 ? 1 : 0,
                 },
               })),
             },
             {
-              target: 'strategy',
+              target: 'reserveEnergy',
               actions: 'drawMainCard',
             },
           ],
+        },
+
+        // Upkeep step 4 — Reserve Energy Generation (Rulebook 8). Runs after the
+        // draws (steps 2/3) and before the Strategy Phase.
+        reserveEnergy: {
+          entry: 'reserveEnergy',
+          always: { target: 'strategy' },
         },
 
         strategy: {
@@ -245,10 +314,41 @@ export const gameMachine = setup({
               target: 'action',
             },
           },
-          always: {
-            target: '#aetherionGame.gameOver',
-            guard: { type: 'hasWinner' },
+          always: [
+            {
+              target: '#aetherionGame.gameOver',
+              guard: { type: 'hasWinner' },
+            },
+            {
+              target: 'priorityWindow',
+              guard: { type: 'windowOpen' },
+            },
+          ],
+        },
+
+        // Reactive response window (Rulebook 14). The responder casts a Counter/
+        // Flash (REACTIVE_ACTION) or passes (PRIORITY_PASS); two passes close the
+        // window and resolve the chain LIFO, clearing pendingPriority. Then we
+        // return to strategy so the active player continues their turn.
+        priorityWindow: {
+          on: {
+            REACTIVE_ACTION: {
+              actions: 'applyReactiveAction',
+            },
+            PRIORITY_PASS: {
+              actions: 'applyPriorityPass',
+            },
           },
+          always: [
+            {
+              target: '#aetherionGame.gameOver',
+              guard: { type: 'hasWinner' },
+            },
+            {
+              target: 'strategy',
+              guard: ({ context }) => context.gameState.pendingPriority == null,
+            },
+          ],
         },
 
         action: {
@@ -270,7 +370,9 @@ export const gameMachine = setup({
         endPhase: {
           entry: [
             { type: 'setPhase', params: { phase: 'end' as const } },
+            { type: 'fireScheduled', params: { timing: 'end_of_turn' as const } },
             'removeTemps',
+            'expireEndOfTurnMods',
           ],
           always: [
             {
@@ -288,18 +390,13 @@ export const gameMachine = setup({
               target: 'passTurn',
               actions: [
                 assign(({ context, event }) => {
-                  if (event.type !== 'PLAYER_RESPONSE') return {};
-                  const player = context.gameState.players[context.gameState.activePlayerIndex]!;
+                  const player = context.gameState.players[context.gameState.activePlayerIndex];
                   const discardIds = event.response.selectedOptionIds;
-                  const discarded = player.hand.filter(c =>
-                    discardIds.includes(c.instanceId),
-                  );
-                  const remaining = player.hand.filter(
-                    c => !discardIds.includes(c.instanceId),
-                  );
+                  const discarded = player.hand.filter((c) => discardIds.includes(c.instanceId));
+                  const remaining = player.hand.filter((c) => !discardIds.includes(c.instanceId));
                   const newPlayers = [...context.gameState.players] as [
-                    typeof context.gameState.players[0],
-                    typeof context.gameState.players[1],
+                    (typeof context.gameState.players)[0],
+                    (typeof context.gameState.players)[1],
                   ];
                   newPlayers[context.gameState.activePlayerIndex] = {
                     ...player,

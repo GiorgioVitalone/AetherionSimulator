@@ -8,4 +8,12 @@ export type {
   ActivateOption,
   AttackOption,
 } from './available-actions.js';
-export { canAfford, payCost, getAvailableResources } from './cost-checker.js';
+export { computeReactiveActions } from './reactive-actions.js';
+export type { ReactiveOption } from './reactive-actions.js';
+export {
+  canAfford,
+  payCost,
+  getAvailableResources,
+  effectiveCost,
+  consumeReductions,
+} from './cost-checker.js';

@@ -43,6 +43,26 @@ function createRegisteredTrigger(
     effects: ability.effects,
     condition: ability.condition,
     abilityIndex,
+    ...triggerRateLimits(ability),
+  };
+}
+
+/** Extract the wrapper oncePerTurn / cooldown rate-limits onto a RegisteredTrigger.
+ * Both the DSL wrapper (TriggeredAbilityDSL) and an Activated trigger may carry them;
+ * the DSL-level value wins when present. Only set keys that are truthy so plain
+ * triggers stay shape-identical (preserves determinism / serialized state). */
+export function triggerRateLimits(
+  ability: TriggeredAbilityDSL,
+): { oncePerTurn?: true; cooldown?: number } {
+  const trigger = ability.trigger;
+  const oncePerTurn =
+    ability.oncePerTurn === true ||
+    (trigger.type === 'activated' && trigger.oncePerTurn === true);
+  const cooldown =
+    ability.cooldown ?? (trigger.type === 'activated' ? trigger.cooldown : undefined);
+  return {
+    ...(oncePerTurn ? { oncePerTurn: true } : {}),
+    ...(cooldown !== undefined && cooldown > 0 ? { cooldown } : {}),
   };
 }
 
@@ -55,10 +75,15 @@ export function registerCardTriggers(
   cardInstanceId: string,
 ): GameState {
   return updateCardTriggers(state, cardInstanceId, card => {
-    const triggered = extractTriggeredAbilities(card);
-    const newTriggers = triggered.map(({ ability, index }) =>
-      createRegisteredTrigger(card, ability, index),
+    // Idempotent: skip abilities already registered (e.g. a granted ability that
+    // self-registered). Re-running registration must never double-register a
+    // trigger, otherwise a granted "on destroy" effect would fire twice.
+    const alreadyRegistered = new Set(
+      card.registeredTriggers.map(t => t.abilityIndex),
     );
+    const newTriggers = extractTriggeredAbilities(card)
+      .filter(({ index }) => !alreadyRegistered.has(index))
+      .map(({ ability, index }) => createRegisteredTrigger(card, ability, index));
     return {
       ...card,
       registeredTriggers: [...card.registeredTriggers, ...newTriggers],
@@ -92,7 +117,9 @@ export function getAllRegisteredTriggers(
     // Zone card triggers
     for (const zone of [player.zones.reserve, player.zones.frontline, player.zones.highGround]) {
       for (const slot of zone) {
-        if (slot !== null) {
+        // A character exhausted for Reserve Energy Generation has ALL abilities,
+        // including triggered ones, disabled until next Upkeep (Rulebook 8 step 4).
+        if (slot !== null && slot.reserveEnergyExhausted !== true) {
           triggers.push(...slot.registeredTriggers);
         }
       }
