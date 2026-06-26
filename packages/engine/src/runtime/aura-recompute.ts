@@ -226,8 +226,12 @@ function applyArmBuffMaxRule(state: GameState): GameState {
     }
     if (count < 2) return card;
     if (measure && diag !== undefined) {
-      diag.armBuffsStackedEvents![card.owner]++;
-      diag.armBuffsStackedShaved![card.owner] += sum - max;
+      // Guard each counter directly — both are independently optional on
+      // DiagCounters, so a diag supplying one without the other must not crash
+      // (same pattern as the combat-resolver diag guards). Under `measure` the
+      // events guard is always true; it just drops the non-null assertions.
+      if (diag.armBuffsStackedEvents !== undefined) diag.armBuffsStackedEvents[card.owner]++;
+      if (diag.armBuffsStackedShaved !== undefined) diag.armBuffsStackedShaved[card.owner] += sum - max;
     }
     if (!takeMax) return card;
     // Shave the redundant (sum − max) ARM, but record it as an aura-tagged

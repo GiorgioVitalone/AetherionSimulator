@@ -96,11 +96,11 @@ function spellThreat(
   const responder = state.players[responderId]!;
   const card = caster.discardPile.find(c => c.instanceId === item.sourceInstanceId)
     ?? handCard(caster, item.sourceInstanceId);
-  const base =
-    card !== null
-      ? scoreSpell(caster, responder, card, item.xPaid ?? 0, gameplanForSeat(state.config, enemyId))
-          .value
-      : 0;
+  // Threat is scored on the NEUTRAL baseline: scoreSpell conflates the caster's
+  // removal/face preference with the responder's valuation of the bodies at risk,
+  // so neither seat's gameplan is a clean weight for a counter decision. Keep this
+  // reactive estimate unpiloted (original behavior) rather than bake in a murky model.
+  const base = card !== null ? scoreSpell(caster, responder, card, item.xPaid ?? 0).value : 0;
   let face = 0;
   for (const eff of item.effects) {
     if (eff.type === 'deal_damage' && eff.target.type === 'hero' && eff.target.side === 'enemy'
