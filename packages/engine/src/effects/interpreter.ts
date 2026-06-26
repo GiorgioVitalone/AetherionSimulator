@@ -15,6 +15,7 @@ import type {
   RegisteredTrigger,
   ActiveModifier,
   GrantedDuration,
+  ZoneState,
 } from '../types/game-state.js';
 import type { TriggeredAbilityDSL } from '../types/ability.js';
 import { resolveTargets } from './target-resolver.js';
@@ -70,35 +71,64 @@ export function executeEffect(
   state = prepped.state;
   context = prepped.context;
   switch (effect.type) {
-    case 'deal_damage': return executeDealDamage(state, effect, context);
-    case 'heal': return executeHeal(state, effect, context);
-    case 'modify_stats': return executeModifyStats(state, effect, context);
-    case 'draw_cards': return executeDrawCards(state, effect, context);
-    case 'deploy_token': return executeDeployToken(state, effect, context);
-    case 'destroy': return executeDestroy(state, effect, context);
-    case 'bounce': return executeBounce(state, effect, context);
-    case 'sacrifice': return executeSacrifice(state, effect, context);
-    case 'gain_resource': return executeGainResource(state, effect, context);
-    case 'grant_trait': return executeGrantTrait(state, effect, context);
-    case 'apply_status': return executeApplyStatus(state, effect, context);
-    case 'discard': return executeDiscard(state, effect, context);
-    case 'move': return executeMove(state, effect, context);
-    case 'composite': return executeComposite(state, effect, context);
-    case 'conditional': return executeConditional(state, effect, context);
-    case 'choose_one': return executeChooseOne(state, effect, context);
-    case 'return_from_discard': return executeReturnFromDiscard(state, effect, context);
-    case 'scry': return executeScry(state, effect, context);
-    case 'search_deck': return executeSearchDeck(state, effect, context);
-    case 'shuffle_into_deck': return executeShuffleIntoDeck(state, effect, context);
-    case 'cleanse': return executeCleanse(state, effect, context);
-    case 'deploy_from_deck': return executeDeployFromDeck(state, effect, context);
-    case 'copy_card': return executeCopyCard(state, effect, context);
-    case 'grant_ability': return executeGrantAbility(state, effect, context);
-    case 'counter_spell': return executeCounterSpell(state, effect, context);
-    case 'replacement': return executeReplacement(state, effect, context);
-    case 'cost_reduction': return executeCostReduction(state, effect, context);
-    case 'scheduled': return executeScheduled(state, effect, context);
-    case 'attach_as_equipment': return executeAttachAsEquipment(state, effect, context);
+    case 'deal_damage':
+      return executeDealDamage(state, effect, context);
+    case 'heal':
+      return executeHeal(state, effect, context);
+    case 'modify_stats':
+      return executeModifyStats(state, effect, context);
+    case 'draw_cards':
+      return executeDrawCards(state, effect, context);
+    case 'deploy_token':
+      return executeDeployToken(state, effect, context);
+    case 'destroy':
+      return executeDestroy(state, effect, context);
+    case 'bounce':
+      return executeBounce(state, effect, context);
+    case 'sacrifice':
+      return executeSacrifice(state, effect, context);
+    case 'gain_resource':
+      return executeGainResource(state, effect, context);
+    case 'grant_trait':
+      return executeGrantTrait(state, effect, context);
+    case 'apply_status':
+      return executeApplyStatus(state, effect, context);
+    case 'discard':
+      return executeDiscard(state, effect, context);
+    case 'move':
+      return executeMove(state, effect, context);
+    case 'composite':
+      return executeComposite(state, effect, context);
+    case 'conditional':
+      return executeConditional(state, effect, context);
+    case 'choose_one':
+      return executeChooseOne(state, effect, context);
+    case 'return_from_discard':
+      return executeReturnFromDiscard(state, effect, context);
+    case 'scry':
+      return executeScry(state, effect, context);
+    case 'search_deck':
+      return executeSearchDeck(state, effect, context);
+    case 'shuffle_into_deck':
+      return executeShuffleIntoDeck(state, effect, context);
+    case 'cleanse':
+      return executeCleanse(state, effect, context);
+    case 'deploy_from_deck':
+      return executeDeployFromDeck(state, effect, context);
+    case 'copy_card':
+      return executeCopyCard(state, effect, context);
+    case 'grant_ability':
+      return executeGrantAbility(state, effect, context);
+    case 'counter_spell':
+      return executeCounterSpell(state, effect, context);
+    case 'replacement':
+      return executeReplacement(state, effect, context);
+    case 'cost_reduction':
+      return executeCostReduction(state, effect, context);
+    case 'scheduled':
+      return executeScheduled(state, effect, context);
+    case 'attach_as_equipment':
+      return executeAttachAsEquipment(state, effect, context);
   }
 }
 
@@ -110,7 +140,8 @@ function executeDealDamage(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const amount = evaluateAmount(state, effect.amount, context);
   const events: GameEvent[] = [];
@@ -127,14 +158,20 @@ function executeDealDamage(
     if (targetId.startsWith('hero_')) {
       const playerId = Number(targetId.split('_')[1]) as 0 | 1;
       if (heroReachDisabled && playerId !== context.controllerId) continue;
-      const hero = currentState.players[playerId]!.hero;
+      const hero = currentState.players[playerId].hero;
       const newLp = Math.max(0, hero.currentLp - amount);
       events.push({ type: 'HERO_DAMAGED', playerId, amount, sourceId: context.sourceInstanceId });
-      const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
-      newPlayers[playerId] = { ...currentState.players[playerId]!, hero: { ...hero, currentLp: newLp } };
+      const newPlayers = [...currentState.players] as [
+        (typeof currentState.players)[0],
+        (typeof currentState.players)[1],
+      ];
+      newPlayers[playerId] = {
+        ...currentState.players[playerId],
+        hero: { ...hero, currentLp: newLp },
+      };
       currentState = { ...currentState, players: newPlayers };
       if (newLp <= 0) {
-        const opponentId = (playerId === 0 ? 1 : 0) as 0 | 1;
+        const opponentId = playerId === 0 ? 1 : 0;
         currentState = { ...currentState, winner: opponentId };
       }
     } else {
@@ -143,9 +180,15 @@ function executeDealDamage(
       // Replacement hook: reduce/prevent incoming damage before HP is reduced.
       const dmg = applyDamageReplacements(target, amount);
       currentState = markReplacementsUsed(currentState, targetId, dmg.consumedIds);
-      events.push({ type: 'DAMAGE_DEALT', sourceId: context.sourceInstanceId, targetId, amount: dmg.amount });
-      currentState = updateCardInState(currentState, targetId, c => ({
-        ...c, currentHp: c.currentHp - dmg.amount,
+      events.push({
+        type: 'DAMAGE_DEALT',
+        sourceId: context.sourceInstanceId,
+        targetId,
+        amount: dmg.amount,
+      });
+      currentState = updateCardInState(currentState, targetId, (c) => ({
+        ...c,
+        currentHp: c.currentHp - dmg.amount,
       }));
       // Check destruction (subject to "would be destroyed" replacement).
       const cardCheck = findCardInState(currentState, targetId);
@@ -172,16 +215,30 @@ function destroyOrReplace(
 ): EffectResult {
   const replacement = findDestructionReplacement(card);
   if (replacement === null) {
-    const destroyed: GameEvent = { type: 'CARD_DESTROYED', cardInstanceId: card.instanceId, cause, playerId: card.owner };
+    const destroyed: GameEvent = {
+      type: 'CARD_DESTROYED',
+      cardInstanceId: card.instanceId,
+      cause,
+      playerId: card.owner,
+    };
     // A Volatile non-token unit is destroyed (Last Breath still fires) but its body
     // is exiled rather than discarded — emit CARD_EXILED for the destination.
-    const events: GameEvent[] = !card.isToken && isExiledOnDestruction(card)
-      ? [destroyed, { type: 'CARD_EXILED', cardInstanceId: card.instanceId, playerId: card.owner }]
-      : [destroyed];
+    const events: GameEvent[] =
+      !card.isToken && isExiledOnDestruction(card)
+        ? [
+            destroyed,
+            { type: 'CARD_EXILED', cardInstanceId: card.instanceId, playerId: card.owner },
+          ]
+        : [destroyed];
     // The holder's equipment follows it to the discard pile (Rulebook 13). Emit its
     // own CARD_DESTROYED so discard-recursion watchers can see it (mirrors bounce).
     if (card.equipment !== null) {
-      events.push({ type: 'CARD_DESTROYED', cardInstanceId: card.equipment.instanceId, cause: 'effect', playerId: card.owner });
+      events.push({
+        type: 'CARD_DESTROYED',
+        cardInstanceId: card.equipment.instanceId,
+        cause: 'effect',
+        playerId: card.owner,
+      });
     }
     return { newState: removeCardFromState(state, card.instanceId), events };
   }
@@ -212,7 +269,8 @@ function executeHeal(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   // DIAGNOSTIC ABLATION: scale every heal by config.healScale (default 1).
   const scale = state.config?.healScale ?? 1;
@@ -234,7 +292,7 @@ function executeHeal(
   for (const targetId of resolved.targetIds) {
     if (targetId.startsWith('hero_')) {
       const playerId = Number(targetId.split('_')[1]) as 0 | 1;
-      const hero = currentState.players[playerId]!.hero;
+      const hero = currentState.players[playerId].hero;
       if (disableHeroHealing) {
         // Tally the LP the rule removed (capped by live headroom), then no-op the heal.
         if (diag?.heroHealRemoved) {
@@ -245,8 +303,14 @@ function executeHeal(
       const healed = Math.min(amount, hero.maxLp - hero.currentLp);
       if (healed > 0) {
         events.push({ type: 'HERO_HEALED', playerId, amount: healed, sourceId: srcId });
-        const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
-        newPlayers[playerId] = { ...currentState.players[playerId]!, hero: { ...hero, currentLp: hero.currentLp + healed } };
+        const newPlayers = [...currentState.players] as [
+          (typeof currentState.players)[0],
+          (typeof currentState.players)[1],
+        ];
+        newPlayers[playerId] = {
+          ...currentState.players[playerId],
+          hero: { ...hero, currentLp: hero.currentLp + healed },
+        };
         currentState = { ...currentState, players: newPlayers };
       }
     } else {
@@ -254,11 +318,18 @@ function executeHeal(
       // when set, also suppress the CHARACTER_OVERHEALED signal so no `on_overheal`
       // trigger pays off. Default OFF ⇒ the overheal event still fires (no-op).
       const noOverheal = currentState.config?.noOverheal === true;
-      currentState = updateCardInState(currentState, targetId, c => {
+      currentState = updateCardInState(currentState, targetId, (c) => {
         const healed = Math.min(amount, c.baseHp - c.currentHp);
-        if (healed > 0) events.push({ type: 'CHARACTER_HEALED', cardInstanceId: targetId, amount: healed, sourceId: srcId });
+        if (healed > 0)
+          events.push({
+            type: 'CHARACTER_HEALED',
+            cardInstanceId: targetId,
+            amount: healed,
+            sourceId: srcId,
+          });
         const excess = amount - (c.baseHp - c.currentHp);
-        if (excess > 0 && !noOverheal) events.push({ type: 'CHARACTER_OVERHEALED', cardInstanceId: targetId, excess });
+        if (excess > 0 && !noOverheal)
+          events.push({ type: 'CHARACTER_OVERHEALED', cardInstanceId: targetId, excess });
         return { ...c, currentHp: Math.min(c.baseHp, c.currentHp + amount) };
       });
     }
@@ -292,7 +363,8 @@ function executeModifyStats(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
@@ -302,18 +374,21 @@ function executeModifyStats(
   // ARM component of any `until_next_upkeep` modify_stats — uniquely Seraphina's
   // "Protector's Bulwark" +1 frontline ARM (the only such ARM buff in the field;
   // the Valkyrie transform's until_next_upkeep mod is ATK-only and is untouched).
-  if (state.config?.ablateBulwark === true
-      && effect.duration?.type === 'until_next_upkeep'
-      && (effect.modifier.arm ?? 0) !== 0) {
+  if (
+    state.config?.ablateBulwark === true &&
+    effect.duration.type === 'until_next_upkeep' &&
+    (effect.modifier.arm ?? 0) !== 0
+  ) {
     effect = { ...effect, modifier: { ...effect.modifier, arm: 0 } };
   }
 
   for (const targetId of resolved.targetIds) {
     // Dynamic modifiers depend on the target's live stats / live game state, so
     // they are resolved per target rather than from the static `modifier`.
-    const dyn = effect.dynamicModifier !== undefined
-      ? dynamicModForTarget(currentState, effect.dynamicModifier, targetId, context)
-      : {};
+    const dyn =
+      effect.dynamicModifier !== undefined
+        ? dynamicModForTarget(currentState, effect.dynamicModifier, targetId, context)
+        : {};
     const total = combineStatMods(effect.modifier, dyn);
     const owner = findCardInState(currentState, targetId)?.owner;
     events.push({
@@ -322,19 +397,23 @@ function executeModifyStats(
       modifier: total,
       ...(owner !== undefined ? { playerId: owner } : {}),
     });
-    currentState = updateCardInState(currentState, targetId, c => ({
+    currentState = updateCardInState(currentState, targetId, (c) => ({
       ...c,
       currentAtk: c.currentAtk + (total.atk ?? 0),
       currentHp: c.currentHp + (total.hp ?? 0),
       currentArm: c.currentArm + (total.arm ?? 0),
-      modifiers: tracked === null
-        ? c.modifiers
-        : [...c.modifiers, {
-            id: `mod_${context.sourceInstanceId}_${targetId}_${String(c.modifiers.length)}`,
-            sourceInstanceId: context.sourceInstanceId,
-            modifier: total,
-            duration: tracked,
-          }],
+      modifiers:
+        tracked === null
+          ? c.modifiers
+          : [
+              ...c.modifiers,
+              {
+                id: `mod_${context.sourceInstanceId}_${targetId}_${String(c.modifiers.length)}`,
+                sourceInstanceId: context.sourceInstanceId,
+                modifier: total,
+                duration: tracked,
+              },
+            ],
     }));
   }
 
@@ -358,18 +437,17 @@ function executeDrawCards(
   context: EffectContext,
 ): EffectResult {
   const count = evaluateAmount(state, effect.count, context);
-  const playerIdx = effect.player === 'enemy'
-    ? (context.controllerId === 0 ? 1 : 0) as 0 | 1
-    : context.controllerId;
+  const playerIdx =
+    effect.player === 'enemy' ? (context.controllerId === 0 ? 1 : 0) : context.controllerId;
 
-  const player = state.players[playerIdx]!;
+  const player = state.players[playerIdx];
   const drawCount = Math.min(count, player.mainDeck.length);
   if (drawCount === 0) return unchanged(state);
 
   const drawn = player.mainDeck.slice(0, drawCount);
   const remaining = player.mainDeck.slice(drawCount);
 
-  const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+  const newPlayers = [...state.players] as [(typeof state.players)[0], (typeof state.players)[1]];
   newPlayers[playerIdx] = {
     ...player,
     hand: [...player.hand, ...drawn],
@@ -394,16 +472,20 @@ function executeDeployToken(
   // `inEachEmpty` fills every empty slot: bound iterations by the live zone-array
   // length (the deploy loop already breaks once no open slot remains). Identical to
   // ZONE_SLOTS under the default 3/2 board; respects a zone-capacity override.
-  const count = effect.inEachEmpty === true
-    ? getZoneArray(state.players[context.controllerId]!.zones, zone).length
-    : (effect.count ?? 1);
+  const count =
+    effect.inEachEmpty === true
+      ? getZoneArray(state.players[context.controllerId].zones, zone).length
+      : effect.count;
 
   for (let i = 0; i < count; i++) {
-    const player = currentState.players[context.controllerId]!;
-    const zoneArr = zone === 'reserve' ? player.zones.reserve
-      : zone === 'frontline' ? player.zones.frontline
-      : player.zones.highGround;
-    const openSlot = zoneArr.findIndex(s => s === null);
+    const player = currentState.players[context.controllerId];
+    const zoneArr =
+      zone === 'reserve'
+        ? player.zones.reserve
+        : zone === 'frontline'
+          ? player.zones.frontline
+          : player.zones.highGround;
+    const openSlot = zoneArr.findIndex((s) => s === null);
     if (openSlot === -1) break;
 
     const tokenId = currentState.rng.counter + 1;
@@ -438,10 +520,18 @@ function executeDeployToken(
     };
 
     const newZones = deployToZone(player.zones, token, zone, openSlot);
-    const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
+    const newPlayers = [...currentState.players] as [
+      (typeof currentState.players)[0],
+      (typeof currentState.players)[1],
+    ];
     newPlayers[context.controllerId] = { ...player, zones: newZones };
     currentState = { ...currentState, players: newPlayers };
-    events.push({ type: 'CARD_DEPLOYED', cardInstanceId: token.instanceId, zone, playerId: context.controllerId });
+    events.push({
+      type: 'CARD_DEPLOYED',
+      cardInstanceId: token.instanceId,
+      zone,
+      playerId: context.controllerId,
+    });
   }
 
   return { newState: currentState, events };
@@ -453,7 +543,8 @@ function executeDestroy(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
@@ -473,7 +564,8 @@ function executeBounce(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
@@ -486,16 +578,24 @@ function executeBounce(
     // pull it back out; the detached equipment stays in discard (Rulebook 13).
     currentState = removeCardFromState(currentState, targetId);
     if (!card.isToken) {
-      const ownerState = currentState.players[card.owner]!;
-      const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
+      const ownerState = currentState.players[card.owner];
+      const newPlayers = [...currentState.players] as [
+        (typeof currentState.players)[0],
+        (typeof currentState.players)[1],
+      ];
       newPlayers[card.owner] = {
         ...ownerState,
-        discardPile: ownerState.discardPile.filter(c => c.instanceId !== card.instanceId),
+        discardPile: ownerState.discardPile.filter((c) => c.instanceId !== card.instanceId),
         hand: [...ownerState.hand, resetCard(card)],
       };
       currentState = { ...currentState, players: newPlayers };
       if (card.equipment !== null) {
-        events.push({ type: 'CARD_DESTROYED', cardInstanceId: card.equipment.instanceId, cause: 'effect', playerId: card.owner });
+        events.push({
+          type: 'CARD_DESTROYED',
+          cardInstanceId: card.equipment.instanceId,
+          cause: 'effect',
+          playerId: card.owner,
+        });
       }
     }
     // Tokens are removed from game when bounced
@@ -509,7 +609,8 @@ function executeSacrifice(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
@@ -517,7 +618,12 @@ function executeSacrifice(
     const card = findCardInState(currentState, targetId);
     if (card === null) continue;
     events.push({ type: 'CARD_SACRIFICED', cardInstanceId: targetId });
-    events.push({ type: 'CARD_DESTROYED', cardInstanceId: targetId, cause: 'sacrifice', playerId: card.owner });
+    events.push({
+      type: 'CARD_DESTROYED',
+      cardInstanceId: targetId,
+      cause: 'sacrifice',
+      playerId: card.owner,
+    });
     if (!card.isToken && isExiledOnDestruction(card)) {
       events.push({ type: 'CARD_EXILED', cardInstanceId: targetId, playerId: card.owner });
     }
@@ -531,8 +637,8 @@ function executeGainResource(
   effect: Extract<Effect, { type: 'gain_resource' }>,
   context: EffectContext,
 ): EffectResult {
-  const player = state.players[context.controllerId]!;
-  const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+  const player = state.players[context.controllerId];
+  const newPlayers = [...state.players] as [(typeof state.players)[0], (typeof state.players)[1]];
 
   if (effect.temporary === true) {
     newPlayers[context.controllerId] = {
@@ -554,7 +660,14 @@ function executeGainResource(
         players: newPlayers,
         turnState: { ...state.turnState, gainedTemporaryResource: flags },
       },
-      events: [{ type: 'RESOURCE_GAINED', playerId: context.controllerId, resourceType: effect.resourceType, amount: effect.amount }],
+      events: [
+        {
+          type: 'RESOURCE_GAINED',
+          playerId: context.controllerId,
+          resourceType: effect.resourceType,
+          amount: effect.amount,
+        },
+      ],
     };
   } else {
     // Permanent: add ResourceCards to the bank
@@ -574,13 +687,19 @@ function executeGainResource(
   }
 
   return {
-    newState: { ...state, players: newPlayers, rng: { ...state.rng, counter: state.rng.counter + effect.amount } },
-    events: [{
-      type: 'RESOURCE_GAINED',
-      playerId: context.controllerId,
-      resourceType: effect.resourceType,
-      amount: effect.amount,
-    }],
+    newState: {
+      ...state,
+      players: newPlayers,
+      rng: { ...state.rng, counter: state.rng.counter + effect.amount },
+    },
+    events: [
+      {
+        type: 'RESOURCE_GAINED',
+        playerId: context.controllerId,
+        resourceType: effect.resourceType,
+        amount: effect.amount,
+      },
+    ],
   };
 }
 
@@ -590,12 +709,13 @@ function executeGrantTrait(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const duration = grantedTraitDuration(effect.duration, context.sourceInstanceId);
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    currentState = updateCardInState(currentState, targetId, c => ({
+    currentState = updateCardInState(currentState, targetId, (c) => ({
       ...c,
       grantedTraits: [
         ...c.grantedTraits,
@@ -636,11 +756,12 @@ function executeGrantAbility(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    currentState = updateCardInState(currentState, targetId, card =>
+    currentState = updateCardInState(currentState, targetId, (card) =>
       grantAbilityToCard(card, effect.ability, context.sourceInstanceId),
     );
   }
@@ -687,11 +808,12 @@ function executeApplyStatus(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    currentState = updateCardInState(currentState, targetId, c => ({
+    currentState = updateCardInState(currentState, targetId, (c) => ({
       ...c,
       statusEffects: [
         ...c.statusEffects,
@@ -726,10 +848,13 @@ function executeDiscard(
     return discardEachPlayer(state, effect, context);
   }
 
-  const targetPlayerId = 'side' in effect.target && effect.target.side === 'enemy'
-    ? (context.controllerId === 0 ? 1 : 0) as 0 | 1
-    : context.controllerId;
-  const player = state.players[targetPlayerId]!;
+  const targetPlayerId =
+    'side' in effect.target && effect.target.side === 'enemy'
+      ? context.controllerId === 0
+        ? 1
+        : 0
+      : context.controllerId;
+  const player = state.players[targetPlayerId];
   if (player.hand.length === 0) return unchanged(state);
   if (context.selectedTargets !== undefined) {
     return discardSpecificCards(state, context.selectedTargets);
@@ -740,7 +865,7 @@ function executeDiscard(
     pendingChoice: {
       type: 'choose_discard',
       playerId: targetPlayerId,
-      options: player.hand.map(c => ({ id: c.instanceId, label: c.name })),
+      options: player.hand.map((c) => ({ id: c.instanceId, label: c.name })),
       minSelections: Math.min(effect.count, player.hand.length),
       maxSelections: Math.min(effect.count, player.hand.length),
       context: `Discard ${String(effect.count)} card(s)`,
@@ -761,12 +886,12 @@ function discardEachPlayer(
   if (context.selectedTargets !== undefined) {
     return discardSpecificCards(state, context.selectedTargets);
   }
-  const opponentId = (context.controllerId === 0 ? 1 : 0) as 0 | 1;
-  const opponent = state.players[opponentId]!;
-  const oppPicks = opponent.hand.slice(0, effect.count).map(c => c.instanceId);
+  const opponentId = context.controllerId === 0 ? 1 : 0;
+  const opponent = state.players[opponentId];
+  const oppPicks = opponent.hand.slice(0, effect.count).map((c) => c.instanceId);
   const afterOpp = discardSpecificCards(state, oppPicks);
 
-  const controller = afterOpp.newState.players[context.controllerId]!;
+  const controller = afterOpp.newState.players[context.controllerId];
   if (controller.hand.length === 0) return afterOpp;
   return {
     newState: afterOpp.newState,
@@ -774,7 +899,7 @@ function discardEachPlayer(
     pendingChoice: {
       type: 'choose_discard',
       playerId: context.controllerId,
-      options: controller.hand.map(c => ({ id: c.instanceId, label: c.name })),
+      options: controller.hand.map((c) => ({ id: c.instanceId, label: c.name })),
       minSelections: Math.min(effect.count, controller.hand.length),
       maxSelections: Math.min(effect.count, controller.hand.length),
       context: `Discard ${String(effect.count)} card(s)`,
@@ -784,21 +909,21 @@ function discardEachPlayer(
 
 /** Move specific cards from their owners' hands to their discard piles. Used by the
  * `random` discard path (cards already selected by the RNG pre-pass). */
-function discardSpecificCards(
-  state: GameState,
-  cardIds: readonly string[],
-): EffectResult {
+function discardSpecificCards(state: GameState, cardIds: readonly string[]): EffectResult {
   let currentState = state;
   const events: GameEvent[] = [];
   for (const cardId of cardIds) {
     for (let pi = 0; pi < 2; pi++) {
       const player = currentState.players[pi]!;
-      const card = player.hand.find(c => c.instanceId === cardId);
+      const card = player.hand.find((c) => c.instanceId === cardId);
       if (card === undefined) continue;
-      const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
+      const newPlayers = [...currentState.players] as [
+        (typeof currentState.players)[0],
+        (typeof currentState.players)[1],
+      ];
       newPlayers[pi] = {
         ...player,
-        hand: player.hand.filter(c => c.instanceId !== cardId),
+        hand: player.hand.filter((c) => c.instanceId !== cardId),
         discardPile: [...player.discardPile, card],
       };
       currentState = { ...currentState, players: newPlayers };
@@ -817,15 +942,11 @@ function discardSpecificCards(
 /** Apply a discarded card's Recycle X: its owner draws X from the top of their main
  * deck (capped by deck size). Returns the card's events untouched when it has no
  * recycle trait/value, so existing decks are byte-identical. */
-function recycleDraw(
-  state: GameState,
-  card: CardInstance,
-  playerId: 0 | 1,
-): EffectResult {
+function recycleDraw(state: GameState, card: CardInstance, playerId: 0 | 1): EffectResult {
   const x = card.traits.includes('recycle') ? (card.recycleValue ?? 1) : 0;
   if (x <= 0) return { newState: state, events: [] };
 
-  const player = state.players[playerId]!;
+  const player = state.players[playerId];
   const count = Math.min(x, player.mainDeck.length);
   if (count === 0) return { newState: state, events: [] };
 
@@ -854,17 +975,19 @@ const ALL_ZONES: readonly ZoneType[] = ['reserve', 'frontline', 'high_ground'];
  * `any` or `adjacent_to_current`: the first candidate zone (other than the current)
  * that has an open slot. Returns null when none is available. */
 function resolveMoveDestination(
-  zones: import('../types/game-state.js').ZoneState,
+  zones: ZoneState,
   fromZone: ZoneType,
   destination: ZoneType | 'any' | 'adjacent_to_current',
 ): ZoneType | null {
   if (destination !== 'any' && destination !== 'adjacent_to_current') return destination;
-  const candidates = destination === 'adjacent_to_current'
-    ? MOVE_ADJACENT[fromZone]
-    : ALL_ZONES.filter(z => z !== fromZone);
+  const candidates =
+    destination === 'adjacent_to_current'
+      ? MOVE_ADJACENT[fromZone]
+      : ALL_ZONES.filter((z) => z !== fromZone);
   for (const z of candidates) {
-    const arr = z === 'reserve' ? zones.reserve : z === 'frontline' ? zones.frontline : zones.highGround;
-    if (arr.some(s => s === null)) return z;
+    const arr =
+      z === 'reserve' ? zones.reserve : z === 'frontline' ? zones.frontline : zones.highGround;
+    if (arr.some((s) => s === null)) return z;
   }
   return null;
 }
@@ -875,7 +998,8 @@ function executeMove(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
@@ -894,7 +1018,10 @@ function executeMove(
       const movedCard: CardInstance = { ...location.card, movedThisTurn: true };
       try {
         const newZones = deployToZone(clearedZones, movedCard, toZone);
-        const newPlayers = [...currentState.players] as [typeof currentState.players[0], typeof currentState.players[1]];
+        const newPlayers = [...currentState.players] as [
+          (typeof currentState.players)[0],
+          (typeof currentState.players)[1],
+        ];
         newPlayers[pi] = { ...player, zones: newZones };
         currentState = { ...currentState, players: newPlayers };
         events.push({ type: 'CARD_MOVED', cardInstanceId: targetId, fromZone, toZone });

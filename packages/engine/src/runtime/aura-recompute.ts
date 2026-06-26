@@ -51,19 +51,19 @@ function stripAuras(card: CardInstance): CardInstance {
     currentAtk: atk,
     currentHp: hp,
     currentArm: arm,
-    modifiers: card.modifiers.filter(m => !isAuraModifier(m)),
+    modifiers: card.modifiers.filter((m) => !isAuraModifier(m)),
   };
 }
 
 function stripAllAuras(state: GameState): GameState {
   return {
     ...state,
-    players: state.players.map(player => ({
+    players: state.players.map((player) => ({
       ...stripAuraCostReductions(player),
       zones: {
-        reserve: player.zones.reserve.map(c => (c === null ? null : stripAuras(c))),
-        frontline: player.zones.frontline.map(c => (c === null ? null : stripAuras(c))),
-        highGround: player.zones.highGround.map(c => (c === null ? null : stripAuras(c))),
+        reserve: player.zones.reserve.map((c) => (c === null ? null : stripAuras(c))),
+        frontline: player.zones.frontline.map((c) => (c === null ? null : stripAuras(c))),
+        highGround: player.zones.highGround.map((c) => (c === null ? null : stripAuras(c))),
       },
     })) as unknown as readonly [GameState['players'][0], GameState['players'][1]],
   };
@@ -86,7 +86,7 @@ function snapshotAuraCostReductionUse(state: GameState): ReadonlyMap<string, boo
 function stripAuraCostReductions(player: PlayerState): PlayerState {
   const reductions = player.costReductions;
   if (reductions === undefined) return player;
-  const kept = reductions.filter(r => !r.id.startsWith(AURA_PREFIX));
+  const kept = reductions.filter((r) => !r.id.startsWith(AURA_PREFIX));
   if (kept.length === reductions.length) return player;
   return { ...player, costReductions: kept.length === 0 ? undefined : kept };
 }
@@ -101,7 +101,7 @@ function applyAuraCostReduction(
   auraIndex: number,
   priorUsed: ReadonlyMap<string, boolean>,
 ): GameState {
-  const player = state.players[context.controllerId]!;
+  const player = state.players[context.controllerId];
   const id = `${AURA_PREFIX}cr_${context.sourceInstanceId}_${String(auraIndex)}`;
   const registration: ActiveCostReduction = {
     id,
@@ -139,9 +139,10 @@ function applyAuraStatEffect(
   for (const targetId of resolved.targetIds) {
     const target = findCardInState(current, targetId);
     if (target === null) continue;
-    const dyn = effect.dynamicModifier !== undefined
-      ? evaluateDynamicStat(state, effect.dynamicModifier, target, context)
-      : {};
+    const dyn =
+      effect.dynamicModifier !== undefined
+        ? evaluateDynamicStat(state, effect.dynamicModifier, target, context)
+        : {};
     const total = combine(effect.modifier, dyn);
     if ((total.atk ?? 0) === 0 && (total.hp ?? 0) === 0 && (total.arm ?? 0) === 0) continue;
     const modifier: ActiveModifier = {
@@ -150,7 +151,7 @@ function applyAuraStatEffect(
       modifier: total,
       duration: { type: 'while_in_play', sourceId: context.sourceInstanceId },
     };
-    current = updateCardInState(current, targetId, c => ({
+    current = updateCardInState(current, targetId, (c) => ({
       ...c,
       currentAtk: c.currentAtk + (total.atk ?? 0),
       currentHp: c.currentHp + (total.hp ?? 0),
@@ -170,16 +171,16 @@ function collectAuraSources(state: GameState): readonly AuraSource[] {
   const out: AuraSource[] = [];
   for (let pi = 0; pi < 2; pi++) {
     const controllerId = pi as 0 | 1;
-    for (const card of getAllCards(state.players[controllerId]!.zones)) {
+    for (const card of getAllCards(state.players[controllerId].zones)) {
       // A character exhausted for Reserve Energy Generation has ALL abilities —
       // including passive Auras — disabled until next Upkeep (Rulebook 8 step 4).
       if (card.reserveEnergyExhausted === true) continue;
-      if (card.abilities.some(a => a.type === 'aura')) out.push({ card, controllerId });
+      if (card.abilities.some((a) => a.type === 'aura')) out.push({ card, controllerId });
       // Attached equipment can carry its own continuous auras (e.g. Steel-Root
       // Armor's +0/+X HP); the source is the equipment instance so `equipped_character`
       // resolves to its host and its recorded xPaid feeds x_cost grants.
       const equip = card.equipment;
-      if (equip !== null && equip.abilities.some(a => a.type === 'aura')) {
+      if (equip !== null && equip.abilities.some((a) => a.type === 'aura')) {
         out.push({ card: equip, controllerId });
       }
     }
@@ -225,13 +226,14 @@ function applyArmBuffMaxRule(state: GameState): GameState {
       count++;
     }
     if (count < 2) return card;
-    if (measure && diag !== undefined) {
+    if (measure) {
       // Guard each counter directly — both are independently optional on
       // DiagCounters, so a diag supplying one without the other must not crash
       // (same pattern as the combat-resolver diag guards). Under `measure` the
       // events guard is always true; it just drops the non-null assertions.
       if (diag.armBuffsStackedEvents !== undefined) diag.armBuffsStackedEvents[card.owner]++;
-      if (diag.armBuffsStackedShaved !== undefined) diag.armBuffsStackedShaved[card.owner] += sum - max;
+      if (diag.armBuffsStackedShaved !== undefined)
+        diag.armBuffsStackedShaved[card.owner] += sum - max;
     }
     if (!takeMax) return card;
     // Shave the redundant (sum − max) ARM, but record it as an aura-tagged
@@ -258,7 +260,7 @@ function applyArmBuffMaxRule(state: GameState): GameState {
 
   return {
     ...state,
-    players: state.players.map(player => ({
+    players: state.players.map((player) => ({
       ...player,
       zones: {
         reserve: player.zones.reserve.map(adjust),

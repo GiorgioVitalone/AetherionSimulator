@@ -6,20 +6,23 @@
  * building decks and registry directly from mock data.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import type { DeckSelection } from '@aetherion-sim/engine';
+import type { DeckSelection, GameState } from '@aetherion-sim/engine';
 import { createRegistry, RARITY_COPY_LIMITS } from '@/features/game-setup';
 import { GameFlowController } from '@/machines/game-flow';
 import { MOCK_CARDS } from './__fixtures__/mock-cards';
 
 function buildTestDeck(faction: string): DeckSelection {
   const hero = MOCK_CARDS.find(
-    c => c.cardType === 'H' && c.alignment.includes(faction as 'Onyx' | 'Radiant'),
+    (c) => c.cardType === 'H' && c.alignment.includes(faction as 'Onyx' | 'Radiant'),
   );
   if (!hero) throw new Error(`No hero for ${faction}`);
 
   const factionCards = MOCK_CARDS.filter(
-    c => c.alignment.includes(faction as 'Onyx' | 'Radiant') &&
-      c.cardType !== 'H' && c.cardType !== 'T' && c.cardType !== 'R',
+    (c) =>
+      c.alignment.includes(faction as 'Onyx' | 'Radiant') &&
+      c.cardType !== 'H' &&
+      c.cardType !== 'T' &&
+      c.cardType !== 'R',
   );
 
   const mainDeckDefIds: number[] = [];
@@ -37,7 +40,7 @@ function buildTestDeck(faction: string): DeckSelection {
   }
 
   const resourceCard = MOCK_CARDS.find(
-    c => c.cardType === 'R' && c.alignment.includes(faction as 'Onyx' | 'Radiant'),
+    (c) => c.cardType === 'R' && c.alignment.includes(faction as 'Onyx' | 'Radiant'),
   );
   const resourceDeckDefIds: number[] = [];
   if (resourceCard) {
@@ -61,8 +64,8 @@ describe('Game Flow Integration', () => {
     controller = null;
   });
 
-  function startGame(): { states: import('@aetherion-sim/engine').GameState[] } {
-    const states: import('@aetherion-sim/engine').GameState[] = [];
+  function startGame(): { states: GameState[] } {
+    const states: GameState[] = [];
     const onyxDeck = buildTestDeck('Onyx');
     const radiantDeck = buildTestDeck('Radiant');
 
@@ -99,9 +102,7 @@ describe('Game Flow Integration', () => {
     const initial = states[0]!;
 
     // At least one hero should have abilities from the mock data
-    const heroWithAbilities = initial.players.find(
-      p => p.hero.abilities.length > 0,
-    );
+    const heroWithAbilities = initial.players.find((p) => p.hero.abilities.length > 0);
     expect(heroWithAbilities).toBeDefined();
   });
 

@@ -29,7 +29,7 @@ import { gameplanFor, type Gameplan } from './gameplan.js';
 export function chooseAction(state: GameState): PlayerAction | null {
   if (state.winner !== null) return null;
   const acts = computeAvailableActions(state);
-  const player = state.players[state.activePlayerIndex]!;
+  const player = state.players[state.activePlayerIndex];
 
   if (state.phase === 'strategy') {
     return chooseStrategyAction(state, player, acts);
@@ -92,8 +92,8 @@ function spellThreat(
   responderId: 0 | 1,
 ): number {
   const enemyId = responderId === 0 ? 1 : 0;
-  const caster = state.players[enemyId]!;
-  const responder = state.players[responderId]!;
+  const caster = state.players[enemyId];
+  const responder = state.players[responderId];
   const card = caster.discardPile.find(c => c.instanceId === item.sourceInstanceId)
     ?? handCard(caster, item.sourceInstanceId);
   // Threat is scored on the NEUTRAL baseline: scoreSpell conflates the caster's
@@ -119,7 +119,7 @@ function spellThreat(
 export function chooseChoiceResponse(state: GameState): readonly string[] {
   const pc = state.pendingChoice;
   if (pc === null) return [];
-  const player = state.players[pc.playerId]!;
+  const player = state.players[pc.playerId];
   if (pc.type === 'discard_to_hand_limit' || pc.type === 'choose_discard') {
     return lowestValueHandIds(player, pc.options.map(o => o.id), pc.minSelections);
   }
@@ -129,7 +129,7 @@ export function chooseChoiceResponse(state: GameState): readonly string[] {
 
 /** Mulligan policy: keep a hand that has at least one affordable early play. */
 export function shouldKeepHand(state: GameState, playerId: 0 | 1): boolean {
-  const player = state.players[playerId]!;
+  const player = state.players[playerId];
   const playable = player.hand.filter(c => c.cardType === 'C' || c.cardType === 'S').length;
   return playable >= 2;
 }
@@ -141,7 +141,7 @@ function chooseStrategyAction(
   player: PlayerState,
   acts: ReturnType<typeof computeAvailableActions>,
 ): PlayerAction | null {
-  const opponent = state.players[state.activePlayerIndex === 0 ? 1 : 0]!;
+  const opponent = state.players[state.activePlayerIndex === 0 ? 1 : 0];
   const best = bestSpell(player, opponent, acts, gameplanForSeat(state.config, state.activePlayerIndex));
 
   // 1. Transform when eligible and beneficial (gains new abilities / Ultimate).
@@ -400,7 +400,7 @@ function chooseCombatAction(
   player: PlayerState,
   acts: ReturnType<typeof computeAvailableActions>,
 ): PlayerAction | null {
-  const opponent = state.players[state.activePlayerIndex === 0 ? 1 : 0]!;
+  const opponent = state.players[state.activePlayerIndex === 0 ? 1 : 0];
   const faceWeight = faceWeightFor(state.config, state.activePlayerIndex);
 
   // Score every legal attack across all ready bodies, then take the single

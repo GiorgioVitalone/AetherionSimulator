@@ -79,14 +79,13 @@ export function effectiveCost(player: PlayerState, card: CardInstance): Resource
 export function consumeReductions(player: PlayerState, card: CardInstance): PlayerState {
   const reductions = player.costReductions;
   if (reductions === undefined || reductions.length === 0) return player;
-  let changed = false;
-  const next = reductions.map(red => {
+  const next = reductions.map((red) => {
     if (red.appliesTo.firstPerTurn === true && !red.usedThisTurn && reductionMatches(red, card)) {
-      changed = true;
       return { ...red, usedThisTurn: true };
     }
     return red;
   });
+  const changed = next.some((red, i) => red !== reductions[i]);
   return changed ? { ...player, costReductions: next } : player;
 }
 
@@ -107,10 +106,7 @@ export function canAfford(player: PlayerState, cost: ResourceCost): boolean {
 }
 
 /** Deduct cost from player resources. Returns updated PlayerState. Throws if insufficient. */
-export function payCost(
-  player: PlayerState,
-  cost: ResourceCost,
-): PlayerState {
+export function payCost(player: PlayerState, cost: ResourceCost): PlayerState {
   if (!canAfford(player, cost)) {
     throw new Error('Insufficient resources to pay cost');
   }
@@ -120,7 +116,7 @@ export function payCost(
   let flexNeeded = cost.flexible;
 
   // Exhaust resource bank cards — specific first, then flexible
-  const newBank: ResourceCard[] = player.resourceBank.map(rc => {
+  const newBank: ResourceCard[] = player.resourceBank.map((rc) => {
     if (rc.exhausted) return rc;
 
     if (rc.resourceType === 'mana' && manaNeeded > 0) {
@@ -136,7 +132,7 @@ export function payCost(
   });
 
   // Pay flexible from remaining unexhausted bank cards
-  const finalBank: ResourceCard[] = newBank.map(rc => {
+  const finalBank: ResourceCard[] = newBank.map((rc) => {
     if (rc.exhausted || flexNeeded <= 0) return rc;
     flexNeeded--;
     return { ...rc, exhausted: true };
@@ -146,7 +142,7 @@ export function payCost(
   let tempResources = player.temporaryResources;
   if (manaNeeded > 0 || energyNeeded > 0 || flexNeeded > 0) {
     tempResources = tempResources
-      .map(tmp => {
+      .map((tmp) => {
         if (tmp.resourceType === 'mana' && manaNeeded > 0) {
           const deduct = Math.min(tmp.amount, manaNeeded);
           manaNeeded -= deduct;
@@ -164,7 +160,7 @@ export function payCost(
         }
         return tmp;
       })
-      .filter(tmp => tmp.amount > 0);
+      .filter((tmp) => tmp.amount > 0);
   }
 
   return {

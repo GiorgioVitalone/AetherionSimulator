@@ -3,12 +3,8 @@
  * Returns a PendingChoice when player must select targets.
  */
 import type { TargetExpr } from '../types/targets.js';
-import type {
-  GameState,
-  EffectContext,
-  PendingChoice,
-  CardInstance,
-} from '../types/game-state.js';
+import type { ZoneType } from '../types/common.js';
+import type { GameState, EffectContext, PendingChoice, CardInstance } from '../types/game-state.js';
 import { getAllCards, getCardsInZone, findCard } from '../zones/zone-manager.js';
 import { evaluateAmount } from './amount-evaluator.js';
 
@@ -93,7 +89,7 @@ function resolveTargetEquipment(
 ): ResolvedTargets {
   const cards = getCardsBySide(state, target.side, context);
   const equipmentIds = cards
-    .map(c => c.equipment?.instanceId)
+    .map((c) => c.equipment?.instanceId)
     .filter((id): id is string => id !== undefined);
   if (equipmentIds.length === 0) return { resolved: true, targetIds: [] };
   return {
@@ -101,7 +97,7 @@ function resolveTargetEquipment(
     pendingChoice: {
       type: 'select_targets',
       playerId: context.controllerId,
-      options: equipmentIds.map(id => ({ id, label: id })),
+      options: equipmentIds.map((id) => ({ id, label: id })),
       minSelections: 1,
       maxSelections: 1,
       context: 'Choose a piece of equipment',
@@ -111,23 +107,20 @@ function resolveTargetEquipment(
 
 /** Characters in zones adjacent to the source's current zone (Rulebook adjacency:
  * reserve↔frontline↔high_ground), on the source's side. */
-function resolveAdjacentToSelf(
-  state: GameState,
-  context: EffectContext,
-): ResolvedTargets {
+function resolveAdjacentToSelf(state: GameState, context: EffectContext): ResolvedTargets {
   for (const player of state.players) {
     const loc = findCard(player.zones, context.sourceInstanceId);
     if (loc === null) continue;
     const adjacentZones = ADJACENT_ZONES[loc.zone];
     const ids = adjacentZones
-      .flatMap(z => getCardsInZone(player.zones, z))
-      .map(c => c.instanceId);
+      .flatMap((z) => getCardsInZone(player.zones, z))
+      .map((c) => c.instanceId);
     return { resolved: true, targetIds: ids };
   }
   return { resolved: true, targetIds: [] };
 }
 
-const ADJACENT_ZONES: Record<import('../types/common.js').ZoneType, readonly import('../types/common.js').ZoneType[]> = {
+const ADJACENT_ZONES: Record<ZoneType, readonly ZoneType[]> = {
   reserve: ['frontline'],
   frontline: ['reserve', 'high_ground'],
   high_ground: ['frontline'],
@@ -139,14 +132,11 @@ const ADJACENT_ZONES: Record<import('../types/common.js').ZoneType, readonly imp
  * natural response target, so we offer enemy-controlled spell stack items
  * (newest first). Returns a select_targets choice, or empty when none exist.
  */
-function resolveTargetSpell(
-  state: GameState,
-  context: EffectContext,
-): ResolvedTargets {
+function resolveTargetSpell(state: GameState, context: EffectContext): ResolvedTargets {
   const enemyId = context.controllerId === 0 ? 1 : 0;
   const spells = [...state.stack]
     .reverse()
-    .filter(item => item.type === 'spell' && item.controllerId === enemyId);
+    .filter((item) => item.type === 'spell' && item.controllerId === enemyId);
   if (spells.length === 0) {
     return { resolved: true, targetIds: [] };
   }
@@ -155,7 +145,7 @@ function resolveTargetSpell(
     pendingChoice: {
       type: 'select_targets',
       playerId: context.controllerId,
-      options: spells.map(item => ({ id: item.id, label: item.id })),
+      options: spells.map((item) => ({ id: item.id, label: item.id })),
       minSelections: 1,
       maxSelections: 1,
       context: 'Choose a spell on the stack to counter',
@@ -169,7 +159,7 @@ function resolveCardInDiscard(
   context: EffectContext,
 ): ResolvedTargets {
   const players = getPlayersBySide(state, target.side, context);
-  const cards = players.flatMap(p => p.discardPile);
+  const cards = players.flatMap((p) => p.discardPile);
   const filtered = applyFilter(cards, target.filter, context);
   if (filtered.length === 0) {
     return { resolved: true, targetIds: [] };
@@ -179,7 +169,7 @@ function resolveCardInDiscard(
     pendingChoice: {
       type: 'select_targets',
       playerId: context.controllerId,
-      options: filtered.map(c => ({ id: c.instanceId, label: c.name })),
+      options: filtered.map((c) => ({ id: c.instanceId, label: c.name })),
       minSelections: 1,
       maxSelections: 1,
       context: 'Choose a card from the discard pile',
@@ -191,18 +181,16 @@ function resolveHeroTarget(
   target: Extract<TargetExpr, { type: 'hero' }>,
   context: EffectContext,
 ): ResolvedTargets {
-  const id = target.side === 'allied'
-    ? `hero_${String(context.controllerId)}`
-    : target.side === 'enemy'
-      ? `hero_${String(context.controllerId === 0 ? 1 : 0)}`
-      : `hero_${String(context.controllerId)}`;
+  const id =
+    target.side === 'allied'
+      ? `hero_${String(context.controllerId)}`
+      : target.side === 'enemy'
+        ? `hero_${String(context.controllerId === 0 ? 1 : 0)}`
+        : `hero_${String(context.controllerId)}`;
   return { resolved: true, targetIds: [id] };
 }
 
-function resolveEquippedCharacter(
-  state: GameState,
-  context: EffectContext,
-): ResolvedTargets {
+function resolveEquippedCharacter(state: GameState, context: EffectContext): ResolvedTargets {
   // Find the card this equipment is attached to
   for (const player of state.players) {
     const allCards = getAllCards(player.zones);
@@ -222,7 +210,7 @@ function resolveAllCharacters(
 ): ResolvedTargets {
   const cards = getCardsBySide(state, target.side, context);
   const filtered = applyFilter(cards, target.filter);
-  return { resolved: true, targetIds: filtered.map(c => c.instanceId) };
+  return { resolved: true, targetIds: filtered.map((c) => c.instanceId) };
 }
 
 function resolveAllInZone(
@@ -231,10 +219,10 @@ function resolveAllInZone(
   context: EffectContext,
 ): ResolvedTargets {
   const players = getPlayersBySide(state, target.side, context);
-  const inZone = players.flatMap(p => getCardsInZone(p.zones, target.zone));
+  const inZone = players.flatMap((p) => getCardsInZone(p.zones, target.zone));
   const cards = excludeUntargetable(inZone, context.controllerId);
   const filtered = applyFilter(cards, target.filter);
-  return { resolved: true, targetIds: filtered.map(c => c.instanceId) };
+  return { resolved: true, targetIds: filtered.map((c) => c.instanceId) };
 }
 
 function resolveTargetCharacter(
@@ -252,7 +240,7 @@ function resolveTargetCharacter(
     pendingChoice: {
       type: 'select_targets',
       playerId: context.controllerId,
-      options: filtered.map(c => ({ id: c.instanceId, label: c.name })),
+      options: filtered.map((c) => ({ id: c.instanceId, label: c.name })),
       minSelections: 1,
       maxSelections: 1,
       context: 'Choose a target character',
@@ -270,15 +258,14 @@ function resolveUpTo(
   if (filtered.length === 0) {
     return { resolved: true, targetIds: [] };
   }
-  const count = typeof target.count === 'number'
-    ? target.count
-    : evaluateAmount(state, target.count, context);
+  const count =
+    typeof target.count === 'number' ? target.count : evaluateAmount(state, target.count, context);
   return {
     resolved: false,
     pendingChoice: {
       type: 'select_targets',
       playerId: context.controllerId,
-      options: filtered.map(c => ({ id: c.instanceId, label: c.name })),
+      options: filtered.map((c) => ({ id: c.instanceId, label: c.name })),
       minSelections: 0,
       maxSelections: Math.min(count, filtered.length),
       context: `Choose up to ${String(count)} targets`,
@@ -290,11 +277,12 @@ function resolvePlayerTarget(
   target: Extract<TargetExpr, { type: 'player' }>,
   context: EffectContext,
 ): ResolvedTargets {
-  const id = target.side === 'allied'
-    ? `hero_${String(context.controllerId)}`
-    : target.side === 'enemy'
-      ? `hero_${String(context.controllerId === 0 ? 1 : 0)}`
-      : `hero_${String(context.controllerId)}`;
+  const id =
+    target.side === 'allied'
+      ? `hero_${String(context.controllerId)}`
+      : target.side === 'enemy'
+        ? `hero_${String(context.controllerId === 0 ? 1 : 0)}`
+        : `hero_${String(context.controllerId)}`;
   return { resolved: true, targetIds: [id] };
 }
 
@@ -306,7 +294,10 @@ function getCardsBySide(
   context: EffectContext,
 ): readonly CardInstance[] {
   const players = getPlayersBySide(state, side, context);
-  return excludeUntargetable(players.flatMap(p => getAllCards(p.zones)), context.controllerId);
+  return excludeUntargetable(
+    players.flatMap((p) => getAllCards(p.zones)),
+    context.controllerId,
+  );
 }
 
 /**
@@ -323,13 +314,13 @@ export function excludeUntargetable(
   cards: readonly CardInstance[],
   controllerId: 0 | 1,
 ): readonly CardInstance[] {
-  return cards.filter(c => c.owner === controllerId || !isUntargetableByOpponent(c));
+  return cards.filter((c) => c.owner === controllerId || !isUntargetableByOpponent(c));
 }
 
 function isUntargetableByOpponent(card: CardInstance): boolean {
-  if (card.statusEffects.some(s => s.statusType === 'hexproof')) return true;
+  if (card.statusEffects.some((s) => s.statusType === 'hexproof')) return true;
   const hasStealth =
-    card.traits.includes('stealth') || card.grantedTraits.some(g => g.trait === 'stealth');
+    card.traits.includes('stealth') || card.grantedTraits.some((g) => g.trait === 'stealth');
   return hasStealth && card.hasActed !== true;
 }
 
@@ -337,11 +328,14 @@ function getPlayersBySide(
   state: GameState,
   side: 'allied' | 'enemy' | 'any',
   context: EffectContext,
-): readonly (typeof state.players[0])[] {
+): readonly (typeof state.players)[0][] {
   switch (side) {
-    case 'allied': return [state.players[context.controllerId]!];
-    case 'enemy': return [state.players[context.controllerId === 0 ? 1 : 0]!];
-    case 'any': return [...state.players];
+    case 'allied':
+      return [state.players[context.controllerId]];
+    case 'enemy':
+      return [state.players[context.controllerId === 0 ? 1 : 0]];
+    case 'any':
+      return [...state.players];
   }
 }
 
@@ -370,11 +364,17 @@ export function applyFilter(
   // costRelativeTo constrains total cost to (referenceCost + offset). When the
   // reference can't be resolved (no referenceCost supplied) the constraint is a
   // no-op rather than silently excluding everything.
-  const relativeMax = filter.costRelativeTo !== undefined && referenceCost !== undefined
-    ? referenceCost + filter.costRelativeTo.offset
-    : undefined;
-  return cards.filter(c => {
-    if (filter.excludeSelf === true && context !== undefined && c.instanceId === context.sourceInstanceId) return false;
+  const relativeMax =
+    filter.costRelativeTo !== undefined && referenceCost !== undefined
+      ? referenceCost + filter.costRelativeTo.offset
+      : undefined;
+  return cards.filter((c) => {
+    if (
+      filter.excludeSelf === true &&
+      context !== undefined &&
+      c.instanceId === context.sourceInstanceId
+    )
+      return false;
     if (filter.trait !== undefined && !c.traits.includes(filter.trait as never)) return false;
     if (filter.tag !== undefined && !c.tags.includes(filter.tag)) return false;
     if (filter.cardType !== undefined && c.cardType !== filter.cardType) return false;

@@ -24,7 +24,6 @@ export function executeCostReduction(
   context: EffectContext,
 ): EffectResult {
   const player = state.players[context.controllerId];
-  if (player === undefined) return { newState: state, events: [] };
 
   const existing = player.costReductions ?? [];
   const registration: ActiveCostReduction = {

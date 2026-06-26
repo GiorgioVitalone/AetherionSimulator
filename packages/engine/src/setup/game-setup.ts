@@ -8,6 +8,7 @@ import type {
   CardInstance,
   HeroState,
   ResourceCard,
+  RngState,
 } from '../types/game-state.js';
 import type { ResourceCost, CardTypeCode } from '../types/common.js';
 import { createEmptyZoneState } from '../zones/zone-manager.js';
@@ -61,10 +62,7 @@ export function resetSetupInstanceCounter(): void {
 
 // ── Card Instance Creation ────────────────────────────────────────────────────
 
-function createCardInstance(
-  def: CardDefinition,
-  owner: 0 | 1,
-): CardInstance {
+function createCardInstance(def: CardDefinition, owner: 0 | 1): CardInstance {
   const { traits, statusEffects, rushValue, recycleValue } = normalizeTraits(def.traits);
   return {
     ...(rushValue !== undefined ? { rushValue } : {}),
@@ -113,9 +111,7 @@ function createHeroState(def: HeroDefinition): HeroState {
   };
 }
 
-function createResourceCard(
-  resourceType: 'mana' | 'energy',
-): ResourceCard {
+function createResourceCard(resourceType: 'mana' | 'energy'): ResourceCard {
   return {
     instanceId: nextInstanceId(),
     resourceType,
@@ -134,18 +130,8 @@ export function createGame(
   resetSetupInstanceCounter();
   const rng = createRng(seed ?? Date.now());
 
-  const { player: p1, nextRng: rng1 } = buildPlayerState(
-    player1,
-    registry,
-    0,
-    rng,
-  );
-  const { player: p2, nextRng: rng2 } = buildPlayerState(
-    player2,
-    registry,
-    1,
-    rng1,
-  );
+  const { player: p1, nextRng: rng1 } = buildPlayerState(player1, registry, 0, rng);
+  const { player: p2, nextRng: rng2 } = buildPlayerState(player2, registry, 1, rng1);
 
   // Determine first player randomly
   const { value: firstPlayer, nextRng: rng3 } = randomInt(rng2, 0, 1);
@@ -181,10 +167,10 @@ function buildPlayerState(
   deck: DeckSelection,
   registry: CardDefinitionRegistry,
   owner: 0 | 1,
-  rng: import('../types/game-state.js').RngState,
+  rng: RngState,
 ): {
   readonly player: PlayerState;
-  readonly nextRng: import('../types/game-state.js').RngState;
+  readonly nextRng: RngState;
 } {
   // Load hero
   const heroDef = registry.getHero(deck.heroDefId);
@@ -194,7 +180,7 @@ function buildPlayerState(
   const hero = createHeroState(heroDef);
 
   // Load main deck cards
-  const mainCards = deck.mainDeckDefIds.map(id => {
+  const mainCards = deck.mainDeckDefIds.map((id) => {
     const def = registry.getCard(id);
     if (def === undefined) {
       throw new Error(`Card definition not found: ${String(id)}`);
@@ -203,22 +189,17 @@ function buildPlayerState(
   });
 
   // Load resource deck
-  const resourceCards = deck.resourceDeckDefIds.map(id => {
+  const resourceCards = deck.resourceDeckDefIds.map((id) => {
     // Determine resource type from card definition
     const def = registry.getCard(id);
     const resourceType =
-      def !== undefined && def.cardType === 'R'
-        ? guessResourceType(def)
-        : 'mana';
+      def !== undefined && def.cardType === 'R' ? guessResourceType(def) : 'mana';
     return createResourceCard(resourceType);
   });
 
   // Shuffle both decks
   const { result: shuffledMain, nextRng: rng1 } = shuffle(mainCards, rng);
-  const { result: shuffledResource, nextRng: rng2 } = shuffle(
-    resourceCards,
-    rng1,
-  );
+  const { result: shuffledResource, nextRng: rng2 } = shuffle(resourceCards, rng1);
 
   // Draw initial hand (5 cards)
   const handSize = Math.min(INITIAL_HAND_SIZE, shuffledMain.length);
@@ -257,22 +238,15 @@ function guessResourceType(def: CardDefinition): 'mana' | 'energy' {
 
 // ── Mulligan ──────────────────────────────────────────────────────────────────
 
-export function applyMulligan(
-  state: GameState,
-  playerId: 0 | 1,
-  keepHand: boolean,
-): GameState {
+export function applyMulligan(state: GameState, playerId: 0 | 1, keepHand: boolean): GameState {
   if (keepHand) {
     return advanceMulligan(state, playerId);
   }
 
-  const player = state.players[playerId]!;
+  const player = state.players[playerId];
 
   // Shuffle hand back into deck
-  const { result: reshuffled, nextRng } = shuffle(
-    [...player.hand, ...player.mainDeck],
-    state.rng,
-  );
+  const { result: reshuffled, nextRng } = shuffle([...player.hand, ...player.mainDeck], state.rng);
 
   // Draw mulligan hand (4 cards)
   const handSize = Math.min(MULLIGAN_HAND_SIZE, reshuffled.length);
@@ -288,10 +262,7 @@ export function applyMulligan(
   const newPlayers = [...state.players] as [PlayerState, PlayerState];
   newPlayers[playerId] = newPlayer;
 
-  return advanceMulligan(
-    { ...state, players: newPlayers, rng: nextRng },
-    playerId,
-  );
+  return advanceMulligan({ ...state, players: newPlayers, rng: nextRng }, playerId);
 }
 
 function advanceMulligan(state: GameState, completedPlayerId: 0 | 1): GameState {

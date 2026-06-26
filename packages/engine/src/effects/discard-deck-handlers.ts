@@ -72,7 +72,7 @@ function returnOne(
 ): GameState {
   for (let pi = 0; pi < 2; pi++) {
     const playerId = pi as 0 | 1;
-    const player = state.players[playerId]!;
+    const player = state.players[playerId];
     const card = player.discardPile.find(c => c.instanceId === targetId);
     if (card === undefined) continue;
 
@@ -102,7 +102,7 @@ export function executeSearchDeck(
   context: EffectContext,
 ): EffectResult {
   const playerId = context.controllerId;
-  const player = state.players[playerId]!;
+  const player = state.players[playerId];
   const matches = applyFilter(player.mainDeck, effect.filter, context);
   const events: GameEvent[] = [];
   let currentState = state;
@@ -158,11 +158,11 @@ function castFoundForFree(
   found: CardInstance,
   playerId: 0 | 1,
 ): EffectResult {
-  const handAfter = state.players[playerId]!.hand.filter(c => c.instanceId !== found.instanceId);
+  const handAfter = state.players[playerId].hand.filter(c => c.instanceId !== found.instanceId);
   const movedToDiscard = setPlayer(state, playerId, {
-    ...state.players[playerId]!,
+    ...state.players[playerId],
     hand: handAfter,
-    discardPile: [...state.players[playerId]!.discardPile, found],
+    discardPile: [...state.players[playerId].discardPile, found],
   });
   const events: GameEvent[] = [{ type: 'SPELL_CAST', cardInstanceId: found.instanceId, playerId }];
   let current = movedToDiscard;
@@ -203,7 +203,7 @@ export function executeShuffleIntoDeck(
   context: EffectContext,
 ): EffectResult {
   const playerId = context.controllerId;
-  const player = state.players[playerId]!;
+  const player = state.players[playerId];
   const source = effect.source === 'discard' ? player.discardPile : player.hand;
   if (source.length === 0) return { newState: state, events: [] };
 
@@ -248,7 +248,7 @@ export function executeDeployFromDeck(
   context: EffectContext,
 ): EffectResult {
   const playerId = context.controllerId;
-  const player = state.players[playerId]!;
+  const player = state.players[playerId];
   const characters = player.mainDeck.filter(c => c.cardType === 'C');
   const referenceCost = resolveReferenceCost(player, effect.filter);
   const matches = applyFilter(characters, effect.filter, context, referenceCost);
@@ -296,7 +296,7 @@ export function executeCopyCard(
   context: EffectContext,
 ): EffectResult {
   const playerId = context.controllerId;
-  const player = state.players[playerId]!;
+  const player = state.players[playerId];
   const pile = effect.source === 'discard' ? player.discardPile : player.mainDeck;
   const matches = applyFilter(pile, effect.filter, context);
   if (matches.length === 0) return { newState: state, events: [] };

@@ -42,7 +42,7 @@ export function expireModifiers(
   playerIndex: 0 | 1,
   boundary: TimedBoundary,
 ): GameState {
-  const player = state.players[playerIndex]!;
+  const player = state.players[playerIndex];
   const strip = (c: CardInstance | null): CardInstance | null =>
     c === null ? null : stripCardModifiers(c, boundary);
   const newPlayers = [...state.players] as [GameState['players'][0], GameState['players'][1]];

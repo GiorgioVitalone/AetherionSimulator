@@ -55,8 +55,8 @@ function countValue(
       return countEventsThisTurn(state, 'SPELL_CAST');
     case 'empty_slots': {
       const player = counting.side === 'enemy'
-        ? state.players[context.controllerId === 0 ? 1 : 0]!
-        : state.players[context.controllerId]!;
+        ? state.players[context.controllerId === 0 ? 1 : 0]
+        : state.players[context.controllerId];
       const zoneCards = getCardsInZone(player.zones, counting.zone);
       // Capacity = live zone-array length (respects a zone-capacity override),
       // identical to ZONE_SLOTS under the default 3/2 board.
@@ -125,7 +125,7 @@ function countCardsInZone(
   const playerIndex = counting.side === 'enemy'
     ? (controllerId === 0 ? 1 : 0)
     : controllerId;
-  const player = state.players[playerIndex]!;
+  const player = state.players[playerIndex];
 
   switch (counting.zone) {
     case 'hand':

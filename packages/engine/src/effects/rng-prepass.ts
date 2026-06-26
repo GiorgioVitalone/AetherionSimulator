@@ -110,7 +110,7 @@ function randomPool(
         ? [context.controllerId === 0 ? 1 : 0]
         : [context.controllerId];
   return indices.flatMap(i => {
-    const player = state.players[i]!;
+    const player = state.players[i];
     return target.zone === 'hand' ? player.hand : getAllCards(player.zones);
   });
 }

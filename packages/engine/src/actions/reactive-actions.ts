@@ -42,7 +42,7 @@ export function computeReactiveActions(
   state: GameState,
   responderId: 0 | 1,
 ): readonly ReactiveOption[] {
-  const player = state.players[responderId]!;
+  const player = state.players[responderId];
   const enemyId = responderId === 0 ? 1 : 0;
   const hasEnemySpell = state.stack.some(
     i => i.type === 'spell' && i.controllerId === enemyId,

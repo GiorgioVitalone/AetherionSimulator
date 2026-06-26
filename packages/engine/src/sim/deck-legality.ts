@@ -58,34 +58,59 @@ function copyLimitFor(rarity: string): number {
   return rarity === 'Legendary' ? LEGENDARY_COPY_LIMIT : COPY_LIMIT;
 }
 
-function checkMain(ids: readonly number[], index: CardIndex, hero: HeroFacts, errors: string[]): void {
+function checkMain(
+  ids: readonly number[],
+  index: CardIndex,
+  hero: HeroFacts,
+  errors: string[],
+): void {
   if (ids.length < MAIN_MIN || ids.length > MAIN_MAX) {
-    errors.push(`main deck size ${ids.length} outside ${MAIN_MIN}-${MAIN_MAX}`);
+    errors.push(
+      `main deck size ${String(ids.length)} outside ${String(MAIN_MIN)}-${String(MAIN_MAX)}`,
+    );
   }
   const counts = new Map<number, number>();
   for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
   for (const [id, n] of counts) {
     const card = index.card(id);
-    if (!card) { errors.push(`unknown main-deck card id ${id}`); continue; }
-    if (card.cardType === 'R') { errors.push(`resource card ${id} in main deck`); continue; }
+    if (!card) {
+      errors.push(`unknown main-deck card id ${String(id)}`);
+      continue;
+    }
+    if (card.cardType === 'R') {
+      errors.push(`resource card ${String(id)} in main deck`);
+      continue;
+    }
     if (n > copyLimitFor(card.rarity)) {
-      errors.push(`${n} copies of ${id} exceeds limit ${copyLimitFor(card.rarity)}`);
+      errors.push(
+        `${String(n)} copies of ${String(id)} exceeds limit ${String(copyLimitFor(card.rarity))}`,
+      );
     }
     if (card.faction !== hero.faction) {
-      errors.push(`card ${id} faction ${card.faction} != hero ${hero.faction}`);
+      errors.push(`card ${String(id)} faction ${card.faction} != hero ${hero.faction}`);
     }
   }
 }
 
-function checkResources(ids: readonly number[], index: CardIndex, hero: HeroFacts, errors: string[]): void {
+function checkResources(
+  ids: readonly number[],
+  index: CardIndex,
+  hero: HeroFacts,
+  errors: string[],
+): void {
   if (ids.length !== RESOURCE_DECK_SIZE) {
-    errors.push(`resource deck size ${ids.length} != ${RESOURCE_DECK_SIZE}`);
+    errors.push(`resource deck size ${String(ids.length)} != ${String(RESOURCE_DECK_SIZE)}`);
   }
   for (const id of ids) {
     const card = index.card(id);
-    if (!card || card.cardType !== 'R') { errors.push(`non-resource card ${id} in resource deck`); continue; }
+    if (!card || card.cardType !== 'R') {
+      errors.push(`non-resource card ${String(id)} in resource deck`);
+      continue;
+    }
     if (card.resourceType !== hero.resourceType) {
-      errors.push(`resource ${id} type ${card.resourceType} != faction ${hero.resourceType}`);
+      errors.push(
+        `resource ${String(id)} type ${String(card.resourceType)} != faction ${hero.resourceType}`,
+      );
     }
   }
 }
@@ -95,7 +120,7 @@ export function validateDeck(selection: DeckSelection, index: CardIndex): Legali
   const errors: string[] = [];
   const hero = index.hero(selection.heroDefId);
   if (!hero) {
-    return { legal: false, errors: [`unknown hero id ${selection.heroDefId}`] };
+    return { legal: false, errors: [`unknown hero id ${String(selection.heroDefId)}`] };
   }
   if (selection.faction != null && selection.faction !== hero.faction) {
     errors.push(`selection faction ${selection.faction} != hero faction ${hero.faction}`);

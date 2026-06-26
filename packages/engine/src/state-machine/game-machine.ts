@@ -35,17 +35,15 @@ export const gameMachine = setup({
     input: {} as { readonly gameState: GameState },
   },
   guards: {
-    isFirstPlayerFirstTurn: ({ context }) =>
-      context.gameState.turnState.firstPlayerFirstTurn,
+    isFirstPlayerFirstTurn: ({ context }) => context.gameState.turnState.firstPlayerFirstTurn,
     handExceedsLimit: ({ context }) => {
-      const player = context.gameState.players[context.gameState.activePlayerIndex]!;
+      const player = context.gameState.players[context.gameState.activePlayerIndex];
       return player.hand.length > MAX_HAND_SIZE;
     },
     hasWinner: ({ context }) => context.gameState.winner !== null,
-    windowOpen: ({ context }) =>
-      context.gameState.pendingPriority != null,
+    windowOpen: ({ context }) => context.gameState.pendingPriority != null,
     mainDeckEmpty: ({ context }) => {
-      const player = context.gameState.players[context.gameState.activePlayerIndex]!;
+      const player = context.gameState.players[context.gameState.activePlayerIndex];
       return player.mainDeck.length === 0;
     },
   },
@@ -92,7 +90,7 @@ export const gameMachine = setup({
         return {
           gameState: {
             ...context.gameState,
-            winner: (context.gameState.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
+            winner: context.gameState.activePlayerIndex === 0 ? 1 : 0,
           },
           pendingChoice: null,
         };
@@ -154,24 +152,22 @@ export const gameMachine = setup({
     removeTemps: assign({
       gameState: ({ context }) => removeTemporaryResources(context.gameState),
     }),
-    fireScheduled: assign(
-      ({ context }, params: { readonly timing: ScheduledTiming['type'] }) => {
-        const result = runScheduledEffects(context.gameState, params.timing);
-        return {
-          gameState: {
-            ...result.state,
-            log: [...result.state.log, ...result.events],
-          },
-        };
-      },
-    ),
+    fireScheduled: assign(({ context }, params: { readonly timing: ScheduledTiming['type'] }) => {
+      const result = runScheduledEffects(context.gameState, params.timing);
+      return {
+        gameState: {
+          ...result.state,
+          log: [...result.state.log, ...result.events],
+        },
+      };
+    }),
     setHandSizeChoice: assign(({ context }) => {
-      const player = context.gameState.players[context.gameState.activePlayerIndex]!;
+      const player = context.gameState.players[context.gameState.activePlayerIndex];
       const excess = player.hand.length - MAX_HAND_SIZE;
       const choice: PendingChoice = {
         type: 'discard_to_hand_limit',
         playerId: context.gameState.activePlayerIndex,
-        options: player.hand.map(c => ({
+        options: player.hand.map((c) => ({
           id: c.instanceId,
           label: c.name,
           instanceId: c.instanceId,
@@ -210,7 +206,7 @@ export const gameMachine = setup({
       return {
         gameState: {
           ...context.gameState,
-          winner: (event.playerId === 0 ? 1 : 0) as 0 | 1,
+          winner: event.playerId === 0 ? 1 : 0,
         },
       };
     }),
@@ -239,11 +235,7 @@ export const gameMachine = setup({
           {
             // After player 1 decides, transition based on game state
             actions: assign(({ context, event }) => {
-              const newState = applyMulligan(
-                context.gameState,
-                event.playerId,
-                event.keep,
-              );
+              const newState = applyMulligan(context.gameState, event.playerId, event.keep);
               return {
                 gameState: newState,
                 pendingChoice: newState.pendingChoice,
@@ -294,7 +286,7 @@ export const gameMachine = setup({
               actions: assign(({ context }) => ({
                 gameState: {
                   ...context.gameState,
-                  winner: (context.gameState.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
+                  winner: context.gameState.activePlayerIndex === 0 ? 1 : 0,
                 },
               })),
             },
@@ -398,18 +390,13 @@ export const gameMachine = setup({
               target: 'passTurn',
               actions: [
                 assign(({ context, event }) => {
-                  if (event.type !== 'PLAYER_RESPONSE') return {};
-                  const player = context.gameState.players[context.gameState.activePlayerIndex]!;
+                  const player = context.gameState.players[context.gameState.activePlayerIndex];
                   const discardIds = event.response.selectedOptionIds;
-                  const discarded = player.hand.filter(c =>
-                    discardIds.includes(c.instanceId),
-                  );
-                  const remaining = player.hand.filter(
-                    c => !discardIds.includes(c.instanceId),
-                  );
+                  const discarded = player.hand.filter((c) => discardIds.includes(c.instanceId));
+                  const remaining = player.hand.filter((c) => !discardIds.includes(c.instanceId));
                   const newPlayers = [...context.gameState.players] as [
-                    typeof context.gameState.players[0],
-                    typeof context.gameState.players[1],
+                    (typeof context.gameState.players)[0],
+                    (typeof context.gameState.players)[1],
                   ];
                   newPlayers[context.gameState.activePlayerIndex] = {
                     ...player,

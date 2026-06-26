@@ -12,7 +12,6 @@ import type {
   RegisteredTrigger,
   TemporaryResource,
 } from '../types/game-state.js';
-import type { TriggeredAbilityDSL } from '../types/ability.js';
 import type { PlayerAction } from './types.js';
 import type { Effect, ScheduledTiming } from '../types/effects.js';
 import type { AbilityDSL } from '../types/ability.js';
@@ -32,7 +31,7 @@ import { isStunned, consumeStun, isSlowed, tickStatusEffects } from '../runtime/
 import { getAllRegisteredTriggers, triggerRateLimits } from '../events/trigger-registry.js';
 import { ELITE_HIGH_GROUND_SURCHARGE } from '../actions/available-actions.js';
 import { MAX_HAND_SIZE } from '../types/game-state.js';
-import type { ResourceCost } from '../types/common.js';
+import type { ResourceCost, ZoneType } from '../types/common.js';
 
 // Variable (X) cost: the chosen X is paid as additional flexible resource on top
 // of the base cost, and threaded to effects as `context.xPaid`. The engine's
@@ -80,14 +79,14 @@ export function expireUpkeepModifiers(state: GameState): GameState {
 }
 
 export function refreshCards(state: GameState): GameState {
-  return updateActivePlayer(state, player => ({
+  return updateActivePlayer(state, (player) => ({
     ...player,
     zones: {
       reserve: player.zones.reserve.map(refreshCard),
       frontline: player.zones.frontline.map(refreshCard),
       highGround: player.zones.highGround.map(refreshCard),
     },
-    resourceBank: player.resourceBank.map(r => ({ ...r, exhausted: false })),
+    resourceBank: player.resourceBank.map((r) => ({ ...r, exhausted: false })),
   }));
 }
 
@@ -142,10 +141,10 @@ export function generateReserveEnergy(state: GameState): {
   readonly state: GameState;
   readonly events: readonly GameEvent[];
 } {
-  const player = state.players[state.activePlayerIndex]!;
+  const player = state.players[state.activePlayerIndex];
   const events: GameEvent[] = [];
   const tempGained: TemporaryResource[] = [];
-  const reserve = player.zones.reserve.map(card => {
+  const reserve = player.zones.reserve.map((card) => {
     if (card === null || !isReserveEnergyEligible(card)) return card;
     const resourceType = cardResourceType(card);
     tempGained.push({ resourceType, amount: 1 });
@@ -173,14 +172,14 @@ export function generateReserveEnergy(state: GameState): {
 function isReserveEnergyEligible(card: CardInstance): boolean {
   if (card.cardType !== 'C') return false;
   if (card.exhausted || card.summoningSick) return false;
-  return !card.traits.includes('sniper') && !card.grantedTraits.some(g => g.trait === 'sniper');
+  return !card.traits.includes('sniper') && !card.grantedTraits.some((g) => g.trait === 'sniper');
 }
 
 export function drawResourceCard(state: GameState): {
   readonly state: GameState;
   readonly events: readonly GameEvent[];
 } {
-  const player = state.players[state.activePlayerIndex]!;
+  const player = state.players[state.activePlayerIndex];
   // DESIGN-SWEEP (config.resourceRampBonus N): draw 1 + N this Upkeep (faster ramp),
   // never past the live Resource Deck. Absent / <= 0 ⇒ exactly 1 (byte-identical).
   const bonus = state.config?.resourceRampBonus ?? 0;
@@ -199,7 +198,7 @@ export function drawResourceCard(state: GameState): {
 
   return {
     state: setPlayer(state, state.activePlayerIndex, newPlayer),
-    events: drawn.map(d => ({
+    events: drawn.map((d) => ({
       type: 'RESOURCE_GAINED' as const,
       playerId: state.activePlayerIndex,
       resourceType: d.resourceType,
@@ -213,7 +212,7 @@ export function drawMainDeckCard(state: GameState): {
   readonly events: readonly GameEvent[];
   readonly deckEmpty: boolean;
 } {
-  const player = state.players[state.activePlayerIndex]!;
+  const player = state.players[state.activePlayerIndex];
   if (player.mainDeck.length === 0) {
     return { state, events: [], deckEmpty: true };
   }
@@ -227,11 +226,13 @@ export function drawMainDeckCard(state: GameState): {
 
   return {
     state: setPlayer(state, state.activePlayerIndex, newPlayer),
-    events: [{
-      type: 'CARD_DRAWN',
-      playerId: state.activePlayerIndex,
-      count: 1,
-    }],
+    events: [
+      {
+        type: 'CARD_DRAWN',
+        playerId: state.activePlayerIndex,
+        count: 1,
+      },
+    ],
     deckEmpty: false,
   };
 }
@@ -270,9 +271,10 @@ export function executeReactiveResponse(
   return { state: finalState, events: [...resolved.events, ...dispatched.events] };
 }
 
-export function executePriorityPass(
-  state: GameState,
-): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+export function executePriorityPass(state: GameState): {
+  readonly state: GameState;
+  readonly events: readonly GameEvent[];
+} {
   const triggerPool = getAllRegisteredTriggers(state);
   const resolved = passPriority(state);
   const dispatched = dispatchTriggers(resolved.state, resolved.events, 0, triggerPool);
@@ -288,8 +290,8 @@ function castReactiveSpell(
   action: { cardInstanceId: string; xValue?: number; selectedTargetIds?: readonly string[] },
   responderId: 0 | 1,
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const player = state.players[responderId]!;
-  const cardIndex = player.hand.findIndex(c => c.instanceId === action.cardInstanceId);
+  const player = state.players[responderId];
+  const cardIndex = player.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
@@ -380,12 +382,15 @@ function resolvePlayerAction(
 
 let heroTriggerCounter = 0;
 
-function buildHeroTriggers(hero: HeroState, abilities: readonly import('../types/ability.js').AbilityDSL[]): readonly RegisteredTrigger[] {
+function buildHeroTriggers(
+  hero: HeroState,
+  abilities: readonly AbilityDSL[],
+): readonly RegisteredTrigger[] {
   const triggers: RegisteredTrigger[] = [];
   for (let i = 0; i < abilities.length; i++) {
     const ability = abilities[i]!;
     if (ability.type !== 'triggered') continue;
-    const t = ability as TriggeredAbilityDSL;
+    const t = ability;
     heroTriggerCounter++;
     triggers.push({
       id: `hero_trigger_${String(heroTriggerCounter)}`,
@@ -401,13 +406,19 @@ function buildHeroTriggers(hero: HeroState, abilities: readonly import('../types
   return triggers;
 }
 
-function executeDeclareTransform(
-  state: GameState,
-): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const player = state.players[state.activePlayerIndex]!;
+function executeDeclareTransform(state: GameState): {
+  readonly state: GameState;
+  readonly events: readonly GameEvent[];
+} {
+  const player = state.players[state.activePlayerIndex];
   const hero = player.hero;
   const data = hero.transformData;
-  if (data === undefined || hero.transformed || !hero.canTransformThisGame || hero.transformedThisTurn) {
+  if (
+    data === undefined ||
+    hero.transformed ||
+    !hero.canTransformThisGame ||
+    hero.transformedThisTurn
+  ) {
     return { state, events: [] };
   }
 
@@ -424,18 +435,21 @@ function executeDeclareTransform(
   };
   const withTriggers: HeroState = {
     ...transformedHero,
-    registeredTriggers: buildHeroTriggers(transformedHero, data.abilities).map(
-      t => ({ ...t, ownerPlayerId: state.activePlayerIndex }),
-    ),
+    registeredTriggers: buildHeroTriggers(transformedHero, data.abilities).map((t) => ({
+      ...t,
+      ownerPlayerId: state.activePlayerIndex,
+    })),
   };
 
   return {
     state: setPlayer(state, state.activePlayerIndex, { ...player, hero: withTriggers }),
-    events: [{
-      type: 'ABILITY_ACTIVATED',
-      cardInstanceId: `hero_${String(data.cardDefId)}`,
-      abilityIndex: -1,
-    }],
+    events: [
+      {
+        type: 'ABILITY_ACTIVATED',
+        cardInstanceId: `hero_${String(data.cardDefId)}`,
+        abilityIndex: -1,
+      },
+    ],
   };
 }
 
@@ -460,10 +474,15 @@ function refreshFreeMoves(card: CardInstance): number {
 
 function executeDeploy(
   state: GameState,
-  action: { cardInstanceId: string; zone: import('../types/common.js').ZoneType; slotIndex: number; xValue?: number },
+  action: {
+    cardInstanceId: string;
+    zone: ZoneType;
+    slotIndex: number;
+    xValue?: number;
+  },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const player = state.players[state.activePlayerIndex]!;
-  const cardIndex = player.hand.findIndex(c => c.instanceId === action.cardInstanceId);
+  const player = state.players[state.activePlayerIndex];
+  const cardIndex = player.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
@@ -471,11 +490,14 @@ function executeDeploy(
   // Elite direct High-Ground deploy costs +2 (Rulebook 16). Frontline/Reserve free.
   const eliteSurcharge =
     action.zone === 'high_ground' &&
-    (card.traits.includes('elite') || card.grantedTraits.some(g => g.trait === 'elite'))
+    (card.traits.includes('elite') || card.grantedTraits.some((g) => g.trait === 'elite'))
       ? ELITE_HIGH_GROUND_SURCHARGE
       : 0;
   const baseCost = effectiveCost(player, card);
-  const surchargedCost: ResourceCost = { ...baseCost, flexible: baseCost.flexible + eliteSurcharge };
+  const surchargedCost: ResourceCost = {
+    ...baseCost,
+    flexible: baseCost.flexible + eliteSurcharge,
+  };
   const deployCost = addXCost(surchargedCost, xPaid ?? 0);
   if (!canAfford(player, deployCost)) return { state, events: [] };
   const paidPlayer = consumeReductions(payCost(player, deployCost), card);
@@ -519,7 +541,13 @@ function executeDeploy(
     zone: action.zone,
     playerId: state.activePlayerIndex,
   };
-  const ran = runAbilityEffects(deployedState, card.instanceId, abilityEffects(card.abilities, true), state.activePlayerIndex, xPaid);
+  const ran = runAbilityEffects(
+    deployedState,
+    card.instanceId,
+    abilityEffects(card.abilities, true),
+    state.activePlayerIndex,
+    xPaid,
+  );
   return { state: ran.state, events: [deployEvent, ...ran.events] };
 }
 
@@ -527,8 +555,8 @@ function executeCastSpell(
   state: GameState,
   action: { cardInstanceId: string; xValue?: number; selectedTargetIds?: readonly string[] },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const player = state.players[state.activePlayerIndex]!;
-  const cardIndex = player.hand.findIndex(c => c.instanceId === action.cardInstanceId);
+  const player = state.players[state.activePlayerIndex];
+  const cardIndex = player.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
@@ -576,8 +604,8 @@ function executeAttachEquipment(
   state: GameState,
   action: { cardInstanceId: string; targetInstanceId: string; xValue?: number },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const player = state.players[state.activePlayerIndex]!;
-  const cardIndex = player.hand.findIndex(c => c.instanceId === action.cardInstanceId);
+  const player = state.players[state.activePlayerIndex];
+  const cardIndex = player.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
   if (cardIndex === -1) return { state, events: [] };
 
   const equipCard = player.hand[cardIndex]!;
@@ -621,9 +649,17 @@ function executeAttachEquipment(
   };
 
   const attachedState = setPlayer(state, state.activePlayerIndex, newPlayer);
-  const replacedEvents: GameEvent[] = replaced === null ? [] : [
-    { type: 'CARD_DESTROYED', cardInstanceId: replaced.instanceId, cause: 'effect', playerId: replaced.owner },
-  ];
+  const replacedEvents: GameEvent[] =
+    replaced === null
+      ? []
+      : [
+          {
+            type: 'CARD_DESTROYED',
+            cardInstanceId: replaced.instanceId,
+            cause: 'effect',
+            playerId: replaced.owner,
+          },
+        ];
   const attachEvent: GameEvent = {
     type: 'EQUIPMENT_ATTACHED',
     equipmentId: equipCard.instanceId,
@@ -651,15 +687,22 @@ function executeRemoveEquipment(
   const holder = findEquipmentHolder(state, state.activePlayerIndex, action.equipmentInstanceId);
   if (holder === null) return { state, events: [] };
   const equip = holder.equipment!;
-  const cleared = updateCardInState(state, holder.instanceId, c => ({ ...c, equipment: null }));
-  const player = cleared.players[state.activePlayerIndex]!;
+  const cleared = updateCardInState(state, holder.instanceId, (c) => ({ ...c, equipment: null }));
+  const player = cleared.players[state.activePlayerIndex];
   const withDiscard = setPlayer(cleared, state.activePlayerIndex, {
     ...player,
     discardPile: [...player.discardPile, equip],
   });
   return {
     state: recomputeAuras(withDiscard),
-    events: [{ type: 'CARD_DESTROYED', cardInstanceId: equip.instanceId, cause: 'effect', playerId: equip.owner }],
+    events: [
+      {
+        type: 'CARD_DESTROYED',
+        cardInstanceId: equip.instanceId,
+        cause: 'effect',
+        playerId: equip.owner,
+      },
+    ],
   };
 }
 
@@ -675,17 +718,26 @@ function executeTransferEquipment(
   if (holder === null || target === null || target.equipment !== null) return { state, events: [] };
   const equip = holder.equipment!;
   if (equip.transferredThisTurn === true) return { state, events: [] };
-  const player = state.players[state.activePlayerIndex]!;
+  const player = state.players[state.activePlayerIndex];
   if (!meetsEquipRequirement(equip, target) || !canAfford(player, effectiveCost(player, equip))) {
     return { state, events: [] };
   }
-  const paid = setPlayer(state, state.activePlayerIndex, payCost(player, effectiveCost(player, equip)));
+  const paid = setPlayer(
+    state,
+    state.activePlayerIndex,
+    payCost(player, effectiveCost(player, equip)),
+  );
   const movedEquip: CardInstance = { ...equip, transferredThisTurn: true };
-  const detached = updateCardInState(paid, holder.instanceId, c => ({ ...c, equipment: null }));
-  const attached = updateCardInState(detached, target.instanceId, c => ({ ...c, equipment: movedEquip }));
+  const detached = updateCardInState(paid, holder.instanceId, (c) => ({ ...c, equipment: null }));
+  const attached = updateCardInState(detached, target.instanceId, (c) => ({
+    ...c,
+    equipment: movedEquip,
+  }));
   return {
     state: recomputeAuras(attached),
-    events: [{ type: 'EQUIPMENT_ATTACHED', equipmentId: equip.instanceId, targetId: target.instanceId }],
+    events: [
+      { type: 'EQUIPMENT_ATTACHED', equipmentId: equip.instanceId, targetId: target.instanceId },
+    ],
   };
 }
 
@@ -694,7 +746,7 @@ function findEquipmentHolder(
   playerIndex: 0 | 1,
   equipmentInstanceId: string,
 ): CardInstance | null {
-  const player = state.players[playerIndex]!;
+  const player = state.players[playerIndex];
   for (const zone of [player.zones.reserve, player.zones.frontline, player.zones.highGround]) {
     for (const c of zone) {
       if (c !== null && c.equipment?.instanceId === equipmentInstanceId) return c;
@@ -705,30 +757,34 @@ function findEquipmentHolder(
 
 function executeMove(
   state: GameState,
-  action: { cardInstanceId: string; toZone: import('../types/common.js').ZoneType },
+  action: { cardInstanceId: string; toZone: ZoneType },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const player = state.players[state.activePlayerIndex]!;
+  const player = state.players[state.activePlayerIndex];
   // Slowed characters cannot move (Rulebook 16).
   const mover = findOnBattlefield(state, action.cardInstanceId);
   if (mover !== null && isSlowed(mover)) return { state, events: [] };
   const newZones = moveCard(player.zones, action.cardInstanceId, action.toZone);
 
-  const fromLoc = (['reserve', 'frontline', 'high_ground'] as const)
-    .find(z => {
-      const arr = z === 'reserve' ? player.zones.reserve
-        : z === 'frontline' ? player.zones.frontline
+  const fromLoc = (['reserve', 'frontline', 'high_ground'] as const).find((z) => {
+    const arr =
+      z === 'reserve'
+        ? player.zones.reserve
+        : z === 'frontline'
+          ? player.zones.frontline
           : player.zones.highGround;
-      return arr.some(c => c?.instanceId === action.cardInstanceId);
-    });
+    return arr.some((c) => c?.instanceId === action.cardInstanceId);
+  });
 
   return {
     state: setPlayer(state, state.activePlayerIndex, { ...player, zones: newZones }),
-    events: [{
-      type: 'CARD_MOVED',
-      cardInstanceId: action.cardInstanceId,
-      fromZone: fromLoc ?? 'frontline',
-      toZone: action.toZone,
-    }],
+    events: [
+      {
+        type: 'CARD_MOVED',
+        cardInstanceId: action.cardInstanceId,
+        fromZone: fromLoc ?? 'frontline',
+        toZone: action.toZone,
+      },
+    ],
   };
 }
 
@@ -745,14 +801,15 @@ function executeActivateAbility(
   const heroAbilities = heroAbilitiesFor(state, action.cardInstanceId);
   const abilities = heroAbilities ?? findOnBattlefield(state, action.cardInstanceId)?.abilities;
   const ability = abilities?.[action.abilityIndex];
-  const effects = ability && (ability.type === 'triggered' || ability.type === 'aura') ? ability.effects : [];
+  const effects =
+    ability && (ability.type === 'triggered' || ability.type === 'aura') ? ability.effects : [];
 
   // Pay the activated ability's cost (mana/energy/flexible, plus any X). Affordability
   // is already gated in computeActivateOptions, so this only deducts — matching the
   // deploy/cast/equip pipeline. A 0-cost ability (e.g. Kaelthar idx0) pays nothing.
   let payState = state;
   if (ability?.type === 'triggered' && ability.trigger.type === 'activated') {
-    const player = state.players[state.activePlayerIndex]!;
+    const player = state.players[state.activePlayerIndex];
     const cost = addXCost(ability.trigger.cost, action.xValue ?? 0);
     if (!canAfford(player, cost)) return { state, events: [] };
     payState = setPlayer(state, state.activePlayerIndex, payCost(player, cost));
@@ -762,20 +819,26 @@ function executeActivateAbility(
   // lifts Stealth's untargetability (Rulebook 16). Only battlefield cards carry
   // these; the Hero pseudo-id is not on the battlefield and never exhausts here.
   if (heroAbilities === null && findOnBattlefield(payState, action.cardInstanceId) !== null) {
-    payState = updateCardInState(payState, action.cardInstanceId, c => ({
+    payState = updateCardInState(payState, action.cardInstanceId, (c) => ({
       ...c,
       hasActed: true,
       exhausted: true,
     }));
   }
 
-  const ran = runAbilityEffects(payState, action.cardInstanceId, effects, payState.activePlayerIndex, action.xValue);
+  const ran = runAbilityEffects(
+    payState,
+    action.cardInstanceId,
+    effects,
+    payState.activePlayerIndex,
+    action.xValue,
+  );
   return { state: ran.state, events: [activatedEvent, ...ran.events] };
 }
 
 /** If `id` addresses the active player's Hero, return its abilities; else null. */
 function heroAbilitiesFor(state: GameState, id: string): readonly AbilityDSL[] | null {
-  const hero = state.players[state.activePlayerIndex]!.hero;
+  const hero = state.players[state.activePlayerIndex].hero;
   return id === `hero_${String(hero.cardDefId)}` ? hero.abilities : null;
 }
 
@@ -783,8 +846,8 @@ function executeDiscardForEnergy(
   state: GameState,
   action: { cardInstanceId: string },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const player = state.players[state.activePlayerIndex]!;
-  const cardIndex = player.hand.findIndex(c => c.instanceId === action.cardInstanceId);
+  const player = state.players[state.activePlayerIndex];
+  const cardIndex = player.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
@@ -807,17 +870,19 @@ function executeDiscardForEnergy(
 
   return {
     state: newState,
-    events: [{
-      type: 'CARD_DISCARDED',
-      cardInstanceId: card.instanceId,
-      playerId: state.activePlayerIndex,
-    }],
+    events: [
+      {
+        type: 'CARD_DISCARDED',
+        cardInstanceId: card.instanceId,
+        playerId: state.activePlayerIndex,
+      },
+    ],
   };
 }
 
 function executeDeclareAttack(
   state: GameState,
-  action: { attackerInstanceId: string; targetId: string | 'hero' },
+  action: { attackerInstanceId: string; targetId: string },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
   const result = resolveCombat(state, action.attackerInstanceId, action.targetId);
   return { state: result.newState, events: result.events };
@@ -826,7 +891,7 @@ function executeDeclareAttack(
 // ── End Phase Actions ───────────────────────────────────────────────────────
 
 export function removeTemporaryResources(state: GameState): GameState {
-  return updateActivePlayer(state, player => ({
+  return updateActivePlayer(state, (player) => ({
     ...player,
     temporaryResources: [],
   }));
@@ -848,18 +913,15 @@ export function checkHandSize(state: GameState): {
   readonly needsDiscard: boolean;
   readonly count: number;
 } {
-  const player = state.players[state.activePlayerIndex]!;
+  const player = state.players[state.activePlayerIndex];
   const excess = player.hand.length - MAX_HAND_SIZE;
   return { needsDiscard: excess > 0, count: Math.max(0, excess) };
 }
 
-export function discardCards(
-  state: GameState,
-  cardIds: readonly string[],
-): GameState {
-  return updateActivePlayer(state, player => {
+export function discardCards(state: GameState, cardIds: readonly string[]): GameState {
+  return updateActivePlayer(state, (player) => {
     const discarded: CardInstance[] = [];
-    const remaining = player.hand.filter(c => {
+    const remaining = player.hand.filter((c) => {
       if (cardIds.includes(c.instanceId)) {
         discarded.push(c);
         return false;
@@ -878,7 +940,7 @@ export function passTurn(state: GameState): GameState {
   const nextPlayer = state.activePlayerIndex === 0 ? 1 : 0;
   return {
     ...state,
-    activePlayerIndex: nextPlayer as 0 | 1,
+    activePlayerIndex: nextPlayer,
     turnNumber: state.turnNumber + 1,
     // Per-turn flags reset at the turn boundary (gainedTemporaryResource /
     // usedTemporaryResource are scoped to a single turn; absent ≡ none).
@@ -964,11 +1026,7 @@ export function runScheduledEffects(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function setPlayer(
-  state: GameState,
-  index: 0 | 1,
-  player: PlayerState,
-): GameState {
+function setPlayer(state: GameState, index: 0 | 1, player: PlayerState): GameState {
   const newPlayers = [...state.players] as [PlayerState, PlayerState];
   newPlayers[index] = player;
   return { ...state, players: newPlayers };
@@ -978,6 +1036,6 @@ function updateActivePlayer(
   state: GameState,
   updater: (player: PlayerState) => PlayerState,
 ): GameState {
-  const player = state.players[state.activePlayerIndex]!;
+  const player = state.players[state.activePlayerIndex];
   return setPlayer(state, state.activePlayerIndex, updater(player));
 }
