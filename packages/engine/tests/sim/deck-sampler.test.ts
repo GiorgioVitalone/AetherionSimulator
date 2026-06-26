@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 const samplerPath = join(here, '..', '..', 'deck-sampler.mjs');
 const distLegality = join(here, '..', '..', 'dist', 'sim', 'deck-legality.js');
-const cardsPath = '/Users/gvitalone/Projects/personal/temp/aetherion-cards.json';
+const cardsPath = new URL('../../sim-data/aetherion-cards.json', import.meta.url);
 
 const ready = existsSync(samplerPath) && existsSync(distLegality) && existsSync(cardsPath);
 const d = ready ? describe : describe.skip;

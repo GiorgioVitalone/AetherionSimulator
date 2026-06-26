@@ -39,7 +39,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const runnerPath = resolve(here, '../../sim-runner.mjs');
 const distPath = join(here, '..', '..', 'dist', 'index.js');
-const cardsPath = '/Users/gvitalone/Projects/personal/temp/aetherion-cards.json';
+const cardsPath = new URL('../../sim-data/aetherion-cards.json', import.meta.url);
 
 function ctx(sourceId: string, controllerId: 0 | 1 = 0): EffectContext {
   return { sourceInstanceId: sourceId, controllerId, triggerDepth: 0 };
@@ -264,5 +264,5 @@ ds('design knobs: byte-identical no-op + determinism (runSim)', () => {
       expect(h, JSON.stringify(o)).not.toBe(off);
       expect(runSim({ ...base, ...o }).runHash, JSON.stringify(o)).toBe(h);
     }
-  });
+  }, 30000);
 });

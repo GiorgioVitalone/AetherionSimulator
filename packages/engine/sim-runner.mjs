@@ -100,7 +100,9 @@ import { summarizeStats } from './dist/sim/summarize-stats.js';
 import { getDeck } from './deck-loader.mjs';
 import { makeRolloutPilot } from './pilot-rollout.mjs';
 
-const CARDS = '/Users/gvitalone/Projects/personal/temp/aetherion-cards.json';
+const CARDS = process.env.AETHERION_CARDS
+  ? process.env.AETHERION_CARDS
+  : new URL('./sim-data/aetherion-cards.json', import.meta.url);
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const ENERGY_FACTIONS = new Set(['Verdant']);
 const STEP_CAP = 8000;
@@ -1191,7 +1193,9 @@ if (isMain()) {
     process.exit(ok ? 0 : 1);
   }
   const res = runSim(cfg);
-  writeFileSync('/Users/gvitalone/Projects/personal/temp/game/sim/sim-runner-summary.json', JSON.stringify(res, null, 1));
+  if (process.env.AETHERION_SIM_OUT) {
+    writeFileSync(process.env.AETHERION_SIM_OUT, JSON.stringify(res, null, 1));
+  }
   console.log(`runHash ${res.runHash} | games ${res.games} | parity ${res.paritySpread}% | ${JSON.stringify(res.factionWinPct)}`);
   console.log(`firstPlayer ${res.firstPlayerPct}% | mirrorFP ${res.mirrorFirstPlayerPct}% | decided ${res.decidedPct}% | timeout ${res.timeoutPct}% | avgTurns ${res.gameLength.avg} (median ${res.gameLength.median})`);
   console.log(`snowball leader@10 ${res.snowball.leaderAtTurn10WinPct}% | comeback ${res.snowball.comebackPct}%`);

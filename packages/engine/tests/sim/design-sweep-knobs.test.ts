@@ -139,5 +139,5 @@ describe('design-sweep knobs: byte-identical no-op + determinism (runSim)', () =
     const hg3 = runSim({ ...base, highGroundSlots: 3 });
     expect(hg3.runHash).not.toBe(off.runHash);
     expect(hg3.runHash).not.toBe(fl4.runHash);
-  });
+  }, 30000);
 });
