@@ -157,14 +157,14 @@ function decrementByType(
 }
 
 function ownedCards(state: GameState, playerIndex: 0 | 1): readonly CardInstance[] {
-  const z = state.players[playerIndex]!.zones;
+  const z = state.players[playerIndex].zones;
   return [...z.reserve, ...z.frontline, ...z.highGround].filter(
     (c): c is CardInstance => c !== null,
   );
 }
 
 function findCard(state: GameState, playerIndex: 0 | 1, id: string): CardInstance | null {
-  const z = state.players[playerIndex]!.zones;
+  const z = state.players[playerIndex].zones;
   for (const c of [...z.reserve, ...z.frontline, ...z.highGround]) {
     if (c !== null && c.instanceId === id) return c;
   }
@@ -172,7 +172,7 @@ function findCard(state: GameState, playerIndex: 0 | 1, id: string): CardInstanc
 }
 
 function setCard(state: GameState, playerIndex: 0 | 1, card: CardInstance): GameState {
-  const player = state.players[playerIndex]!;
+  const player = state.players[playerIndex];
   const map = (c: CardInstance | null): CardInstance | null =>
     c !== null && c.instanceId === card.instanceId ? card : c;
   const newPlayers = [...state.players] as [GameState['players'][0], GameState['players'][1]];

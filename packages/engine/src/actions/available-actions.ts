@@ -2,13 +2,9 @@
  * Available Actions — computes all legal actions for the active player.
  * Called each time the UI needs to know what the player can do.
  */
-import type {
-  GameState,
-  PlayerState,
-  CardInstance,
-} from '../types/game-state.js';
+import type { GameState, PlayerState, CardInstance } from '../types/game-state.js';
 import type { ResourceCost, ZoneType, Trait } from '../types/common.js';
-import type { TriggeredAbilityDSL } from '../types/ability.js';
+import type { AbilityDSL } from '../types/ability.js';
 import { hasOpenSlot, getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 import { getValidAttackTargets, type AttackTarget } from '../zones/targeting.js';
 import { canAfford, effectiveCost } from './cost-checker.js';
@@ -74,9 +70,9 @@ export interface AttackOption {
 // ── Main Computation ──────────────────────────────────────────────────────────
 
 export function computeAvailableActions(state: GameState): AvailableActions {
-  const player = state.players[state.activePlayerIndex]!;
+  const player = state.players[state.activePlayerIndex];
   const opponentIndex = state.activePlayerIndex === 0 ? 1 : 0;
-  const opponent = state.players[opponentIndex]!;
+  const opponent = state.players[opponentIndex];
   const isStrategy = state.phase === 'strategy';
   const isAction = state.phase === 'action';
 
@@ -108,7 +104,7 @@ function computeDeployOptions(player: PlayerState, state: GameState): readonly D
 
     // Only offer a slot group the player can actually pay for (the High-Ground
     // group carries the Elite +2 surcharge and may be unaffordable).
-    const validSlots = getValidDeploySlots(player, card, state).filter(g =>
+    const validSlots = getValidDeploySlots(player, card, state).filter((g) =>
       canAfford(player, withSurcharge(baseCost, g.surcharge)),
     );
     if (validSlots.length > 0) {
@@ -159,18 +155,16 @@ function getValidDeploySlots(
 }
 
 function hasElite(card: CardInstance): boolean {
-  return card.traits.includes('elite') || card.grantedTraits.some(g => g.trait === 'elite');
+  return card.traits.includes('elite') || card.grantedTraits.some((g) => g.trait === 'elite');
 }
 
-function getOpenSlotIndices(
-  player: PlayerState,
-  zone: ZoneType,
-): readonly number[] {
-  const arr = zone === 'reserve'
-    ? player.zones.reserve
-    : zone === 'frontline'
-      ? player.zones.frontline
-      : player.zones.highGround;
+function getOpenSlotIndices(player: PlayerState, zone: ZoneType): readonly number[] {
+  const arr =
+    zone === 'reserve'
+      ? player.zones.reserve
+      : zone === 'frontline'
+        ? player.zones.frontline
+        : player.zones.highGround;
 
   const indices: number[] = [];
   for (let i = 0; i < arr.length; i++) {
@@ -197,7 +191,7 @@ function computeSpellOptions(player: PlayerState): readonly CastSpellOption[] {
 
 function computeEquipOptions(player: PlayerState): readonly EquipOption[] {
   const options: EquipOption[] = [];
-  const boardCharacters = getAllCards(player.zones).filter(c => c.cardType === 'C');
+  const boardCharacters = getAllCards(player.zones).filter((c) => c.cardType === 'C');
 
   for (const card of player.hand) {
     if (card.cardType !== 'E') continue;
@@ -208,8 +202,8 @@ function computeEquipOptions(player: PlayerState): readonly EquipOption[] {
     // before the new one attaches (handled at execution). Eligibility honors the
     // equipment's alignment/Tag requirement.
     const targets = boardCharacters
-      .filter(c => meetsEquipRequirement(card, c))
-      .map(c => c.instanceId);
+      .filter((c) => meetsEquipRequirement(card, c))
+      .map((c) => c.instanceId);
 
     if (targets.length > 0) {
       options.push({
@@ -244,7 +238,7 @@ function computeMoveOptions(player: PlayerState): readonly MoveOption[] {
       if (!hasFreeMove && (card.exhausted || card.movedThisTurn)) continue;
 
       const adjacentZones = ADJACENT.get(zone) ?? [];
-      const validDests = adjacentZones.filter(z => hasOpenSlot(player.zones, z));
+      const validDests = adjacentZones.filter((z) => hasOpenSlot(player.zones, z));
 
       if (validDests.length > 0) {
         options.push({
@@ -261,17 +255,22 @@ function computeMoveOptions(player: PlayerState): readonly MoveOption[] {
 
 // ── Ability Activation ────────────────────────────────────────────────────────
 
-function computeActivateOptions(
-  player: PlayerState,
-  state: GameState,
-): readonly ActivateOption[] {
+function computeActivateOptions(player: PlayerState, state: GameState): readonly ActivateOption[] {
   const options: ActivateOption[] = [];
   // Battlefield cards plus the Hero — Hero (Trigger/Ultimate) abilities are
   // activatable in the Strategy Phase and addressed via a `hero_<cardDefId>` id.
   // The Hero is never summoning-sick/exhausted; characters are gated below.
-  const sources: readonly { id: string; abilities: readonly import('../types/ability.js').AbilityDSL[]; card?: CardInstance }[] = [
+  const sources: readonly {
+    id: string;
+    abilities: readonly AbilityDSL[];
+    card?: CardInstance;
+  }[] = [
     { id: heroInstanceId(player), abilities: player.hero.abilities },
-    ...getAllCards(player.zones).map(c => ({ id: c.instanceId, abilities: c.abilities, card: c })),
+    ...getAllCards(player.zones).map((c) => ({
+      id: c.instanceId,
+      abilities: c.abilities,
+      card: c,
+    })),
   ];
 
   for (const src of sources) {
@@ -283,7 +282,7 @@ function computeActivateOptions(
       const ability = src.abilities[i]!;
       if (ability.type !== 'triggered') continue;
 
-      const triggered = ability as TriggeredAbilityDSL;
+      const triggered = ability;
       if (triggered.trigger.type !== 'activated') continue;
 
       const activatedTrigger = triggered.trigger;
@@ -333,7 +332,7 @@ function canActivateFrom(card: CardInstance): boolean {
 /** True if `sourceId`'s ability `abilityIndex` was activated anywhere in the log. */
 function activatedAnyTime(state: GameState, sourceId: string, abilityIndex: number): boolean {
   return state.log.some(
-    e =>
+    (e) =>
       e.type === 'ABILITY_ACTIVATED' &&
       e.cardInstanceId === sourceId &&
       e.abilityIndex === abilityIndex,
@@ -451,18 +450,12 @@ function computeAttackOptions(
 }
 
 function allTraits(card: CardInstance): readonly Trait[] {
-  return [
-    ...card.traits,
-    ...card.grantedTraits.map(g => g.trait),
-  ];
+  return [...card.traits, ...card.grantedTraits.map((g) => g.trait)];
 }
 
 // ── Discard for Energy ────────────────────────────────────────────────────────
 
-function computeCanDiscardForEnergy(
-  player: PlayerState,
-  state: GameState,
-): boolean {
+function computeCanDiscardForEnergy(player: PlayerState, state: GameState): boolean {
   return player.hand.length > 0 && !state.turnState.discardedForEnergy;
 }
 
@@ -485,13 +478,15 @@ function computeCanTransform(
   // OR: ≥5 fewer resource cards than opponent AND no characters on board.
   const myResources = player.resourceBank.length;
   const oppResources = opponent.resourceBank.length;
-  const noCharacters = getAllCards(player.zones).filter(c => c.cardType === 'C').length === 0;
+  const noCharacters = getAllCards(player.zones).filter((c) => c.cardType === 'C').length === 0;
   if (noCharacters && oppResources - myResources >= 5) return true;
 
   // OR (termination knob): once this player's Resource Deck is empty, transform
   // becomes available unconditionally — a comeback enabler that ends stalled games.
-  if (state.config?.terminationMode === 'resource_deck_empty_transform'
-    && player.resourceDeck.length === 0) {
+  if (
+    state.config?.terminationMode === 'resource_deck_empty_transform' &&
+    player.resourceDeck.length === 0
+  ) {
     return true;
   }
 
@@ -499,10 +494,7 @@ function computeCanTransform(
   return matchesPrintedTransformTrigger(state, hero);
 }
 
-function matchesPrintedTransformTrigger(
-  state: GameState,
-  hero: PlayerState['hero'],
-): boolean {
+function matchesPrintedTransformTrigger(state: GameState, hero: PlayerState['hero']): boolean {
   if (hero.transformTrigger === undefined) return false;
   return evaluateCondition(state, hero.transformTrigger, {
     sourceInstanceId: `hero_${String(hero.cardDefId)}`,

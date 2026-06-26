@@ -2,24 +2,16 @@
  * Combat Resolver — resolves a full attack declaration.
  * Validates, exhausts attacker, calculates damage, applies results, emits events.
  */
-import type {
-  GameState,
-  GameEvent,
-  CardInstance,
-  DiagCounters,
-} from '../types/game-state.js';
+import type { GameState, GameEvent, CardInstance, DiagCounters } from '../types/game-state.js';
 import type { Trait } from '../types/common.js';
 import { findCard } from '../zones/zone-manager.js';
 import { getValidAttackTargets, activeForcingDefenders } from '../zones/targeting.js';
+import { calculateCombatDamage, calculateHeroDamage } from './damage-calculator.js';
+import { applyDamageReplacements, markReplacementsUsed } from '../effects/replacement-handler.js';
 import {
-  calculateCombatDamage,
-  calculateHeroDamage,
-} from './damage-calculator.js';
-import {
-  applyDamageReplacements,
-  markReplacementsUsed,
-} from '../effects/replacement-handler.js';
-import { isExiledOnDestruction, detachEquipmentForDiscard } from '../effects/destruction-destination.js';
+  isExiledOnDestruction,
+  detachEquipmentForDiscard,
+} from '../effects/destruction-destination.js';
 
 export interface CombatResult {
   readonly newState: GameState;
@@ -27,12 +19,8 @@ export interface CombatResult {
 }
 
 function allTraits(card: CardInstance): readonly Trait[] {
-  return [
-    ...card.traits,
-    ...card.grantedTraits.map(g => g.trait),
-  ];
+  return [...card.traits, ...card.grantedTraits.map((g) => g.trait)];
 }
-
 
 // ── Diagnostic instrumentation (no-op unless a `diag` accumulator is supplied) ──
 
@@ -63,9 +51,7 @@ function accumulateArmAbsorbed(
 
 /** Which alternative ARM mechanic (if any) is active. armChargeAbsorb (TEST B)
  * takes precedence if both are somehow set. Pure read. */
-function armMechanic(
-  config: GameState['config'],
-): 'charge' | 'oneTime' | 'none' {
+function armMechanic(config: GameState['config']): 'charge' | 'oneTime' | 'none' {
   if (config?.armChargeAbsorb === true) return 'charge';
   if (config?.armOneTimeAbsolute === true) return 'oneTime';
   return 'none';
@@ -105,7 +91,8 @@ function resolveArmMechanic(
   // re-charging from the unchanged printed ARM every instance.
   const synced = body.armChargeSyncedArm ?? 0;
   const freshBuff = Math.max(0, body.currentArm - synced);
-  const remaining = (body.armCharges ?? body.currentArm) + (body.armCharges === undefined ? 0 : freshBuff);
+  const remaining =
+    (body.armCharges ?? body.currentArm) + (body.armCharges === undefined ? 0 : freshBuff);
   if (remaining <= 0) {
     // Never-engaged 0-ARM body: leave it completely untouched (no-op feel).
     if (body.armCharges === undefined) return { presentedArm: 0, delta: null };
@@ -178,20 +165,18 @@ function updateCardInZones(
 ): GameState {
   return {
     ...state,
-    players: state.players.map(player => ({
+    players: state.players.map((player) => ({
       ...player,
       zones: {
-        reserve: player.zones.reserve.map(c =>
+        reserve: player.zones.reserve.map((c) => (c?.instanceId === instanceId ? updater(c) : c)),
+        frontline: player.zones.frontline.map((c) =>
           c?.instanceId === instanceId ? updater(c) : c,
         ),
-        frontline: player.zones.frontline.map(c =>
-          c?.instanceId === instanceId ? updater(c) : c,
-        ),
-        highGround: player.zones.highGround.map(c =>
+        highGround: player.zones.highGround.map((c) =>
           c?.instanceId === instanceId ? updater(c) : c,
         ),
       },
-    })) as unknown as readonly [typeof state.players[0], typeof state.players[1]],
+    })) as unknown as readonly [(typeof state.players)[0], (typeof state.players)[1]],
   };
 }
 
@@ -204,17 +189,14 @@ function removeCardFromZones(
     const location = findCard(player.zones, instanceId);
     if (location !== null) {
       const newZones = {
-        reserve: player.zones.reserve.map(c =>
-          c?.instanceId === instanceId ? null : c,
-        ),
-        frontline: player.zones.frontline.map(c =>
-          c?.instanceId === instanceId ? null : c,
-        ),
-        highGround: player.zones.highGround.map(c =>
-          c?.instanceId === instanceId ? null : c,
-        ),
+        reserve: player.zones.reserve.map((c) => (c?.instanceId === instanceId ? null : c)),
+        frontline: player.zones.frontline.map((c) => (c?.instanceId === instanceId ? null : c)),
+        highGround: player.zones.highGround.map((c) => (c?.instanceId === instanceId ? null : c)),
       };
-      const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+      const newPlayers = [...state.players] as [
+        (typeof state.players)[0],
+        (typeof state.players)[1],
+      ];
       // The destroyed holder's equipment follows it to the discard pile as its own
       // entry (Rulebook 13), even if the holder itself is exiled.
       const split = detachEquipmentForDiscard(location.card);
@@ -244,7 +226,7 @@ function removeCardFromZones(
 export function resolveCombat(
   state: GameState,
   attackerInstanceId: string,
-  targetId: string | 'hero',
+  targetId: string,
 ): CombatResult {
   const events: GameEvent[] = [];
 
@@ -254,7 +236,7 @@ export function resolveCombat(
   }
 
   // 1. Find attacker
-  const attackerPlayer = state.players[state.activePlayerIndex]!;
+  const attackerPlayer = state.players[state.activePlayerIndex];
   const attackerLocation = findCard(attackerPlayer.zones, attackerInstanceId);
   if (attackerLocation === null) {
     throw new Error(`Attacker ${attackerInstanceId} not found`);
@@ -265,7 +247,7 @@ export function resolveCombat(
 
   // 2. Validate target
   const defenderIndex = state.activePlayerIndex === 0 ? 1 : 0;
-  const defenderPlayer = state.players[defenderIndex]!;
+  const defenderPlayer = state.players[defenderIndex];
   const validTargets = getValidAttackTargets(
     attackerLocation.zone,
     allTraits(attackerLocation.card),
@@ -275,16 +257,14 @@ export function resolveCombat(
   );
   const isValidTarget =
     targetId === 'hero'
-      ? validTargets.some(t => t.type === 'hero')
-      : validTargets.some(
-          t => t.type === 'character' && t.instanceId === targetId,
-        );
+      ? validTargets.some((t) => t.type === 'hero')
+      : validTargets.some((t) => t.type === 'character' && t.instanceId === targetId);
   if (!isValidTarget) {
     throw new Error(`Invalid target: ${targetId}`);
   }
 
   // 3. Exhaust attacker
-  let currentState = updateCardInZones(state, attackerInstanceId, card => ({
+  const currentState = updateCardInZones(state, attackerInstanceId, (card) => ({
     ...card,
     exhausted: true,
     attackedThisTurn: true,
@@ -309,7 +289,7 @@ export function resolveCombat(
           defenderPlayer.zones,
           forceCap,
           state.config?.defenderHighGroundOnly === true,
-        ).map(d => d.instanceId),
+        ).map((d) => d.instanceId),
       )
     : null;
   const diag = state.config?.diag;
@@ -320,12 +300,7 @@ export function resolveCombat(
     // Instrument every attack that reaches the hero face (independent of EC-004, but
     // only when a diag accumulator is attached ⇒ no-op for a normal run).
     if (diag?.heroFaceAttacks) diag.heroFaceAttacks[attackerPlayerIndex] += 1;
-    return resolveHeroAttack(
-      currentState,
-      attackerLocation.card,
-      defenderIndex,
-      events,
-    );
+    return resolveHeroAttack(currentState, attackerLocation.card, defenderIndex, events);
   }
 
   const result = resolveCharacterAttack(
@@ -342,7 +317,7 @@ export function resolveCombat(
   // attacker flowed around a capped-out wall, tally a bypass.
   if (ec004On && forcingIds !== null) {
     if (forcingIds.has(targetId)) {
-      const newState = updateCardInZones(result.newState, targetId, card => ({
+      const newState = updateCardInZones(result.newState, targetId, (card) => ({
         ...card,
         forcedAttacksThisTurn: (card.forcedAttacksThisTurn ?? 0) + 1,
       }));
@@ -362,7 +337,9 @@ export function resolveCombat(
  * controls (forcing or capped-out). Pure read. */
 function getDefendersInFrontlineCount(zones: GameState['players'][0]['zones']): number {
   return zones.frontline.filter(
-    c => c !== null && (c.traits.includes('defender') || c.grantedTraits.some(g => g.trait === 'defender')),
+    (c) =>
+      c !== null &&
+      (c.traits.includes('defender') || c.grantedTraits.some((g) => g.trait === 'defender')),
   ).length;
 }
 
@@ -372,7 +349,7 @@ function resolveHeroAttack(
   defenderIndex: 0 | 1,
   events: GameEvent[],
 ): CombatResult {
-  const hero = state.players[defenderIndex]!.hero;
+  const hero = state.players[defenderIndex].hero;
   // EC-002: the hero's ARM (granted-only; base 0) also blunts only the first combat
   // instance it takes this turn. Default OFF ⇒ effectiveCombatArm returns currentArm.
   const firstInstanceOnly = state.config?.armFirstInstanceOnly === true;
@@ -391,11 +368,7 @@ function resolveHeroAttack(
     heroArm = h.presentedArm;
     heroArmDelta = h.delta;
   }
-  const damage = calculateHeroDamage(
-    attacker.currentAtk,
-    heroArm,
-    state.config?.damageScale ?? 1,
-  );
+  const damage = calculateHeroDamage(attacker.currentAtk, heroArm, state.config?.damageScale ?? 1);
   const newLp = Math.max(0, hero.currentLp - damage);
 
   events.push({
@@ -407,9 +380,9 @@ function resolveHeroAttack(
 
   const spendHeroCharge =
     firstInstanceOnly && hero.currentArm > 0 && hero.armMitigatedThisTurn !== true;
-  const newPlayers = [...state.players] as [typeof state.players[0], typeof state.players[1]];
+  const newPlayers = [...state.players] as [(typeof state.players)[0], (typeof state.players)[1]];
   newPlayers[defenderIndex] = {
-    ...state.players[defenderIndex]!,
+    ...state.players[defenderIndex],
     hero: {
       ...hero,
       currentLp: newLp,
@@ -438,7 +411,7 @@ function resolveCharacterAttack(
   targetId: string,
   events: GameEvent[],
   attackerPlayerId: 0 | 1 = state.activePlayerIndex,
-  defenderPlayerId: 0 | 1 = (state.activePlayerIndex === 0 ? 1 : 0) as 0 | 1,
+  defenderPlayerId: 0 | 1 = state.activePlayerIndex === 0 ? 1 : 0,
 ): CombatResult {
   // Find defender in either player's zones
   let defender: CardInstance | null = null;
@@ -475,8 +448,9 @@ function resolveCharacterAttack(
   const atkConsumed: string[] = [];
   // Records, per body, whether its shield actually fired in this exchange (so the
   // EC-003 first-instance charge is spent only when a reduction really happened).
-  let defShieldFired = false;
-  let atkShieldFired = false;
+  // Held in a mutable record so the closures below can flag firing without the
+  // outer flag being narrowed to a `false` literal by control-flow analysis.
+  const shieldFired: { def: boolean; atk: boolean } = { def: false, atk: false };
   const reduceShield = (
     holder: CardInstance,
     raw: number,
@@ -519,9 +493,13 @@ function resolveCharacterAttack(
     accumulateArmAbsorbed(diag, attacker, defender.currentAtk, attackerPlayerId);
   }
   const reduceDefender = (raw: number): number =>
-    reduceShield(defender, raw, defConsumed, defenderPlayerId, () => { defShieldFired = true; });
+    reduceShield(defender, raw, defConsumed, defenderPlayerId, () => {
+      shieldFired.def = true;
+    });
   const reduceAttacker = (raw: number): number =>
-    reduceShield(attacker, raw, atkConsumed, attackerPlayerId, () => { atkShieldFired = true; });
+    reduceShield(attacker, raw, atkConsumed, attackerPlayerId, () => {
+      shieldFired.atk = true;
+    });
 
   // EC-002: each body presents ARM only on its FIRST combat instance this turn.
   // Default OFF ⇒ effectiveCombatArm returns currentArm (byte-identical). The diag
@@ -569,13 +547,13 @@ function resolveCharacterAttack(
   // nothing to spend, so the flag is left untouched (keeps the gate minimal).
   if (firstInstanceOnly) {
     if (defender.currentArm > 0 && defender.armMitigatedThisTurn !== true) {
-      currentState = updateCardInZones(currentState, targetId, card => ({
+      currentState = updateCardInZones(currentState, targetId, (card) => ({
         ...card,
         armMitigatedThisTurn: true,
       }));
     }
     if (attacker.currentArm > 0 && attacker.armMitigatedThisTurn !== true) {
-      currentState = updateCardInZones(currentState, attackerInstanceId, card => ({
+      currentState = updateCardInZones(currentState, attackerInstanceId, (card) => ({
         ...card,
         armMitigatedThisTurn: true,
       }));
@@ -585,23 +563,29 @@ function resolveCharacterAttack(
   // armCharges) onto each body whose ARM actually engaged this instance. Delta null
   // (no engagement, or mechanic OFF) ⇒ flag untouched (byte-identical no-op).
   if (defArmDelta !== null) {
-    currentState = updateCardInZones(currentState, targetId, card => ({ ...card, ...defArmDelta }));
+    currentState = updateCardInZones(currentState, targetId, (card) => ({
+      ...card,
+      ...defArmDelta,
+    }));
   }
   if (atkArmDelta !== null) {
-    currentState = updateCardInZones(currentState, attackerInstanceId, card => ({ ...card, ...atkArmDelta }));
+    currentState = updateCardInZones(currentState, attackerInstanceId, (card) => ({
+      ...card,
+      ...atkArmDelta,
+    }));
   }
   // EC-003: spend each body's first-instance SHIELD charge once its −1 shield has
   // actually blunted a combat instance this turn (it fired and was not already
   // spent). Bodies whose shield did not fire leave the flag untouched (minimal gate).
   if (shieldFirstInstanceOnly) {
-    if (defShieldFired && defender.shieldMitigatedThisTurn !== true) {
-      currentState = updateCardInZones(currentState, targetId, card => ({
+    if (shieldFired.def && defender.shieldMitigatedThisTurn !== true) {
+      currentState = updateCardInZones(currentState, targetId, (card) => ({
         ...card,
         shieldMitigatedThisTurn: true,
       }));
     }
-    if (atkShieldFired && attacker.shieldMitigatedThisTurn !== true) {
-      currentState = updateCardInZones(currentState, attackerInstanceId, card => ({
+    if (shieldFired.atk && attacker.shieldMitigatedThisTurn !== true) {
+      currentState = updateCardInZones(currentState, attackerInstanceId, (card) => ({
         ...card,
         shieldMitigatedThisTurn: true,
       }));
@@ -618,7 +602,7 @@ function resolveCharacterAttack(
       targetId,
       amount: result.damageToDefender,
     });
-    currentState = updateCardInZones(currentState, targetId, card => ({
+    currentState = updateCardInZones(currentState, targetId, (card) => ({
       ...card,
       currentHp: card.currentHp - result.damageToDefender,
     }));
@@ -632,14 +616,10 @@ function resolveCharacterAttack(
       targetId: attackerInstanceId,
       amount: result.damageToAttacker,
     });
-    currentState = updateCardInZones(
-      currentState,
-      attackerInstanceId,
-      card => ({
-        ...card,
-        currentHp: card.currentHp - result.damageToAttacker,
-      }),
-    );
+    currentState = updateCardInZones(currentState, attackerInstanceId, (card) => ({
+      ...card,
+      currentHp: card.currentHp - result.damageToAttacker,
+    }));
   }
 
   // Destroy defender if dead
@@ -659,7 +639,12 @@ function resolveCharacterAttack(
       events.push({ type: 'CARD_EXILED', cardInstanceId: targetId, playerId: defenderPlayerId });
     }
     if (defender.equipment !== null) {
-      events.push({ type: 'CARD_DESTROYED', cardInstanceId: defender.equipment.instanceId, cause: 'combat', playerId: defenderPlayerId });
+      events.push({
+        type: 'CARD_DESTROYED',
+        cardInstanceId: defender.equipment.instanceId,
+        cause: 'combat',
+        playerId: defenderPlayerId,
+      });
     }
     const removal = removeCardFromZones(currentState, targetId);
     if (removal !== null) {
@@ -676,10 +661,19 @@ function resolveCharacterAttack(
       playerId: attackerPlayerId,
     });
     if (!attacker.isToken && isExiledOnDestruction(attacker)) {
-      events.push({ type: 'CARD_EXILED', cardInstanceId: attackerInstanceId, playerId: attackerPlayerId });
+      events.push({
+        type: 'CARD_EXILED',
+        cardInstanceId: attackerInstanceId,
+        playerId: attackerPlayerId,
+      });
     }
     if (attacker.equipment !== null) {
-      events.push({ type: 'CARD_DESTROYED', cardInstanceId: attacker.equipment.instanceId, cause: 'combat', playerId: attackerPlayerId });
+      events.push({
+        type: 'CARD_DESTROYED',
+        cardInstanceId: attacker.equipment.instanceId,
+        cause: 'combat',
+        playerId: attackerPlayerId,
+      });
     }
     const removal = removeCardFromZones(currentState, attackerInstanceId);
     if (removal !== null) {

@@ -1,11 +1,7 @@
 /**
  * State Machine Types — context, events, and player actions for XState v5.
  */
-import type {
-  GameState,
-  PendingChoice,
-  PlayerResponse,
-} from '../types/game-state.js';
+import type { GameState, PendingChoice, PlayerResponse } from '../types/game-state.js';
 import type { ZoneType } from '../types/common.js';
 
 // ── Machine Context ─────────────────────────────────────────────────────────
@@ -90,7 +86,7 @@ export interface ActivateAbilityAction {
 export interface DeclareAttackAction {
   readonly type: 'declare_attack';
   readonly attackerInstanceId: string;
-  readonly targetId: string | 'hero';
+  readonly targetId: string;
 }
 
 export interface DiscardForEnergyAction {

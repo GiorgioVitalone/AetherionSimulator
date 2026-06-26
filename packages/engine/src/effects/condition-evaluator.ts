@@ -32,7 +32,7 @@ export function evaluateCondition(
     case 'turn_count':
       return evaluateTurnCount(state, condition, context);
     case 'is_transformed':
-      return state.players[context.controllerId]!.hero.transformed;
+      return state.players[context.controllerId].hero.transformed;
     case 'controls_character':
       return evaluateControlsCharacter(state, condition, context);
     case 'compare_to_opponent':
@@ -135,7 +135,7 @@ function evaluateCardCount(
   cond: Extract<Condition, { type: 'card_count' }>,
   context: EffectContext,
 ): boolean {
-  const player = state.players[context.controllerId]!;
+  const player = state.players[context.controllerId];
   let count: number;
   if (cond.tag !== undefined) {
     // Tag-filtered counting — iterate cards instead of using .length
@@ -213,7 +213,7 @@ function evaluateResourceCheck(
   cond: Extract<Condition, { type: 'resource_check' }>,
   context: EffectContext,
 ): boolean {
-  const player = state.players[context.controllerId]!;
+  const player = state.players[context.controllerId];
   const available = player.resourceBank.filter(
     r => !r.exhausted && (cond.resourceType === 'flexible' || r.resourceType === cond.resourceType),
   ).length;
@@ -229,7 +229,7 @@ function evaluateTurnCount(
   cond: Extract<Condition, { type: 'turn_count' }>,
   context: EffectContext,
 ): boolean {
-  const counters = state.players[context.controllerId]!.turnCounters;
+  const counters = state.players[context.controllerId].turnCounters;
   let count: number;
   switch (cond.action) {
     case 'spell_cast': count = counters.spellsCast; break;
@@ -245,9 +245,9 @@ function evaluateCompareToOpponent(
   cond: Extract<Condition, { type: 'compare_to_opponent' }>,
   context: EffectContext,
 ): boolean {
-  const player = state.players[context.controllerId]!;
+  const player = state.players[context.controllerId];
   const opponentIdx = context.controllerId === 0 ? 1 : 0;
-  const opponent = state.players[opponentIdx]!;
+  const opponent = state.players[opponentIdx];
   let playerValue: number;
   let opponentValue: number;
   switch (cond.metric) {
@@ -268,7 +268,7 @@ function evaluateControlsCharacter(
   cond: Extract<Condition, { type: 'controls_character' }>,
   context: EffectContext,
 ): boolean {
-  const player = state.players[context.controllerId]!;
+  const player = state.players[context.controllerId];
   const cards = cond.zone !== undefined
     ? getCardsInZone(player.zones, cond.zone)
     : getAllCards(player.zones);

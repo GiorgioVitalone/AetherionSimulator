@@ -42,7 +42,7 @@ export interface ActivateAbilityAction {
 export interface DeclareAttackAction {
   readonly type: 'declare_attack';
   readonly attackerInstanceId: string;
-  readonly targetId: string | 'hero';
+  readonly targetId: string;
 }
 
 export interface DiscardForEnergyAction {

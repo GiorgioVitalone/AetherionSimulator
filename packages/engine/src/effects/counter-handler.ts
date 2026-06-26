@@ -70,7 +70,7 @@ function shouldCounter(
 }
 
 function canAfford(state: GameState, playerId: 0 | 1, cost: ResourceCost): boolean {
-  const bank = state.players[playerId]!.resourceBank.filter(r => !r.exhausted);
+  const bank = state.players[playerId].resourceBank.filter(r => !r.exhausted);
   const mana = bank.filter(r => r.resourceType === 'mana').length;
   const energy = bank.filter(r => r.resourceType === 'energy').length;
   if (mana < cost.mana) return false;

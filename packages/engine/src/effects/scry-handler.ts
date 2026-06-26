@@ -31,7 +31,7 @@ export function executeScry(
   context: EffectContext,
 ): EffectResult {
   const playerId = context.controllerId;
-  const player = state.players[playerId]!;
+  const player = state.players[playerId];
   const looked = player.mainDeck.slice(0, effect.lookCount);
   const rest = player.mainDeck.slice(effect.lookCount);
   if (looked.length === 0) return { newState: state, events: [] };
