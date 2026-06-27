@@ -115,11 +115,16 @@ for (const c of cards) {
 const meanByCost = new Map([...byCost].map(([k, a]) => [k, a.reduce((s, v) => s + v, 0) / a.length]));
 for (const c of cards) c.costResidual = round(c.power - meanByCost.get(c.cost));
 
-// ── Cost budget window: an expected-power line fit to the pool, widened into a
-// tolerance BAND (a window we want cards inside, not a strict value). Each card's
-// delta = power − expected-for-its-cost; status = under / within / over the band.
+// ── Cost budget window: an expected-power line fit to the pool + a RARITY shift
+// (higher-rarity cards are allowed more power for their cost), widened into a
+// tolerance BAND (a window, not a strict value). Δ = power − rarity-adjusted
+// expected; status = under / within / over the band.
 const MIN_TOL = 1.5;
-const RMSE_MULT = 0.9; // window half-width ≈ 0.9 × the pool's scatter (RMSE) around the fit
+const RMSE_MULT = 0.9; // window half-width ≈ 0.9 × the pool's scatter (RMSE) around the model
+// Monotonic upward shift per rarity tier — a normative premium (tunable), anchored
+// loosely to the observed Legendary premium (~+4.5 over the cost line).
+const RARITY_BONUS = { Common: 0, Ethereal: 1, Mythic: 2.5, Legendary: 4 };
+const RARITY_ORDER = ['Common', 'Ethereal', 'Mythic', 'Legendary'];
 const n = cards.length;
 const meanCost = cards.reduce((s, c) => s + c.cost, 0) / n;
 const meanPow = cards.reduce((s, c) => s + c.power, 0) / n;
@@ -131,11 +136,11 @@ for (const c of cards) {
 }
 const slope = round(sxy / sxx, 1); // rounded → a clean, legible budget line
 const intercept = round(meanPow - (sxy / sxx) * meanCost, 1);
-const expectedAt = (cst) => intercept + slope * cst;
-const rmse = Math.sqrt(cards.reduce((s, c) => s + (c.power - expectedAt(c.cost)) ** 2, 0) / n);
-const TOL = round(Math.max(MIN_TOL, RMSE_MULT * rmse), 1); // constant-width band around the line
+const expectedFor = (cst, rarity) => intercept + slope * cst + (RARITY_BONUS[rarity] ?? 0);
+const rmse = Math.sqrt(cards.reduce((s, c) => s + (c.power - expectedFor(c.cost, c.rarity)) ** 2, 0) / n);
+const TOL = round(Math.max(MIN_TOL, RMSE_MULT * rmse), 1); // constant-width band around the model
 for (const c of cards) {
-  const exp = expectedAt(c.cost);
+  const exp = expectedFor(c.cost, c.rarity);
   c.budgetExpected = round(exp);
   c.budgetLo = round(exp - TOL);
   c.budgetHi = round(exp + TOL);
@@ -143,20 +148,18 @@ for (const c of cards) {
   c.budgetStatus = c.power > exp + TOL ? 'over' : c.power < exp - TOL ? 'under' : 'within';
 }
 const maxCost = Math.max(...cards.map((c) => c.cost));
-const budgetCurve = [];
-for (let cst = 0; cst <= maxCost; cst++) {
-  budgetCurve.push({ cost: cst, expected: round(expectedAt(cst)), lo: round(expectedAt(cst) - TOL), hi: round(expectedAt(cst) + TOL) });
-}
 const budgetCounts = { over: 0, within: 0, under: 0 };
 for (const c of cards) budgetCounts[c.budgetStatus]++;
-const budgetByFaction = {};
-for (const f of FACTIONS) {
-  const fcards = cards.filter((c) => c.faction === f);
+const groupStats = (subset) => {
   const cnt = { over: 0, within: 0, under: 0 };
-  for (const c of fcards) cnt[c.budgetStatus]++;
-  budgetByFaction[f] = { ...cnt, meanDelta: round(fcards.reduce((s, c) => s + c.budgetDelta, 0) / fcards.length) };
-}
-const budgetMeta = { slope, intercept, tol: TOL, rmse: round(rmse), maxCost, curve: budgetCurve, counts: budgetCounts, byFaction: budgetByFaction };
+  for (const c of subset) cnt[c.budgetStatus]++;
+  return { ...cnt, n: subset.length, meanDelta: subset.length ? round(subset.reduce((s, c) => s + c.budgetDelta, 0) / subset.length) : 0 };
+};
+const budgetByFaction = {};
+for (const f of FACTIONS) budgetByFaction[f] = groupStats(cards.filter((c) => c.faction === f));
+const budgetByRarity = {};
+for (const r of RARITY_ORDER) budgetByRarity[r] = groupStats(cards.filter((c) => c.rarity === r));
+const budgetMeta = { slope, intercept, tol: TOL, rmse: round(rmse), maxCost, rarityBonus: RARITY_BONUS, rarityOrder: RARITY_ORDER, counts: budgetCounts, byFaction: budgetByFaction, byRarity: budgetByRarity };
 
 const dvVec = FACTIONS.map((f) => decks.find((d) => d.faction === f).value);
 const meta = {
@@ -300,22 +303,32 @@ function dashboardApp() {
     return `<svg class="chart" viewBox="0 0 ${W} ${H}">${axes(W, H, m, xMax, yMax, xLabel, yLabel, xTicks)}${ln}${dots}</svg>`;
   }
 
-  function bandScatter(points, xMax, yMax) {
+  function deltaScatter(points, xMax) {
+    // y = Δ vs the (cost + rarity)-adjusted budget; horizontal ±TOL window at 0.
     const b = D.meta.budget;
-    const W = 840, H = 460, m = { l: 48, r: 14, t: 14, b: 42 };
+    const W = 840, H = 440, m = { l: 56, r: 14, t: 14, b: 42 };
+    let yMax = b.tol + 1;
+    for (const p of points) yMax = Math.max(yMax, Math.abs(p.y));
+    yMax = Math.ceil(yMax / 2) * 2;
+    const mid = (m.t + (H - m.b)) / 2;
     const px = (v) => m.l + (v / xMax) * (W - m.l - m.r);
-    const py = (v) => H - m.b - (v / yMax) * (H - m.t - m.b);
-    const xTicks = [];
-    for (let i = 0; i <= xMax; i++) xTicks.push({ v: i, label: String(i) });
-    const hi = b.curve.map((c) => `${px(c.cost).toFixed(1)},${py(Math.min(c.hi, yMax)).toFixed(1)}`);
-    const lo = b.curve.slice().reverse().map((c) => `${px(c.cost).toFixed(1)},${py(Math.max(c.lo, 0)).toFixed(1)}`);
-    const band = `<polygon points="${hi.concat(lo).join(' ')}" fill="#d9b44a" fill-opacity="0.12"/>`;
-    const exp = `<polyline fill="none" stroke="#d9b44a" stroke-width="2" points="${b.curve.map((c) => `${px(c.cost).toFixed(1)},${py(c.expected).toFixed(1)}`).join(' ')}"/>`;
+    const py = (v) => mid - (v / yMax) * ((H - m.t - m.b) / 2);
+    let g = '';
+    for (const v of [-yMax, -yMax / 2, 0, yMax / 2, yMax]) {
+      const y = py(v);
+      g += `<line class="gl" x1="${m.l}" y1="${y.toFixed(1)}" x2="${W - m.r}" y2="${y.toFixed(1)}"/>`;
+      g += `<text x="${m.l - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v > 0 ? '+' : ''}${v}</text>`;
+    }
+    g += `<rect x="${m.l}" y="${py(b.tol).toFixed(1)}" width="${(W - m.l - m.r).toFixed(1)}" height="${(py(-b.tol) - py(b.tol)).toFixed(1)}" fill="#5fb56f" fill-opacity="0.10"><title>within budget: ±${b.tol}</title></rect>`;
+    g += `<line x1="${m.l}" y1="${py(0).toFixed(1)}" x2="${W - m.r}" y2="${py(0).toFixed(1)}" stroke="#d9b44a" stroke-width="1.5" stroke-dasharray="6 4"/>`;
+    for (let i = 0; i <= xMax; i++) g += `<text x="${px(i).toFixed(1)}" y="${H - m.b + 15}" text-anchor="middle">${i}</text>`;
+    g += `<text x="${((m.l + W - m.r) / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">total cost (mana+energy)</text>`;
+    g += `<text transform="translate(14,${mid.toFixed(1)}) rotate(-90)" text-anchor="middle">Δ vs budget (power − expected)</text>`;
     let dots = '';
     for (const p of points) {
       dots += `<circle cx="${px(p.x).toFixed(1)}" cy="${py(p.y).toFixed(1)}" r="${p.r}" fill="${p.color}" fill-opacity="0.82" stroke="#0008" stroke-width=".5"><title>${esc(p.label)}</title></circle>`;
     }
-    return `<svg class="chart" viewBox="0 0 ${W} ${H}">${axes(W, H, m, xMax, yMax, 'total cost (mana+energy)', 'card power', xTicks)}${band}${exp}${dots}</svg>`;
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}">${g}${dots}</svg>`;
   }
 
   function histogram(binW, xMax, bins) {
@@ -480,47 +493,55 @@ function dashboardApp() {
   }
 
   const SC = { over: '#e0bd58', within: '#5fb56f', under: '#e08a8a' };
+  const RCOLOR = { Common: '#9a9382', Ethereal: '#6fb0a0', Mythic: '#9b7fd6', Legendary: '#e0bd58' };
+  function groupBars(groups, order, colorFn) {
+    return order
+      .map((k) => {
+        const gb = groups[k];
+        if (!gb || !gb.n) return '';
+        const tot = gb.under + gb.within + gb.over || 1;
+        const seg = [['under', gb.under], ['within', gb.within], ['over', gb.over]]
+          .map(([s, v]) => (v ? `<span style="width:${(v / tot) * 100}%;background:${SC[s]}" title="${s}: ${v}"></span>` : ''))
+          .join('');
+        return `<div class="row"><span class="lbl" style="color:${colorFn(k)}">${esc(k)} <span class="muted small">(${gb.n})</span></span><span style="display:flex;height:14px;border-radius:3px;overflow:hidden">${seg}</span><span class="val">${gb.meanDelta > 0 ? '+' : ''}${f1(gb.meanDelta)}</span></div>`;
+      })
+      .join('');
+  }
   function budget() {
     const b = D.meta.budget;
     const xMax = b.maxCost + 1;
-    const yMax = Math.ceil(D.meta.overall.max / 2) * 2;
+    const cs = b.counts;
+    const rb = b.rarityBonus;
     const pts = D.cards.map((c) => ({
       x: c.cost + (((c.id * 53) % 11) / 11 - 0.5) * 0.7,
-      y: c.power,
+      y: c.budgetDelta,
       r: 3 + Math.sqrt(c.copies) * 1.4,
       color: SC[c.budgetStatus],
-      label: `${c.name} — cost ${c.cost}, power ${c.power} vs window ${c.budgetLo}–${c.budgetHi} (Δ ${c.budgetDelta > 0 ? '+' : ''}${c.budgetDelta}, ${c.budgetStatus})`,
+      label: `${c.name} [${c.rarity}] — cost ${c.cost}, power ${c.power} vs budget ${c.budgetExpected} (±${b.tol}); Δ ${c.budgetDelta > 0 ? '+' : ''}${c.budgetDelta} (${c.budgetStatus})`,
     }));
-    const cs = b.counts;
     const statusStack = stackBar([
       { name: `under (${cs.under})`, value: cs.under, color: SC.under },
       { name: `within (${cs.within})`, value: cs.within, color: SC.within },
       { name: `over (${cs.over})`, value: cs.over, color: SC.over },
     ]);
-    const facRows = F.map((f) => {
-      const fb = b.byFaction[f];
-      const tot = fb.under + fb.within + fb.over || 1;
-      const seg = [['under', fb.under], ['within', fb.within], ['over', fb.over]]
-        .map(([k, v]) => (v ? `<span style="width:${(v / tot) * 100}%;background:${SC[k]}" title="${k}: ${v}"></span>` : ''))
-        .join('');
-      return `<div class="row"><span class="lbl" style="color:${fc(f)}">${f}</span><span style="display:flex;height:14px;border-radius:3px;overflow:hidden">${seg}</span><span class="val">${fb.meanDelta > 0 ? '+' : ''}${f1(fb.meanDelta)}</span></div>`;
-    }).join('');
     const sorted = [...D.cards].sort((a, c) => c.budgetDelta - a.budgetDelta);
-    const over = barList(sorted.filter((c) => c.budgetStatus === 'over').slice(0, 12).map((c) => ({ label: `${c.name} (${c.cost})`, value: c.budgetDelta, color: SC.over, text: `+${f1(c.budgetDelta)}` })));
-    const under = barList(sorted.filter((c) => c.budgetStatus === 'under').slice(-12).reverse().map((c) => ({ label: `${c.name} (${c.cost})`, value: Math.abs(c.budgetDelta), color: SC.under, text: f1(c.budgetDelta) })));
+    const over = barList(sorted.filter((c) => c.budgetStatus === 'over').slice(0, 12).map((c) => ({ label: `${c.name} (${c.cost}, ${c.rarity[0]})`, value: c.budgetDelta, color: SC.over, text: `+${f1(c.budgetDelta)}` })));
+    const under = barList(sorted.filter((c) => c.budgetStatus === 'under').slice(-12).reverse().map((c) => ({ label: `${c.name} (${c.cost}, ${c.rarity[0]})`, value: Math.abs(c.budgetDelta), color: SC.under, text: f1(c.budgetDelta) })));
     return section(
       'budget',
       'Cost budget & delta',
-      `expected power = ${f1(b.intercept)} + ${f1(b.slope)}·cost (least-squares fit to the pool); window = ±${b.tol} (≈ the pool's RMSE around the line, ${b.rmse}) — Δ = power − expected`,
-      `<div class="panel"><h3 class="hdr">Cards vs the budget window (shaded = window, gold line = expected; green within, gold over, red under — point size = copies)</h3>${bandScatter(pts, xMax, yMax)}<div class="legend"><span><i style="background:${SC.under}"></i>under budget</span><span><i style="background:${SC.within}"></i>within window</span><span><i style="background:${SC.over}"></i>over budget</span></div></div>
+      `expected = ${f1(b.intercept)} + ${f1(b.slope)}·cost + rarity (Ethereal +${rb.Ethereal}, Mythic +${rb.Mythic}, Legendary +${rb.Legendary}); window ±${b.tol} (≈ pool RMSE ${b.rmse}) — Δ = power − expected`,
+      `<div class="panel"><h3 class="hdr">Δ vs the rarity-adjusted budget (green band = within ±${b.tol}, dashed = on budget; point size = copies)</h3>${deltaScatter(pts, xMax)}<div class="legend"><span><i style="background:${SC.under}"></i>under budget</span><span><i style="background:${SC.within}"></i>within window</span><span><i style="background:${SC.over}"></i>over budget</span></div></div>
+      <div class="panel" style="margin-top:14px"><h3 class="hdr">Overall — ${cs.under} under · ${cs.within} within · ${cs.over} over</h3>${statusStack}</div>
       <div class="grid two" style="margin-top:14px">
-        <div class="panel"><h3 class="hdr">Budget status — ${cs.under} under · ${cs.within} within · ${cs.over} over</h3>${statusStack}<div class="bars" style="margin-top:10px">${facRows}</div><div class="small muted" style="margin-top:6px">bars = status mix per faction; number = mean Δ vs budget (negative ⇒ the faction is under-budget for its cost across the board)</div></div>
-        <div class="panel"><h3 class="hdr">Furthest over budget (power − expected)</h3>${over}</div>
+        <div class="panel"><h3 class="hdr">By faction — status mix &amp; mean Δ</h3><div class="bars">${groupBars(b.byFaction, F, fc)}</div></div>
+        <div class="panel"><h3 class="hdr">By rarity — status mix &amp; mean Δ</h3><div class="bars">${groupBars(b.byRarity, b.rarityOrder, (r) => RCOLOR[r] || 'var(--ink)')}</div><div class="small muted" style="margin-top:6px">the budget shifts up with rarity, so a higher tier must score higher to stay "within"</div></div>
       </div>
       <div class="grid two" style="margin-top:14px">
+        <div class="panel"><h3 class="hdr">Furthest over budget</h3>${over}</div>
         <div class="panel"><h3 class="hdr">Furthest under budget</h3>${under}</div>
-        <div class="panel callout small"><b>Over</b> the window = stronger than expected for its cost (efficient / watch for overpowered); <b>under</b> = weaker than its cost-peers. The band is deliberately wide — a window, not a line — so only clear outliers are flagged. The per-faction <b>mean Δ</b> exposes systematic mispricing: a strongly negative faction is under-statted-for-cost across its whole deck, which lines up with the win-rate diagnosis (the floor decks pay full price for below-curve cards).</div>
-      </div>`,
+      </div>
+      <div class="panel callout small" style="margin-top:14px"><b>Over</b> = stronger than its (cost + rarity) budget; <b>under</b> = weaker. The band is deliberately wide — a window, not a line. Because the budget rises with rarity, Ethereal/Mythic cards must clear a higher bar, so several land <b>under</b> — they don't justify their rarity in raw power (often situational value the static score can't see). Per-faction mean Δ still exposes systematic mispricing: Radiant runs above budget, the floor decks below.</div>`,
     );
   }
 
@@ -578,6 +599,7 @@ function dashboardApp() {
     { k: 'name', t: 'Card', num: false },
     { k: 'faction', t: 'Faction', num: false },
     { k: 'type', t: 'Type', num: false },
+    { k: 'rarity', t: 'Rarity', num: false },
     { k: 'cost', t: 'Cost', num: true },
     { k: 'copies', t: '×', num: true },
     { k: 'power', t: 'Power', num: true },
@@ -607,6 +629,7 @@ function dashboardApp() {
           if (col.k === 'name') return `<td>${esc(c.name)}</td>`;
           if (col.k === 'faction') return `<td><span class="tag" style="background:${fc(c.faction)}">${c.faction}</span></td>`;
           if (col.k === 'type') return `<td class="muted">${TYPE[c.type] || c.type}</td>`;
+          if (col.k === 'rarity') return `<td style="color:${RCOLOR[c.rarity] || 'var(--mut)'}">${esc(c.rarity)}</td>`;
           const v = c[col.k];
           const color = col.k === 'budgetDelta' ? SC[c.budgetStatus] : '';
           const txt = col.k === 'xMult' ? '×' + f2(v) : (col.k === 'budgetDelta' && v > 0 ? '+' : '') + f2(v);

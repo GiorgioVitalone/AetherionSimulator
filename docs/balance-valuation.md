@@ -144,8 +144,12 @@ vanilla JS, no CDN, works offline), focused on the 64 distinct cards in the 4 st
 overview KPIs; deck-value panels + ranking; card-value **spread** (stacked-by-faction histogram,
 per-faction box plots, spread-metric table); **value vs cost** (power-vs-cost scatter with the
 mean-power-per-cost curve, power/cost efficiency rankings, cost-curve residuals — the cost lens the
-raw score itself omits); a **cost-budget window** (an expected-power line `a + b·cost` fit to the
-pool, widened into a ±RMSE tolerance band — a window, not a strict value — with each card's Δ vs
-expected and an under/within/over status, plus the per-faction mean-Δ that surfaces systematic
-mispricing); per-deck cost curves; stat/trait/ability **value drivers**; intra-card synergy
-multipliers + inter-card pairs; and a sortable/filterable card table (filterable by budget status).
+raw score itself omits); a **cost-budget window** with a delta view — the expected power is
+`a + b·cost + rarity bonus` (a least-squares cost line shifted UP per rarity tier, so higher-rarity
+cards are allowed more power), widened into a ±RMSE tolerance band (a window, not a strict value);
+each card gets a Δ vs that rarity-adjusted expected and an under/within/over status, shown as a delta
+scatter plus **per-faction and per-rarity** status/mean-Δ breakdowns that surface systematic
+mispricing (Radiant runs above budget; Ethereal/Mythic cards under-deliver on their rarity). Then
+per-deck cost curves; stat/trait/ability **value drivers**; intra-card synergy multipliers +
+inter-card pairs; and a sortable/filterable card table (filterable by budget status). The budget
+constants — `RARITY_BONUS`, `RMSE_MULT`, `MIN_TOL` — are tunable at the top of the budget block.
