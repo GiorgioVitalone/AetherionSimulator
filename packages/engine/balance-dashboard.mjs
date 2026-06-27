@@ -123,7 +123,7 @@ const MIN_TOL = 1.5;
 const RMSE_MULT = 0.9; // window half-width ≈ 0.9 × the pool's scatter (RMSE) around the model
 // Monotonic upward shift per rarity tier — a normative premium (tunable), anchored
 // loosely to the observed Legendary premium (~+4.5 over the cost line).
-const RARITY_BONUS = { Common: 0, Ethereal: 1, Mythic: 2.5, Legendary: 4 };
+const RARITY_BONUS = { Common: 0, Ethereal: 0.75, Mythic: 1.5, Legendary: 2.5 };
 const RARITY_ORDER = ['Common', 'Ethereal', 'Mythic', 'Legendary'];
 const n = cards.length;
 const meanCost = cards.reduce((s, c) => s + c.cost, 0) / n;
