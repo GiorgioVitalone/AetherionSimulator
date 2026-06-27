@@ -115,6 +115,49 @@ for (const c of cards) {
 const meanByCost = new Map([...byCost].map(([k, a]) => [k, a.reduce((s, v) => s + v, 0) / a.length]));
 for (const c of cards) c.costResidual = round(c.power - meanByCost.get(c.cost));
 
+// ── Cost budget window: an expected-power line fit to the pool, widened into a
+// tolerance BAND (a window we want cards inside, not a strict value). Each card's
+// delta = power − expected-for-its-cost; status = under / within / over the band.
+const MIN_TOL = 1.5;
+const RMSE_MULT = 0.9; // window half-width ≈ 0.9 × the pool's scatter (RMSE) around the fit
+const n = cards.length;
+const meanCost = cards.reduce((s, c) => s + c.cost, 0) / n;
+const meanPow = cards.reduce((s, c) => s + c.power, 0) / n;
+let sxy = 0;
+let sxx = 0;
+for (const c of cards) {
+  sxy += (c.cost - meanCost) * (c.power - meanPow);
+  sxx += (c.cost - meanCost) ** 2;
+}
+const slope = round(sxy / sxx, 1); // rounded → a clean, legible budget line
+const intercept = round(meanPow - (sxy / sxx) * meanCost, 1);
+const expectedAt = (cst) => intercept + slope * cst;
+const rmse = Math.sqrt(cards.reduce((s, c) => s + (c.power - expectedAt(c.cost)) ** 2, 0) / n);
+const TOL = round(Math.max(MIN_TOL, RMSE_MULT * rmse), 1); // constant-width band around the line
+for (const c of cards) {
+  const exp = expectedAt(c.cost);
+  c.budgetExpected = round(exp);
+  c.budgetLo = round(exp - TOL);
+  c.budgetHi = round(exp + TOL);
+  c.budgetDelta = round(c.power - exp);
+  c.budgetStatus = c.power > exp + TOL ? 'over' : c.power < exp - TOL ? 'under' : 'within';
+}
+const maxCost = Math.max(...cards.map((c) => c.cost));
+const budgetCurve = [];
+for (let cst = 0; cst <= maxCost; cst++) {
+  budgetCurve.push({ cost: cst, expected: round(expectedAt(cst)), lo: round(expectedAt(cst) - TOL), hi: round(expectedAt(cst) + TOL) });
+}
+const budgetCounts = { over: 0, within: 0, under: 0 };
+for (const c of cards) budgetCounts[c.budgetStatus]++;
+const budgetByFaction = {};
+for (const f of FACTIONS) {
+  const fcards = cards.filter((c) => c.faction === f);
+  const cnt = { over: 0, within: 0, under: 0 };
+  for (const c of fcards) cnt[c.budgetStatus]++;
+  budgetByFaction[f] = { ...cnt, meanDelta: round(fcards.reduce((s, c) => s + c.budgetDelta, 0) / fcards.length) };
+}
+const budgetMeta = { slope, intercept, tol: TOL, rmse: round(rmse), maxCost, curve: budgetCurve, counts: budgetCounts, byFaction: budgetByFaction };
+
 const dvVec = FACTIONS.map((f) => decks.find((d) => d.faction === f).value);
 const meta = {
   factions: FACTIONS,
@@ -125,6 +168,7 @@ const meta = {
   spearmanFair: round(spearman(dvVec, FACTIONS.map((f) => WIN_FAIR[f])).r, 3),
   pearsonHeur: round(pearson(dvVec, FACTIONS.map((f) => WIN_HEUR[f])).r, 3),
   meanByCost: [...meanByCost].sort((a, b) => a[0] - b[0]).map(([cost, m]) => ({ cost, mean: round(m) })),
+  budget: budgetMeta,
 };
 
 const data = { meta, cards, decks };
@@ -254,6 +298,24 @@ function dashboardApp() {
       for (const p of line) ln += `<circle cx="${px(p.x).toFixed(1)}" cy="${py(p.y).toFixed(1)}" r="2.5" fill="#e0bd58"/>`;
     }
     return `<svg class="chart" viewBox="0 0 ${W} ${H}">${axes(W, H, m, xMax, yMax, xLabel, yLabel, xTicks)}${ln}${dots}</svg>`;
+  }
+
+  function bandScatter(points, xMax, yMax) {
+    const b = D.meta.budget;
+    const W = 840, H = 460, m = { l: 48, r: 14, t: 14, b: 42 };
+    const px = (v) => m.l + (v / xMax) * (W - m.l - m.r);
+    const py = (v) => H - m.b - (v / yMax) * (H - m.t - m.b);
+    const xTicks = [];
+    for (let i = 0; i <= xMax; i++) xTicks.push({ v: i, label: String(i) });
+    const hi = b.curve.map((c) => `${px(c.cost).toFixed(1)},${py(Math.min(c.hi, yMax)).toFixed(1)}`);
+    const lo = b.curve.slice().reverse().map((c) => `${px(c.cost).toFixed(1)},${py(Math.max(c.lo, 0)).toFixed(1)}`);
+    const band = `<polygon points="${hi.concat(lo).join(' ')}" fill="#d9b44a" fill-opacity="0.12"/>`;
+    const exp = `<polyline fill="none" stroke="#d9b44a" stroke-width="2" points="${b.curve.map((c) => `${px(c.cost).toFixed(1)},${py(c.expected).toFixed(1)}`).join(' ')}"/>`;
+    let dots = '';
+    for (const p of points) {
+      dots += `<circle cx="${px(p.x).toFixed(1)}" cy="${py(p.y).toFixed(1)}" r="${p.r}" fill="${p.color}" fill-opacity="0.82" stroke="#0008" stroke-width=".5"><title>${esc(p.label)}</title></circle>`;
+    }
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}">${axes(W, H, m, xMax, yMax, 'total cost (mana+energy)', 'card power', xTicks)}${band}${exp}${dots}</svg>`;
   }
 
   function histogram(binW, xMax, bins) {
@@ -417,6 +479,51 @@ function dashboardApp() {
     );
   }
 
+  const SC = { over: '#e0bd58', within: '#5fb56f', under: '#e08a8a' };
+  function budget() {
+    const b = D.meta.budget;
+    const xMax = b.maxCost + 1;
+    const yMax = Math.ceil(D.meta.overall.max / 2) * 2;
+    const pts = D.cards.map((c) => ({
+      x: c.cost + (((c.id * 53) % 11) / 11 - 0.5) * 0.7,
+      y: c.power,
+      r: 3 + Math.sqrt(c.copies) * 1.4,
+      color: SC[c.budgetStatus],
+      label: `${c.name} — cost ${c.cost}, power ${c.power} vs window ${c.budgetLo}–${c.budgetHi} (Δ ${c.budgetDelta > 0 ? '+' : ''}${c.budgetDelta}, ${c.budgetStatus})`,
+    }));
+    const cs = b.counts;
+    const statusStack = stackBar([
+      { name: `under (${cs.under})`, value: cs.under, color: SC.under },
+      { name: `within (${cs.within})`, value: cs.within, color: SC.within },
+      { name: `over (${cs.over})`, value: cs.over, color: SC.over },
+    ]);
+    const facRows = F.map((f) => {
+      const fb = b.byFaction[f];
+      const tot = fb.under + fb.within + fb.over || 1;
+      const seg = [['under', fb.under], ['within', fb.within], ['over', fb.over]]
+        .map(([k, v]) => (v ? `<span style="width:${(v / tot) * 100}%;background:${SC[k]}" title="${k}: ${v}"></span>` : ''))
+        .join('');
+      return `<div class="row"><span class="lbl" style="color:${fc(f)}">${f}</span><span style="display:flex;height:14px;border-radius:3px;overflow:hidden">${seg}</span><span class="val">${fb.meanDelta > 0 ? '+' : ''}${f1(fb.meanDelta)}</span></div>`;
+    }).join('');
+    const sorted = [...D.cards].sort((a, c) => c.budgetDelta - a.budgetDelta);
+    const over = barList(sorted.filter((c) => c.budgetStatus === 'over').slice(0, 12).map((c) => ({ label: `${c.name} (${c.cost})`, value: c.budgetDelta, color: SC.over, text: `+${f1(c.budgetDelta)}` })));
+    const under = barList(sorted.filter((c) => c.budgetStatus === 'under').slice(-12).reverse().map((c) => ({ label: `${c.name} (${c.cost})`, value: Math.abs(c.budgetDelta), color: SC.under, text: f1(c.budgetDelta) })));
+    return section(
+      'budget',
+      'Cost budget & delta',
+      `expected power = ${f1(b.intercept)} + ${f1(b.slope)}·cost (least-squares fit to the pool); window = ±${b.tol} (≈ the pool's RMSE around the line, ${b.rmse}) — Δ = power − expected`,
+      `<div class="panel"><h3 class="hdr">Cards vs the budget window (shaded = window, gold line = expected; green within, gold over, red under — point size = copies)</h3>${bandScatter(pts, xMax, yMax)}<div class="legend"><span><i style="background:${SC.under}"></i>under budget</span><span><i style="background:${SC.within}"></i>within window</span><span><i style="background:${SC.over}"></i>over budget</span></div></div>
+      <div class="grid two" style="margin-top:14px">
+        <div class="panel"><h3 class="hdr">Budget status — ${cs.under} under · ${cs.within} within · ${cs.over} over</h3>${statusStack}<div class="bars" style="margin-top:10px">${facRows}</div><div class="small muted" style="margin-top:6px">bars = status mix per faction; number = mean Δ vs budget (negative ⇒ the faction is under-budget for its cost across the board)</div></div>
+        <div class="panel"><h3 class="hdr">Furthest over budget (power − expected)</h3>${over}</div>
+      </div>
+      <div class="grid two" style="margin-top:14px">
+        <div class="panel"><h3 class="hdr">Furthest under budget</h3>${under}</div>
+        <div class="panel callout small"><b>Over</b> the window = stronger than expected for its cost (efficient / watch for overpowered); <b>under</b> = weaker than its cost-peers. The band is deliberately wide — a window, not a line — so only clear outliers are flagged. The per-faction <b>mean Δ</b> exposes systematic mispricing: a strongly negative faction is under-statted-for-cost across its whole deck, which lines up with the win-rate diagnosis (the floor decks pay full price for below-curve cards).</div>
+      </div>`,
+    );
+  }
+
   function curves() {
     const maxN = Math.max(...D.decks.flatMap((d) => Object.values(d.curve)));
     const panels = D.decks
@@ -466,7 +573,7 @@ function dashboardApp() {
   }
 
   // ── Interactive card table ─────────────────────────────────────────────────
-  const state = { sort: 'power', dir: -1, faction: 'all', type: 'all', q: '' };
+  const state = { sort: 'power', dir: -1, faction: 'all', type: 'all', status: 'all', q: '' };
   const COLS = [
     { k: 'name', t: 'Card', num: false },
     { k: 'faction', t: 'Faction', num: false },
@@ -479,13 +586,14 @@ function dashboardApp() {
     { k: 'abilityValue', t: 'Ability', num: true },
     { k: 'xMult', t: 'xMult', num: true },
     { k: 'powerPerCost', t: 'Pwr/Cost', num: true },
-    { k: 'costResidual', t: 'Residual', num: true },
+    { k: 'budgetDelta', t: 'Δ budget', num: true },
   ];
   function tableRows() {
     let rows = D.cards.filter(
       (c) =>
         (state.faction === 'all' || c.faction === state.faction) &&
         (state.type === 'all' || c.type === state.type) &&
+        (state.status === 'all' || c.budgetStatus === state.status) &&
         (state.q === '' || (c.name + ' ' + c.tags.join(' ') + ' ' + c.traits.join(' ')).toLowerCase().includes(state.q)),
     );
     rows.sort((a, b) => {
@@ -500,8 +608,9 @@ function dashboardApp() {
           if (col.k === 'faction') return `<td><span class="tag" style="background:${fc(c.faction)}">${c.faction}</span></td>`;
           if (col.k === 'type') return `<td class="muted">${TYPE[c.type] || c.type}</td>`;
           const v = c[col.k];
-          const color = col.k === 'costResidual' ? (v > 0 ? '#7fc28a' : v < 0 ? '#d98a8a' : '') : '';
-          return `<td class="num" style="color:${color}">${col.k === 'xMult' ? '×' + f2(v) : f2(v)}</td>`;
+          const color = col.k === 'budgetDelta' ? SC[c.budgetStatus] : '';
+          const txt = col.k === 'xMult' ? '×' + f2(v) : (col.k === 'budgetDelta' && v > 0 ? '+' : '') + f2(v);
+          return `<td class="num" style="color:${color}">${txt}</td>`;
         }).join('');
         return `<tr>${cells}</tr>`;
       })
@@ -527,6 +636,7 @@ function dashboardApp() {
       `<div class="controls">
         <span class="muted small">Faction:</span> <button data-fil="faction" data-v="all" class="on">All</button>${F.map((f) => `<button data-fil="faction" data-v="${f}">${f}</button>`).join('')}
         <span class="muted small" style="margin-left:8px">Type:</span> <button data-fil="type" data-v="all" class="on">All</button>${Object.keys(TYPE).map((t) => `<button data-fil="type" data-v="${t}">${TYPE[t]}</button>`).join('')}
+        <span class="muted small" style="margin-left:8px">Budget:</span> <button data-fil="status" data-v="all" class="on">All</button><button data-fil="status" data-v="under">Under</button><button data-fil="status" data-v="within">Within</button><button data-fil="status" data-v="over">Over</button>
         <input id="q" placeholder="search name / tag / trait" style="margin-left:auto">
       </div><div class="tbl-wrap"></div>`,
     );
@@ -538,14 +648,14 @@ function dashboardApp() {
     return `<section id="${id}"><div class="sec-h"><h2>${esc(title)}</h2><span class="note">${esc(note)}</span></div>${body}</section>`;
   }
 
-  const navIds = [['overview', 'Overview'], ['decks', 'Decks'], ['spread', 'Spread'], ['cost', 'Cost'], ['curve', 'Curves'], ['components', 'Drivers'], ['synergy', 'Synergy'], ['table', 'Cards']];
+  const navIds = [['overview', 'Overview'], ['decks', 'Decks'], ['spread', 'Spread'], ['cost', 'Cost'], ['budget', 'Budget'], ['curve', 'Curves'], ['components', 'Drivers'], ['synergy', 'Synergy'], ['table', 'Cards']];
   const app = document.getElementById('app');
   app.innerHTML =
     `<header><h1>Aetherion · Starter-Deck Balance Analytics</h1><div class="sub">First-principles card-power & deck-value scores · ${D.meta.nCards} cards · weights are interpretable, never fitted to win rates</div><nav>${navIds
       .map(([i, t]) => `<a href="#${i}">${t}</a>`)
       .join('')}</nav></header><main>` +
     `<div class="callout">The card score is <b>raw intrinsic power</b> (no cost anchoring); this dashboard adds the cost lens. Validation is a <b>diagnostic</b>: deck value correlates with measured win rates at Spearman ρ ${f2(D.meta.spearmanFair)} (fair rollout) / Pearson ${f2(D.meta.pearsonHeur)} (heuristic). The one miss is <b>Verdant</b>, whose strength is emergent ramp/snowball that no static score can see — read it alongside simulation.</div>` +
-    kpis() + deckPanels() + spread() + cost() + curves() + components() + synergy() + tableSection() +
+    kpis() + deckPanels() + spread() + cost() + budget() + curves() + components() + synergy() + tableSection() +
     `</main>`;
 
   // wire smooth-scroll nav

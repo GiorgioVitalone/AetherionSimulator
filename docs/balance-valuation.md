@@ -144,5 +144,8 @@ vanilla JS, no CDN, works offline), focused on the 64 distinct cards in the 4 st
 overview KPIs; deck-value panels + ranking; card-value **spread** (stacked-by-faction histogram,
 per-faction box plots, spread-metric table); **value vs cost** (power-vs-cost scatter with the
 mean-power-per-cost curve, power/cost efficiency rankings, cost-curve residuals — the cost lens the
-raw score itself omits); per-deck cost curves; stat/trait/ability **value drivers**; intra-card
-synergy multipliers + inter-card pairs; and a sortable/filterable card table.
+raw score itself omits); a **cost-budget window** (an expected-power line `a + b·cost` fit to the
+pool, widened into a ±RMSE tolerance band — a window, not a strict value — with each card's Δ vs
+expected and an under/within/over status, plus the per-faction mean-Δ that surfaces systematic
+mispricing); per-deck cost curves; stat/trait/ability **value drivers**; intra-card synergy
+multipliers + inter-card pairs; and a sortable/filterable card table (filterable by budget status).
