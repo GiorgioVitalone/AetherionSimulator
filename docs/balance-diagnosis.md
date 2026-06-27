@@ -417,3 +417,56 @@ edge, after which the residual gap *is* the LP asymmetry (Radiant +5 / Onyx −5
 closes the last ~10 pp. The two levers are orthogonal — card budget fixes the power runaway, LP flatten
 fixes the survivability asymmetry — and together take the starter pool from a 48 pp spread (broken) to
 ~6 pp (at target), with no hand-tuning beyond "trim over-budget cards + set every hero to 30 LP."
+
+### 10c. Lever matrix — which of the 13 past levers actually move the spread (2026-06-27)
+
+`balance-matrix.mjs` screens the user's 13 levers against the win-rate spread, each solo and in stacks,
+all via engine config knobs (the budget patch's nerfs are themselves a `cardStatOverride` knob built from
+`computeSuggestions()`, so the card patch composes with the rules levers). 8 are pure rules knobs;
+Radiant-−1HP / cheap-trim / Onyx-LP / Verdant-trim are stat/LP knobs; **Sapphire-wincon and
+Onyx-recursion-payoff need *new cards*, so they run as a labelled stat-scale PROXY**. Heuristic +
+fairPilot, real decks, all-pairs, GPP=300, baseline spread 47.4.
+
+**Single-lever main effects, ranked by Δspread:**
+
+| lever | spread | Δ vs baseline |
+|---|---|---|
+| **Radiant cost≥2 bodies −1 HP** | 21.1 | **−26.3** |
+| Trim cheap over-budget bodies | 33.2 | −14.2 |
+| −1 shield first instance/turn | 40.0 | −7.4 |
+| Disable hero healing | 42.6 | −4.8 |
+| Onyx recursion payoff *(proxy)* | 43.3 | −4.1 |
+| Onyx starting LP 25→30 | 43.4 | −4.0 |
+| First-player compensation (card+res) | 43.6 | −3.8 |
+| Transform-gate widen | 44.0 | −3.4 |
+| ARM buffs take max | 47.4 | +0.0 |
+| LP tiebreak *(counterfactual: off)* | 47.4 | +0.0 |
+| Defender only High Ground | 49.2 | +1.8 |
+| Sapphire wincon *(proxy)* | 49.3 | +1.9 |
+| **Verdant char stats ×0.85** | 58.6 | **+11.2** |
+
+**Stacks:** PATCH (budget nerfs + LP→30) = **6.1 (−41.3)**; PATCH + transform-widen 6.8; PATCH + ARM-max
+6.2; PATCH + shield-first 7.9; PATCH + Defender-HG-only **19.7**; PATCH + Verdant×0.85 **21.5**.
+
+**Four conclusions:**
+
+1. **There is one driver: Radiant's over-statted bodies.** The single most powerful lever by far is
+   *Radiant cost≥2 −1 HP* (−26 pp) — a targeted version of what the budget model flagged. The next is
+   *trim cheap over-budget bodies* (−14). Every decisive lever is a **direct nerf to the top deck's card
+   power**; the full PATCH (which bundles those nerfs + LP flatten) dwarfs them all at −41 → 6.1 pp.
+2. **Nerfing the wrong deck backfires.** *Verdant ×0.85* **widens** the spread +11 (Verdant is the *middle*
+   at ~44 %, so nerfing it just hands Radiant the crown — Radiant 82→88). The lesson the matrix makes
+   unmissable: **target the top, never the middle or the floor.** Floor-raise proxies (Sapphire/Onyx
+   ×1.15) barely move it (±2–4) because they don't touch Radiant.
+3. **The budget patch is essentially optimal; stacking more on top only hurts or does nothing.**
+   PATCH+transform/ARM/shield ≈ PATCH (6–8 pp, no gain at the floor), while PATCH+Verdant×0.85 (21.5) and
+   PATCH+Defender-HG (19.7) *break* it by over-nerfing or over-buffing Verdant.
+4. **This is why the past piecemeal levers never closed the gap.** Most of them — ARM-max (0), LP-tiebreak
+   (0), transform-widen (−3), first-player-comp (−4), disable-hero-heal (−5), shield-first (−7) — are
+   individually weak because none hit the actual driver hard enough. The gap closes only when you nerf
+   Radiant's card power directly (the budget model's contribution) and then flatten LP for the residual.
+
+**Caveat:** GPP=300 (CI ≈ ±5 pp on spread); the ±0–4 cells are noise, but the −26/−14 movers, the +11
+Verdant backfire, and the patch's −41 are well outside it. The two PROXY rows are stat-scale stand-ins,
+not the real new cards — read them as "a generic Sapphire/Onyx power buff," which the matrix shows is the
+wrong lever anyway (you must nerf the top, not buff the floor).
