@@ -392,5 +392,6 @@ the budget model + a re-sim.
 **Caveat.** Numbers are the heuristic pilot — trustworthy for the before→after *delta* (both sides use the
 same pilot and the before matches §9 exactly). The buffs being inert is itself the §8/valuation blind-spot
 showing through: the static score under-rates those spells, so cost-cutting them barely moved the bots, and
-the SIM (which plays them out) confirms they weren't the lever. _Fair-rollout (depth-3) confirmation: in
-progress._
+the SIM (which plays them out) confirms they weren't the lever. _A fair-rollout (depth-3) cross-check was
+attempted but is impractically slow on the full real decks (≫30 min/side at GPP=14); the heuristic delta
+stands on the §9-validated baseline and a large, mechanically-sound magnitude._

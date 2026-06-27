@@ -4,11 +4,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { computeSuggestions } from './balance-suggestions.mjs';
 
-const MODE = process.env.MODE || 'all';
+const MODE = process.env.MODE || 'all'; // all | nerfs | buffs | none
 const OUT = process.env.OUT || '/tmp/aetherion-cards-after.json';
+// FLATTEN_LP: set every hero's starting LP to this value (FLATTEN_LP=1 ⇒ 30).
+const FLATTEN_LP = process.env.FLATTEN_LP ? (Number(process.env.FLATTEN_LP) > 1 ? Number(process.env.FLATTEN_LP) : 30) : 0;
 
 const sug = computeSuggestions();
-const list = MODE === 'nerfs' ? sug.over : MODE === 'buffs' ? sug.under : [...sug.over, ...sug.under];
+const list = MODE === 'nerfs' ? sug.over : MODE === 'buffs' ? sug.under : MODE === 'none' ? [] : [...sug.over, ...sug.under];
 
 const raw = JSON.parse(readFileSync(new URL('./sim-data/aetherion-cards.json', import.meta.url)));
 const byId = new Map(raw.map((c) => [c.id, c]));
@@ -26,6 +28,16 @@ for (const c of list) {
   changes.push(`${card.name}: ${c.after.lever}`);
 }
 
+let lpCount = 0;
+if (FLATTEN_LP) {
+  for (const card of raw) {
+    if (card.cardType === 'H' && card.stats) {
+      card.stats = { ...card.stats, hp: FLATTEN_LP };
+      lpCount++;
+    }
+  }
+}
+
 writeFileSync(OUT, JSON.stringify(raw));
-console.log(`Wrote ${OUT} — ${MODE} (${n} edits):`);
+console.log(`Wrote ${OUT} — ${MODE} (${n} edits)${FLATTEN_LP ? ` + LP→${FLATTEN_LP} (${lpCount} heroes)` : ''}:`);
 for (const ch of changes) console.log(`  · ${ch}`);
