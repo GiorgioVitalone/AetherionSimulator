@@ -129,8 +129,20 @@ honest gap the "build then correlate" approach is meant to surface.
 ## Files & usage
 `src/balance/{types,weights,interaction-matrix,effect-value,trait-scaling,signal-extract,signals,
 card-power,synergy,deck-value,index}.ts`; `src/stats/correlation.ts`; tests under `tests/balance/` and
-`tests/stats/correlation.test.ts`. Run the report (after `pnpm --filter @aetherion-sim/engine build`):
+`tests/stats/correlation.test.ts`. The harness/report code (`balance-data.mjs` is the shared loader)
+runs after `pnpm --filter @aetherion-sim/engine build`:
 
 ```bash
-cd packages/engine && node balance-card-values.mjs
+cd packages/engine
+node balance-card-values.mjs    # text report (per-card table, deck values, correlation)
+node balance-dashboard.mjs      # writes balance-dashboard.html — open it in any browser
 ```
+
+### HTML analytics dashboard
+`balance-dashboard.mjs` emits a **self-contained** `balance-dashboard.html` (inline SVG charts +
+vanilla JS, no CDN, works offline), focused on the 64 distinct cards in the 4 starter decks:
+overview KPIs; deck-value panels + ranking; card-value **spread** (stacked-by-faction histogram,
+per-faction box plots, spread-metric table); **value vs cost** (power-vs-cost scatter with the
+mean-power-per-cost curve, power/cost efficiency rankings, cost-curve residuals — the cost lens the
+raw score itself omits); per-deck cost curves; stat/trait/ability **value drivers**; intra-card
+synergy multipliers + inter-card pairs; and a sortable/filterable card table.
