@@ -1,0 +1,136 @@
+# Card-Power & Deck-Value Valuation
+
+A pure, first-principles model that assigns a scalar **power** to each card and a **value** to
+each deck (cards + inter-card synergy + hero synergy). It is design/balance **tooling** — a
+deterministic analysis layer over the card DSL, not wired into gameplay. Implementation lives in
+`packages/engine/src/balance/`; the report is `packages/engine/balance-card-values.mjs`.
+
+## Design decisions (locked)
+1. **Raw power score only** — no cost anchoring. The card score never reads `cost`; it is intrinsic
+   power. We "work backwards": build the score, then *correlate* it against measured win rates.
+2. **Pure first-principles weights** — every number is anchored to design reasoning or to the
+   engine's own constants (`src/bot/spell-eval.ts`, `src/bot/combat-plan.ts`, gameplan NEUTRAL).
+   Weights are **never fitted** to the win rates. The correlation is a post-hoc *diagnostic*.
+3. **General interaction matrix** for synergy — not a hand-curated registry. Each card emits
+   **Signals** (what it offers) and **Demands** (what it wants); synergy is the sum of signal↔demand
+   matches through a sparse coefficient matrix `W`. The same mechanism covers intra-card, inter-card,
+   and hero synergy.
+
+## Input — `StaticCard`
+The core is context-free (no `GameState`/`CardInstance`). The harness adapts raw `SimCard` JSON into
+`StaticCard`, running `normalizeTraits` (engine traits + `rushValue`/`recycleValue`/regen) and casting
+each `ability.dsl` to `AbilityDSL` at the trust boundary — exactly as `sim-runner.mjs` does. Heroes
+become a `HeroInput` (lp, abilities, optional transform with `lpDelta = transformHP − heroHP`).
+
+## Card power
+`power = base × synergyMultiplier`, where `base = statBase + traitValue + abilityValue` (additive,
+each element once) and the intra-card synergy is a bounded multiplier on top.
+
+**statBase** (characters only; 0 for S/E/H/T/R): `atk×1.0 + hp×1.0 + arm×1.3`. atk/hp anchor to
+spell-eval `bodyValue = atk+hp`; ARM at 1.3 (mitigates ≥1 combat damage per instance and persists).
+
+**traitValue** (`trait-scaling.ts`) — keyword value scales with the stat it leverages:
+
+| trait | value | trait | value |
+|---|---|---|---|
+| defender | `0.6·(hp+arm)` | stealth | `0.25·(atk+hp)` |
+| flying | `0.5·atk` | elite | `0.5` |
+| first_strike | `0.35·atk` | swift | `0.4` |
+| haste | `0.30·atk` | recycle N | `0.6·N` |
+| rush N | `0.12·N·atk` | volatile | `−0.35·hp` |
+| sniper | `0.3·atk` | regeneration N | `min(0.8·N, 0.8·hp)` |
+
+**abilityValue** = `Σ_abilities clamp(Σ effectStaticValue, 0, 12) × recurrence`. Effects are valued by
+`effect-value.ts`, the static analog of spell-eval (same coefficients, expected targets):
+
+| effect | static value | effect | static value |
+|---|---|---|---|
+| destroy/sacrifice enemy | `5.5` (removal) | draw N | `1.2·N` |
+| bounce enemy | `5.5·0.7` (removal) | heal N | `0.7·N` |
+| deal N enemy body | kill `5.5` if N≥3 else chip `min(N,3)` | gain_resource N | `N·(0.5 temp / 1.0 perm)` |
+| deal N enemy hero | `1.5·N` | deploy_token | `(stats)·n·0.5` |
+| AoE variants | `× 2.5` width | return / search / copy | `1.2–1.8 / 1.44–4 / 1.2` |
+| modify_stats allied | `Σgain · bodies · 0.6` | composite / conditional / choose_one | sum / `0.6·ifTrue+0.4·ifFalse` / max |
+| counter_spell / deploy_from_deck | `0.5 / 4` | 10 hard-to-value effects | `1.0` |
+
+`recurrence` (how often an ability lands over a game) multiplies the effect-sum: aura/`while` 2.6,
+`on_turn_start` 2.4, one-shot (`on_deploy`/`on_cast`) 1.0, last-breath/flash 0.9, `activated` 2.0
+(÷ by cooldown, oncePerTurn 1.6, oncePerGame 0.7), board-event triggers (`on_ally_destroyed`,
+`on_spell_cast`, …) 1.2–1.6, an extra ability-level Condition ×0.7. Board-event triggers carry only a
+conservative baseline here — their deck-density upside lives in the synergy term (avoids double-count).
+
+**Intra-card synergy** = `intraSynergy(provides, demands)` over the card's own signals, restricted to
+**different sources within the card** (so a single ability can't self-satisfy).
+`synergyMultiplier = 1 + min(0.5, intraSynergy / base)`; `power = base × multiplier`. Example: a
+Defender (provides `wall`, demands `wall_to_sustain`) with a self-heal ability (provides `sustain`)
+matches `W[sustain][wall_to_sustain] = 0.9` across sources → multiplier > 1 (Sunlit Guardian scores
+~1.38× a vanilla Defender of equal stats).
+
+## Synergy — signals, demands, and the matrix
+A **Signal** is what a card offers; a **Demand** is what it wants. The core primitive is
+`pairSynergy(P, D) = Σ W[p.kind][d.kind] · min(p.weight, d.weight)` (tag-keyed wants additionally
+require tag equality). `min(weight)` keeps units in stat-value space and stops a tiny provider
+inflating a big demand.
+
+Provide kinds: `wall, body, wide_bodies, sustain, removal, reach, card_flow, ramp, buff, spell_cast,
+equipment, death_trigger, tag`. Want kinds: `wall_to_sustain, bodies_to_buff, wide_to_sacrifice,
+spell_density, large_hand, equipment_count, death_of_tag, tag_tribal, frontline_arm, temp_resource,
+attach_target`. The matrix `W` is **sparse**; key cells:
+
+| provide → want | W | provide → want | W |
+|---|---|---|---|
+| sustain → wall_to_sustain | 0.9 | tag → tag_tribal (tag-gated) | 0.9 |
+| spell_cast → spell_density | 0.9 | death_trigger → death_of_tag (tag-gated) | 0.85 |
+| equipment → equipment_count | 0.9 | wide_bodies → wide_to_sacrifice | 0.8 |
+| card_flow → large_hand | 0.8 | ramp → temp_resource | 0.7 |
+| body → attach_target | 0.7 | wide_bodies → bodies_to_buff | 0.7 |
+
+**`removal` and `reach` are all-zero provider rows** — their value lives only in card power, so the
+synergy term can never re-count it. This is the central double-count guard.
+
+## Deck value
+`value = cardPowerSum + consistency + interSynergy.capped + heroSynergy`.
+- **cardPowerSum** — `computeCardPower` per distinct card; the k-th copy worth `power·0.9^(k-1)`
+  (diminishing returns on redundant draws).
+- **consistency** (additive, modest) — `−12·Σ|frac_b − ideal_b|` over cost buckets (a fixed
+  first-principles curve template — uses the cost *distribution* for deck quality, not a per-card cost
+  budget) `+ 8·(onColorFrac − 0.5)` (off-color cards cast less reliably).
+- **interSynergy** — `pairSynergy` over distinct card pairs × presence (`min(copies,3)/3` each);
+  per-pair cap 4; global cap `0.4 × cardPowerSum` (synergy is a bounded amplifier, never dominant).
+- **heroSynergy** — `6 (floor) + (lp−30)·0.6 + heroEngineValue + min(heroDemandMatch, 0.5·engine) +
+  transform`. The hero's demands (Kaelthar → `death_of_tag{Undead}`, Lyria → `spell_density` +
+  `large_hand`, Seraphina → `equipment_count` + `frontline_arm`, RIA-09 → `temp_resource`) are matched
+  against the deck's aggregated provides.
+
+## Validation — diagnostic, never calibration
+The harness reports the **correlation** of the 4 starters' deck values with the measured fair-rollout
+win rates `[Radiant 78, Verdant 69, Onyx 44, Sapphire 8]` (Spearman ρ is the headline; n=4 makes
+Pearson noisy). Weights are **not** adjusted to improve it.
+
+**First run (2026-06-27):** the score ranks `Radiant > Onyx > Sapphire > Verdant`
+(values 351 / 224 / 212 / 206). It nails Radiant #1 (both pilots agree) and correlates strongly with
+the *heuristic* ordering (Pearson 0.95) but only moderately with the fair rollout (Pearson 0.58,
+Spearman 0.40). The divergence is **Verdant**, which the static score ranks last while the fair
+rollout has it 2nd — the same blind spot the heuristic bot has: a context-free score cannot see
+Verdant's emergent **ramp/snowball** (small bodies + resource acceleration look weak card-by-card).
+This is consistent with the pacing diagnosis (`balance-diagnosis.md` §8–9) and is exactly the kind of
+honest gap the "build then correlate" approach is meant to surface.
+
+## Caveats
+- The score is **intrinsic card power**, not a win-rate predictor; Verdant-style emergent strategies
+  (ramp, snowball) are under-valued by any static model — read the score alongside simulation.
+- **Double-counting** is guarded structurally: the WANT axis holds only payoffs that need *other*
+  cards; removal/reach are zero provider rows (counted once, in card power); intra-synergy requires
+  cross-source pairs and is a bounded multiplier, inter-synergy iterates distinct ids and is a
+  separately-capped additive term.
+- Most exotic traits (volatile, sniper, elite, rush, swift, recycle) are near-inert on the 130-card
+  pool — their formulas are defined for completeness and covered by synthetic unit tests.
+
+## Files & usage
+`src/balance/{types,weights,interaction-matrix,effect-value,trait-scaling,signal-extract,signals,
+card-power,synergy,deck-value,index}.ts`; `src/stats/correlation.ts`; tests under `tests/balance/` and
+`tests/stats/correlation.test.ts`. Run the report (after `pnpm --filter @aetherion-sim/engine build`):
+
+```bash
+cd packages/engine && node balance-card-values.mjs
+```
