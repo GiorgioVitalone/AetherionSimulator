@@ -350,3 +350,47 @@ not substitute for the two deck-level fixes §8 already flagged.
 **Caveat:** rollout cells are ±~18 pp (small samples); read the cross-pilot agreement and the ~17–22 pp gap
 swings, not individual faction cells. The heuristic compresses all magnitudes (it under-pilots ramp, so its
 Verdant barely moves) — trust the rollout for the Verdant-collapse mechanism.
+
+## 10. Closing the loop — re-simulating with the valuation-derived changes (2026-06-27)
+
+Downstream of the card-power / deck-value valuation (`docs/balance-valuation.md`) and its outlier
+suggestions (`docs/balance-suggestions.md`): apply those edits to the card data and re-run the sim to test
+whether the static budget model's changes actually flatten the play-tested win rates.
+
+**Method.** `balance-apply-edits.mjs` writes a modified card set with the suggested *primary* edits (the same
+the before/after compare uses) — over-budget Characters get their formula-verified stat trim, under-budget
+spells get their cost cut. `balance-resim.mjs` then runs the 4 starter decks all-pairs under fairPilot. The
+BEFORE run reproduces the §9 heuristic baseline **exactly** (harness validation).
+
+**Result (heuristic + fairPilot, GPP=400, all-pairs):**
+
+| variant | Onyx | Radiant | Sapphire | Verdant | top−floor gap | max−min spread |
+|---|---|---|---|---|---|---|
+| before (baseline) | 33.8 | 81.7 | 39.6 | 44.9 | 26.6 | **47.9** |
+| after — all 23 edits | 43.0 | 55.6 | 43.7 | 57.7 | 13.3 | **14.7** |
+| after — 11 nerfs only | 41.5 | 57.0 | 44.5 | 57.0 | 14.0 | **15.5** |
+
+**Two findings:**
+
+1. **The valuation-derived changes cut the simulated spread ~70% (47.9 → ~15 pp)** and halve the top/floor
+   gap (26.6 → 13.3). Radiant's runaway is reined in (82 → 56), the floor lifts (Onyx 34 → 43). The loop
+   closes: the static budget model's mechanical edits genuinely flatten the play-tested distribution,
+   corroborating the §8 pacing thesis (over-budget bodies are exactly the sustain/stat edge the long game
+   over-rewards).
+2. **The 11 over-budget nerfs do nearly all the work** (nerfs-only spread 15.5 ≈ all-23 spread 14.7). The
+   tentative spell-buffs — the score's situational-value blind spot — are essentially redundant; adding them
+   only nudges Onyx +1.5, and they push Verdant to the top. So the cautious, defensible half of the
+   suggestions is the one that matters; the buffs can be skipped.
+
+**Residual.** Not perfectly flat — Radiant/Verdant still edge Onyx/Sapphire (~14 pp vs the ≤6 pp §0 target),
+and **Verdant rises (45 → 57)** because it carried *no* over-budget bodies, so nerfing everyone else's strong
+cards relatively buffs it. A second pass (refit the budget on the edited pool → nerf the new outliers, now
+Verdant's ramp/token engine) would tighten further. But **one round of mechanical, formula-derived edits
+already moves the spread from "broken" (48 pp) to "playable" (15 pp)** — and it required no hand-tuning, only
+the budget model + a re-sim.
+
+**Caveat.** Numbers are the heuristic pilot — trustworthy for the before→after *delta* (both sides use the
+same pilot and the before matches §9 exactly). The buffs being inert is itself the §8/valuation blind-spot
+showing through: the static score under-rates those spells, so cost-cutting them barely moved the bots, and
+the SIM (which plays them out) confirms they weren't the lever. _Fair-rollout (depth-3) confirmation: in
+progress._
