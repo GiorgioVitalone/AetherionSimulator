@@ -136,7 +136,14 @@ runs after `pnpm --filter @aetherion-sim/engine build`:
 cd packages/engine
 node balance-card-values.mjs    # text report (per-card table, deck values, correlation)
 node balance-dashboard.mjs      # writes balance-dashboard.html — open it in any browser
+node balance-suggestions.mjs    # writes docs/balance-suggestions.md — draft fixes for out-of-window cards
 ```
+
+The budget model (`a + b·cost + rarity bonus`, ±RMSE window) lives in `balance-data.mjs`
+(`budgetModel` + `RARITY_BONUS`), shared by the dashboard and the suggestions generator so they stay
+in lockstep. `balance-suggestions.mjs` lists every card outside its window and proposes, per card, a
+stat/keyword edit (**re-scored through the formula** to verify it lands back inside), a cost re-cost,
+and — when the ability drives the score — an ability note. See `docs/balance-suggestions.md`.
 
 ### HTML analytics dashboard
 `balance-dashboard.mjs` emits a **self-contained** `balance-dashboard.html` (inline SVG charts +

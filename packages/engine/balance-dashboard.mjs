@@ -8,7 +8,7 @@
 import { writeFileSync } from 'node:fs';
 import { computeDeckValue } from './dist/balance/index.js';
 import { pearson, spearman } from './dist/stats/index.js';
-import { loadBalanceData } from './balance-data.mjs';
+import { loadBalanceData, RARITY_BONUS, RARITY_ORDER, budgetModel } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
@@ -119,26 +119,7 @@ for (const c of cards) c.costResidual = round(c.power - meanByCost.get(c.cost));
 // (higher-rarity cards are allowed more power for their cost), widened into a
 // tolerance BAND (a window, not a strict value). Δ = power − rarity-adjusted
 // expected; status = under / within / over the band.
-const MIN_TOL = 1.5;
-const RMSE_MULT = 0.9; // window half-width ≈ 0.9 × the pool's scatter (RMSE) around the model
-// Monotonic upward shift per rarity tier — a normative premium (tunable), anchored
-// loosely to the observed Legendary premium (~+4.5 over the cost line).
-const RARITY_BONUS = { Common: 0, Ethereal: 0.75, Mythic: 1.5, Legendary: 2.5 };
-const RARITY_ORDER = ['Common', 'Ethereal', 'Mythic', 'Legendary'];
-const n = cards.length;
-const meanCost = cards.reduce((s, c) => s + c.cost, 0) / n;
-const meanPow = cards.reduce((s, c) => s + c.power, 0) / n;
-let sxy = 0;
-let sxx = 0;
-for (const c of cards) {
-  sxy += (c.cost - meanCost) * (c.power - meanPow);
-  sxx += (c.cost - meanCost) ** 2;
-}
-const slope = round(sxy / sxx, 1); // rounded → a clean, legible budget line
-const intercept = round(meanPow - (sxy / sxx) * meanCost, 1);
-const expectedFor = (cst, rarity) => intercept + slope * cst + (RARITY_BONUS[rarity] ?? 0);
-const rmse = Math.sqrt(cards.reduce((s, c) => s + (c.power - expectedFor(c.cost, c.rarity)) ** 2, 0) / n);
-const TOL = round(Math.max(MIN_TOL, RMSE_MULT * rmse), 1); // constant-width band around the model
+const { slope, intercept, tol: TOL, rmse, expectedFor } = budgetModel(cards);
 for (const c of cards) {
   const exp = expectedFor(c.cost, c.rarity);
   c.budgetExpected = round(exp);
