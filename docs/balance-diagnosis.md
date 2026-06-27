@@ -511,3 +511,23 @@ extra global rules knobs only add noise or new skews.
 
 **Caveat:** the board-size rows are small-sample/explosive (read them as "clearly re-breaks", not a
 precise number); the inert cells are GPP=400 (CI ≈ ±4 pp), so their ±1 pp deltas are firmly noise.
+
+### 10e. Game length (avg / median turns) — the rebalance changes *who wins*, not *how long*
+
+Reporting both the mean and the median game length (all runs are **100 % decided** — no timeouts/draws —
+so the median is the robust "typical game"; avg ≈ median + ~1, a small right-skew from a few grindy games):
+
+| config | spread | avg turns | median turns |
+|---|---|---|---|
+| before (baseline) | 47.9 | 31.0 | 30 |
+| nerfs + LP→30 (patch) | 5.9 | 31.9 | 31 |
+| all-23 + LP→30 | 6.1 | 31.6 | 30 |
+
+**The whole rebalance moves game length by ~1 turn.** Taking the field from a broken 48 pp spread to a
+balanced ~6 pp one leaves the game ~31 turns long either way — the patch is a card-power/LP correction,
+not a pacing change. **Nor do the rules levers touch length:** every fast lever sits at ~31–32 avg /
+30–31 median (first-player-comp shaves ~1 turn). The **only** pacing lever is board-size (HG/FL +1),
+which shortens games to ~27–29 turns — but that is exactly the lever that *re-breaks* the balance (§10d),
+so there is no free lunch: the single knob that speeds the game also re-tilts the field toward go-wide.
+(This refines §8: at the patched, balanced equilibrium the game length is stable ~31 turns and decisive,
+so "shorten the game" is no longer a needed lever once the card-power runaway is removed.)
