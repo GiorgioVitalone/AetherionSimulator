@@ -180,13 +180,27 @@ export function drawResourceCard(state: GameState): {
   readonly events: readonly GameEvent[];
 } {
   const player = state.players[state.activePlayerIndex];
+  // Precise "Resource Deck empty at Upkeep, BEFORE the draw" flag for the
+  // `resource_deck_empty_transform` rule — recorded ONLY under that mode so every
+  // other run is byte-identical. Captured from the PRE-draw deck length, so transform
+  // unlocks the first turn that STARTS empty, not the turn the last card is drawn.
+  const base =
+    state.config?.terminationMode === 'resource_deck_empty_transform'
+      ? {
+          ...state,
+          turnState: {
+            ...state.turnState,
+            resourceDeckEmptyAtUpkeep: player.resourceDeck.length === 0,
+          },
+        }
+      : state;
   // DESIGN-SWEEP (config.resourceRampBonus N): draw 1 + N this Upkeep (faster ramp),
   // never past the live Resource Deck. Absent / <= 0 ⇒ exactly 1 (byte-identical).
   const bonus = state.config?.resourceRampBonus ?? 0;
   const want = 1 + (bonus > 0 ? bonus : 0);
   const count = Math.min(want, player.resourceDeck.length);
   if (count === 0) {
-    return { state, events: [] };
+    return { state: base, events: [] };
   }
 
   const drawn = player.resourceDeck.slice(0, count);
@@ -197,7 +211,7 @@ export function drawResourceCard(state: GameState): {
   };
 
   return {
-    state: setPlayer(state, state.activePlayerIndex, newPlayer),
+    state: setPlayer(base, state.activePlayerIndex, newPlayer),
     events: drawn.map((d) => ({
       type: 'RESOURCE_GAINED' as const,
       playerId: state.activePlayerIndex,

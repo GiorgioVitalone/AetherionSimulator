@@ -874,6 +874,12 @@ export interface TriggerFiredEvent {
 export interface TurnState {
   readonly discardedForEnergy: boolean;
   readonly firstPlayerFirstTurn: boolean;
+  /** Precise gate for `resource_deck_empty_transform`: set at the active player's
+   * Upkeep, BEFORE the resource draw, to whether their Resource Deck was already
+   * empty (nothing to draw). Recorded ONLY under that termination mode; absent ≡
+   * false. `computeCanTransform` reads this so transform unlocks on the first turn
+   * that STARTS empty (not the turn the last card is drawn). */
+  readonly resourceDeckEmptyAtUpkeep?: boolean;
   /** Per-player flag: did this player gain a Temporary Resource this turn? Set by
    * the `gain_resource` effect (temporary) and read by the `event_context`
    * Condition `gained_temporary_resource_this_turn` (RIA-09 Biotech Harvest).

@@ -481,11 +481,12 @@ function computeCanTransform(
   const noCharacters = getAllCards(player.zones).filter((c) => c.cardType === 'C').length === 0;
   if (noCharacters && oppResources - myResources >= 5) return true;
 
-  // OR (termination knob): once this player's Resource Deck is empty, transform
-  // becomes available unconditionally — a comeback enabler that ends stalled games.
+  // OR (termination knob): once this player's Resource Deck is empty at the START of
+  // their turn (recorded at Upkeep BEFORE the draw — see TurnState.resourceDeckEmptyAtUpkeep),
+  // transform becomes available unconditionally — a comeback enabler that ends stalls.
   if (
     state.config?.terminationMode === 'resource_deck_empty_transform' &&
-    player.resourceDeck.length === 0
+    state.turnState.resourceDeckEmptyAtUpkeep === true
   ) {
     return true;
   }
