@@ -1,0 +1,231 @@
+// balance-compare.mjs — a before/after view of applying the suggested balance
+// changes (balance-suggestions.mjs): over-budget Characters get their verified
+// stat edit, under-budget spells get their cost reduction. Both states are scored
+// against the SAME (before) budget window, so the chart shows outliers being
+// pulled into the band. Writes balance-compare.html (self-contained). Read-only.
+import { writeFileSync } from 'node:fs';
+import { computeCardPower, computeDeckValue } from './dist/balance/index.js';
+import { loadBalanceData } from './balance-data.mjs';
+import { getDeck } from './deck-loader.mjs';
+import { computeSuggestions } from './balance-suggestions.mjs';
+
+const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
+const round = (x, n = 1) => {
+  const p = 10 ** n;
+  return Math.round(x * p) / p;
+};
+
+const sug = computeSuggestions();
+const { model } = sug;
+const { tol, slope, intercept, expectedFor } = model;
+const outlierMap = new Map();
+for (const c of [...sug.over, ...sug.under]) outlierMap.set(c.id, c);
+
+const { index, heroByFaction } = loadBalanceData();
+const afterIndex = new Map(index);
+for (const [id, c] of outlierMap) afterIndex.set(id, c.after.static);
+
+const statusOf = (power, cost, rarity) => {
+  const e = expectedFor(cost, rarity);
+  return power > e + tol ? 'over' : power < e - tol ? 'under' : 'within';
+};
+
+const rows = sug.cards.map((c) => {
+  const out = outlierMap.get(c.id);
+  const beforePower = round(c.power, 2);
+  const beforeCost = c.cost;
+  let afterPower = beforePower;
+  let afterCost = beforeCost;
+  let change = null;
+  if (out) {
+    afterPower = round(computeCardPower(out.after.static).power, 2);
+    afterCost = out.after.totalCost;
+    change = out.after.lever;
+  }
+  return {
+    name: c.sc.name,
+    faction: c.faction,
+    rarity: c.rarity,
+    change,
+    beforePower,
+    afterPower,
+    beforeCost,
+    afterCost,
+    beforeStatus: statusOf(beforePower, beforeCost, c.rarity),
+    afterStatus: statusOf(afterPower, afterCost, c.rarity),
+    beforeDelta: round(beforePower - expectedFor(beforeCost, c.rarity), 2),
+    afterDelta: round(afterPower - expectedFor(afterCost, c.rarity), 2),
+  };
+});
+
+const decks = FACTIONS.map((f) => {
+  const deck = getDeck(f);
+  const hero = heroByFaction.get(f);
+  const sel = { faction: f, mainDeckDefIds: deck.mainDeckDefIds };
+  return {
+    faction: f,
+    before: round(computeDeckValue(sel, hero, index).value, 1),
+    after: round(computeDeckValue(sel, hero, afterIndex).value, 1),
+  };
+});
+
+const summarize = (arr) => {
+  const s = [...arr].sort((a, b) => a - b);
+  const n = s.length;
+  const mean = s.reduce((x, y) => x + y, 0) / n;
+  const sd = Math.sqrt(s.reduce((x, y) => x + (y - mean) ** 2, 0) / n);
+  return { mean: round(mean, 1), sd: round(sd, 1), min: round(s[0], 1), max: round(s[n - 1], 1), spread: round(s[n - 1] - s[0], 1) };
+};
+const countStatus = (key) => {
+  const c = { under: 0, within: 0, over: 0 };
+  for (const r of rows) c[r[key]]++;
+  return c;
+};
+
+const data = {
+  model: { tol, slope, intercept },
+  maxCost: Math.max(...rows.map((r) => Math.max(r.beforeCost, r.afterCost))) + 1,
+  yMax: Math.ceil(Math.max(...rows.flatMap((r) => [Math.abs(r.beforeDelta), Math.abs(r.afterDelta), tol + 1])) / 2) * 2,
+  before: summarize(rows.map((r) => r.beforePower)),
+  after: summarize(rows.map((r) => r.afterPower)),
+  statusBefore: countStatus('beforeStatus'),
+  statusAfter: countStatus('afterStatus'),
+  rows,
+  changed: rows.filter((r) => r.change),
+  decks,
+};
+
+function buildHtml(payload) {
+  return (
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>Aetherion — Balance Changes: Before / After</title>' +
+    `<style>${STYLE}</style></head><body><div id="app"></div>` +
+    `<script>window.DATA=${JSON.stringify(payload)};</script>` +
+    `<script>(${compareApp.toString()})();</script></body></html>`
+  );
+}
+
+const STYLE = `
+:root{--bg:#16130f;--panel:#211d18;--panel2:#2a251f;--line:#3a332a;--ink:#ece4d6;--mut:#a89c88;--gold:#d9b44a;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 'DM Sans',system-ui,Segoe UI,Roboto,sans-serif}
+h1,h2,h3{font-family:'Playfair Display',Georgia,serif;font-weight:600;margin:0}
+header{background:linear-gradient(180deg,#1d1913,#16130f);border-bottom:1px solid var(--line);padding:16px 22px}
+header h1{font-size:21px;color:var(--gold)}
+header .sub{color:var(--mut);font-size:12px;margin-top:3px;max-width:880px}
+main{max-width:1180px;margin:0 auto;padding:22px}
+section{margin-bottom:30px}
+.sec-h{font-size:17px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:12px}
+.grid{display:grid;gap:14px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.two{grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.hdr{font-size:13px;color:var(--mut);margin-bottom:8px;font-family:'DM Sans',sans-serif;font-weight:600}
+.kpi .l{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+.kpi .v{font-size:22px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:4px}
+.kpi .v .ar{color:var(--mut);font-size:15px;margin:0 6px}
+.kpi .v .hi{color:#5fb56f}
+.chart{width:100%;height:auto;display:block}
+.chart text{fill:var(--mut);font-size:11px;font-family:'JetBrains Mono',monospace}
+.chart .gl{stroke:var(--line);stroke-width:1}
+.stack{display:flex;height:24px;border-radius:5px;overflow:hidden;margin:6px 0;background:#0003}
+.stack span{display:flex;align-items:center;justify-content:center;font-size:11px;color:#0c0a08;font-weight:700}
+.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--mut);font-size:11px;margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.bars .row{display:grid;grid-template-columns:96px 1fr auto;align-items:center;gap:8px;margin:4px 0;font-size:12px}
+.bars .twob{display:flex;flex-direction:column;gap:2px}
+.bars .b{height:11px;border-radius:3px;min-width:2px}
+.bars .val{font-family:'JetBrains Mono',monospace;color:var(--mut);font-size:11px;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:5px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mut);font-weight:600}
+td.num{font-family:'JetBrains Mono',monospace}
+.tag{font-size:10px;color:#0c0a08;padding:1px 6px;border-radius:9px;font-weight:600}
+.callout{background:#2a2114;border:1px solid #4a3a1e;border-radius:8px;padding:10px 13px;color:#e8d9b8;font-size:12px}
+.muted{color:var(--mut)}
+`;
+
+function compareApp() {
+  const D = window.DATA;
+  const SC = { over: '#e0bd58', within: '#5fb56f', under: '#e08a8a' };
+  const FC = { Onyx: '#9b7fd6', Radiant: '#e0bd58', Sapphire: '#52a0e8', Verdant: '#5fb56f' };
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const f1 = (x) => Number(x).toFixed(1);
+  const sgn = (x) => (x > 0 ? '+' : '') + f1(x);
+
+  function deltaScatter(points, title) {
+    const tol = D.model.tol, xMax = D.maxCost, yMax = D.yMax;
+    const W = 440, H = 340, m = { l: 40, r: 12, t: 24, b: 34 };
+    const mid = (m.t + (H - m.b)) / 2;
+    const px = (v) => m.l + (v / xMax) * (W - m.l - m.r);
+    const py = (v) => mid - (v / yMax) * ((H - m.t - m.b) / 2);
+    let g = `<text x="${W / 2}" y="14" text-anchor="middle" style="fill:var(--ink);font-size:12px">${esc(title)}</text>`;
+    for (const v of [-yMax, -yMax / 2, 0, yMax / 2, yMax]) {
+      const y = py(v);
+      g += `<line class="gl" x1="${m.l}" y1="${y.toFixed(1)}" x2="${W - m.r}" y2="${y.toFixed(1)}"/>`;
+      g += `<text x="${m.l - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v > 0 ? '+' : ''}${v}</text>`;
+    }
+    g += `<rect x="${m.l}" y="${py(tol).toFixed(1)}" width="${(W - m.l - m.r).toFixed(1)}" height="${(py(-tol) - py(tol)).toFixed(1)}" fill="#5fb56f" fill-opacity="0.10"/>`;
+    g += `<line x1="${m.l}" y1="${py(0).toFixed(1)}" x2="${W - m.r}" y2="${py(0).toFixed(1)}" stroke="#d9b44a" stroke-width="1.4" stroke-dasharray="6 4"/>`;
+    for (let i = 0; i <= xMax; i++) g += `<text x="${px(i).toFixed(1)}" y="${H - m.b + 14}" text-anchor="middle">${i}</text>`;
+    g += `<text x="${W / 2}" y="${H - 3}" text-anchor="middle">total cost</text>`;
+    let dots = '';
+    for (const p of points) {
+      const jx = p.cost + (((p.h * 53) % 11) / 11 - 0.5) * 0.7;
+      dots += `<circle cx="${px(jx).toFixed(1)}" cy="${py(p.d).toFixed(1)}" r="4" fill="${SC[p.s]}" fill-opacity="0.82" stroke="#0008" stroke-width=".5"><title>${esc(p.t)}</title></circle>`;
+    }
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}">${g}${dots}</svg>`;
+  }
+
+  function statusStack(c) {
+    const n = c.under + c.within + c.over;
+    const seg = (k, v) => (v ? `<span style="width:${(v / n) * 100}%;background:${SC[k]}">${v}</span>` : '');
+    return `<div class="stack">${seg('under', c.under)}${seg('within', c.within)}${seg('over', c.over)}</div>`;
+  }
+
+  function deckBars() {
+    const mx = Math.max(...D.decks.flatMap((d) => [d.before, d.after]));
+    return `<div class="bars">${D.decks
+      .map(
+        (d) =>
+          `<div class="row"><span style="color:${FC[d.faction]}">${d.faction}</span><span class="twob"><span class="b" style="width:${(d.before / mx) * 100}%;background:${FC[d.faction]};opacity:.45" title="before ${d.before}"></span><span class="b" style="width:${(d.after / mx) * 100}%;background:${FC[d.faction]}" title="after ${d.after}"></span></span><span class="val">${f1(d.before)} → ${f1(d.after)}</span></div>`,
+      )
+      .join('')}</div><div class="legend"><span style="opacity:.6">▔ before</span><span>▔ after (solid)</span></div>`;
+  }
+
+  function changesTable() {
+    const stat = (s) => `<span class="tag" style="background:${SC[s]}">${s}</span>`;
+    const rows = D.changed
+      .map(
+        (r) =>
+          `<tr><td>${esc(r.name)}</td><td><span class="tag" style="background:${FC[r.faction]}">${r.faction}</span></td><td class="muted" style="text-align:left">${esc(r.change)}</td><td class="num">${f1(r.beforePower)} → ${f1(r.afterPower)}</td><td class="num">${r.beforeCost} → ${r.afterCost}</td><td>${stat(r.beforeStatus)} → ${stat(r.afterStatus)}</td></tr>`,
+      )
+      .join('');
+    return `<table><thead><tr><th>Card</th><th>Faction</th><th style="text-align:left">Change applied</th><th>Power</th><th>Cost</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  const ptsBefore = D.rows.map((r) => ({ cost: r.beforeCost, d: r.beforeDelta, s: r.beforeStatus, h: r.name.length + r.beforeCost, t: `${r.name}: Δ ${sgn(r.beforeDelta)} (${r.beforeStatus})` }));
+  const ptsAfter = D.rows.map((r) => ({ cost: r.afterCost, d: r.afterDelta, s: r.afterStatus, h: r.name.length + r.afterCost, t: `${r.name}: Δ ${sgn(r.afterDelta)} (${r.afterStatus})` }));
+  const sb = D.statusBefore, sa = D.statusAfter, kb = D.before, ka = D.after;
+  const kpi = (l, b, a, better) => `<div class="panel kpi"><div class="l">${l}</div><div class="v">${b}<span class="ar">→</span><span class="${better ? 'hi' : ''}">${a}</span></div></div>`;
+
+  document.getElementById('app').innerHTML =
+    `<header><h1>Aetherion · Balance Changes — Before / After</h1><div class="sub">Applying the suggested edits: over-budget <b>Characters</b> get their formula-verified stat trim; under-budget <b>spells</b> get their cost reduction. Both states are scored against the <b>same</b> budget window (the before-model), so you can watch the outliers pulled into the band. The under-budget "buffs" are tentative — those spells are mostly the score's situational-value blind spot.</div></header><main>` +
+    `<section><div class="grid kpis">` +
+    kpi('Outliers (of 64)', sb.under + sb.over, sa.under + sa.over, true) +
+    kpi('Over budget', sb.over, sa.over, true) +
+    kpi('Under budget', sb.under, sa.under, true) +
+    kpi('Power spread', kb.spread, ka.spread, ka.spread < kb.spread) +
+    kpi('Std deviation', kb.sd, ka.sd, ka.sd < kb.sd) +
+    `</div></section>` +
+    `<section><div class="sec-h">Δ vs budget — before vs after</div><div class="grid two"><div class="panel">${deltaScatter(ptsBefore, 'BEFORE')}</div><div class="panel">${deltaScatter(ptsAfter, 'AFTER')}</div></div><div class="legend"><span><i style="background:${SC.under}"></i>under</span><span><i style="background:${SC.within}"></i>within</span><span><i style="background:${SC.over}"></i>over</span><span class="muted">green band = window (±${D.model.tol}); dashed = on budget</span></div></section>` +
+    `<section><div class="grid two"><div class="panel"><div class="hdr">Budget status — before</div>${statusStack(sb)}<div class="hdr" style="margin-top:12px">Budget status — after</div>${statusStack(sa)}</div><div class="panel"><div class="hdr">Deck value — before → after</div>${deckBars()}</div></div></section>` +
+    `<section><div class="sec-h">Changes applied (${D.changed.length})</div><div class="panel">${changesTable()}</div></section>` +
+    `<section><div class="callout">The window is held fixed at the before-model — we are moving cards into the existing target, not redefining it. Applying these for real would shift the fit slightly (re-run <code>balance-suggestions.mjs</code> after a batch). Nerfing the over-budget bodies lowers the top decks' card-power sum, which is why the deck-value gap narrows; the spread and std-dev drop because the high and low tails are pulled toward the line.</div></section>` +
+    `</main>`;
+}
+
+writeFileSync(new URL('./balance-compare.html', import.meta.url), buildHtml(data));
+console.log(`Wrote balance-compare.html — ${data.changed.length} changes applied (${sug.over.length} nerfs, ${sug.under.length} buffs).`);
