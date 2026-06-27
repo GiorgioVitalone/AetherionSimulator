@@ -395,3 +395,25 @@ showing through: the static score under-rates those spells, so cost-cutting them
 the SIM (which plays them out) confirms they weren't the lever. _A fair-rollout (depth-3) cross-check was
 attempted but is impractically slow on the full real decks (≫30 min/side at GPP=14); the heuristic delta
 stands on the §9-validated baseline and a large, mechanically-sound magnitude._
+
+### 10b. Adding hero-LP flattening (all heroes → 30) — the field lands inside target
+
+Combining the card edits with flattening every hero's starting LP to 30 (Onyx 25→30, Radiant 35→30,
+Sapphire 30, Verdant 33→30; heuristic + fairPilot, GPP=400):
+
+| variant | Onyx | Radiant | Sapphire | Verdant | gap | spread |
+|---|---|---|---|---|---|---|
+| before (baseline) | 33.8 | 81.7 | 39.6 | 44.9 | 26.6 | 47.9 |
+| **LP→30 only** (no card edits) | 42.6 | 77.6 | 41.0 | 38.8 | 16.4 | 38.8 |
+| 11 nerfs only | 41.5 | 57.0 | 44.5 | 57.0 | 14.0 | 15.5 |
+| **11 nerfs + LP→30** | 47.9 | 53.8 | 48.3 | 50.0 | **3.8** | **5.9** |
+| all 23 + LP→30 | 48.4 | 53.3 | 46.8 | 51.5 | 4.8 | 6.5 |
+
+**LP-flattening is the complement, not the lever** (refining §8). *Alone* it barely dents Radiant
+(77.6 — the card-power runaway dominates regardless of LP), shaving the spread only 47.9 → 38.8. But
+*stacked on the nerfs* it is decisive: **nerfs + LP→30 lands every deck at 48–54% — spread 5.9 pp, gap
+3.8 pp, inside the ≤6 pp `balance-targets.md` goal.** Mechanism: the nerfs remove Radiant's card-power
+edge, after which the residual gap *is* the LP asymmetry (Radiant +5 / Onyx −5 vs 30), so flattening it
+closes the last ~10 pp. The two levers are orthogonal — card budget fixes the power runaway, LP flatten
+fixes the survivability asymmetry — and together take the starter pool from a 48 pp spread (broken) to
+~6 pp (at target), with no hand-tuning beyond "trim over-budget cards + set every hero to 30 LP."
