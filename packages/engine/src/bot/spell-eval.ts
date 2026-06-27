@@ -39,11 +39,26 @@ export function scoreSpell(
   card: CardInstance,
   xPaid: number,
   gameplan: Gameplan = NEUTRAL,
+  valueMode: boolean = false,
+): SpellScore {
+  return sumEffects(caster, opponent, spellEffects(card.abilities), xPaid, gameplan, valueMode);
+}
+
+/** Sum the expected value of a list of effects (the shared recursion point used by
+ * scoreSpell and the wrapper-effect cases). isRemoval propagates if ANY sub-effect
+ * neutralizes an enemy body. */
+function sumEffects(
+  caster: PlayerState,
+  opponent: PlayerState,
+  effects: readonly Effect[],
+  xPaid: number,
+  gameplan: Gameplan,
+  valueMode: boolean,
 ): SpellScore {
   let value = 0;
   let isRemoval = false;
-  for (const effect of spellEffects(card.abilities)) {
-    const part = scoreEffect(caster, opponent, effect, xPaid, gameplan);
+  for (const effect of effects) {
+    const part = scoreEffect(caster, opponent, effect, xPaid, gameplan, valueMode);
     value += part.value;
     if (part.isRemoval) isRemoval = true;
   }
@@ -65,6 +80,7 @@ function scoreEffect(
   effect: Effect,
   xPaid: number,
   gameplan: Gameplan,
+  valueMode: boolean,
 ): SpellScore {
   switch (effect.type) {
     case 'destroy':
@@ -112,17 +128,19 @@ function scoreEffect(
       // `removalWeight`); a non-lethal hit is just the chip damage dealt. AoE
       // (all_characters) thus scores its full board impact, not one target.
       const value = victims.reduce(
-        (sum, v) => sum + (dmg >= spellTargetHp(v)
-          ? bodyValue(v, gameplan) * gameplan.removalWeight
-          : Math.min(dmg, spellTargetHp(v))),
+        (sum, v) =>
+          sum +
+          (dmg >= spellTargetHp(v)
+            ? bodyValue(v, gameplan) * gameplan.removalWeight
+            : Math.min(dmg, spellTargetHp(v))),
         0,
       );
-      return { value, isRemoval: victims.some(v => dmg >= spellTargetHp(v)) };
+      return { value, isRemoval: victims.some((v) => dmg >= spellTargetHp(v)) };
     }
     case 'modify_stats': {
       if (isEnemyTarget(effect.target)) return ZERO; // debuffs handled as chip via dmg path
-      const gain = (effect.modifier.atk ?? 0) + (effect.modifier.hp ?? 0)
-        + (effect.modifier.arm ?? 0);
+      const gain =
+        (effect.modifier.atk ?? 0) + (effect.modifier.hp ?? 0) + (effect.modifier.arm ?? 0);
       const bodies = countAlliedBodies(caster, effect.target);
       // Allied buffs are proactive board development; weight by the seat's tempo
       // appetite (A6 `tempoWeight`; NEUTRAL = 0.6 ⇒ no-op).
@@ -141,8 +159,12 @@ function scoreEffect(
       const urgency = caster.hero.currentLp <= 12 ? 1 : 0.4;
       return { value: amount(effect.amount, xPaid) * urgency, isRemoval: false };
     }
-    case 'gain_resource':
-      return { value: effect.amount * 0.5, isRemoval: false };
+    case 'gain_resource': {
+      // Permanent resource ramp compounds over the game (Verdant snowball); a
+      // temporary resource is one-shot tempo. Legacy (!valueMode) ⇒ flat 0.5 rate.
+      const rate = !valueMode ? 0.5 : effect.temporary === true ? 0.5 : 1.0;
+      return { value: effect.amount * rate, isRemoval: false };
+    }
     case 'deploy_token': {
       const n = effect.inEachEmpty === true ? 2 : effect.count;
       const stats = effect.token.atk + effect.token.hp + (effect.token.arm ?? 0);
@@ -155,27 +177,82 @@ function scoreEffect(
       // Pulls a body straight from deck onto the board — Rampant Evolution's
       // payoff (the bigger upgraded creature). Worth a solid mid-body of tempo.
       return { value: 4, isRemoval: false };
-    case 'scry':
-    case 'discard':
+    // ── Value / recursion / wrapper effects ──────────────────────────────────
+    // Legacy (!valueMode): all flat-1 (unmodeled), byte-identical to before. Under
+    // valueMode the bot SEES these, so control/value/recursion decks get piloted
+    // instead of played as chaff.
+    case 'composite':
+      if (!valueMode) return FLAT_ONE;
+      return sumEffects(caster, opponent, effect.effects, xPaid, gameplan, valueMode);
+    case 'conditional': {
+      if (!valueMode) return FLAT_ONE;
+      // The Condition needs full board context to evaluate; approximate by scoring
+      // the ifTrue branch at a probability discount (riders usually pay off) plus
+      // the rarer ifFalse branch. Propagate the wrapped removal flag (KEYSTONE: a
+      // card like "deal 2; if it dies, draw" finally registers as removal).
+      const t = sumEffects(caster, opponent, effect.ifTrue, xPaid, gameplan, valueMode);
+      const f = effect.ifFalse
+        ? sumEffects(caster, opponent, effect.ifFalse, xPaid, gameplan, valueMode)
+        : ZERO;
+      return {
+        value: CONDITIONAL_P * t.value + (1 - CONDITIONAL_P) * f.value,
+        isRemoval: t.isRemoval,
+      };
+    }
+    case 'choose_one': {
+      if (!valueMode) return FLAT_ONE;
+      // The chooser takes the best mode; approximate by the max-value option.
+      let best = ZERO;
+      for (const opt of effect.options) {
+        const s = sumEffects(caster, opponent, opt.effects, xPaid, gameplan, valueMode);
+        if (s.value > best.value) best = s;
+      }
+      return best;
+    }
     case 'return_from_discard':
+      // Onyx recursion (Necrotic Revival): a body back ≈ a draw; to the battlefield
+      // is stronger (it skips the replay cost).
+      if (!valueMode) return FLAT_ONE;
+      return {
+        value: effect.destination === 'battlefield' ? CARD_VALUE * 1.5 : CARD_VALUE,
+        isRemoval: false,
+      };
+    case 'search_deck':
+      // Tutor: a chosen card ≈ a draw, a touch above; battlefield ≈ a deploy.
+      if (!valueMode) return FLAT_ONE;
+      return {
+        value: effect.destination === 'battlefield' ? 4 : CARD_VALUE * 1.2,
+        isRemoval: false,
+      };
+    case 'copy_card':
+      // Sapphire value (Arcane Echoes): a copy of a known-good card ≈ a draw.
+      if (!valueMode) return FLAT_ONE;
+      return { value: CARD_VALUE, isRemoval: false };
+    case 'scry':
+      // Card selection/quality: smaller than a draw, scaled by cards filtered.
+      if (!valueMode) return FLAT_ONE;
+      return { value: Math.min(effect.lookCount, 3) * 0.3, isRemoval: false };
+    case 'discard':
+      // Enemy discard is disruption (a card-advantage swing); allied/self discard is
+      // a cost offset by its paired draw (scored separately).
+      if (!valueMode) return FLAT_ONE;
+      return {
+        value: isEnemyTarget(effect.target) ? effect.count * CARD_VALUE * 0.8 : 0,
+        isRemoval: false,
+      };
+    // Genuinely hard-to-value effects: flat-1 in BOTH modes (out of scope — the goal
+    // is "stop scoring strategies as chaff", not perfect valuation).
     case 'cost_reduction':
     case 'grant_trait':
     case 'grant_ability':
     case 'move':
     case 'apply_status':
     case 'cleanse':
-    case 'search_deck':
     case 'shuffle_into_deck':
-    case 'copy_card':
     case 'attach_as_equipment':
-    case 'choose_one':
-    case 'conditional':
-    case 'composite':
     case 'replacement':
     case 'scheduled':
-      // Unmodeled-for-scoring effects: small positive so a free/cheap spell with
-      // a real effect still beats doing nothing, without overvaluing it.
-      return { value: 1, isRemoval: false };
+      return FLAT_ONE;
     default:
       return assertNever(effect);
   }
@@ -191,7 +268,7 @@ function assertNever(x: never): never {
  * threat (the body the target-aware bot now aims at), not front-of-zone. */
 function enemyTargets(opponent: PlayerState, target: TargetExpr): readonly CardInstance[] {
   if (!isEnemyTarget(target)) return [];
-  const enemies = getAllCards(opponent.zones).filter(c => c.cardType === 'C');
+  const enemies = getAllCards(opponent.zones).filter((c) => c.cardType === 'C');
   if (enemies.length === 0) return [];
   if (target.type === 'all_characters' || target.type === 'all_characters_in_zone') {
     return enemies;
@@ -215,7 +292,7 @@ function isAlliedCharacterTarget(target: TargetExpr): boolean {
 /** Weakest allied character the spell could sacrifice (the cheapest chump), or
  * null when the caster has NO eligible body — the noAlly guard. */
 function weakestAlly(caster: PlayerState, target: TargetExpr): CardInstance | null {
-  const allies = getAllCards(caster.zones).filter(c => c.cardType === 'C');
+  const allies = getAllCards(caster.zones).filter((c) => c.cardType === 'C');
   if (allies.length === 0) return null;
   if (target.type === 'all_characters' || target.type === 'all_characters_in_zone') {
     return allies.sort((a, b) => power(a) - power(b))[0]!;
@@ -231,7 +308,7 @@ function isEnemyHero(target: TargetExpr): boolean {
 
 function countAlliedBodies(caster: PlayerState, target: TargetExpr): number {
   if (target.type === 'all_characters' || target.type === 'all_characters_in_zone') {
-    return getAllCards(caster.zones).filter(c => c.cardType === 'C').length;
+    return getAllCards(caster.zones).filter((c) => c.cardType === 'C').length;
   }
   return 1;
 }
@@ -240,9 +317,12 @@ function countAlliedBodies(caster: PlayerState, target: TargetExpr): number {
 
 function amount(expr: AmountExpr, xPaid: number): number {
   switch (expr.type) {
-    case 'fixed': return expr.value;
-    case 'x_cost': return xPaid;
-    case 'dice': return expr.count * ((expr.sides + 1) / 2);
+    case 'fixed':
+      return expr.value;
+    case 'x_cost':
+      return xPaid;
+    case 'dice':
+      return expr.count * ((expr.sides + 1) / 2);
     case 'count':
     case 'event_value':
       return 2; // unknown at decision time: assume a modest payoff
@@ -281,6 +361,17 @@ function spellTargetHp(card: CardInstance): number {
 }
 
 const ZERO: SpellScore = { value: 0, isRemoval: false };
+// Flat small-positive for effects the bot does not model: a free/cheap spell with a
+// real effect still beats doing nothing, without overvaluing it. (Legacy flat-1.)
+const FLAT_ONE: SpellScore = { value: 1, isRemoval: false };
+
+// A card put into hand (drawn/returned/tutored/copied) ≈ the draw scale (1.2/card).
+const CARD_VALUE = 1.2; // anchored to the draw_cards weight in scoreEffect
+
+// Probability weight on a conditional rider's ifTrue branch when its Condition cannot
+// be cheaply evaluated at decision time. Defensible mid value (riders usually pay
+// off, e.g. "if it dies, draw"); not finely tuned.
+const CONDITIONAL_P = 0.6;
 
 // Strong negative so an ally-sacrifice/destroy spell with NO eligible body on
 // board nets below SPELL_THRESHOLD and is never cast into thin air (noAlly guard).

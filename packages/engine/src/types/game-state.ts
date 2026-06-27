@@ -244,6 +244,15 @@ export interface GameConfig {
    * NEUTRAL gameplan), a byte-identical no-op; the engine's resolution path never
    * consults this field, so it cannot affect any runHash. */
   readonly botGameplan?: Record<0 | 1, Gameplan>;
+  /** FAIR-PILOT KNOB (default absent/false ⇒ engine-default heuristic constants &
+   * rollout policy). When true, the heuristic value model recurses into wrapper
+   * effects (conditional/composite/choose_one) and values recursion/tutor/copy/ramp
+   * effects, the reactive + mulligan policy is card-advantage / curve aware, and the
+   * rollout pilot rolls to game end and counters high-threat spells. Read ONLY by the
+   * bot (src/bot/*) and the rollout pilot; the engine's resolution path never consults
+   * it, so it cannot affect any runHash on its own. Absent/false ⇒ byte-identical
+   * no-op (the v-current hash). */
+  readonly fairPilot?: boolean;
 }
 
 /** Mutable diagnostic accumulator (see GameConfig.diag). Written by the engine
@@ -514,7 +523,13 @@ export interface ActiveStatus {
   readonly sourceAuraId?: string;
 }
 
-export type StatusEffectType = 'persistent' | 'regeneration' | 'slowed' | 'stunned' | 'hexproof' | 'anti_redirect';
+export type StatusEffectType =
+  | 'persistent'
+  | 'regeneration'
+  | 'slowed'
+  | 'stunned'
+  | 'hexproof'
+  | 'anti_redirect';
 
 /** A replacement effect currently active on a card. Registered by a `replacement`
  * effect; consulted by the damage/destruction pipeline. `usedThisTurn` enforces

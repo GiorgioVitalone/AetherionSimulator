@@ -89,6 +89,9 @@ function candidateActions(acts) {
 // "random": uniform over legal concrete actions (no archetype prior — primary).
 // "heuristic": the engine's target-aware bot (used only for the cross-check pilot).
 const RANDOM_ACTION_PROB = 0.85;
+// Under fair pilot, the probability a random playout actually fires a worthwhile
+// counter (one the fair reactive bot would pick) — so counters matter inside playouts.
+const FAIR_COUNTER_PROB = 0.9;
 
 function concreteActions(acts) {
   const out = [];
@@ -107,7 +110,7 @@ function concreteActions(acts) {
 // the final GameState. `rnd` is the seeded RNG. `horizonTurn` (absolute turn number)
 // caps how far we simulate; beyond it we stop and the leaf is scored by LP-diff —
 // still archetype-neutral. horizonTurn === Infinity means roll to game end.
-function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall = false) {
+function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall = false, fairPilot = false) {
   let steps = 0;
   let gs;
   while (steps++ < stepCap) {
@@ -126,8 +129,21 @@ function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHan
         if (playoutPolicy === 'heuristic') {
           react = heuristicReactive(gs);
         } else {
-          const opts = computeReactiveActions(gs, gs.pendingPriority.toRespondPlayerId);
-          if (opts.length && rnd() < RANDOM_ACTION_PROB) react = { type: 'cast_spell', cardInstanceId: opts[0].cardInstanceId };
+          const ropts = computeReactiveActions(gs, gs.pendingPriority.toRespondPlayerId);
+          if (ropts.length) {
+            if (fairPilot) {
+              // Threat-aware: fire the counter the fair reactive bot would pick (it
+              // reads gs.config.fairPilot), so control's counters matter in playouts.
+              const wants = chooseReactiveAction(gs);
+              if (wants) {
+                if (rnd() < FAIR_COUNTER_PROB) react = wants;
+              } else if (rnd() < RANDOM_ACTION_PROB * 0.2) {
+                react = { type: 'cast_spell', cardInstanceId: ropts[0].cardInstanceId };
+              }
+            } else if (rnd() < RANDOM_ACTION_PROB) {
+              react = { type: 'cast_spell', cardInstanceId: ropts[0].cardInstanceId };
+            }
+          }
         }
         if (react == null) fork.send({ type: 'PRIORITY_PASS' });
         else fork.send({ type: 'REACTIVE_ACTION', action: react });
@@ -234,9 +250,11 @@ export function makeRolloutPilot(opts = {}) {
   const maxCandidates = opts.maxCandidates ?? 12; // cap branching for feasibility
   const perKindCap = opts.perKindCap ?? 4;   // cap candidates kept per action kind
   const search = opts.search ?? 'flat';      // 'flat' | 'ucb' budget allocation
+  const fairPilot = opts.fairPilot ?? false; // control/value-aware fairness (depth=0 + threat-aware counters)
   // Turn-depth horizon: simulate at most this many of the deciding player's future
-  // turns before scoring the leaf by LP-diff. 0 / undefined => roll to game end.
-  const depth = opts.depth ?? 3;
+  // turns before scoring the leaf by LP-diff. 0 / undefined => roll to game end. Under
+  // fair pilot DEFAULT to 0 (truest win/loss signal — control's late game isn't penalized).
+  const depth = opts.depth ?? (fairPilot ? 0 : 3);
   const closingReward = opts.closingReward ?? true; // reward decided+fast wins, penalize stalls
   const fixHandSizeStall = opts.fixHandSizeStall ?? false; // gated end-phase discard fix in playouts
 
@@ -281,7 +299,7 @@ export function makeRolloutPilot(opts = {}) {
         if (cand != null) fork.send({ type: 'PLAYER_ACTION', action: cand });
         else fork.send({ type: 'END_PHASE' });
       } catch { /* illegal in this fork: treat as a pass-equivalent rollout */ }
-      const fin = playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall);
+      const fin = playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall, fairPilot);
       const score = outcomeScore(fin, meSeat, turnCap, closingReward);
       fork.stop();
       return score;
@@ -303,7 +321,7 @@ export function makeRolloutPilot(opts = {}) {
     return best ? best.action : null;
   }
 
-  return { chooseAction, reset, meta: { rollouts, playoutPolicy, maxCandidates, perKindCap, depth, closingReward, search, fixHandSizeStall } };
+  return { chooseAction, reset, meta: { rollouts, playoutPolicy, maxCandidates, perKindCap, depth, closingReward, search, fixHandSizeStall, fairPilot } };
 }
 
 // ── Budget allocators (flat default; UCB1 optional behind opts.search==="ucb") ─

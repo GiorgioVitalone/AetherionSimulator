@@ -609,6 +609,7 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       ...(config.directHighGroundDeploy ? { directHighGroundDeploy: true } : {}),
       ...(disableHeroReachBySeat ? { disableHeroReachBySeat } : {}),
       ...(botGameplan ? { botGameplan } : {}),
+      ...(config.fairPilot ? { fairPilot: true } : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -622,7 +623,7 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   // forking THIS actor at each active-player decision point. Deterministic — its
   // rollout seeds derive purely from `seed`. Heuristic/random paths never touch it.
   const rolloutPilot = config.botPolicy === 'rollout'
-    ? makeRolloutPilot({ rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall })
+    ? makeRolloutPilot({ rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot })
     : null;
 
   let leaderAt10 = null; // 0|1|'tie' — side ahead on LP at SNOWBALL_TURN
@@ -854,7 +855,9 @@ function resolveConfig(config = {}) {
           maxCandidates: config.maxCandidates ?? 12,
           // Turn-depth horizon for each playout (0 = roll to game end). A positive
           // depth scores the leaf by LP-differential — faster, still archetype-neutral.
-          rolloutDepth: config.rolloutDepth ?? 3,
+          // Fair pilot defaults the horizon to 0 (roll to game end) so control's
+          // late-game inevitability is not penalized; recorded in the hashed config.
+          rolloutDepth: config.rolloutDepth ?? (config.fairPilot ? 0 : 3),
           // T-A2 — reward decided+fast wins / penalize stalls in the outcome score.
           // Default true to match pilot-rollout; emitted (and hashed) ONLY under the
           // rollout policy, so heuristic/random runs stay byte-identical to v10.
@@ -976,6 +979,9 @@ function resolveConfig(config = {}) {
     // constants. Only emitted (and hashed) when ENABLED ⇒ a default run is
     // byte-identical to the v10 baseline (absent ⇒ NEUTRAL ⇒ no-op).
     ...(config.botGameplan ? { botGameplan: true } : {}),
+    // FAIR-PILOT — opt-in heuristic/rollout fairness for control/value/recursion decks.
+    // Only emitted (and hashed) when ENABLED ⇒ a default run is byte-identical to baseline.
+    ...(config.fairPilot ? { fairPilot: true } : {}),
     // RAW-POWER DECOMP — hero-LP head-start override: pin ONE faction's Hero
     // starting+max LP to a fixed value ({ faction, lp }). Only emitted (and hashed)
     // when a valid spec is given ⇒ default run is byte-identical to the v10 baseline.
