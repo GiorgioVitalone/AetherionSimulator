@@ -187,3 +187,46 @@ floored (~27%). **A fix validated only on the heuristic is worse than useless he
 **One-line:** the spread is a two-headed top tier (Radiant via body-HP/defense, Verdant via ramp) sitting
 above a floor that is mostly an artifact of an un-pilotable control/recursion design — and it cannot be
 diagnosed or fixed from the default bot's numbers, which mis-rank half the field.
+
+---
+
+## 7. Step 0 executed — the `fairPilot` measurement fix + A/B (2026-06-27)
+
+Implemented an opt-in `fairPilot` mode (one `GameConfig` knob, default-off byte-identical no-op; both
+pilots). It makes the heuristic value model recurse into wrapper effects and value recursion/tutor/ramp,
+the reactive/mulligan policy card-advantage/curve aware, and the rollout pilot roll to game end (depth 0)
+and fire threat-aware counters. A/B on the real decks (`packages/engine/balance-fair-ab.mjs`):
+
+| Pilot / mode | Onyx | Radiant | Sapphire | Verdant | spread |
+|---|---|---|---|---|---|
+| heuristic OFF | 36.0 | 81.8 | 37.6 | 44.6 | 45.8 |
+| heuristic ON | 33.8 | 81.7 | 39.6 | 44.9 | 47.9 |
+| rollout OFF (depth-3) | 50.0 | 72.2 | 11.1 | 66.7 | 61.1 |
+| **rollout ON** (depth-0 + counters) | 22.2 | 72.2 | **23.5** | **82.4** | 60.2 |
+
+*(heuristic 4,000 games/config — tight CIs; rollout 60 games/config — directional only, ±~20 pp, turnCap 60.)*
+
+**What this establishes:**
+1. **Scoring the bot's spells correctly is necessary but not sufficient.** The heuristic A/B barely moves
+   (45.8→47.9) — the heuristic is single-ply with no card-advantage-to-inevitability model, so it cannot
+   *pilot* a control deck regardless of how it scores cards. Fairness has to come from the rollout.
+2. **Sapphire's extreme floor was *partly* a measurement artifact.** Under the fair rollout it ~doubles
+   (11→23%), confirming some of its weakness was under-piloting. But it stays low, so Sapphire is *also*
+   genuinely weak and/or still imperfectly piloted (even depth-0 random playouts don't fully sequence a
+   hard-control counter plan). This tempers §0's "mostly an artifact" — it's **partly** artifact, not wholly.
+3. **The Radiant+Verdant top tier is REAL.** It persists under the fairest pilot we have, and Verdant
+   *strengthens* to ~82% — i.e. the top-tier imbalance is not a bot bias. Verdant is plausibly THE dominant
+   deck under fair play.
+4. **The spread did NOT close (~60 pp).** Fixing the measurement did not reveal a balanced game — so balance
+   changes are warranted, and the target is the **Radiant + Verdant top tier together** (nerf one alone and
+   the other inherits the throne, per §5).
+
+**Caveat:** depth-0 rollout is ~34 s/game, so the rollout A/B is a small-sample directional read; the robust
+conclusions are the top-tier persistence and Sapphire's partial lift. Per-faction floor values (Onyx 22 vs
+50) are within the noise band and should not be over-read.
+
+**Net:** Step 0 did its job — it confirms the top-tier imbalance is genuine (not a pilot artifact) and
+refines the floor (Sapphire was partly under-measured). The trustworthy next step is to balance the
+Radiant+Verdant top tier under `fairPilot`, re-measuring after each change; judge Sapphire/Onyx only under
+`fairPilot` (their OFF numbers understate them), and consider a still-stronger pilot or bot-legible payoffs
+before concluding they need buffs.
