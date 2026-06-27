@@ -230,3 +230,53 @@ refines the floor (Sapphire was partly under-measured). The trustworthy next ste
 Radiant+Verdant top tier under `fairPilot`, re-measuring after each change; judge Sapphire/Onyx only under
 `fairPilot` (their OFF numbers understate them), and consider a still-stronger pilot or bot-legible payoffs
 before concluding they need buffs.
+
+---
+
+## 8. Root cause — it is a PACING (rules/design) issue, not card tuning (2026-06-27)
+
+Decomposing the spread under the trustworthy fair rollout (depth-3) and adjudicating "rules vs cards" with
+two harnesses (`balance-diagnose-fair.mjs`, `balance-pacing-test.mjs`):
+
+**Two systemic findings, both from controlled levers:**
+
+1. **The hero-LP gradient is NOT the driver** (refutes an earlier hypothesis). Equalizing all heroes to 31
+   barely moved the spread (66.7→61.9, within noise) and moved factions the *wrong* way (low-LP Onyx
+   *gained* LP but *lost* win rate). The LP↔win monotonicity seen under the random bot was a long-grindy-game
+   confound, not causation.
+2. **The two strong decks are a *coupled* top tier.** Every lever that nerfs one board deck hands the crown
+   to the other (Radiant cost-2+ −1 HP → Radiant 76→55 but Verdant 69→**83**; Verdant ×0.80 → Verdant 69→60
+   but Radiant 76→**81**). The spread stays ~57–74 pp whichever one is hit — the signature of a systemic
+   dynamic, not two independently over-tuned decks.
+
+**The adjudicating experiment — move the tempo clock, change nothing else** (fair rollout, gap = (Radiant+
+Verdant)avg − (Onyx+Sapphire)avg):
+
+| clock | top avg | floor avg | gap | avg turns |
+|---|---|---|---|---|
+| slower (`lpScale 2`) | 80.5 | 19.4 | **61.1** | 47 |
+| baseline | 73.6 | 26.4 | 47.2 | 39 |
+| faster (`damageScale 1.6`) | 63.9 | 36.1 | **27.8** | 32 |
+| go-long payoff (`resource_deck_empty_transform`) | 70.8 | 29.2 | 41.6 | 38 |
+
+**The gap moves monotonically with game length** (61 pp @ 47 turns → 28 pp @ 32 turns), and a single global
+*rules* knob (combat-damage speed) nearly halves the spread **without touching a card.** That is a
+rules/design problem by definition.
+
+**Mechanism: the game runs too long, which over-rewards SUSTAIN.** The strong decks are the sustain/long-game
+decks that survive and take over late — Radiant (14 heal + walls + highest LP, a defensive grind) and Verdant
+(ramp → bigger each turn). The weak decks lack sustain and are ground out before their plans mature — Sapphire
+(no healing, fewest/flimsiest bodies) and Onyx (lowest LP). Shorten the game → less late-game for sustain to
+exploit → the field compresses. (The go-long payoff did ~nothing and the slower clock made it *worse* — both
+confirm the direction is "too much late game," not "too little.")
+
+**Fix levers, evidence-ranked:**
+1. **Speed up the clock** (higher base combat damage / smaller HP pools / faster resource curve) — the single
+   biggest rebalancing lever found, a pure rules change touching zero cards.
+2. **Rein in the sustain engines** the long game rewards — Radiant's healing density + wall HP, Verdant's ramp.
+3. **Do NOT**: add go-long payoffs (no effect), flatten hero LP (no effect / wrong direction), or slow the game.
+
+**Caveats:** small samples (±~18 pp; the length↔gap trend and ~20 pp swing are outside noise, individual cells
+are not). Even fast games leave a **~28 pp residual** — pacing is the largest factor, not the only one;
+Radiant/Verdant's raw sustain/stat edges sit on top of it. At depth-3 the floor is mainly *Sapphire* (Onyx is
+middling/noisy); the clean 2-strong/2-weak split is sharpest under the faster pilots (random, depth-0).
