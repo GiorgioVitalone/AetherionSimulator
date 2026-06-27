@@ -280,3 +280,73 @@ confirm the direction is "too much late game," not "too little.")
 are not). Even fast games leave a **~28 pp residual** — pacing is the largest factor, not the only one;
 Radiant/Verdant's raw sustain/stat edges sit on top of it. At depth-3 the floor is mainly *Sapphire* (Onyx is
 middling/noisy); the clean 2-strong/2-weak split is sharpest under the faster pilots (random, depth-0).
+
+## 9. Workshopped pacing changes tested — empty-deck transform + 10-card Resource Deck (2026-06-27)
+
+Downstream of §8, testing two user-workshopped changes that target the late-game transform payoff and
+resource pacing. The transform rule is a **condition, not a turn number**: *at a player's Upkeep, BEFORE the
+resource draw, if their Resource Deck is empty ⇒ transform is available that turn* (engine: a `before-draw`
+`resourceDeckEmptyAtUpkeep` flag, gated to `terminationMode: 'resource_deck_empty_transform'`; commit
+`cfc1616`). A 4-config matrix (`balance-transform-test.mjs`, real decks, all-pairs, **fairPilot**) isolates the
+transform payoff from the resource cap. `xform%` = fraction of heroes that transformed (validates the mechanic
+fires; **0 would mean silently inert**).
+
+| config | Onyx | Radi | Sapp | Verd | gap | turns | xform% |
+|---|---|---|---|---|---|---|---|
+| **heuristic + fairPilot (GPP=400, tight CIs)** | | | | | | | |
+| baseline (15, turn_cap) | 33.8 | 81.7 | 39.6 | 44.9 | 26.6 | 31 | 61 |
+| A: 15 + empty-transform | 35.1 | 80.0 | 40.5 | 44.4 | **24.4** | 31 | 74 |
+| B-ctrl: 10, turn_cap | 31.6 | 82.6 | 38.8 | 47.1 | **29.6** | 31 | 60 |
+| B: 10 + empty-transform | 40.9 | 79.4 | 37.6 | 42.1 | **21.5** | 30 | 96 |
+| **fair rollout (depth-3, GPP=12, trustworthy — ±~18 pp)** | | | | | | | |
+| baseline (15, turn_cap) | 44.4 | 77.8 | 8.3 | 69.4 | 47.2 | 39 | 41 |
+| A: 15 + empty-transform | 38.9 | 75.0 | 11.1 | 75.0 | **50.0** | 39 | 72 |
+| B-ctrl: 10, turn_cap | 33.3 | 83.3 | 13.9 | 69.4 | **52.8** | 40 | 35 |
+| B: 10 + empty-transform | 55.6 | 86.1 | 13.9 | 44.4 | **30.5** | 40 | 91 |
+
+(gap = (Radiant+Verdant)avg − (Onyx+Sapphire)avg, the §8 metric. A − baseline = transform @ 15; B-ctrl −
+baseline = resource-cap @ 10 alone; B − B-ctrl = transform once it procs in time; B − baseline = combined.)
+
+**Both pilots agree on direction; the rollout (which actually plays out ramp) shows the magnitude.**
+
+1. **Scenario A (transform @ 15 cards) is inert** — gap +2.8 pp rollout / −2.2 pp heuristic, both within noise.
+   The transform fires *more* (xform 41→72%) but a 15-card deck doesn't empty until ~turn 31 ≈ game's end, so
+   the payoff lands too late to swing anything. Confirms §8's "go-long payoffs do nothing" result.
+2. **The 10-card resource cap ALONE backfires** (B-ctrl − baseline = **+5.6 pp** rollout, +3.0 heuristic).
+   Starving resources hurts the value/floor decks (Onyx, Sapphire) *more* than the resource-light aggressive
+   top — the cap by itself *widens* the gap.
+3. **Scenario B (10-card + transform) is the strongest single lever found** — gap **47.2 → 30.5 (−16.7 pp)**
+   rollout, rivalling the §8 faster-clock knob. The active ingredient is **B − B-ctrl = −22.3 pp**: the
+   transform comeback, once it procs in time (xform 91%, deck empties ~turn 21), is what moves the field. The
+   cap's only role is *timing-enabler* — it makes the deck run dry early enough for the transform to matter.
+
+**Mechanism — exactly the §8 prediction realized:** capping resources at 10 throttles **Verdant's ramp**
+(69.4 → **44.4**, −25 pp — its snowball ceiling is gone), while the guaranteed ~turn-21 transform is a comeback
+button that most rewards the lowest-LP grind-survivor, **Onyx** (44.4 → **55.6**, +11 pp). This is the pacing
+thesis confirmed by a second independent lever: throttle the long game's resource engine + hand the loser a
+clock-ending payoff → the late-game-sustain advantage shrinks.
+
+**BUT — the honest catch: B reshuffles the tiers, it does not flatten the field.** The gap metric compresses
+only because it is measured against the *old* §8 tiering, which B inverts:
+
+| | tier order (rollout) | max−min spread |
+|---|---|---|
+| baseline | Radiant 78 > Verdant 69 > Onyx 44 > Sapphire 8 | 69.5 |
+| **B** | Radiant 86 > **Onyx 56** > **Verdant 44** > Sapphire 14 | **72.2** |
+
+Onyx and Verdant *swap* tiers, so "(Radiant+Verdant) − (Onyx+Sapphire)" shrinks mechanically — but the
+pilot-agnostic **max−min spread is unchanged-to-slightly-wider (69.5 → 72.2)**. Two faults B does NOT fix:
+**Radiant inflates** (78 → 86 — it is a heal-wall grind that needs no ramp, so the cap doesn't touch it, and it
+absorbs Verdant's lost matchups) and **Sapphire stays broken** (8 → 14 — its floor is raw card weakness, not
+pacing; §8's residual). B trades a Radiant+Verdant top for a **Radiant runaway**.
+
+**Verdict.** The before-draw empty-deck transform is a clean, correct rule (kept as the gated knob), and
+Scenario B is a genuinely powerful **pacing** lever that independently re-confirms the §8 diagnosis (resource
+cap throttles ramp; comeback clock lifts the grind-survivor). It is **not a standalone balance fix**: to flatten
+the field rather than reshuffle it, B must be paired with a **Radiant sustain nerf** (or Radiant runs away once
+Verdant falls) and a **Sapphire card-power buff** (pacing never touches its floor). Use B for *pacing*; it does
+not substitute for the two deck-level fixes §8 already flagged.
+
+**Caveat:** rollout cells are ±~18 pp (small samples); read the cross-pilot agreement and the ~17–22 pp gap
+swings, not individual faction cells. The heuristic compresses all magnitudes (it under-pilots ramp, so its
+Verdant barely moves) — trust the rollout for the Verdant-collapse mechanism.
