@@ -26,26 +26,29 @@ const L = {
   armOnce: { armOneTimeAbsolute: true }, // ARM consumed once per battle (not refreshed per turn)
 };
 
+// group: 'both' (always), 'fast' (no board change — cheap), 'board' (larger board
+// blows up the heuristic's action/combat search → run at a tiny GPP). GROUP env
+// selects which to run; default 'all'.
+const GROUP = process.env.GROUP || 'all';
 const ROWS = [
-  ['baseline (patch: rebalance + LP30)', {}],
-  // ── 7 levers, each solo on the patch ──────────────────────────────────────
-  ['+ first-player compensation', L.fpComp],
-  ['+ transform-gate widen', L.transform],
-  ['+ ARM buffs take max', L.armMax],
-  ['+ Defender only High Ground', L.defHG],
-  ['+ High Ground size +1 (3 slots)', L.hg1],
-  ['+ Frontline size +1 (4 slots)', L.fl1],
-  ['+ ARM once per battle', L.armOnce],
-  // ── combinations ──────────────────────────────────────────────────────────
-  ['+ HG+1 & FL+1', { ...L.hg1, ...L.fl1 }],
-  ['+ HG+1 & Defender-HG-only', { ...L.hg1, ...L.defHG }],
-  ['+ ARM once & ARM max', { ...L.armOnce, ...L.armMax }],
-  ['+ transform & FP-comp', { ...L.transform, ...L.fpComp }],
-  ['+ FL+1 & HG+1 & Defender-HG', { ...L.fl1, ...L.hg1, ...L.defHG }],
-  ['+ ARM once & FL+1 & HG+1', { ...L.armOnce, ...L.fl1, ...L.hg1 }],
-  ['+ FP-comp & transform & ARM-once', { ...L.fpComp, ...L.transform, ...L.armOnce }],
-  ['+ ALL 7 stacked', { ...L.fpComp, ...L.transform, ...L.armMax, ...L.defHG, ...L.hg1, ...L.fl1, ...L.armOnce }],
-];
+  ['baseline (patch: rebalance + LP30)', {}, 'both'],
+  // ── fast levers (no board-size change) ────────────────────────────────────
+  ['+ first-player compensation', L.fpComp, 'fast'],
+  ['+ transform-gate widen', L.transform, 'fast'],
+  ['+ ARM buffs take max', L.armMax, 'fast'],
+  ['+ Defender only High Ground', L.defHG, 'fast'],
+  ['+ ARM once per battle', L.armOnce, 'fast'],
+  ['+ ARM once & ARM max', { ...L.armOnce, ...L.armMax }, 'fast'],
+  ['+ transform & FP-comp', { ...L.transform, ...L.fpComp }, 'fast'],
+  ['+ FP-comp & transform & ARM-once', { ...L.fpComp, ...L.transform, ...L.armOnce }, 'fast'],
+  ['+ Defender-HG & ARM-once & FP-comp', { ...L.defHG, ...L.armOnce, ...L.fpComp }, 'fast'],
+  // ── board-size levers (SLOW — larger board explodes the action search) ────
+  ['+ High Ground size +1 (3 slots)', L.hg1, 'board'],
+  ['+ Frontline size +1 (4 slots)', L.fl1, 'board'],
+  ['+ HG+1 & FL+1', { ...L.hg1, ...L.fl1 }, 'board'],
+  ['+ HG+1 & Defender-HG-only', { ...L.hg1, ...L.defHG }, 'board'],
+  ['+ ALL 7 stacked', { ...L.fpComp, ...L.transform, ...L.armMax, ...L.defHG, ...L.hg1, ...L.fl1, ...L.armOnce }, 'board'],
+].filter(([, , g]) => GROUP === 'all' || g === 'both' || g === GROUP);
 
 const pct = (x) => x.toFixed(1);
 console.log(`Lever stack ON TOP of patch — heuristic + fairPilot, real decks, GPP=${GPP}, cards=${process.env.AETHERION_CARDS ? 'patched' : 'DEFAULT(!)'} `);
