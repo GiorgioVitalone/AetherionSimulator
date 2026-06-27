@@ -91,3 +91,32 @@ A balance number is only as good as the player generating it. A single heuristic
 ## 5. One-line summary
 
 Target every faction inside **47–53%** (spread **≤6 pp**, ~8–10 pp tolerated for un-tuned starters), no matchup worse than **~70/30**, mirror first-player edge **≤+3 pp**, decided **≥85%** — and only trust the numbers once the **random / heuristic / rollout** pilots **agree** and the rollout has **converged**.
+
+---
+
+## 6. Verification run — 2026-06-27 (first measurement)
+
+**Method.** Real 4 starter decks (committed fixture), all-pairs incl. mirrors, first player **alternating**, hand-size stall fixed, undecided games LP-tiebroken. Pilot panel run via `packages/engine/balance-verify.mjs`, deterministic (seeded). Reproduce: `cd packages/engine && node balance-verify.mjs` (env knobs `GPP_MATRIX`, `RL_GPP`, `RH_GPP`).
+
+| Pilot | Games | Radiant | Verdant | Onyx | Sapphire | Parity spread |
+|---|---|---|---|---|---|---|
+| `random` (floor) | 10,000 | 94.2% | 57.2% | 14.8% | 33.8% | 79.3 pp |
+| `heuristic` | 10,000 | 81.6% | 43.1% | 37.1% | 38.2% | 44.5 pp |
+| `rollout` r4/d2 | 200 | 73.3% | 73.3% | 31.7% | 21.7% | 51.7 pp |
+| `rollout` r8/d3 | 100 | 73.3% | 73.3% | 40.0% | 13.3% | 60.0 pp |
+
+Heuristic CIs are tight (±~1.5 pp); rollout CIs are wide (±~12–18 pp, small n).
+
+**Result: FAIL on every faction-level target — and it is a _trustworthy_ FAIL.** All four pilots, including the archetype-neutral outcome-driven `rollout`, independently rank **Radiant #1 by a wide margin** (73–94%), and the two rollout budgets agree (converged). Because the verdict does **not** flip with pilot strength, this is real faction imbalance, not a bot artifact — the central validity risk is cleared.
+
+| Target | Result | Observed vs target |
+|---|---|---|
+| Faction win% in 47–53% | ❌ FAIL (all factions) | Radiant 73–94%, Sapphire 13–38%, Onyx 15–40% |
+| Parity spread ≤6 pp | ❌ FAIL | 44–79 pp (≈7–13× over) |
+| Worst matchup within 30/70 | ❌ FAIL | Radiant→Onyx 99%, Radiant→Sapphire 88% |
+| Mirror first-player ≤+3 pp | ✅ PASS | **+2.6 pp** (heuristic, real-finishing games) — matches the 17Lands +2.7 pp benchmark |
+| Decided ≥85% | ⚠️ not meaningfully tested | tiebreak forces 100%; avgTurns ≈31 (heuristic) implies games close — re-run with `termination:'none'` to measure true stall rate |
+
+**Confidence by faction.** *High* on the extremes — **Radiant is overpowered** and **Sapphire is weakest** under **every** pilot. *Medium* on the middle: **Verdant** looks mediocre under the heuristic (43%) but ties Radiant at the top (73%) under the rollout — the classic **under-piloted-faction** effect (the heuristic doesn't pilot Verdant's plan well; outcome-driven search does), so Verdant is plausibly *also* top-tier and its true rank is unsettled pending a larger rollout. **Onyx** is weak-to-mid.
+
+**Headline.** The starter pool is severely imbalanced — roughly **Radiant (/Verdant) ≫ Onyx ≫ Sapphire** — with a parity spread ~7–13× the target and multiple near-unwinnable matchups. **Turn order is not the culprit** (first-player advantage is healthy at ~+2.6 pp); raw faction power is. Next step is balance work on the decks/cards, then re-run this exact (deterministic) panel after each change to watch the spread close toward ≤6 pp.
