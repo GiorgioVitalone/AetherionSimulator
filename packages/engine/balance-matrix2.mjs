@@ -52,7 +52,7 @@ const ROWS = [
 
 const pct = (x) => x.toFixed(1);
 console.log(`Lever stack ON TOP of patch — heuristic + fairPilot, real decks, GPP=${GPP}, cards=${process.env.AETHERION_CARDS ? 'patched' : 'DEFAULT(!)'} `);
-console.log(`  ${'config'.padEnd(38)}${FACTIONS.map((f) => f.slice(0, 4).padStart(6)).join('')}   spread Δspr  turns dec%`);
+console.log(`  ${'config'.padEnd(38)}${FACTIONS.map((f) => f.slice(0, 4).padStart(6)).join('')}   spread Δspr  avgT medT dec%`);
 const results = [];
 let base = null;
 for (const [label, delta] of ROWS) {
@@ -66,9 +66,9 @@ for (const [label, delta] of ROWS) {
   const wp = FACTIONS.map((f) => r.factionWinPct[f] ?? 0);
   const dS = base ? r.paritySpread - base.paritySpread : 0;
   const dcol = base ? ` ${(dS >= 0 ? '+' : '') + pct(dS)}`.padStart(6) : '      ';
-  console.log(`  ${label.padEnd(38)}${wp.map((v) => pct(v).padStart(6)).join('')}   ${pct(r.paritySpread).padStart(5)}${dcol}  ${r.gameLength.avg.toFixed(0).padStart(4)} ${pct(r.decidedPct ?? 0).padStart(4)}`);
+  console.log(`  ${label.padEnd(38)}${wp.map((v) => pct(v).padStart(6)).join('')}   ${pct(r.paritySpread).padStart(5)}${dcol}  ${r.gameLength.avg.toFixed(1).padStart(4)} ${String(r.gameLength.median).padStart(4)} ${pct(r.decidedPct ?? 0).padStart(4)}`);
   if (label.startsWith('baseline')) base = r;
-  results.push({ label, faction: { ...r.factionWinPct }, spread: r.paritySpread, dSpread: dS, avgTurns: r.gameLength.avg, decidedPct: r.decidedPct });
+  results.push({ label, faction: { ...r.factionWinPct }, spread: r.paritySpread, dSpread: dS, avgTurns: r.gameLength.avg, medTurns: r.gameLength.median, decidedPct: r.decidedPct });
 }
 writeFileSync(OUT, JSON.stringify({ GPP, results }, null, 1));
 console.log(`\nWrote ${OUT}  (Δspread vs the patched baseline)`);

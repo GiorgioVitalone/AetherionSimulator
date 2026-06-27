@@ -32,8 +32,8 @@ const r = runSim(cfg);
 const wp = Object.fromEntries(FACTIONS.map((f) => [f, r.factionWinPct[f] ?? 0]));
 const top = (wp.Radiant + wp.Verdant) / 2;
 const floor = (wp.Onyx + wp.Sapphire) / 2;
-const result = { label: LABEL, pilot: PILOT, gpp: GPP, wp, top, floor, gap: top - floor, spread: r.paritySpread, avgTurns: r.gameLength.avg };
+const result = { label: LABEL, pilot: PILOT, gpp: GPP, wp, top, floor, gap: top - floor, spread: r.paritySpread, avgTurns: r.gameLength.avg, medTurns: r.gameLength.median };
 
 const pct = (x) => x.toFixed(1).padStart(5);
-console.log(`${LABEL.padEnd(8)} ${FACTIONS.map((f) => `${f.slice(0, 4)}${pct(wp[f])}`).join('  ')}   top ${pct(top)} floor ${pct(floor)} gap ${pct(top - floor)}  spread ${r.paritySpread.toFixed(1)}  turns ${r.gameLength.avg.toFixed(0)}`);
+console.log(`${LABEL.padEnd(8)} ${FACTIONS.map((f) => `${f.slice(0, 4)}${pct(wp[f])}`).join('  ')}   top ${pct(top)} floor ${pct(floor)} gap ${pct(top - floor)}  spread ${r.paritySpread.toFixed(1)}  turns avg ${r.gameLength.avg.toFixed(1)} med ${r.gameLength.median}`);
 if (process.env.OUT) writeFileSync(process.env.OUT, JSON.stringify(result, null, 1));

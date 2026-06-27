@@ -470,3 +470,44 @@ fairPilot, real decks, all-pairs, GPP=300, baseline spread 47.4.
 Verdant backfire, and the patch's −41 are well outside it. The two PROXY rows are stat-scale stand-ins,
 not the real new cards — read them as "a generic Sapphire/Onyx power buff," which the matrix shows is the
 wrong lever anyway (you must nerf the top, not buff the floor).
+
+### 10d. Stacking rules levers ON TOP of the patch — none of the 7 help (2026-06-27)
+
+`balance-matrix2.mjs` stacks 7 rules levers on the **patched baseline** (budget nerfs + LP→30, spread
+5.9 pp — already at target), dropping Radiant-−1HP and trim-cheap as redundant with the rebalance.
+Note: the baseline is **nerfs+LP30, not all-23+LP30** — the under-budget spell "ups" are redundant (§10)
+*and* their cheaper spells make every game ~9× slower to sim (more casts/actions); nerfs+LP30 is
+marginally tighter (5.9 vs 6.5) and sims at normal speed. Heuristic + fairPilot, GPP=400 for the cheap
+levers; the **board-size levers are computationally explosive** (a larger board blows up the heuristic's
+action/combat search — one row ran 25+ min at GPP=400), so they were sampled at GPP=12–60 (directional).
+
+| lever stacked on the 5.9 patch | spread | Δ | verdict |
+|---|---|---|---|
+| + ARM buffs take max | 5.7 | −0.2 | inert |
+| + ARM once per battle | 5.9 | +0.0 | inert |
+| + transform-gate widen | 6.0 | +0.1 | inert |
+| + first-player compensation | 6.6 | +0.7 | inert |
+| + transform & FP-comp & ARM-once | 6.7 | +0.8 | inert |
+| **+ Defender only High Ground** | 20.4 | **+14.5** | **re-breaks** |
+| + High Ground size +1 *(directional)* | ~19–31 | +13…+25 | **re-breaks** |
+| + Frontline size +1 *(directional)* | ~33 | +~19 | **re-breaks** |
+
+**None of the 7 improves the patch; 4–5 are inert and 2–3 actively re-break it.**
+
+1. **Inert (ARM-take-max, ARM-once-per-battle, transform-widen, first-player-comp):** all stay within ±1 pp
+   of 5.9 — no effect. **Why:** once the card-power runaway and the LP asymmetry are removed, there is no
+   residual imbalance left for a rules tweak to correct, so these levers have nothing to bite on. (ARM-once
+   per battle is *literally* +0.0 — it changes no faction's win rate on the patched field.)
+2. **Re-breaks (Defender-only-High-Ground, High Ground +1, Frontline +1):** each introduces a **new**
+   asymmetry. Defender-HG-only frees the go-wide decks from blockers (Verdant 50→61, Sapphire 48→40 →
+   spread 20). Bigger boards (HG/FL +1) disproportionately help the go-wide floor decks (Onyx balloons
+   past 60), re-widening the spread +15–25 pp — they *do* speed games a touch (~28 vs 32 turns) but at the
+   cost of balance.
+
+**Bottom line for stacking:** don't. The card rebalance + LP→30 is sufficient and self-contained; every
+one of these rules levers is either redundant-with-the-patch (inert) or introduces a fresh imbalance. The
+lesson mirrors §10c — there's a single thing to fix (top-deck card power + LP), and once it's fixed,
+extra global rules knobs only add noise or new skews.
+
+**Caveat:** the board-size rows are small-sample/explosive (read them as "clearly re-breaks", not a
+precise number); the inert cells are GPP=400 (CI ≈ ±4 pp), so their ±1 pp deltas are firmly noise.
