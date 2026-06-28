@@ -59,9 +59,10 @@ const res = runSim({
   termination: 'tiebreak', terminationMode: 'turn_cap', abilitiesOn: true, turnCap: 80,
   seedBase: 12345, botPolicy: 'heuristic', fairPilot: true, gamesPerPairing: GPP,
   __trace: trace, __diag: trace,
-  ...(process.env.REACH ? { reachDiscard: true } : {}),
-  ...(process.env.EXILE ? { exileDiscardForEnergy: true } : {}),
-  ...(process.env.VALUE ? { valuePilot: true } : {}),
+  // STANDARD PILOT (adopted) on by default; NO_REACH / NO_EXILE / NO_VALUE to ablate.
+  reachDiscard: !process.env.NO_REACH,
+  exileDiscardForEnergy: !process.env.NO_EXILE,
+  valuePilot: !process.env.NO_VALUE,
 });
 
 // ── Full trace for two representative non-mirror games ─────────────────────────

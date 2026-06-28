@@ -533,3 +533,69 @@ which shortens games to ~27–29 turns — but that is exactly the lever that *r
 so there is no free lunch: the single knob that speeds the game also re-tilts the field toward go-wide.
 (This refines §8: at the patched, balanced equilibrium the game length is stable ~31 turns and decisive,
 so "shorten the game" is no longer a needed lever once the card-power runaway is removed.)
+
+## 11. The pilot was the instrument — and it was miscalibrated (2026-06-28)
+
+Everything in §0–§10 was measured through the heuristic pilot. Investigating one telemetry oddity —
+the bot's `discard_for_energy` rate (~14/game) — exposed a flaw in that instrument big enough to
+**invalidate the §10b "balanced" verdict.**
+
+### 11a. The bot wasted 77% of its discards — a self-inflicted handicap
+
+`discard_for_energy` grants **one temporary resource** (spend-it-or-lose-it, wiped end of turn), **once
+per turn**, and the legacy pilot fired it as a blind last-resort gated only on `hand.length > 1` — no
+lookahead that the +1 would unlock anything. Instrumenting every discard (did a resource-spending play
+follow it that turn?) found:
+
+| pilot | discards/game | **pure waste** | hand (early/mid/late) |
+|---|---|---|---|
+| legacy (blind) | 13.9 | **76–77%** | 3.2 / 1.4 / 1.6 |
+| `reachDiscard` (fund a 1-short play only) | 1.4 | **0%** | 5.1 / 4.2 / 3.8 |
+
+Near-identical waste on raw vs rebalanced cards ⇒ **a bot-policy flaw, not a card defect.** The
+"hand-starvation" noted earlier was largely self-inflicted: the bot pitched ~10 needed cards/game. The fix
+(`reachDiscard`, §11c) makes discard a funded reach — pitch one matching-type card only when a play is
+short by exactly one resource and out-values the pitched card by a tempo margin.
+
+### 11b. Fixing the pilot QUADRUPLED the measured spread — the patch is not balanced under competent play
+
+| pilot (on patched + LP30) | Onyx | Radiant | Sapphire | Verdant | spread |
+|---|---|---|---|---|---|
+| legacy (reproduces §10b control) | 48.4 | 53.3 | 46.8 | 51.5 | **6.5** |
+| `reachDiscard` | 38.8 | 57.3 | 45.2 | 58.7 | **19.9** |
+
+The §10b 5.9 pp "balanced" result was an **artifact of a handicapped bot.** The blind discard (a) added a
+symmetric handicap compressing everyone toward 50, and (b) specifically propped Onyx up: it pitched ~7
+cards/player/turn into the bin, and **Onyx owns 4 of the 5 reanimation cards in the game** (Kaelthar
+transform, Morgath, Grave Digger, Necrotic Revival; Sapphire's Ephemeral Cloak is the 5th). The bot was
+free-fuelling Onyx's graveyard. Remove the waste and Onyx's recursion engine starves → it craters
+48 → 39. Under competent play the patched decks are **~18–20 pp apart**, Onyx the floor, Radiant+Verdant
+the ceiling. Every card-tuning conclusion drawn through the legacy pilot must be re-validated.
+
+### 11c. Three pilot upgrades, and the standard we adopted
+
+Behind config flags (default off ⇒ byte-identical baseline), validated by an A/B sweep (patched + LP30,
+GPP=400):
+
+| pilot | Onyx | Radiant | Sapphire | Verdant | gap | spread |
+|---|---|---|---|---|---|---|
+| `reachDiscard` (control) | 38.8 | 57.3 | 45.2 | 58.7 | 16.0 | 19.9 |
+| + `exileDiscardForEnergy` | 39.2 | 57.8 | 44.7 | 58.4 | 16.1 | 19.2 |
+| + `valuePilot` | 37.8 | 58.3 | 46.8 | 57.2 | 15.5 | 20.5 |
+| + both (**adopted standard**) | 39.8 | 58.3 | 45.7 | 56.1 | **14.5** | **18.5** |
+
+- **`exileDiscardForEnergy`** — discard exiles instead of binning, so the resource mechanic can't double
+  as reanimation fuel. **Balance-neutral (+0.4 Onyx):** under `reachDiscard` only ~1.4 cards/game are
+  discarded, so the subsidy is already gone. This **confirms Onyx's weakness is its real power level, not
+  the discard pathway** (the bin fills from combat deaths regardless). Clean design fix; keep it.
+- **`valuePilot`** — the heuristic ranks deploy and keep/pitch by the first-principles card-power +
+  board/hero synergy engine (`src/balance`) on top of its heuristics. A **refinement, not a regime change**
+  (≤1.6 pp): mostly Sapphire +1.6 (the control/value deck has the most synergy to exploit), Verdant −1.5.
+- **Adopted standard = reach + exile + value** — the most faithful *and* tightest instrument (spread
+  19.9 → 18.5, gap 16.0 → 14.5), now the default in `balance-{resim,trace,discard-probe}.mjs`
+  (`NO_REACH` / `NO_EXILE` / `NO_VALUE` ablate).
+
+**The structural verdict is stable:** Onyx ~40 floor, Sapphire ~46, Radiant+Verdant ~56–58 ceiling. The
+re-tune target (§11d): buff Onyx, trim Verdant + Radiant; Sapphire is near-centered. Onyx's fix must be
+real power (stats, or intrinsic graveyard fuel so its engine doesn't depend on opponent behavior) — not a
+discard tweak, which §11c shows is balance-neutral.

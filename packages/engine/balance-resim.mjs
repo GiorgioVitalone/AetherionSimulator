@@ -26,9 +26,11 @@ const cfg = {
   decks, matchups: 'all-pairs', firstPlayer: 'alternating', fixHandSizeStall: true,
   termination: 'tiebreak', terminationMode: 'turn_cap', abilitiesOn: true, turnCap: 80,
   seedBase: 12345, fairPilot: true, gamesPerPairing: GPP, ...pilotCfg,
-  ...(process.env.REACH ? { reachDiscard: true } : {}),
-  ...(process.env.EXILE ? { exileDiscardForEnergy: true } : {}),
-  ...(process.env.VALUE ? { valuePilot: true } : {}),
+  // STANDARD PILOT (adopted): reach-discard + exile-on-discard + value/synergy ranking.
+  // On by default; set NO_REACH / NO_EXILE / NO_VALUE to ablate any leg.
+  reachDiscard: !process.env.NO_REACH,
+  exileDiscardForEnergy: !process.env.NO_EXILE,
+  valuePilot: !process.env.NO_VALUE,
 };
 
 const r = runSim(cfg);
