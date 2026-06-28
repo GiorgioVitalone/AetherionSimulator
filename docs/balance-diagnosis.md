@@ -515,7 +515,9 @@ precise number); the inert cells are GPP=400 (CI ≈ ±4 pp), so their ±1 pp de
 ### 10e. Game length (avg / median turns) — the rebalance changes *who wins*, not *how long*
 
 Reporting both the mean and the median game length (all runs are **100 % decided** — no timeouts/draws —
-so the median is the robust "typical game"; avg ≈ median + ~1, a small right-skew from a few grindy games):
+so the median is the robust "typical game"; avg ≈ median + ~1, a small right-skew from a few grindy games).
+**"Turns" = player-turns** — `turnNumber` increments once per side-switch (`passTurn`), starting at 1, so
+a reported ~31 is ~31 *player-turns* ≈ **15–16 turns per player** (~15.5 full rounds), not 31 each:
 
 | config | spread | avg turns | median turns |
 |---|---|---|---|
