@@ -261,6 +261,23 @@ export interface GameConfig {
    * by the bot (src/bot/*); the engine's resolution path never consults it, so it
    * cannot affect any runHash on its own. Absent/false ⇒ byte-identical no-op. */
   readonly reachDiscard?: boolean;
+  /** RULE VARIANT (default absent/false ⇒ engine-default: discarded card goes to the
+   * discard pile). When true, a card spent via `discard_for_energy` is EXILED (removed
+   * from the game) instead of binned, so the resource mechanic no longer doubles as
+   * graveyard fuel for reanimation (Onyx's Grave Digger / Morgath / Necrotic Revival /
+   * Kaelthar). The +1 temporary resource and the CARD_DISCARDED event are unchanged —
+   * only the card's destination differs. Read by the discard executor only. Absent/
+   * false ⇒ byte-identical no-op. */
+  readonly exileDiscardForEnergy?: boolean;
+  /** BOT-POLICY KNOB (default absent/false ⇒ engine-default atk+hp valuation). When
+   * true, the heuristic pilot consults the first-principles card-power / synergy
+   * engine (src/balance) ON TOP of its existing heuristics: deploy and keep/pitch
+   * decisions rank by `computeCardPower` (stats + keywords + abilities + intra-card
+   * synergy, on the same scale as atk+hp) plus a bounded board/hero inter-card synergy
+   * bonus, so it plays the cards that actually combo with its board and hero. Read
+   * ONLY by the bot (src/bot/*); the engine's resolution path never consults it, so it
+   * cannot affect any runHash on its own. Absent/false ⇒ byte-identical no-op. */
+  readonly valuePilot?: boolean;
 }
 
 /** Mutable diagnostic accumulator (see GameConfig.diag). Written by the engine

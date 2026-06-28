@@ -611,6 +611,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       ...(botGameplan ? { botGameplan } : {}),
       ...(config.fairPilot ? { fairPilot: true } : {}),
       ...(config.reachDiscard ? { reachDiscard: true } : {}),
+      ...(config.exileDiscardForEnergy ? { exileDiscardForEnergy: true } : {}),
+      ...(config.valuePilot ? { valuePilot: true } : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -995,6 +997,12 @@ function resolveConfig(config = {}) {
     // REACH-DISCARD — opt-in bot policy: discard only to fund a one-resource-short play.
     // Read only by the heuristic; emitted (and hashed) only when ON ⇒ default is no-op.
     ...(config.reachDiscard ? { reachDiscard: true } : {}),
+    // EXILE-DISCARD — rule variant: discard_for_energy exiles instead of binning.
+    // Emitted (and hashed) only when ON ⇒ default is byte-identical.
+    ...(config.exileDiscardForEnergy ? { exileDiscardForEnergy: true } : {}),
+    // VALUE-PILOT — opt-in bot policy: rank deploy/keep by the card-power+synergy engine.
+    // Read only by the heuristic; emitted (and hashed) only when ON ⇒ default is no-op.
+    ...(config.valuePilot ? { valuePilot: true } : {}),
     // RAW-POWER DECOMP — hero-LP head-start override: pin ONE faction's Hero
     // starting+max LP to a fixed value ({ faction, lp }). Only emitted (and hashed)
     // when a valid spec is given ⇒ default run is byte-identical to the v10 baseline.

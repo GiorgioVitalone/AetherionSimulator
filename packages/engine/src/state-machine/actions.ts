@@ -866,11 +866,14 @@ function executeDiscardForEnergy(
 
   const card = player.hand[cardIndex]!;
   // Grant a temporary resource matching the card's resource type (Rulebook 11:
-  // "Mana if the card is Magic-aligned, Energy if Tech-aligned").
+  // "Mana if the card is Magic-aligned, Energy if Tech-aligned"). Under
+  // exileDiscardForEnergy the card is removed from the game instead of binned, so it
+  // never becomes reanimation fuel; otherwise it goes to the discard pile as usual.
+  const exile = state.config?.exileDiscardForEnergy === true;
   const newPlayer: PlayerState = {
     ...player,
     hand: player.hand.filter((_, i) => i !== cardIndex),
-    discardPile: [...player.discardPile, card],
+    ...(exile ? {} : { discardPile: [...player.discardPile, card] }),
     temporaryResources: [
       ...player.temporaryResources,
       { resourceType: cardResourceType(card), amount: 1 },

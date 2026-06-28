@@ -27,6 +27,8 @@ const cfg = {
   termination: 'tiebreak', terminationMode: 'turn_cap', abilitiesOn: true, turnCap: 80,
   seedBase: 12345, fairPilot: true, gamesPerPairing: GPP, ...pilotCfg,
   ...(process.env.REACH ? { reachDiscard: true } : {}),
+  ...(process.env.EXILE ? { exileDiscardForEnergy: true } : {}),
+  ...(process.env.VALUE ? { valuePilot: true } : {}),
 };
 
 const r = runSim(cfg);

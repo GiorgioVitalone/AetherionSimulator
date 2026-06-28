@@ -60,6 +60,8 @@ const res = runSim({
   seedBase: 12345, botPolicy: 'heuristic', fairPilot: true, gamesPerPairing: GPP,
   __trace: trace, __diag: trace,
   ...(process.env.REACH ? { reachDiscard: true } : {}),
+  ...(process.env.EXILE ? { exileDiscardForEnergy: true } : {}),
+  ...(process.env.VALUE ? { valuePilot: true } : {}),
 });
 
 // ── Full trace for two representative non-mirror games ─────────────────────────

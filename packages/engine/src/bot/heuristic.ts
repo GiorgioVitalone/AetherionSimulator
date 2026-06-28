@@ -16,6 +16,7 @@ import { getAllCards, hasOpenSlot } from '../zones/zone-manager.js';
 import { getAvailableResources, effectiveCost } from '../actions/cost-checker.js';
 import { cardResourceType } from '../actions/card-resource.js';
 import { reachAffordTypes } from './reach-discard.js';
+import { deployValue, intrinsicValue } from './value-pilot.js';
 import { calculateHeroDamage } from '../combat/damage-calculator.js';
 import { scoreSpell } from './spell-eval.js';
 import { chooseSpellTargets } from './target-select.js';
@@ -240,7 +241,7 @@ function chooseStrategyAction(
   if (activate !== null) return activate;
 
   // 4. Deploy the strongest affordable creature to the best zone.
-  const deploy = chooseDeploy(player, acts);
+  const deploy = chooseDeploy(player, acts, state.config?.valuePilot === true);
   if (deploy !== null) return deploy;
 
   // 5. Equip the best creature on board.
@@ -348,12 +349,17 @@ function chooseActivate(
 function chooseDeploy(
   player: PlayerState,
   acts: ReturnType<typeof computeAvailableActions>,
+  valuePilot: boolean,
 ): PlayerAction | null {
-  // Strongest = highest (atk + hp). Tie-break: cheaper first so we curve out.
+  // Strongest first. Default: highest (atk + hp). Under valuePilot: first-principles
+  // card power + board/hero synergy. Tie-break: cheaper first so we curve out.
+  const rank = valuePilot
+    ? (card: CardInstance): number => deployValue(card, player)
+    : (card: CardInstance): number => power(card);
   const ranked = [...acts.canDeploy]
     .map((opt) => ({ opt, card: handCard(player, opt.cardInstanceId) }))
     .filter((x): x is { opt: typeof x.opt; card: CardInstance } => x.card !== null)
-    .sort((a, b) => power(b.card) - power(a.card) || costTotal(a.opt.cost) - costTotal(b.opt.cost));
+    .sort((a, b) => rank(b.card) - rank(a.card) || costTotal(a.opt.cost) - costTotal(b.opt.cost));
 
   const choice = ranked[0];
   if (choice === undefined) return null;
@@ -512,11 +518,12 @@ function chooseReachDiscard(
   const pool = getAvailableResources(player);
   const gameplan = gameplanForSeat(state.config, state.activePlayerIndex);
   const fair = isFairPilot(state.config);
+  const valuePilot = state.config?.valuePilot === true;
 
   let best: { pitchId: string; net: number } | null = null;
-  for (const play of reachPlays(player, opponent, pool, gameplan, fair)) {
+  for (const play of reachPlays(player, opponent, pool, gameplan, fair, valuePilot)) {
     if (play.value < MIN_REACH_PLAY) continue;
-    const pitch = bestPitch(player, opponent, play.playId, play.types, gameplan, fair);
+    const pitch = bestPitch(player, opponent, play.playId, play.types, gameplan, fair, valuePilot);
     if (pitch === null) continue;
     const net = play.value - pitch.value - REACH_MARGIN;
     if (net > 0 && (best === null || net > best.net)) best = { pitchId: pitch.id, net };
@@ -532,6 +539,7 @@ function reachPlays(
   pool: ReturnType<typeof getAvailableResources>,
   gameplan: Gameplan,
   fair: boolean,
+  valuePilot: boolean,
 ): readonly ReachPlay[] {
   const plays: ReachPlay[] = [];
   for (const card of player.hand) {
@@ -541,7 +549,7 @@ function reachPlays(
     if (card.cardType === 'C' && !canDeployBody(player)) continue; // no slot ⇒ unplayable
     plays.push({
       playId: card.instanceId,
-      value: cardValue(player, opponent, card, gameplan, fair),
+      value: cardValue(player, opponent, card, gameplan, fair, valuePilot),
       types,
     });
   }
@@ -556,26 +564,31 @@ function bestPitch(
   types: readonly ('mana' | 'energy')[],
   gameplan: Gameplan,
   fair: boolean,
+  valuePilot: boolean,
 ): { id: string; value: number } | null {
   const wanted = new Set(types);
   let best: { id: string; value: number } | null = null;
   for (const card of player.hand) {
     if (card.instanceId === excludeId || !wanted.has(cardResourceType(card))) continue;
-    const value = cardValue(player, opponent, card, gameplan, fair);
+    const value = cardValue(player, opponent, card, gameplan, fair, valuePilot);
     if (best === null || value < best.value) best = { id: card.instanceId, value };
   }
   return best;
 }
 
-/** A hand card's value on one scale (atk+hp units) for the reach/pitch gauge. */
+/** A hand card's value on one scale (atk+hp units) for the reach/pitch gauge. Under
+ * valuePilot a creature is valued by first-principles card power, not raw atk+hp. */
 function cardValue(
   player: PlayerState,
   opponent: PlayerState,
   card: CardInstance,
   gameplan: Gameplan,
   fair: boolean,
+  valuePilot: boolean,
 ): number {
-  if (card.cardType === 'C' || card.cardType === 'T') return power(card);
+  if (card.cardType === 'C' || card.cardType === 'T') {
+    return valuePilot ? intrinsicValue(card) : power(card);
+  }
   if (card.cardType === 'S') {
     return Math.max(
       0,
