@@ -14,8 +14,8 @@ a batch of changes._
 > synergy body (e.g. Defender + self-heal), so when the stat edit lands far below the window prefer
 > the keyword / cost / ability lever instead.
 
-**Budget model:** expected = -0.3 + 1.6·cost + rarity (E +0.75, M +1.5, L +2.5); window ±3.4 (RMSE 3.73).
-**Outliers:** 11 over budget · 12 under budget · 41 within.
+**Budget model:** expected = -0.3 + 1.6·cost + rarity (E +0.75, M +1.5, L +2.5); window ±2.2 (RMSE 3.73).
+**Outliers:** 15 over budget · 23 under budget · 26 within.
 
 **Levers** — pick what fits the card's role:
 - **Stats / keyword** — surgical power change for characters (re-scored to land in-window).
@@ -25,94 +25,139 @@ a batch of changes._
 ## Over budget — suggested nerfs (tone down)
 
 #### Onyx
-- **Morgath, the Undying** — Legendary, cost 7, 4/4/0  ·  power **19.6** vs **[10, 16.8]** (**+2.8 over**)
-  - **Stats:** -3 HP (4/4/0 → 4/1/0) → power 16.6 ✓
+- **Morgath, the Undying** — Legendary, cost 7, 4/4/0  ·  power **19.6** vs **[11.2, 15.6]** (**+4 over**)
+  - **Stats:** -2 ATK, -3 HP (4/4/0 → 2/1/0) → power 14.6 ✓
   - **Ability** (10.7 of 19.6 power): scale down / add a cooldown / raise its activation cost — "Allied Undead have +1/+1. / Return a character costing 3 or less to your hand. It becomes Volatile."
-  - **Cost:** raise cost 7→9 (+2) → window [13.2, 20]
-- **Necrotic Squire** — Common, cost 2, 1/2/0  ·  power **6.8** vs **[-0.5, 6.3]** (**+0.5 over**)
-  - **Stats:** -1 HP (1/2/0 → 1/1/0) → power 5.7 ✓
-  - **Cost:** raise cost 2→3 (+1) → window [1.1, 7.9]
+  - **Cost:** raise cost 7→10 (+3) → window [16, 20.4]
+- **Necrotic Squire** — Common, cost 2, 1/2/0  ·  power **6.8** vs **[0.7, 5.1]** (**+1.7 over**)
+  - **Stats:** -1 ATK, -1 HP (1/2/0 → 0/1/0) → power 4.2 ✓
+  - **Cost:** raise cost 2→4 (+2) → window [3.9, 8.3]
+- **Ghoul Marshal** — Common, cost 3, 1/3/0  ·  power **6.7** vs **[2.3, 6.7]** (**+0 over**)
+  - **Stats:** -1 HP (1/3/0 → 1/2/0) → power 5.6 ✓
+  - **Cost:** raise cost 3→4 (+1) → window [3.9, 8.3]
 
 #### Radiant
-- **Shieldbearer Paladin** — Common, cost 3, 2/3/0 [Defender]  ·  power **11.2** vs **[1.1, 7.9]** (**+3.3 over**)
-  - **Stats:** -2 HP (2/3/0 → 2/1/0) → power 7.1 ✓
-  - **Keyword:** remove Defender → power 7.6 ✓
-  - **Cost:** raise cost 3→6 (+3) → window [5.9, 12.7]
-- **Faithkeeper of Dawn** — Ethereal, cost 4, 2/4/0 [Defender]  ·  power **13.6** vs **[3.5, 10.3]** (**+3.3 over**)
+- **Shieldbearer Paladin** — Common, cost 3, 2/3/0 [Defender]  ·  power **11.2** vs **[2.3, 6.7]** (**+4.5 over**)
+  - **Stats:** -1 ATK, -2 HP (2/3/0 → 1/1/0) → power 6.1 ✓
+  - **Cost:** raise cost 3→6 (+3) → window [7.1, 11.5]
+- **Faithkeeper of Dawn** — Ethereal, cost 4, 2/4/0 [Defender]  ·  power **13.6** vs **[4.7, 9.1]** (**+4.5 over**)
   - **Stats:** -3 HP (2/4/0 → 2/1/0) → power 8.8 ✓
-  - **Cost:** raise cost 4→7 (+3) → window [8.3, 15.1]
-- **Archon of Order, Uriel** — Legendary, cost 7, 4/4/0 [Flying]  ·  power **19.6** vs **[10, 16.8]** (**+2.8 over**)
-  - **Stats:** -2 ATK (4/4/0 → 2/4/0) → power 16.6 ✓
-  - **Cost:** raise cost 7→9 (+2) → window [13.2, 20]
-- **Archon's Guardian** — Mythic, cost 6, 3/3/0 [Flying]  ·  power **16.6** vs **[7.4, 14.2]** (**+2.4 over**)
-  - **Stats:** -2 ATK (3/3/0 → 1/3/0) → power 13.6 ✓
-  - **Cost:** raise cost 6→8 (+2) → window [10.6, 17.4]
-- **Protector of Faith** — Common, cost 3, 1/3/0 [Defender]  ·  power **9** vs **[1.1, 7.9]** (**+1.1 over**)
-  - **Stats:** -1 HP (1/3/0 → 1/2/0) → power 7.4 ✓
+  - **Cost:** raise cost 4→7 (+3) → window [9.5, 13.9]
+- **Archon of Order, Uriel** — Legendary, cost 7, 4/4/0 [Flying]  ·  power **19.6** vs **[11.2, 15.6]** (**+4 over**)
+  - **Stats:** -3 ATK (4/4/0 → 1/4/0) → power 15.1 ✓
+  - **Cost:** raise cost 7→10 (+3) → window [16, 20.4]
+- **Archon's Guardian** — Mythic, cost 6, 3/3/0 [Flying]  ·  power **16.6** vs **[8.6, 13]** (**+3.6 over**)
+  - **Stats:** -3 ATK (3/3/0 → 0/3/0) → power 12.1 ✓
+  - **Cost:** raise cost 6→9 (+3) → window [13.4, 17.8]
+- **Protector of Faith** — Common, cost 3, 1/3/0 [Defender]  ·  power **9** vs **[2.3, 6.7]** (**+2.3 over**)
+  - **Stats:** -2 HP (1/3/0 → 1/1/0) → power 4.9 ✓
   - **Keyword:** remove Defender → power 5.4 ✓
-  - **Cost:** raise cost 3→4 (+1) → window [2.7, 9.5]
-- **Radiant Angel** — Ethereal, cost 5, 3/4/0 [Flying]  ·  power **12.8** vs **[5, 11.9]** (**+0.8 over**)
-  - **Stats:** -1 HP (3/4/0 → 3/3/0) → power 11.8 ✓
-  - **Keyword:** remove Flying → power 11.3 ✓
-  - **Cost:** raise cost 5→6 (+1) → window [6.7, 13.5]
-- **Sunlit Guardian** — Common, cost 2, 1/2/0 [Defender]  ·  power **6.6** vs **[-0.5, 6.3]** (**+0.3 over**)
+  - **Cost:** raise cost 3→5 (+2) → window [5.5, 9.9]
+- **Radiant Angel** — Ethereal, cost 5, 3/4/0 [Flying]  ·  power **12.8** vs **[6.2, 10.6]** (**+2.2 over**)
+  - **Stats:** -2 ATK (3/4/0 → 1/4/0) → power 9.8 ✓
+  - **Cost:** raise cost 5→7 (+2) → window [9.5, 13.9]
+- **Sunlit Guardian** — Common, cost 2, 1/2/0 [Defender]  ·  power **6.6** vs **[0.7, 5.1]** (**+1.5 over**)
   - **Stats:** -1 HP (1/2/0 → 1/1/0) → power 4.1 ✓
   - **Keyword:** remove Defender → power 3.6 ✓
-  - **Cost:** raise cost 2→3 (+1) → window [1.1, 7.9]
+  - **Cost:** raise cost 2→3 (+1) → window [2.3, 6.7]
+- **Blessed Squire** — Common, cost 1, 1/1/0  ·  power **3.9** vs **[-0.9, 3.5]** (**+0.4 over**)
+  - **Stats:** -1 ATK (1/1/0 → 0/1/0) → power 2.9 ✓
+  - **Cost:** raise cost 1→2 (+1) → window [0.7, 5.1]
 
 #### Sapphire
-- **Sapphire Sentinel** — Common, cost 2, 1/2/0 [Defender]  ·  power **8.6** vs **[-0.5, 6.3]** (**+2.3 over**)
-  - **Stats:** -1 HP (1/2/0 → 1/1/0) → power 6.1 ✓
-  - **Keyword:** remove Defender → power 5.6 ✓
-  - **Cost:** raise cost 2→4 (+2) → window [2.7, 9.5]
-- **Crystal Golem** — Ethereal, cost 3, 1/3/0 [Defender]  ·  power **10.2** vs **[1.9, 8.7]** (**+1.5 over**)
-  - **Stats:** -1 HP (1/3/0 → 1/2/0) → power 8.6 ✓
+- **Sapphire Sentinel** — Common, cost 2, 1/2/0 [Defender]  ·  power **8.6** vs **[0.7, 5.1]** (**+3.5 over**)
+  - **Stats:** -1 ATK, -1 HP (1/2/0 → 0/1/0) → power 5.1 ✓
+  - **Cost:** raise cost 2→5 (+3) → window [5.5, 9.9]
+- **Crystal Golem** — Ethereal, cost 3, 1/3/0 [Defender]  ·  power **10.2** vs **[3.1, 7.5]** (**+2.7 over**)
+  - **Stats:** -2 HP (1/3/0 → 1/1/0) → power 6.1 ✓
   - **Keyword:** remove Defender → power 6.6 ✓
-  - **Cost:** raise cost 3→4 (+1) → window [3.5, 10.3]
+  - **Cost:** raise cost 3→5 (+2) → window [6.2, 10.6]
+- **Mystic Librarian** — Common, cost 4, 2/4/0  ·  power **8.4** vs **[3.9, 8.3]** (**+0.1 over**)
+  - **Stats:** -1 HP (2/4/0 → 2/3/0) → power 7.4 ✓
+  - **Cost:** raise cost 4→5 (+1) → window [5.5, 9.9]
 
+#### Verdant
+- **Bio-Seedling** — Common, cost 0, 0/2/0  ·  power **2** vs **[-2.5, 1.9]** (**+0.1 over**)
+  - **Stats:** -1 HP (0/2/0 → 0/1/0) → power 1 ✓
+  - **Cost:** raise cost 0→1 (+1) → window [-0.9, 3.5]
 
 ## Under budget — suggested buffs (bring up)
 
 #### Onyx
-- **Haunting** — Ethereal, cost 5, spell  ·  power **0.9** vs **[5, 11.9]** (**−4.1 under**)
+- **Haunting** — Ethereal, cost 5, spell  ·  power **0.9** vs **[6.2, 10.6]** (**−5.3 under**)
   - **Ability** (0.9 of 0.9 power): scale up / lower its activation cost — "For each character destroyed this turn, target character gets -1 ATK"
-  - **Cost:** lower cost 5→2 (−3) → window [0.3, 7.1]
-- **Plague Burst** — Mythic, cost 5, spell  ·  power **2** vs **[5.8, 12.6]** (**−3.8 under**)
+  - **Cost:** lower cost 5→1 (−4) → window [-0.2, 4.3]
+- **Plague Burst** — Mythic, cost 5, spell  ·  power **2** vs **[7, 11.4]** (**−5 under**)
   - **Ability** (2 of 2 power): scale up / lower its activation cost — "All enemy characters lose 1 ATK and 1 HP."
-  - **Cost:** lower cost 5→2 (−3) → window [1, 7.8]
-- **Necrotic Revival** — Common, cost 4, spell  ·  power **1.2** vs **[2.7, 9.5]** (**−1.5 under**)
+  - **Cost:** lower cost 5→1 (−4) → window [0.6, 5]
+- **Necrotic Revival** — Common, cost 4, spell  ·  power **1.2** vs **[3.9, 8.3]** (**−2.7 under**)
   - **Ability** (1.2 of 1.2 power): scale up / lower its activation cost — "Return target character (cost 3 or less) from your discard to your hand."
-  - **Cost:** lower cost 4→3 (−1) → window [1.1, 7.9]
-- **Dark Bond** — Common, cost 3, spell  ·  power **0.7** vs **[1.1, 7.9]** (**−0.4 under**)
+  - **Cost:** lower cost 4→2 (−2) → window [0.7, 5.1]
+- **Dark Bond** — Common, cost 3, spell  ·  power **0.7** vs **[2.3, 6.7]** (**−1.6 under**)
   - **Ability** (0.7 of 0.7 power): scale up / lower its activation cost — "Sacrifice an allied character: draw a card."
-  - **Cost:** lower cost 3→2 (−1) → window [-0.5, 6.3]
+  - **Cost:** lower cost 3→1 (−2) → window [-0.9, 3.5]
+- **Dark Command** — Ethereal, cost 3, spell  ·  power **2.2** vs **[3.1, 7.5]** (**−0.9 under**)
+  - **Ability** (2.2 of 2.2 power): scale up / lower its activation cost — "Each player discards a card, if they do, they draw a card."
+  - **Cost:** lower cost 3→2 (−1) → window [1.5, 5.9]
+- **Witchstone** — Ethereal, cost 3, equipment  ·  power **2.6** vs **[3.1, 7.5]** (**−0.5 under**)
+  - **Ability** (2.6 of 2.6 power): scale up / lower its activation cost — ""Whenever you sacrifice a character, draw a card.""
+  - **Cost:** lower cost 3→2 (−1) → window [1.5, 5.9]
 
 #### Radiant
-- **Celestial Aegis** — Mythic, cost 5, equipment  ·  power **1.5** vs **[5.8, 12.6]** (**−4.3 under**)
+- **Celestial Aegis** — Mythic, cost 5, equipment  ·  power **1.5** vs **[7, 11.4]** (**−5.5 under**)
   - **Ability** (1.5 of 1.5 power): scale up / lower its activation cost — "At the end of your turn, heal 1 HP to all your characters."
-  - **Cost:** lower cost 5→2 (−3) → window [1, 7.8]
-- **Heavenly Chorus** — Ethereal, cost 5, spell  ·  power **2** vs **[5, 11.9]** (**−3 under**)
+  - **Cost:** lower cost 5→1 (−4) → window [0.6, 5]
+- **Heavenly Chorus** — Ethereal, cost 5, spell  ·  power **2** vs **[6.2, 10.6]** (**−4.2 under**)
   - **Ability** (2 of 2 power): scale up / lower its activation cost — "Deploy two 1/1 Angel tokens with Defender."
-  - **Cost:** lower cost 5→3 (−2) → window [1.9, 8.7]
-- **Symphonic Banner** — Ethereal, cost 4, equipment  ·  power **3.1** vs **[3.5, 10.3]** (**−0.4 under**)
+  - **Cost:** lower cost 5→2 (−3) → window [1.5, 5.9]
+- **Symphonic Banner** — Ethereal, cost 4, equipment  ·  power **3.1** vs **[4.7, 9.1]** (**−1.6 under**)
   - **Ability** (2.7 of 3.1 power): scale up / lower its activation cost — "Allied characters gain +1/+0 while equipped character is alive."
-  - **Cost:** lower cost 4→3 (−1) → window [1.9, 8.7]
+  - **Cost:** lower cost 4→3 (−1) → window [3.1, 7.5]
+- **Divine Light** — Common, cost 2, spell  ·  power **0** vs **[0.7, 5.1]** (**−0.7 under**)
+  - **Ability** (0 of 0 power): scale up / lower its activation cost — "Heal target character 3 HP."
+  - **Cost:** lower cost 2→1 (−1) → window [-0.9, 3.5]
 
 #### Sapphire
-- **Arcane Echoes** — Mythic, cost 5, spell  ·  power **1.2** vs **[5.8, 12.6]** (**−4.6 under**)
+- **Arcane Echoes** — Mythic, cost 5, spell  ·  power **1.2** vs **[7, 11.4]** (**−5.8 under**)
   - **Ability** (1.2 of 1.2 power): scale up / lower its activation cost — "Choose an Arcane spell in your discard; add a copy of it to your hand."
-  - **Cost:** lower cost 5→2 (−3) → window [1, 7.8]
-- **Lens of Foresight** — Ethereal, cost 3, equipment  ·  power **1.4** vs **[1.9, 8.7]** (**−0.5 under**)
+  - **Cost:** lower cost 5→1 (−4) → window [0.6, 5]
+- **Lens of Foresight** — Ethereal, cost 3, equipment  ·  power **1.4** vs **[3.1, 7.5]** (**−1.7 under**)
   - **Ability** (1.4 of 1.4 power): scale up / lower its activation cost — "Once per turn, look at the top 3 cards of your deck and rearrange them."
-  - **Cost:** lower cost 3→2 (−1) → window [0.3, 7.1]
+  - **Cost:** lower cost 3→1 (−2) → window [-0.2, 4.3]
+- **Arcane Storm** — Legendary, cost 8, spell  ·  power **12** vs **[12.8, 17.2]** (**−0.8 under**)
+  - **Ability** (12 of 12 power): scale up / lower its activation cost — "Return all enemy characters to their owners' hands. Draw a card for each character returned this way."
+  - **Cost:** lower cost 8→7 (−1) → window [11.2, 15.6]
+- **Mana Leak** — Common, cost 2, spell  ·  power **0.5** vs **[0.7, 5.1]** (**−0.2 under**)
+  - **Ability** (0.5 of 0.5 power): scale up / lower its activation cost — "Counter target spell unless its controller pays 2."
+  - **Cost:** lower cost 2→1 (−1) → window [-0.9, 3.5]
+- **Master Archivist** — Mythic, cost 6, 2/5/0  ·  power **8.4** vs **[8.6, 13]** (**−0.2 under**)
+  - **Stats:** +1 HP (2/5/0 → 2/6/0) → power 9.4 ✓
+  - **Keyword:** add Defender → power 11.4 ✓
+  - **Cost:** lower cost 6→5 (−1) → window [7, 11.4]
+- **Time Reversal** — Ethereal, cost 4, spell  ·  power **4.6** vs **[4.7, 9.1]** (**−0.1 under**)
+  - **Ability** (4.6 of 4.6 power): scale up / lower its activation cost — "Shuffle your discard pile into your deck, then draw 3 cards."
+  - **Cost:** lower cost 4→3 (−1) → window [3.1, 7.5]
 
 #### Verdant
-- **Biomass Surge** — Ethereal, cost 5, spell  ·  power **2** vs **[5, 11.9]** (**−3 under**)
+- **Biomass Surge** — Ethereal, cost 5, spell  ·  power **2** vs **[6.2, 10.6]** (**−4.2 under**)
   - **Ability** (2 of 2 power): scale up / lower its activation cost — "Deploy two 1/1 Sapling tokens in your Reserve."
-  - **Cost:** lower cost 5→3 (−2) → window [1.9, 8.7]
-- **Tech Bloom** — Mythic, cost 5, spell  ·  power **3** vs **[5.8, 12.6]** (**−2.8 under**)
+  - **Cost:** lower cost 5→2 (−3) → window [1.5, 5.9]
+- **Tech Bloom** — Mythic, cost 5, spell  ·  power **3** vs **[7, 11.4]** (**−4 under**)
   - **Ability** (3 of 3 power): scale up / lower its activation cost — "Gain 3 Energy."
-  - **Cost:** lower cost 5→3 (−2) → window [2.6, 9.4]
-- **Spore Burst** — Ethereal, cost 5, spell  ·  power **5** vs **[5, 11.9]** (**−0 under**)
+  - **Cost:** lower cost 5→2 (−3) → window [2.2, 6.6]
+- **Spore Burst** — Ethereal, cost 5, spell  ·  power **5** vs **[6.2, 10.6]** (**−1.2 under**)
   - **Ability** (5 of 5 power): scale up / lower its activation cost — "Deal 2 damage to all enemy characters."
-  - **Cost:** lower cost 5→4 (−1) → window [3.5, 10.3]
+  - **Cost:** lower cost 5→4 (−1) → window [4.7, 9.1]
+- **Symbiotic Shield** — Ethereal, cost 3, equipment  ·  power **2.6** vs **[3.1, 7.5]** (**−0.5 under**)
+  - **Ability** (2.6 of 2.6 power): scale up / lower its activation cost — "Whenever equipped character takes damage, draw a card."
+  - **Cost:** lower cost 3→2 (−1) → window [1.5, 5.9]
+- **Steel-Root Armor** — Common, cost 4, equipment  ·  power **3.5** vs **[3.9, 8.3]** (**−0.4 under**)
+  - **Ability** (3.1 of 3.5 power): scale up / lower its activation cost — "Equipped character gains +0/+X HP, where X is the Energy spent."
+  - **Cost:** lower cost 4→3 (−1) → window [2.3, 6.7]
+- **Vinecall Elder** — Ethereal, cost 5, 2/4/0  ·  power **6** vs **[6.2, 10.6]** (**−0.2 under**)
+  - **Stats:** +1 HP (2/4/0 → 2/5/0) → power 7 ✓
+  - **Keyword:** add Flying → power 7 ✓
+  - **Cost:** lower cost 5→4 (−1) → window [4.7, 9.1]
+- **Regrowth** — Common, cost 2, spell  ·  power **0.7** vs **[0.7, 5.1]** (**−0 under**)
+  - **Ability** (0.7 of 0.7 power): scale up / lower its activation cost — "Sacrifice an allied character to draw a card."
+  - **Cost:** lower cost 2→1 (−1) → window [-0.9, 3.5]

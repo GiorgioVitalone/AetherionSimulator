@@ -8,7 +8,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { computeCardPower } from './dist/balance/index.js';
-import { loadBalanceData, budgetModel } from './balance-data.mjs';
+import { loadBalanceData, indexFromRaw, budgetModel } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
@@ -28,8 +28,12 @@ const withCostDelta = (sc, delta) => {
   return { ...sc, cost: c };
 };
 
-export function computeSuggestions() {
-  const { index, raw } = loadBalanceData();
+/** Suggestions for the starter pool. Pass `rawOverride` (a full SimCard array) to
+ * fit a PATCHED pool instead of the baseline — used to iterate the fit to convergence. */
+export function computeSuggestions(rawOverride) {
+  const { index, raw } = rawOverride
+    ? { index: indexFromRaw(rawOverride).index, raw: rawOverride }
+    : loadBalanceData();
   const effectText = new Map();
   for (const c of raw) {
     const t = (c.abilities || []).map((a) => a.effect).filter(Boolean).join(' / ');

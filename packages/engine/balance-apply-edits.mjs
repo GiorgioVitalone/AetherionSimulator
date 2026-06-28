@@ -10,7 +10,7 @@ import { computeSuggestions } from './balance-suggestions.mjs';
  * mode: all|nerfs|buffs|none. Returns { raw, changes, lpCount }. Never mutates input. */
 export function applyEdits(rawInput, { mode = 'all', flattenLp = 0 } = {}) {
   const raw = JSON.parse(JSON.stringify(rawInput));
-  const sug = computeSuggestions();
+  const sug = computeSuggestions(rawInput); // fit the INPUT pool (so passes iterate)
   const list =
     mode === 'nerfs' ? sug.over : mode === 'buffs' ? sug.under : mode === 'none' ? [] : [...sug.over, ...sug.under];
   const byId = new Map(raw.map((c) => [c.id, c]));
