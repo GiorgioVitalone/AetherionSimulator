@@ -599,3 +599,65 @@ GPP=400):
 re-tune target (§11d): buff Onyx, trim Verdant + Radiant; Sapphire is near-centered. Onyx's fix must be
 real power (stats, or intrinsic graveyard fuel so its engine doesn't depend on opponent behavior) — not a
 discard tweak, which §11c shows is balance-neutral.
+
+### 11d. Re-tuned under the standard pilot — spread 19.5 → 6.0 with 15 surgical edits (2026-06-28)
+
+Re-tuning against the standard pilot converged in four rounds (`balance-faction-tune.mjs`, applying flat
+character-stat deltas to the top-N marquee bodies of a faction on top of the budget patch + LP30). The
+calibration finding dominated the method: **faction-power is an extreme lever** — a flat ±1 across a whole
+faction swings 25–50 pp (Onyx +1/+1 ×13 → **92%**), and even +1 on the top-8 swings +8 to +38 pp (§11e). So
+the patch is a *handful of surgical edits*, not a faction-wide rescale. Win rates are relative, so nerfing
+the Radiant+Verdant ceiling lifts the Onyx+Sapphire floor for free.
+
+**Converged patch (r4), on top of the budget edits + LP→30:**
+
+| faction | edit | cards |
+|---|---|---|
+| Radiant | **−1 HP** | Heavenly Knight, Radiant Angel, Archon of Order Uriel, Cleric of Dawn, Archon's Guardian |
+| Verdant | **−1 ATK** | Ancient Treant, Guardian Spirit MK-III, Biosteel Golem, Pneumatic Gorilla |
+| Onyx | **+1 HP** | Carrion Queen, Zombie Horde, Grave Digger, Soulflay Necromancer |
+| Sapphire | **+1 HP** | Arcane Guardian, Master Archivist |
+
+| field (GPP=400, standard pilot) | Onyx | Radiant | Sapphire | Verdant | spread |
+|---|---|---|---|---|---|
+| budget patch + LP30 (no re-tune) | 40 | 60 | 45 | 56 | 19.5 |
+| **+ r4 re-tune** | 46.8 | 48.1 | 52.4 | 52.8 | **6.0** |
+
+15 edits take the field from a 19.5 pp gap to 6.0 (at target), all factions 46.8–52.8. Residuals are ±3 pp,
+inside GPP=400 noise (±~1.5 pp), so this is the lock point — pushing lower would chase noise. Note Onyx was
+buffed via HP, not ATK, deliberately: §11e shows Onyx is so ATK-sensitive (+38 pp) that an ATK buff would
+wildly overshoot — HP is the controllable knob.
+
+### 11e. Why stat tweaks swing so hard — the breakpoint isolation (2026-06-28)
+
+Isolating a single stat (+1 on a faction's top-8 bodies, standard pilot, GPP=250), measured as that
+faction's own win-rate lift:
+
+| faction (baseline) | +1 HP | +1 ATK | +1 ARM |
+|---|---|---|---|
+| Radiant (60) | +10.1 | +8.6 | **+16.1** |
+| Verdant (56) | +12.1 | +8.1 | — |
+| Onyx (40) | +15.2 | **+38.1** | — |
+
+**The sensitivity is a game-dynamics property, not a valuation error.** Stats matter most at *trade
+breakpoints*: a 3/3 into a 3/3 is an even trade; a 3/**4** survives AND kills it — an even trade becomes a
+2-for-1 with a surviving threat, and the survivor snowballs. Four amplifiers make ours extreme: low base
+stats (a +1 is a +25–50% relative change), **binary breakpoint mechanics** (ARM/shield reduce flat → hard
+0-damage thresholds), symmetric mirror-heavy fair-pilot eval (a stat edge is pure and uncountered), and a
+grindy ~31-turn combat meta (edges compound dozens of times).
+
+Findings:
+- **ARM is the sharpest per-point knob** (Radiant +16.1 for +1 ARM, ~1.6× HP, ~1.9× ATK) — it's the one
+  truly binary stat. It is the highest-leverage rule target if the game should be *de-swung*.
+- **HP-vs-ATK is faction-dependent — by *bottleneck*, not "aggro vs control."** Onyx is wildly ATK-bound
+  (+38: its win condition is closing/trading, and as the weakest faction it has the most headroom);
+  Radiant and Verdant are HP ≥ ATK. There is no universal answer to "does HP swing as much as ATK."
+- **Sensitivity concentrates on small/mid bodies near breakpoints**, not the biggest ones: −1 HP on
+  Verdant's three largest bodies moved nothing (already above any breakpoint), while +1 HP across its
+  top-8 (which reaches the trade-relevant range) was +12 pp.
+
+Design implications: (a) the swing is *contextual* (breakpoints vs the opposing board), so re-weighting the
+*static* card-power formula cannot fix it — keep using the **sim** for win-rate balance; (b) `W_ARM = 1.3`
+arguably under-weights ARM relative to its ~1.6× in-game impact, a defensible small tooling bump for card
+ranking only; (c) if the swinginess itself is undesirable, **soften ARM's breakpoint first** (fractional or
+capped reduction) and re-measure — it is the disproportionate contributor.
