@@ -772,7 +772,8 @@ function dashboardApp() {
         <div class="panel"><h3 class="hdr">Budget fit — before · ${rb.before.counts.within} within</h3>${stack(rb.before.counts)}</div>
         <div class="panel"><h3 class="hdr">Budget fit — after · ${rb.after.counts.within} within</h3>${stack(rb.after.counts)}</div>
       </div>
-      <div class="panel" style="margin-top:14px"><h3 class="hdr">Starter deck value — before → after (Radiant's ceiling drops hardest)</h3>${dvHead}${dvRows}</div>`,
+      <div class="panel" style="margin-top:14px"><h3 class="hdr">Starter deck value — before → after (Radiant's ceiling drops hardest)</h3>${dvHead}${dvRows}</div>
+      <div class="panel callout small" style="margin-top:14px">The "after" is the budget patch + LP30 + the <b>15 sim-guided faction edits</b> (the §11d re-tune, spread 6.0). A <b>pure</b> budget-fit — mechanically editing every card onto the tightened ±2.2 line — instead breaks win-rate balance (spread 35–44: budget can't see Verdant's engine, and cost-cutting under-budget spells over-buffs the blind spot). The narrowed window is a diagnostic, not a mandate — see docs/balance-diagnosis.md §11f.</div>`,
     );
   }
 

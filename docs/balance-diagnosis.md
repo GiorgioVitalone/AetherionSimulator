@@ -661,3 +661,37 @@ Design implications: (a) the swing is *contextual* (breakpoints vs the opposing 
 arguably under-weights ARM relative to its ~1.6× in-game impact, a defensible small tooling bump for card
 ranking only; (c) if the swinginess itself is undesirable, **soften ARM's breakpoint first** (fractional or
 capped reduction) and re-measure — it is the disproportionate contributor.
+
+### 11f. Fitting the *narrowed* budget window is a diagnostic, not a mandate (2026-06-28)
+
+After tightening the budget window (`RMSE_MULT` 0.9 → 0.6, ±3.4 → ±2.2 — `balance-data.mjs`), we asked
+what a full re-fit to it would do. Answer: **it perfects the budget and breaks the balance.**
+
+- **Budget fit (Phase 1).** One `applyEdits(baseline,{mode:'all',flattenLp:30})` pass lands **64/64**
+  starter cards within ±2.2 (measured vs the fixed window). Iterating *past* one pass overshoots — the
+  model re-fits a shrinking window each pass and chases it (pass 1–2 = 64 within, pass 5 = 53), so **one
+  pass is the fit.** (`balance-refit.mjs`.)
+- **Win-rate (the experiment).** Re-simulated under the standard pilot (GPP=20, noisy ±~7 pp but
+  unambiguous):
+
+  | tight-window set | Onyx | Radiant | Sapphire | Verdant | spread |
+  |---|---|---|---|---|---|
+  | budget-fit (`mode=all`, 38 edits) | 50 | **27** | 53 | **71** | **43.6** |
+  | nerfs-only (`mode=nerfs`, 15 trims) | 53 | 42 | **35** | **70** | **35.0** |
+  | *§11d re-tune (reference, GPP 400)* | *47* | *48* | *52* | *53* | ***6.0*** |
+
+  The pure budget-fit takes the spread from a tuned **6.0 to 35–44** — far *worse* than doing nothing.
+
+- **Why.** The §11 budget-vs-win-rate gap, amplified: (1) the budget can't see **Verdant's ramp/value
+  engine**, so it never nerfs Verdant's real strength — trimming everyone *else's* over-budget bodies just
+  lifts Verdant to ~70 in *both* sets; (2) the under-budget "buff" lever is **cost cuts**, which over-buffs
+  the blind-spot spells the static score under-rates (the doc's own "verify it's actually weak, don't
+  auto-buff" warning) — and the 23 cheap spells also make the sim **~10× slower** (more affordable plays
+  per turn; game length stays normal ~28 turns, so it is per-turn compute, not stalls); (3) the tighter
+  window **over-trims** Radiant/Sapphire bodies.
+
+**Conclusion.** The narrowed window is a good **diagnostic** (it flags ~40% more outliers — 38 vs 23 — for
+human review) but a poor **mandate**: mechanically editing every card onto the line fights win-rate
+balance. The arbiter remains the **sim** (§11d's targeted, sim-guided re-tune to 6.0 stays the balance
+baseline); the budget audit narrows *where to look*, not *what the answer is*. This is exactly why the
+scalability toolkit pairs the static audit with the gauntlet/sim rather than trusting the budget alone.
