@@ -171,6 +171,7 @@ node balance-card-values.mjs    # text report (per-card table, deck values, corr
 node balance-dashboard.mjs      # writes balance-dashboard.html — open it in any browser
 node balance-suggestions.mjs    # writes docs/balance-suggestions.md — draft fixes for out-of-window cards
 node balance-compare.mjs        # writes balance-compare.html — before/after of applying those fixes
+node balance-rebalance.mjs      # compares function-preserving balance vectors; writes a pool + a SIM-confirm command
 ```
 
 The budget model (`a + b·cost + rarity bonus`, ±RMSE window) lives in `balance-data.mjs`
