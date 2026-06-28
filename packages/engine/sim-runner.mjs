@@ -722,6 +722,7 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
         if (action.type === 'attach_equipment') equipPlayed++;
         if (action.type === 'cast_spell') { if (gs.activePlayerIndex === 0) spellsCastA++; else spellsCastB++; }
         actionCounts[action.type] = (actionCounts[action.type] || 0) + 1;
+        if (config.__trace && config.__trace.onAction) config.__trace.onAction(action.type, gs.turnNumber, gs.activePlayerIndex);
         actor.send({ type: 'PLAYER_ACTION', action });
       }
     } catch {
