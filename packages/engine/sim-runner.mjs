@@ -632,10 +632,17 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   let spellsCastB = 0;   // cast_spell actions dispatched by seat 1 (faction fB)
   let spellsCounters = 0; // reactive Counter/Flash casts (REACTIVE_ACTION) dispatched
   let steps = 0;
+  let lastTurn = -1;
+  const actionCounts = {};
   while (steps++ < STEP_CAP) {
     const snap = actor.getSnapshot();
     if (snap.status === 'done') break;
     gs = snap.context.gameState;
+    // Per-turn telemetry (gated; read-only; fires once at the start of each turn).
+    if (config.__trace && gs.turnNumber !== lastTurn) {
+      lastTurn = gs.turnNumber;
+      config.__trace.onTurn(gs, { spellsCastA, spellsCastB, equipPlayed, spellsCounters, actionCounts });
+    }
     if (gs.winner != null) break;
     if (gs.turnNumber > config.turnCap) break;
 
@@ -714,6 +721,7 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       else {
         if (action.type === 'attach_equipment') equipPlayed++;
         if (action.type === 'cast_spell') { if (gs.activePlayerIndex === 0) spellsCastA++; else spellsCastB++; }
+        actionCounts[action.type] = (actionCounts[action.type] || 0) + 1;
         actor.send({ type: 'PLAYER_ACTION', action });
       }
     } catch {
@@ -1011,6 +1019,8 @@ function resolveConfig(config = {}) {
     // Diagnostic accounting collector (read-only side-channel). Stripped from the
     // hashed config in computeRunHash so attaching it keeps runHash byte-identical.
     ...(config.__diag !== undefined ? { __diag: config.__diag } : {}),
+    // Per-turn telemetry collector (read-only side-channel; same hash-strip as __diag).
+    ...(config.__trace !== undefined ? { __trace: config.__trace } : {}),
   };
 }
 
@@ -1128,8 +1138,9 @@ function computeRunHash(results, config, deckLabels = []) {
   // Decks used are part of the run's identity: fold their stable labels in so two
   // runs that differ only by deck selection produce different hashes. The diagnostic
   // accounting collector (__diag) is a read-only side-channel and is excluded.
-  const { __diag, ...hashedConfig } = config;
+  const { __diag, __trace, ...hashedConfig } = config;
   void __diag;
+  void __trace;
   const payload = JSON.stringify(hashedConfig) + '\n' + deckLabels.join(',') + '\n' + rows.join('\n');
   return createHash('sha256').update(payload).digest('hex').slice(0, 16);
 }
