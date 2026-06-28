@@ -29,6 +29,18 @@ const COLOR_BONUS = 8;
 // low curve; a first-principles template, NOT fit to win rates.
 const IDEAL_CURVE: readonly number[] = [0.06, 0.12, 0.2, 0.2, 0.16, 0.12, 0.08, 0.06];
 
+// ── Acceleration (ramp / snowball) ───────────────────────────────────────────
+// The per-card score is cost-FREE (a locked decision), so it values a 0-cost
+// enabler the same as an 8-cost one — i.e. ~0. That structurally blinds it to the
+// ramp/snowball archetype: cheap development + resource acceleration now, an
+// oversized finisher later. This deck-level term restores that tempo, using cost
+// (fair game at the deck level, as `consistency` already does).
+const ACCEL_TOP_COST = 5; // a "finisher" — what early tempo deploys ahead of curve
+const ACCEL_CHEAP_COST = 1; // sub-2-cost development that buys tempo for ~no cost
+const ACCEL_CHEAP_TEMPO = 2; // tempo value of one cheap play (~a vanilla 1-drop body)
+const ACCEL_RAMP_TEMPO = 1.5; // tempo per point of resource ramp (deploys ~1.5 stat/turn)
+const ACCEL_COEF = 1.0; // snowball value ≈ min(tempo generated, payoff to deploy), once
+
 function round2(x: number): number {
   return Math.round(x * 100) / 100;
 }
@@ -76,6 +88,33 @@ function consistencyScore(distinct: readonly Distinct[], total: number, faction:
   return -CURVE_PENALTY * curveDev + COLOR_BONUS * (onColor / total - 0.5);
 }
 
+function cardCost(d: Distinct): number {
+  return d.card.cost.mana + d.card.cost.energy + d.card.cost.flexible;
+}
+
+function rampWeight(d: Distinct): number {
+  let w = 0;
+  for (const p of d.power.provides) if (p.kind === 'ramp') w += p.weight;
+  return w;
+}
+
+/** Ramp/snowball value the cost-free per-card score cannot see: early tempo —
+ * resource ramp + cheap development (the enablers scored ~0 because the score
+ * ignores cost) — GATED by the top-end power it lets you deploy ahead of curve.
+ * `min` keeps both halves honest (cheap junk or a clunky top-heavy curve alone
+ * earns nothing) and the payoff is only a gate, never re-counted as power. */
+function accelerationValue(distinct: readonly Distinct[]): number {
+  let earlyTempo = 0;
+  let payoffReach = 0;
+  for (const d of distinct) {
+    const cost = cardCost(d);
+    earlyTempo += rampWeight(d) * copyFactor(d.copies) * ACCEL_RAMP_TEMPO;
+    if (cost <= ACCEL_CHEAP_COST) earlyTempo += copyFactor(d.copies) * ACCEL_CHEAP_TEMPO;
+    if (cost >= ACCEL_TOP_COST) payoffReach += d.power.power * copyFactor(d.copies);
+  }
+  return ACCEL_COEF * Math.min(earlyTempo, payoffReach);
+}
+
 function heroEngineValue(abilities: readonly AbilityDSL[]): number {
   return abilities.reduce((s, ab) => s + abilityContribution(ab), 0);
 }
@@ -121,13 +160,15 @@ export function computeDeckValue(
     demands: d.power.demands,
   }));
   const interSynergy = deckInterSynergy(cardSignals, cardPowerSum);
+  const acceleration = accelerationValue(distinct);
   const hero2 = heroSynergyValue(hero, aggregateProvides(cardSignals));
-  const value = cardPowerSum + consistency + interSynergy.capped + hero2.total;
+  const value = cardPowerSum + consistency + acceleration + interSynergy.capped + hero2.total;
   return {
     faction: deck.faction,
     value: round2(value),
     cardPowerSum: round2(cardPowerSum),
     consistency: round2(consistency),
+    acceleration: round2(acceleration),
     interSynergy,
     heroSynergy: round2(hero2.total),
     heroLpBaseline: round2(hero2.lpBaseline),

@@ -89,36 +89,69 @@ attach_target`. The matrix `W` is **sparse**; key cells:
 synergy term can never re-count it. This is the central double-count guard.
 
 ## Deck value
-`value = cardPowerSum + consistency + interSynergy.capped + heroSynergy`.
+`value = cardPowerSum + consistency + acceleration + interSynergy.capped + heroSynergy`.
 - **cardPowerSum** — `computeCardPower` per distinct card; the k-th copy worth `power·0.9^(k-1)`
   (diminishing returns on redundant draws).
 - **consistency** (additive, modest) — `−12·Σ|frac_b − ideal_b|` over cost buckets (a fixed
   first-principles curve template — uses the cost *distribution* for deck quality, not a per-card cost
   budget) `+ 8·(onColorFrac − 0.5)` (off-color cards cast less reliably).
+- **acceleration** (ramp / snowball) — `min(earlyTempo, payoffReach)`, where `earlyTempo =
+  Σ ramp·copyFactor·1.5 + Σ_{cost≤1} copyFactor·2` (resource ramp + cheap development) and
+  `payoffReach = Σ_{cost≥5} power·copyFactor` (the finishers it deploys ahead of curve). The per-card
+  score is **cost-free** by design (decision #1), so it values a 0-cost enabler at ~0 — structurally
+  blind to the ramp/snowball archetype (cheap development + acceleration now, an oversized threat
+  later). This deck-level term restores that tempo, using cost (fair game at the deck level, as
+  `consistency` already does). The `min` gate keeps both halves honest — cheap junk with no payoff, or
+  a clunky top-heavy curve with no acceleration, earns nothing — and the payoff is only a *gate*, never
+  re-counted as power (it is already in `cardPowerSum`). Anchored to resource→tempo conversion, never
+  fitted; it lifts ramp decks (Verdant) without touching decks that lack the curve (Sapphire → 0).
 - **interSynergy** — `pairSynergy` over distinct card pairs × presence (`min(copies,3)/3` each);
-  per-pair cap 4; global cap `0.4 × cardPowerSum` (synergy is a bounded amplifier, never dominant).
+  per-pair cap 4; **per-card saturation** (a card spends a free quota of 2 edges, then its k-th extra
+  edge decays by `0.6^(k−1)`); global cap `0.4 × cardPowerSum` (synergy is a bounded amplifier, never
+  dominant). Saturation models throughput — one card is one card on the board: a hub wired into many
+  partners (a lone sac outlet fed by ten bodies, one shield for the whole board) cannot fire them all
+  at once. It distinguishes a **redundant wide web** (8–10 edges/card — Onyx's aristocrats) from a
+  **coherent package** (3–4 — Radiant's walls+equipment), where the old flat sum over-credited the
+  former; Radiant is unaffected at the ranking level (it was already global-cap-bound).
 - **heroSynergy** — `6 (floor) + (lp−30)·0.6 + heroEngineValue + min(heroDemandMatch, 0.5·engine) +
   transform`. The hero's demands (Kaelthar → `death_of_tag{Undead}`, Lyria → `spell_density` +
   `large_hand`, Seraphina → `equipment_count` + `frontline_arm`, RIA-09 → `temp_resource`) are matched
   against the deck's aggregated provides.
 
 ## Validation — diagnostic, never calibration
-The harness reports the **correlation** of the 4 starters' deck values with the measured fair-rollout
-win rates `[Radiant 78, Verdant 69, Onyx 44, Sapphire 8]` (Spearman ρ is the headline; n=4 makes
-Pearson noisy). Weights are **not** adjusted to improve it.
+The harness reports the **correlation** of the 4 starters' deck values with measured win rates
+(Spearman ρ is the headline; n=4 makes Pearson noisy). The **headline reference is the adopted
+standard pilot** (reach+exile+value) measured on the *same baseline cards the formula scores*:
+`[Radiant 83.7, Verdant 49.8, Onyx 27.2, Sapphire 39.3]` — the reference the dashboard uses. The fair
+rollout `[78, 69, 44, 8]` and heuristic are kept as secondary lenses (they disagree in the middle; the
+fair rollout's Sapphire 8 is a stale outlier vs the standard pilot's 39.3). Weights are **not**
+adjusted to improve any of them — the terms below are anchored to game dynamics and the ρ is reported
+post-hoc.
 
-**First run (2026-06-27):** the score ranks `Radiant > Onyx > Sapphire > Verdant`
-(values 351 / 224 / 212 / 206). It nails Radiant #1 (both pilots agree) and correlates strongly with
-the *heuristic* ordering (Pearson 0.95) but only moderately with the fair rollout (Pearson 0.58,
-Spearman 0.40). The divergence is **Verdant**, which the static score ranks last while the fair
-rollout has it 2nd — the same blind spot the heuristic bot has: a context-free score cannot see
-Verdant's emergent **ramp/snowball** (small bodies + resource acceleration look weak card-by-card).
-This is consistent with the pacing diagnosis (`balance-diagnosis.md` §8–9) and is exactly the kind of
-honest gap the "build then correlate" approach is meant to surface.
+**First run (2026-06-27):** the score ranked `Radiant > Onyx > Sapphire > Verdant`
+(values 351 / 224 / 212 / 206), Spearman ρ = **0.20** vs the standard pilot. It nailed Radiant #1 but
+**inverted Onyx and Verdant**: it ranked Verdant *last* (the standard pilot has it 2nd) and Onyx 2nd
+(it wins last). Two structural blind spots: a cost-free score cannot see Verdant's **ramp/snowball**
+(cheap bodies + acceleration look weak card-by-card), and the flat synergy sum over-credited Onyx's
+**redundant aristocrats web** (a lone sac outlet counted as fed by all ten bodies at once).
+
+**Second run (2026-06-28) — after the `acceleration` term + synergy `saturation`:** the score ranks
+`Radiant > Verdant > Sapphire > Onyx` (values 293 / 206 / 198 / 193), **Spearman ρ = 1.00** vs the
+standard pilot (Pearson 0.96), 1.00 vs the heuristic, 0.80 vs the fair rollout (its Sapphire-8 outlier
+is the only disagreement). Both inversions are resolved by the two principled terms — *not* by fitting:
+acceleration lifts Verdant by modelling tempo the cost-free score omits; saturation tempers Onyx's web
+by modelling sacrifice throughput. **Caveat — n = 4.** A perfect rank match on four decks is
+encouraging, not proof; a parameter sweep shows the Verdant lift is insensitive to the exact constants
+while the Onyx<Sapphire ordering is the delicate one (it holds across the defensible saturation range
+but ties at the gentlest setting). The real test is more decks/archetypes (the tier-2 gauntlet) — the
+score stays a *diagnostic read alongside simulation*, never a replacement for it.
 
 ## Caveats
-- The score is **intrinsic card power**, not a win-rate predictor; Verdant-style emergent strategies
-  (ramp, snowball) are under-valued by any static model — read the score alongside simulation.
+- The score is **intrinsic card power** plus modest deck-level corrections, not a win-rate predictor.
+  The `acceleration` term now captures *some* of the ramp/snowball tempo a pure static model misses, and
+  `saturation` discounts redundant synergy — but both are coarse deck-level proxies for emergent,
+  turn-by-turn dynamics. Read the score alongside simulation; it is a fast first-pass drift gauge, not a
+  substitute for the gauntlet/full sim.
 - **Double-counting** is guarded structurally: the WANT axis holds only payoffs that need *other*
   cards; removal/reach are zero provider rows (counted once, in card power); intra-synergy requires
   cross-source pairs and is a bounded multiplier, inter-synergy iterates distinct ids and is a

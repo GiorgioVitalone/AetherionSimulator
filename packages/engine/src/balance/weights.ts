@@ -41,6 +41,15 @@ export const EFFECT_SUM_CAP = 12; // per-ability effect-sum cap before recurrenc
 export const INTRA_CAP = 0.5; // intra-card synergy lifts a card at most +50%
 export const PAIR_CAP = 4; // a single inter-card pair contributes at most this
 export const GLOBAL_SYN_FRACTION = 0.4; // total deck synergy <= 0.4 * raw card power
+// A card is ONE card on the board: it can realize a FEW combos reliably, but a
+// hub wired into many partners (a lone sac outlet fed by ten bodies, one shield
+// for the whole board) cannot fire them all at once. Each card gets SATURATION_FREE
+// edges at full value, then its k-th extra edge decays by SATURATION_DECAY. This
+// distinguishes a redundant wide web (8–10 edges/card) from a coherent package
+// (3–4), where a flat per-edge decay would wrongly gut both. Anchored to "a card
+// realizes ~2 simultaneous combos," not to win rates; mirrors REDUNDANCY_DECAY.
+export const SATURATION_FREE = 2;
+export const SATURATION_DECAY = 0.6;
 
 // ── Hero / deck consts ───────────────────────────────────────────────────────
 export const LP_VALUE = 0.6; // value per hero LP above/below the 30 baseline

@@ -139,6 +139,7 @@ export interface DeckValueBreakdown {
   readonly value: number; // final scalar
   readonly cardPowerSum: number; // sum over slots with copy diminishing-returns
   readonly consistency: number; // curve + color adjustment (additive, can be +/-)
+  readonly acceleration: number; // ramp/snowball: early tempo gated by top-end payoff
   readonly interSynergy: SynergyBreakdown;
   readonly heroSynergy: number; // hero demands x deck provides + LP baseline + transform
   readonly heroLpBaseline: number; // hero LP contribution (broken out)

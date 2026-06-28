@@ -94,6 +94,7 @@ for (const f of FACTIONS) {
     value: round(dv.value),
     cardPowerSum: round(dv.cardPowerSum),
     consistency: round(dv.consistency),
+    acceleration: round(dv.acceleration),
     interSynergy: round(dv.interSynergy.capped),
     interSynergyRaw: round(dv.interSynergy.raw),
     heroSynergy: round(dv.heroSynergy),
@@ -466,6 +467,7 @@ function dashboardApp() {
       .map((d) => {
         const segs = [
           { name: 'card power', value: d.cardPowerSum, color: fc(d.faction) },
+          { name: 'acceleration', value: d.acceleration, color: '#7fa86b' },
           { name: 'inter-card synergy', value: d.interSynergy, color: '#d9b44a' },
           { name: 'hero synergy', value: d.heroSynergy, color: '#c98b5a' },
         ];
@@ -473,7 +475,7 @@ function dashboardApp() {
         <div class="hero">${esc(d.hero.name)} · ${d.hero.lp} LP · ${d.distinct} distinct / ${d.totalCards} cards</div>
         <div class="big" style="color:${fc(d.faction)}">${f1(d.value)}</div>
         ${stackBar(segs)}
-        <div class="legend"><span><i style="background:${fc(d.faction)}"></i>cards ${f1(d.cardPowerSum)}</span><span><i style="background:#d9b44a"></i>synergy ${f1(d.interSynergy)}</span><span><i style="background:#c98b5a"></i>hero ${f1(d.heroSynergy)}</span></div>
+        <div class="legend"><span><i style="background:${fc(d.faction)}"></i>cards ${f1(d.cardPowerSum)}</span><span><i style="background:#7fa86b"></i>accel ${f1(d.acceleration)}</span><span><i style="background:#d9b44a"></i>synergy ${f1(d.interSynergy)}</span><span><i style="background:#c98b5a"></i>hero ${f1(d.heroSynergy)}</span></div>
         <div class="small muted" style="margin-top:8px">consistency ${f1(d.consistency)} · mean power ${f1(d.stat.mean)} · spread ${f1(d.stat.max - d.stat.min)} · fair win ${d.winFair}%</div></div>`;
       })
       .join('');
