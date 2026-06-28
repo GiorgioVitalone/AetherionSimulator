@@ -59,6 +59,7 @@ const res = runSim({
   termination: 'tiebreak', terminationMode: 'turn_cap', abilitiesOn: true, turnCap: 80,
   seedBase: 12345, botPolicy: 'heuristic', fairPilot: true, gamesPerPairing: GPP,
   __trace: trace, __diag: trace,
+  ...(process.env.REACH ? { reachDiscard: true } : {}),
 });
 
 // ── Full trace for two representative non-mirror games ─────────────────────────

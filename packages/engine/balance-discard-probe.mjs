@@ -28,6 +28,7 @@ runSim({
   decks, matchups: 'all-pairs', firstPlayer: 'alternating', fixHandSizeStall: true,
   termination: 'tiebreak', terminationMode: 'turn_cap', abilitiesOn: true, turnCap: 80,
   seedBase: 12345, botPolicy: 'heuristic', fairPilot: true, gamesPerPairing: GPP, __trace: trace,
+  ...(process.env.REACH ? { reachDiscard: true } : {}),
 });
 
 // Group the flat log into contiguous (game, turn) segments — each is one player's

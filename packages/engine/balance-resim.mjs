@@ -26,6 +26,7 @@ const cfg = {
   decks, matchups: 'all-pairs', firstPlayer: 'alternating', fixHandSizeStall: true,
   termination: 'tiebreak', terminationMode: 'turn_cap', abilitiesOn: true, turnCap: 80,
   seedBase: 12345, fairPilot: true, gamesPerPairing: GPP, ...pilotCfg,
+  ...(process.env.REACH ? { reachDiscard: true } : {}),
 };
 
 const r = runSim(cfg);

@@ -253,6 +253,14 @@ export interface GameConfig {
    * it, so it cannot affect any runHash on its own. Absent/false ⇒ byte-identical
    * no-op (the v-current hash). */
   readonly fairPilot?: boolean;
+  /** BOT-POLICY KNOB (default absent/false ⇒ engine-default blind last-resort
+   * discard). When true, the heuristic pilot's `discard_for_energy` stops being a
+   * reflexive pitch: it fires ONLY to fund a specific play that is short by exactly
+   * one resource, pitches a single matching-type card to pay for it, and only when
+   * the play's value exceeds the pitched card's value plus a tempo margin. Read ONLY
+   * by the bot (src/bot/*); the engine's resolution path never consults it, so it
+   * cannot affect any runHash on its own. Absent/false ⇒ byte-identical no-op. */
+  readonly reachDiscard?: boolean;
 }
 
 /** Mutable diagnostic accumulator (see GameConfig.diag). Written by the engine

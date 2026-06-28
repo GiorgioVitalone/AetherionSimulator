@@ -610,6 +610,7 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       ...(disableHeroReachBySeat ? { disableHeroReachBySeat } : {}),
       ...(botGameplan ? { botGameplan } : {}),
       ...(config.fairPilot ? { fairPilot: true } : {}),
+      ...(config.reachDiscard ? { reachDiscard: true } : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -991,6 +992,9 @@ function resolveConfig(config = {}) {
     // FAIR-PILOT — opt-in heuristic/rollout fairness for control/value/recursion decks.
     // Only emitted (and hashed) when ENABLED ⇒ a default run is byte-identical to baseline.
     ...(config.fairPilot ? { fairPilot: true } : {}),
+    // REACH-DISCARD — opt-in bot policy: discard only to fund a one-resource-short play.
+    // Read only by the heuristic; emitted (and hashed) only when ON ⇒ default is no-op.
+    ...(config.reachDiscard ? { reachDiscard: true } : {}),
     // RAW-POWER DECOMP — hero-LP head-start override: pin ONE faction's Hero
     // starting+max LP to a fixed value ({ faction, lp }). Only emitted (and hashed)
     // when a valid spec is given ⇒ default run is byte-identical to the v10 baseline.

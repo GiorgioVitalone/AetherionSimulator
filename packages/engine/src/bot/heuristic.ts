@@ -12,8 +12,10 @@ import type { ZoneType } from '../types/common.js';
 import type { Effect } from '../types/effects.js';
 import { computeAvailableActions } from '../actions/available-actions.js';
 import { computeReactiveActions } from '../actions/reactive-actions.js';
-import { getAllCards } from '../zones/zone-manager.js';
-import { getAvailableResources } from '../actions/cost-checker.js';
+import { getAllCards, hasOpenSlot } from '../zones/zone-manager.js';
+import { getAvailableResources, effectiveCost } from '../actions/cost-checker.js';
+import { cardResourceType } from '../actions/card-resource.js';
+import { reachAffordTypes } from './reach-discard.js';
 import { calculateHeroDamage } from '../combat/damage-calculator.js';
 import { scoreSpell } from './spell-eval.js';
 import { chooseSpellTargets } from './target-select.js';
@@ -253,8 +255,12 @@ function chooseStrategyAction(
   const move = chooseMove(state, player, opponent, acts);
   if (move !== null) return move;
 
-  // 8. Discard a dead card for energy if we are resource-starved with plays stuck.
-  const discard = chooseDiscardForEnergy(player, acts);
+  // 8. Discard for energy. Under reachDiscard, only to fund a specific reach-by-one
+  //    play worth more than the pitched card; otherwise the legacy blind last resort.
+  const discard =
+    state.config?.reachDiscard === true
+      ? chooseReachDiscard(state, player, opponent, acts)
+      : chooseDiscardForEnergy(player, acts);
   if (discard !== null) return discard;
 
   return null;
@@ -478,6 +484,109 @@ function chooseDiscardForEnergy(
   const id = ids[0];
   if (id === undefined) return null;
   return { type: 'discard_for_energy', cardInstanceId: id };
+}
+
+// ── Reach-discard (config.reachDiscard) ──────────────────────────────────────
+// Discard is no longer a blind pitch: it fires ONLY to fund a play that is short
+// by exactly one resource, pitching one matching-type card, and only when the
+// play out-values the pitched card by a tempo margin. The +1 temporary resource
+// makes the play affordable on the very next pass, where the normal deploy/cast
+// step makes it — so every such discard is, by construction, productive.
+const REACH_MARGIN = 1.5; // tempo / temp-only friction the play must clear
+const MIN_REACH_PLAY = 2; // never pitch a card to rush out a trivial play
+const EQUIP_VALUE = 3; // static stand-in value for an equipment in hand
+
+interface ReachPlay {
+  readonly playId: string;
+  readonly value: number;
+  readonly types: readonly ('mana' | 'energy')[];
+}
+
+function chooseReachDiscard(
+  state: GameState,
+  player: PlayerState,
+  opponent: PlayerState,
+  acts: ReturnType<typeof computeAvailableActions>,
+): PlayerAction | null {
+  if (!acts.canDiscardForEnergy || player.hand.length <= 1) return null;
+  const pool = getAvailableResources(player);
+  const gameplan = gameplanForSeat(state.config, state.activePlayerIndex);
+  const fair = isFairPilot(state.config);
+
+  let best: { pitchId: string; net: number } | null = null;
+  for (const play of reachPlays(player, opponent, pool, gameplan, fair)) {
+    if (play.value < MIN_REACH_PLAY) continue;
+    const pitch = bestPitch(player, opponent, play.playId, play.types, gameplan, fair);
+    if (pitch === null) continue;
+    const net = play.value - pitch.value - REACH_MARGIN;
+    if (net > 0 && (best === null || net > best.net)) best = { pitchId: pitch.id, net };
+  }
+  if (best === null) return null;
+  return { type: 'discard_for_energy', cardInstanceId: best.pitchId };
+}
+
+/** Hand plays (creature/spell) that a single +1 resource would make affordable. */
+function reachPlays(
+  player: PlayerState,
+  opponent: PlayerState,
+  pool: ReturnType<typeof getAvailableResources>,
+  gameplan: Gameplan,
+  fair: boolean,
+): readonly ReachPlay[] {
+  const plays: ReachPlay[] = [];
+  for (const card of player.hand) {
+    if (card.cardType !== 'C' && card.cardType !== 'S') continue;
+    const types = reachAffordTypes(pool, effectiveCost(player, card));
+    if (types.length === 0) continue;
+    if (card.cardType === 'C' && !canDeployBody(player)) continue; // no slot ⇒ unplayable
+    plays.push({
+      playId: card.instanceId,
+      value: cardValue(player, opponent, card, gameplan, fair),
+      types,
+    });
+  }
+  return plays;
+}
+
+/** Lowest-value hand card (≠ the play) whose resource type can fund the reach. */
+function bestPitch(
+  player: PlayerState,
+  opponent: PlayerState,
+  excludeId: string,
+  types: readonly ('mana' | 'energy')[],
+  gameplan: Gameplan,
+  fair: boolean,
+): { id: string; value: number } | null {
+  const wanted = new Set(types);
+  let best: { id: string; value: number } | null = null;
+  for (const card of player.hand) {
+    if (card.instanceId === excludeId || !wanted.has(cardResourceType(card))) continue;
+    const value = cardValue(player, opponent, card, gameplan, fair);
+    if (best === null || value < best.value) best = { id: card.instanceId, value };
+  }
+  return best;
+}
+
+/** A hand card's value on one scale (atk+hp units) for the reach/pitch gauge. */
+function cardValue(
+  player: PlayerState,
+  opponent: PlayerState,
+  card: CardInstance,
+  gameplan: Gameplan,
+  fair: boolean,
+): number {
+  if (card.cardType === 'C' || card.cardType === 'T') return power(card);
+  if (card.cardType === 'S') {
+    return Math.max(
+      0,
+      scoreSpell(player, opponent, card, chooseXValue(player, card), gameplan, fair).value,
+    );
+  }
+  return card.cardType === 'E' ? EQUIP_VALUE : 1;
+}
+
+function canDeployBody(player: PlayerState): boolean {
+  return hasOpenSlot(player.zones, 'frontline') || hasOpenSlot(player.zones, 'reserve');
 }
 
 // ── Action (Combat) Phase ────────────────────────────────────────────────────
