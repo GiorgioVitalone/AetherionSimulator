@@ -6,16 +6,19 @@
 // The card SCORE is raw power (no cost anchoring); the dashboard ADDS the cost
 // lens (power/cost, cost-curve residual) the user asked for in the viz layer.
 import { writeFileSync } from 'node:fs';
-import { computeDeckValue } from './dist/balance/index.js';
+import { computeDeckValue, computeCardPower, detectCardLoops } from './dist/balance/index.js';
 import { pearson, spearman } from './dist/stats/index.js';
-import { loadBalanceData, RARITY_BONUS, RARITY_ORDER, budgetModel, MIN_TOL } from './balance-data.mjs';
+import { loadBalanceData, indexFromRaw, RARITY_BONUS, RARITY_ORDER, budgetModel, MIN_TOL } from './balance-data.mjs';
+import { applyEdits } from './balance-apply-edits.mjs';
+import { applyFactionDeltas } from './balance-faction-tune.mjs';
+import { auditPool } from './balance-card-audit.mjs';
 import { getDeck } from './deck-loader.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const WIN_FAIR = { Radiant: 78, Verdant: 69, Onyx: 44, Sapphire: 8 };
 const WIN_HEUR = { Radiant: 81.7, Verdant: 44.9, Onyx: 33.8, Sapphire: 39.6 };
 
-const { index, heroByFaction } = loadBalanceData();
+const { raw, index, heroByFaction } = loadBalanceData();
 const round = (x, n = 2) => {
   const p = 10 ** n;
   return Math.round(x * p) / p;
@@ -152,6 +155,57 @@ const budgetByRarity = {};
 for (const r of RARITY_ORDER) budgetByRarity[r] = groupStats(cards.filter((c) => c.rarity === r));
 const budgetMeta = { slope, intercept, tol: TOL, rmse: round(rmse), maxCost, rarityBonus: RARITY_BONUS, rarityOrder: RARITY_ORDER, counts: budgetCounts, byFaction: budgetByFaction, byRarity: budgetByRarity, window: budgetWindow };
 
+// ── Rebalance before/after — the re-tuned pool (budget patch + LP30 + the 15
+// surgical re-tune edits), compared to baseline against the SAME budget window. ──
+const R4_DELTAS = { Radiant: { hp: -1 }, Verdant: { atk: -1 }, Onyx: { hp: 1 }, Sapphire: { hp: 1 } };
+const R4_COUNT = { Radiant: 5, Verdant: 4, Onyx: 4, Sapphire: 2 };
+const afterRaw = applyFactionDeltas(applyEdits(raw, { mode: 'all', flattenLp: 30 }).raw, R4_DELTAS, R4_COUNT).raw;
+const after = indexFromRaw(afterRaw);
+const statusVs = (power, cost, rarity) => {
+  const e = expectedFor(cost, rarity);
+  return power > e + TOL ? 'over' : power < e - TOL ? 'under' : 'within';
+};
+function rebalanceFor(idx, heroes) {
+  const counts = { over: 0, within: 0, under: 0 };
+  const faction = {};
+  for (const f of FACTIONS) {
+    const deck = getDeck(f);
+    const dv = computeDeckValue({ faction: f, mainDeckDefIds: deck.mainDeckDefIds }, heroes.get(f), idx);
+    const cs = [...idx.values()].filter((c) => c.alignment.includes(f));
+    const avgPow = cs.reduce((s, c) => s + computeCardPower(c).power, 0) / (cs.length || 1);
+    faction[f] = { deckValue: round(dv.value), avgPow: round(avgPow) };
+    for (const b of dv.perCard) {
+      const sc = idx.get(b.cardId);
+      counts[statusVs(b.power, totalCost(sc), sc.rarity)]++;
+    }
+  }
+  return { counts, faction };
+}
+const rebalance = { before: rebalanceFor(index, heroByFaction), after: rebalanceFor(after.index, after.heroByFaction) };
+
+// ── Toolkit signals — what the new local checks see across the full pool. ──────
+const audits = auditPool(index);
+const toolkit = {
+  audit: {
+    ship: audits.filter((a) => a.verdict === 'SHIP').length,
+    sim: audits.filter((a) => a.verdict === 'SIM-NEEDED').length,
+    list: audits.filter((a) => a.verdict === 'SIM-NEEDED').map((a) => ({ name: a.name, faction: a.faction, reasons: a.reasons })),
+  },
+  loops: [...index.values()]
+    .map((sc) => detectCardLoops(sc))
+    .filter((l) => l.level !== 'none')
+    .map((l) => ({ name: l.name, level: l.level, reasons: l.abilities.flatMap((a) => a.reasons) })),
+};
+
+// ── Pilot win-rate impact — measured this session (docs/balance-diagnosis.md §11). ──
+const pilot = {
+  states: [
+    { label: 'legacy pilot', sub: 'patched + LP30, blind discard', wp: { Onyx: 48.4, Radiant: 53.3, Sapphire: 46.8, Verdant: 51.5 }, spread: 6.5 },
+    { label: 'standard pilot', sub: 'reach + exile + value, no re-tune', wp: { Onyx: 40.1, Radiant: 59.6, Sapphire: 44.7, Verdant: 55.6 }, spread: 19.5 },
+    { label: 're-tuned', sub: 'standard pilot + 15 surgical edits', wp: { Onyx: 46.8, Radiant: 48.1, Sapphire: 52.4, Verdant: 52.8 }, spread: 6.0 },
+  ],
+};
+
 const dvVec = FACTIONS.map((f) => decks.find((d) => d.faction === f).value);
 const meta = {
   factions: FACTIONS,
@@ -163,6 +217,9 @@ const meta = {
   pearsonHeur: round(pearson(dvVec, FACTIONS.map((f) => WIN_HEUR[f])).r, 3),
   meanByCost: [...meanByCost].sort((a, b) => a[0] - b[0]).map(([cost, m]) => ({ cost, mean: round(m) })),
   budget: budgetMeta,
+  rebalance,
+  toolkit,
+  pilot,
 };
 
 const data = { meta, cards, decks };
@@ -663,18 +720,106 @@ function dashboardApp() {
   }
 
   // ── Mount ──────────────────────────────────────────────────────────────────
+  function pilot() {
+    const p = D.meta.pilot;
+    const MAXW = 65;
+    const stateRow = (st) =>
+      `<div class="panel"><h3 class="hdr">${esc(st.label)} <span class="muted small">— ${esc(st.sub)}</span> · spread ${f1(st.spread)}</h3>${D.meta.factions
+        .map(
+          (f) =>
+            `<div style="display:flex;align-items:center;gap:10px;margin:5px 0;font-size:12px"><span style="width:72px;color:${fc(f)};font-weight:600">${f}</span><span style="flex:1;height:13px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden"><span style="display:block;height:13px;width:${Math.min(100, (st.wp[f] / MAXW) * 100)}%;background:${fc(f)}"></span></span><span style="width:46px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--mut)">${f1(st.wp[f])}%</span></div>`,
+        )
+        .join('')}</div>`;
+    return section(
+      'pilot',
+      'Pilot win-rate impact',
+      'measured faction win% under three pilots — where the static scores meet simulated outcomes',
+      `<div class="grid">${p.states.map(stateRow).join('')}</div>
+      <div class="panel callout small" style="margin-top:14px">The legacy bot's blind discard masked the imbalance (spread <b>6.5</b>); a faithful pilot (reach + exile + value) exposes the true ~<b>20 pp</b> gap; the 15-edit re-tune closes it to <b>6.0</b>. See docs/balance-diagnosis.md §11.</div>`,
+    );
+  }
+
+  function rebalance() {
+    const rb = D.meta.rebalance;
+    const stack = (c) =>
+      stackBar([
+        { name: `under (${c.under})`, value: c.under, color: SC.under },
+        { name: `within (${c.within})`, value: c.within, color: SC.within },
+        { name: `over (${c.over})`, value: c.over, color: SC.over },
+      ]);
+    const mono = "font-family:'JetBrains Mono',monospace";
+    const dvRow = (cells) =>
+      `<div style="display:flex;align-items:center;gap:12px;margin:4px 0;font-size:12px">${cells}</div>`;
+    const dvRows = D.meta.factions
+      .map((f) => {
+        const b = rb.before.faction[f].deckValue;
+        const a = rb.after.faction[f].deckValue;
+        const d = Math.round((a - b) * 10) / 10;
+        const dc = d > 0 ? SC.over : d < 0 ? SC.under : 'var(--mut)';
+        return dvRow(
+          `<span style="width:88px;color:${fc(f)};font-weight:600">${f}</span><span style="width:56px;text-align:right;${mono};color:var(--mut)">${f1(b)}</span><span style="opacity:.45">→</span><span style="width:56px;text-align:right;${mono};color:var(--ink)">${f1(a)}</span><span style="width:60px;text-align:right;${mono};color:${dc}">${d > 0 ? '+' : ''}${f1(d)}</span>`,
+        );
+      })
+      .join('');
+    const dvHead = dvRow(
+      `<span style="width:88px" class="muted small">faction</span><span style="width:56px;text-align:right" class="muted small">before</span><span style="width:14px"></span><span style="width:56px;text-align:right" class="muted small">after</span><span style="width:60px;text-align:right" class="muted small">Δ</span>`,
+    );
+    return section(
+      'rebalance',
+      'Rebalance before / after',
+      'patch + LP30 + the 15 surgical re-tune edits, scored against the same budget window',
+      `<div class="grid two">
+        <div class="panel"><h3 class="hdr">Budget fit — before · ${rb.before.counts.within} within</h3>${stack(rb.before.counts)}</div>
+        <div class="panel"><h3 class="hdr">Budget fit — after · ${rb.after.counts.within} within</h3>${stack(rb.after.counts)}</div>
+      </div>
+      <div class="panel" style="margin-top:14px"><h3 class="hdr">Starter deck value — before → after (Radiant's ceiling drops hardest)</h3>${dvHead}${dvRows}</div>`,
+    );
+  }
+
+  function toolkit() {
+    const t = D.meta.toolkit;
+    const auditStack = stackBar([
+      { name: `SHIP (${t.audit.ship})`, value: t.audit.ship, color: SC.within },
+      { name: `SIM-NEEDED (${t.audit.sim})`, value: t.audit.sim, color: SC.over },
+    ]);
+    const ell = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    const simList = t.audit.list
+      .slice(0, 20)
+      .map(
+        (a) =>
+          `<div style="display:flex;gap:12px;margin:3px 0;font-size:12px"><span style="width:158px;flex:none;color:${fc(a.faction)};${ell}" title="${esc(a.name)}">${esc(a.name)}</span><span style="flex:1;color:var(--mut)">${esc(a.reasons.join(' | '))}</span></div>`,
+      )
+      .join('');
+    const loopList = t.loops.length
+      ? t.loops
+          .map(
+            (l) =>
+              `<div style="display:flex;gap:12px;margin:3px 0;font-size:12px"><span style="width:150px;flex:none;${ell}" title="${esc(l.name)}">${esc(l.name)}</span><span style="width:46px;flex:none;font-weight:600;color:${l.level === 'flag' ? SC.over : 'var(--gold)'}">${esc(l.level)}</span><span style="flex:1;color:var(--mut)">${esc(l.reasons.join('; '))}</span></div>`,
+          )
+          .join('')
+      : '<div class="muted small">no loop risk in the pool</div>';
+    return section(
+      'toolkit',
+      'Toolkit signals',
+      'what the new local checks (card audit · loop detector) see across the full 120-card pool — no simulation',
+      `<div class="panel"><h3 class="hdr">Audit verdict — ${t.audit.ship} SHIP · ${t.audit.sim} SIM-NEEDED</h3>${auditStack}<div class="small muted" style="margin-top:6px">A card SHIPs only if it clears budget, synergy cap, loop risk, and novelty; otherwise it carries the specific reason to simulate.</div></div>
+      <div class="panel" style="margin-top:14px"><h3 class="hdr">SIM-NEEDED — why (top 20)</h3>${simList}</div>
+      <div class="panel" style="margin-top:14px"><h3 class="hdr">Loop-risk flags</h3>${loopList}</div>`,
+    );
+  }
+
   function section(id, title, note, body) {
     return `<section id="${id}"><div class="sec-h"><h2>${esc(title)}</h2><span class="note">${esc(note)}</span></div>${body}</section>`;
   }
 
-  const navIds = [['overview', 'Overview'], ['decks', 'Decks'], ['spread', 'Spread'], ['cost', 'Cost'], ['budget', 'Budget'], ['curve', 'Curves'], ['components', 'Drivers'], ['synergy', 'Synergy'], ['table', 'Cards']];
+  const navIds = [['overview', 'Overview'], ['decks', 'Decks'], ['spread', 'Spread'], ['cost', 'Cost'], ['budget', 'Budget'], ['pilot', 'Win-rate'], ['rebalance', 'Rebalance'], ['toolkit', 'Toolkit'], ['curve', 'Curves'], ['components', 'Drivers'], ['synergy', 'Synergy'], ['table', 'Cards']];
   const app = document.getElementById('app');
   app.innerHTML =
     `<header><h1>Aetherion · Starter-Deck Balance Analytics</h1><div class="sub">First-principles card-power & deck-value scores · ${D.meta.nCards} cards · weights are interpretable, never fitted to win rates</div><nav>${navIds
       .map(([i, t]) => `<a href="#${i}">${t}</a>`)
       .join('')}</nav></header><main>` +
     `<div class="callout">The card score is <b>raw intrinsic power</b> (no cost anchoring); this dashboard adds the cost lens. Validation is a <b>diagnostic</b>: deck value correlates with measured win rates at Spearman ρ ${f2(D.meta.spearmanFair)} (fair rollout) / Pearson ${f2(D.meta.pearsonHeur)} (heuristic). The one miss is <b>Verdant</b>, whose strength is emergent ramp/snowball that no static score can see — read it alongside simulation.</div>` +
-    kpis() + deckPanels() + spread() + cost() + budget() + curves() + components() + synergy() + tableSection() +
+    kpis() + deckPanels() + spread() + cost() + budget() + pilot() + rebalance() + toolkit() + curves() + components() + synergy() + tableSection() +
     `</main>`;
 
   // wire smooth-scroll nav

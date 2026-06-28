@@ -29,10 +29,9 @@ export function toStatic(c) {
   };
 }
 
-/** Load the card pool into a StaticCard index + a faction->HeroInput map. */
-export function loadBalanceData() {
-  const raw = JSON.parse(readFileSync(new URL('./sim-data/aetherion-cards.json', import.meta.url)));
-
+/** Build a StaticCard index + faction->HeroInput map from a raw SimCard array.
+ * Pure — runs on the baseline pool or any edited copy (e.g. the rebalanced set). */
+export function indexFromRaw(raw) {
   const transformsByHero = new Map();
   for (const c of raw) {
     if (c.cardType === 'T' && c.originalHeroId != null) transformsByHero.set(c.originalHeroId, c);
@@ -53,7 +52,13 @@ export function loadBalanceData() {
     if (c.cardType === 'C' || c.cardType === 'S' || c.cardType === 'E') index.set(c.id, toStatic(c));
   }
 
-  return { raw, index, heroByFaction };
+  return { index, heroByFaction };
+}
+
+/** Load the baseline card pool into a StaticCard index + a faction->HeroInput map. */
+export function loadBalanceData() {
+  const raw = JSON.parse(readFileSync(new URL('./sim-data/aetherion-cards.json', import.meta.url)));
+  return { raw, ...indexFromRaw(raw) };
 }
 
 // ── Cost-budget model (shared by the dashboard + the suggestions generator) ───
