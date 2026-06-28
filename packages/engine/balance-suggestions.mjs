@@ -20,6 +20,13 @@ const totalCost = (sc) => sc.cost.mana + sc.cost.energy + sc.cost.flexible;
 const statline = (s) => (s ? `${s.atk}/${s.hp}/${s.arm}` : '—');
 const TRAIT_NAME = { first_strike: 'First Strike' };
 const traitName = (t) => TRAIT_NAME[t] ?? t.charAt(0).toUpperCase() + t.slice(1);
+// Combat-viability floor for a PROPOSED stat line — a stat cut must never drop a
+// body below these, or it craters past a combat breakpoint (a 0-ATK body can't
+// trade; hp+arm below 2 dies to any ping). The §11f budget-fit ignored this and
+// printed 0/3 and 2/1 bodies. Beyond a gentle trim, prefer cost (preserve the body).
+const MIN_ATK = 1;
+const MIN_BULK = 2; // hp + arm
+const STAT_TRIM_MAX = 2; // max total stat points to trim before deferring to the cost lever
 const withStats = (sc, da, dh, dr) => ({ ...sc, stats: { atk: sc.stats.atk + da, hp: sc.stats.hp + dh, arm: sc.stats.arm + dr } });
 const withCostDelta = (sc, delta) => {
   const c = { ...sc.cost };
@@ -73,7 +80,11 @@ export function computeSuggestions(rawOverride) {
           if (a === 0 && h === 0 && r === 0) continue;
           const da = a * dir, dh = h * dir, dr = r * dir;
           const ns = { atk: sc.stats.atk + da, hp: sc.stats.hp + dh, arm: sc.stats.arm + dr };
-          if (ns.atk < 0 || ns.hp < 1 || ns.arm < 0) continue;
+          // never propose a sub-viable body (unless the card already started below
+          // the floor, in which case don't push it further down)
+          if (ns.arm < 0) continue;
+          if (ns.atk < Math.min(MIN_ATK, sc.stats.atk)) continue;
+          if (ns.hp + ns.arm < Math.min(MIN_BULK, sc.stats.hp + sc.stats.arm)) continue;
           const p = computeCardPower(withStats(sc, da, dh, dr)).power;
           if (p >= c.lo && p <= c.hi) best.push({ da, dh, dr, ns, p, mag: a + h + 1.3 * r, touched: (a ? 1 : 0) + (h ? 1 : 0) + (r ? 1 : 0) });
         }
@@ -84,7 +95,7 @@ export function computeSuggestions(rawOverride) {
     if (b.da) parts.push(`${b.da > 0 ? '+' : ''}${b.da} ATK`);
     if (b.dh) parts.push(`${b.dh > 0 ? '+' : ''}${b.dh} HP`);
     if (b.dr) parts.push(`${b.dr > 0 ? '+' : ''}${b.dr} ARM`);
-    return { da: b.da, dh: b.dh, dr: b.dr, desc: parts.join(', '), from: statline(sc.stats), to: statline(b.ns), newPower: round(b.p, 1) };
+    return { da: b.da, dh: b.dh, dr: b.dr, mag: b.mag, desc: parts.join(', '), from: statline(sc.stats), to: statline(b.ns), newPower: round(b.p, 1) };
   };
   const searchKeywordEdit = (c) => {
     const sc = c.sc;
@@ -121,7 +132,12 @@ export function computeSuggestions(rawOverride) {
     if (c.status === 'over') {
       c.costK = Math.max(1, Math.ceil((c.power - (exp + tol)) / slope));
       c.costAfter = c.cost + c.costK;
-      c.after = c.statEdit
+      // Pick the FUNCTION-PRESERVING lever. A small viable stat trim is the primary
+      // edit only for an over-STATTED vanilla body; otherwise raise cost (keeps the
+      // body, slows it). Never trim an ability-driven card's stats (its power isn't
+      // the body) and never below viability (searchStatEdit already enforces that).
+      const cleanTrim = c.statEdit && c.abilityShare < 0.5 && c.statEdit.mag <= STAT_TRIM_MAX;
+      c.after = cleanTrim
         ? { static: withStats(c.sc, c.statEdit.da, c.statEdit.dh, c.statEdit.dr), totalCost: c.cost, lever: `stats ${c.statEdit.desc}` }
         : { static: withCostDelta(c.sc, c.costK), totalCost: c.costAfter, lever: `cost +${c.costK}` };
     } else {
@@ -183,9 +199,11 @@ a batch of changes._
 > recursion, ramp, card advantage — is systematically under-rated (the documented Verdant blind spot).
 > So for the **under-budget** list (almost all spells), treat the flag as _"verify this is actually
 > weak"_ rather than an automatic buff — many are fine and simply score low; lowering cost is the
-> gentlest lever if you do act. For the **over-budget** list, a minimal stat cut can over-nerf a
-> synergy body (e.g. Defender + self-heal), so when the stat edit lands far below the window prefer
-> the keyword / cost / ability lever instead.
+> gentlest lever if you do act. For the **over-budget** list the **primary** edit is now chosen to
+> _preserve the card's function_: a small viable stat trim only for an over-statted vanilla body,
+> otherwise a **cost raise** (keeps the body, slows it) — never a stat cut on an ability-driven card
+> and never below combat viability (**ATK ≥ 1, HP+ARM ≥ 2**). The stat / keyword / ability lines below
+> each entry remain as alternatives to hand-pick from.
 
 **Budget model:** expected = ${intercept} + ${slope}·cost + rarity (E +0.75, M +1.5, L +2.5); window ±${tol} (RMSE ${rmse}).
 **Outliers:** ${over.length} over budget · ${under.length} under budget · ${cards.length - over.length - under.length} within.

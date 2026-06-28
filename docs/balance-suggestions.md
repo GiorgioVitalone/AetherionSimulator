@@ -10,9 +10,11 @@ a batch of changes._
 > recursion, ramp, card advantage — is systematically under-rated (the documented Verdant blind spot).
 > So for the **under-budget** list (almost all spells), treat the flag as _"verify this is actually
 > weak"_ rather than an automatic buff — many are fine and simply score low; lowering cost is the
-> gentlest lever if you do act. For the **over-budget** list, a minimal stat cut can over-nerf a
-> synergy body (e.g. Defender + self-heal), so when the stat edit lands far below the window prefer
-> the keyword / cost / ability lever instead.
+> gentlest lever if you do act. For the **over-budget** list the **primary** edit is now chosen to
+> _preserve the card's function_: a small viable stat trim only for an over-statted vanilla body,
+> otherwise a **cost raise** (keeps the body, slows it) — never a stat cut on an ability-driven card
+> and never below combat viability (**ATK ≥ 1, HP+ARM ≥ 2**). The stat / keyword / ability lines below
+> each entry remain as alternatives to hand-pick from.
 
 **Budget model:** expected = -0.3 + 1.6·cost + rarity (E +0.75, M +1.5, L +2.5); window ±2.2 (RMSE 3.73).
 **Outliers:** 15 over budget · 23 under budget · 26 within.
@@ -26,11 +28,10 @@ a batch of changes._
 
 #### Onyx
 - **Morgath, the Undying** — Legendary, cost 7, 4/4/0  ·  power **19.6** vs **[11.2, 15.6]** (**+4 over**)
-  - **Stats:** -2 ATK, -3 HP (4/4/0 → 2/1/0) → power 14.6 ✓
+  - **Stats:** -3 ATK, -2 HP (4/4/0 → 1/2/0) → power 14.6 ✓
   - **Ability** (10.7 of 19.6 power): scale down / add a cooldown / raise its activation cost — "Allied Undead have +1/+1. / Return a character costing 3 or less to your hand. It becomes Volatile."
   - **Cost:** raise cost 7→10 (+3) → window [16, 20.4]
 - **Necrotic Squire** — Common, cost 2, 1/2/0  ·  power **6.8** vs **[0.7, 5.1]** (**+1.7 over**)
-  - **Stats:** -1 ATK, -1 HP (1/2/0 → 0/1/0) → power 4.2 ✓
   - **Cost:** raise cost 2→4 (+2) → window [3.9, 8.3]
 - **Ghoul Marshal** — Common, cost 3, 1/3/0  ·  power **6.7** vs **[2.3, 6.7]** (**+0 over**)
   - **Stats:** -1 HP (1/3/0 → 1/2/0) → power 5.6 ✓
@@ -38,38 +39,31 @@ a batch of changes._
 
 #### Radiant
 - **Shieldbearer Paladin** — Common, cost 3, 2/3/0 [Defender]  ·  power **11.2** vs **[2.3, 6.7]** (**+4.5 over**)
-  - **Stats:** -1 ATK, -2 HP (2/3/0 → 1/1/0) → power 6.1 ✓
   - **Cost:** raise cost 3→6 (+3) → window [7.1, 11.5]
 - **Faithkeeper of Dawn** — Ethereal, cost 4, 2/4/0 [Defender]  ·  power **13.6** vs **[4.7, 9.1]** (**+4.5 over**)
-  - **Stats:** -3 HP (2/4/0 → 2/1/0) → power 8.8 ✓
   - **Cost:** raise cost 4→7 (+3) → window [9.5, 13.9]
 - **Archon of Order, Uriel** — Legendary, cost 7, 4/4/0 [Flying]  ·  power **19.6** vs **[11.2, 15.6]** (**+4 over**)
   - **Stats:** -3 ATK (4/4/0 → 1/4/0) → power 15.1 ✓
   - **Cost:** raise cost 7→10 (+3) → window [16, 20.4]
 - **Archon's Guardian** — Mythic, cost 6, 3/3/0 [Flying]  ·  power **16.6** vs **[8.6, 13]** (**+3.6 over**)
-  - **Stats:** -3 ATK (3/3/0 → 0/3/0) → power 12.1 ✓
+  - **Stats:** -2 ATK, -1 HP (3/3/0 → 1/2/0) → power 12.6 ✓
   - **Cost:** raise cost 6→9 (+3) → window [13.4, 17.8]
 - **Protector of Faith** — Common, cost 3, 1/3/0 [Defender]  ·  power **9** vs **[2.3, 6.7]** (**+2.3 over**)
-  - **Stats:** -2 HP (1/3/0 → 1/1/0) → power 4.9 ✓
   - **Keyword:** remove Defender → power 5.4 ✓
   - **Cost:** raise cost 3→5 (+2) → window [5.5, 9.9]
 - **Radiant Angel** — Ethereal, cost 5, 3/4/0 [Flying]  ·  power **12.8** vs **[6.2, 10.6]** (**+2.2 over**)
   - **Stats:** -2 ATK (3/4/0 → 1/4/0) → power 9.8 ✓
   - **Cost:** raise cost 5→7 (+2) → window [9.5, 13.9]
 - **Sunlit Guardian** — Common, cost 2, 1/2/0 [Defender]  ·  power **6.6** vs **[0.7, 5.1]** (**+1.5 over**)
-  - **Stats:** -1 HP (1/2/0 → 1/1/0) → power 4.1 ✓
   - **Keyword:** remove Defender → power 3.6 ✓
   - **Cost:** raise cost 2→3 (+1) → window [2.3, 6.7]
 - **Blessed Squire** — Common, cost 1, 1/1/0  ·  power **3.9** vs **[-0.9, 3.5]** (**+0.4 over**)
-  - **Stats:** -1 ATK (1/1/0 → 0/1/0) → power 2.9 ✓
   - **Cost:** raise cost 1→2 (+1) → window [0.7, 5.1]
 
 #### Sapphire
 - **Sapphire Sentinel** — Common, cost 2, 1/2/0 [Defender]  ·  power **8.6** vs **[0.7, 5.1]** (**+3.5 over**)
-  - **Stats:** -1 ATK, -1 HP (1/2/0 → 0/1/0) → power 5.1 ✓
   - **Cost:** raise cost 2→5 (+3) → window [5.5, 9.9]
 - **Crystal Golem** — Ethereal, cost 3, 1/3/0 [Defender]  ·  power **10.2** vs **[3.1, 7.5]** (**+2.7 over**)
-  - **Stats:** -2 HP (1/3/0 → 1/1/0) → power 6.1 ✓
   - **Keyword:** remove Defender → power 6.6 ✓
   - **Cost:** raise cost 3→5 (+2) → window [6.2, 10.6]
 - **Mystic Librarian** — Common, cost 4, 2/4/0  ·  power **8.4** vs **[3.9, 8.3]** (**+0.1 over**)
@@ -78,7 +72,6 @@ a batch of changes._
 
 #### Verdant
 - **Bio-Seedling** — Common, cost 0, 0/2/0  ·  power **2** vs **[-2.5, 1.9]** (**+0.1 over**)
-  - **Stats:** -1 HP (0/2/0 → 0/1/0) → power 1 ✓
   - **Cost:** raise cost 0→1 (+1) → window [-0.9, 3.5]
 
 ## Under budget — suggested buffs (bring up)
