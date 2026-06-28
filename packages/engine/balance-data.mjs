@@ -58,7 +58,10 @@ export function loadBalanceData() {
 
 // ── Cost-budget model (shared by the dashboard + the suggestions generator) ───
 export const MIN_TOL = 1.5;
-export const RMSE_MULT = 0.9; // window half-width ≈ 0.9 × the pool's RMSE around the model
+// Window half-width ≈ RMSE_MULT × the pool's RMSE around the model. Tightened from
+// 0.9 to 0.6 (full window ~8 → ~5.3): the budget is a real gate while staying a
+// window, not a strict single value. See docs/balance-diagnosis.md.
+export const RMSE_MULT = 0.6;
 // Monotonic upward shift per rarity tier (higher rarity ⇒ higher budget). Tunable.
 export const RARITY_BONUS = { Common: 0, Ethereal: 0.75, Mythic: 1.5, Legendary: 2.5 };
 export const RARITY_ORDER = ['Common', 'Ethereal', 'Mythic', 'Legendary'];

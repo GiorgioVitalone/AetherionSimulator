@@ -8,7 +8,7 @@
 import { writeFileSync } from 'node:fs';
 import { computeDeckValue } from './dist/balance/index.js';
 import { pearson, spearman } from './dist/stats/index.js';
-import { loadBalanceData, RARITY_BONUS, RARITY_ORDER, budgetModel } from './balance-data.mjs';
+import { loadBalanceData, RARITY_BONUS, RARITY_ORDER, budgetModel, MIN_TOL } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
@@ -128,6 +128,16 @@ for (const c of cards) {
   c.budgetDelta = round(c.power - exp);
   c.budgetStatus = c.power > exp + TOL ? 'over' : c.power < exp - TOL ? 'under' : 'within';
 }
+// Window before/after — the tightening from RMSE_MULT 0.9 → 0.6 (balance-data.mjs).
+// TOL already reflects the new (tighter) multiplier; reconstruct the old window from
+// the same RMSE so the dashboard can show what the tightening newly catches.
+const RMSE_MULT_OLD = 0.9;
+const oldTol = round(Math.max(MIN_TOL, RMSE_MULT_OLD * rmse), 1);
+const newlyFlagged = cards
+  .filter((c) => Math.abs(c.budgetDelta) > TOL && Math.abs(c.budgetDelta) <= oldTol)
+  .map((c) => ({ name: c.name, faction: c.faction, cost: c.cost, delta: c.budgetDelta, side: c.budgetDelta > 0 ? 'over' : 'under' }))
+  .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+const budgetWindow = { oldTol, newTol: TOL, newlyFlagged };
 const maxCost = Math.max(...cards.map((c) => c.cost));
 const budgetCounts = { over: 0, within: 0, under: 0 };
 for (const c of cards) budgetCounts[c.budgetStatus]++;
@@ -140,7 +150,7 @@ const budgetByFaction = {};
 for (const f of FACTIONS) budgetByFaction[f] = groupStats(cards.filter((c) => c.faction === f));
 const budgetByRarity = {};
 for (const r of RARITY_ORDER) budgetByRarity[r] = groupStats(cards.filter((c) => c.rarity === r));
-const budgetMeta = { slope, intercept, tol: TOL, rmse: round(rmse), maxCost, rarityBonus: RARITY_BONUS, rarityOrder: RARITY_ORDER, counts: budgetCounts, byFaction: budgetByFaction, byRarity: budgetByRarity };
+const budgetMeta = { slope, intercept, tol: TOL, rmse: round(rmse), maxCost, rarityBonus: RARITY_BONUS, rarityOrder: RARITY_ORDER, counts: budgetCounts, byFaction: budgetByFaction, byRarity: budgetByRarity, window: budgetWindow };
 
 const dvVec = FACTIONS.map((f) => decks.find((d) => d.faction === f).value);
 const meta = {
@@ -508,11 +518,16 @@ function dashboardApp() {
     const sorted = [...D.cards].sort((a, c) => c.budgetDelta - a.budgetDelta);
     const over = barList(sorted.filter((c) => c.budgetStatus === 'over').slice(0, 12).map((c) => ({ label: `${c.name} (${c.cost}, ${c.rarity[0]})`, value: c.budgetDelta, color: SC.over, text: `+${f1(c.budgetDelta)}` })));
     const under = barList(sorted.filter((c) => c.budgetStatus === 'under').slice(-12).reverse().map((c) => ({ label: `${c.name} (${c.cost}, ${c.rarity[0]})`, value: Math.abs(c.budgetDelta), color: SC.under, text: f1(c.budgetDelta) })));
+    const w = b.window;
+    const flagged = w.newlyFlagged.length
+      ? barList(w.newlyFlagged.slice(0, 16).map((c) => ({ label: `${c.name} (${c.cost}, ${c.faction.slice(0, 4)})`, value: Math.abs(c.delta), color: c.side === 'over' ? SC.over : SC.under, text: `${c.delta > 0 ? '+' : ''}${c.delta}` })))
+      : '<div class="small muted">none — the tighter window catches no additional cards</div>';
     return section(
       'budget',
       'Cost budget & delta',
       `expected = ${f1(b.intercept)} + ${f1(b.slope)}·cost + rarity (Ethereal +${rb.Ethereal}, Mythic +${rb.Mythic}, Legendary +${rb.Legendary}); window ±${b.tol} (≈ pool RMSE ${b.rmse}) — Δ = power − expected`,
       `<div class="panel"><h3 class="hdr">Δ vs the rarity-adjusted budget (green band = within ±${b.tol}, dashed = on budget; point size = copies)</h3>${deltaScatter(pts, xMax)}<div class="legend"><span><i style="background:${SC.under}"></i>under budget</span><span><i style="background:${SC.within}"></i>within window</span><span><i style="background:${SC.over}"></i>over budget</span></div></div>
+      <div class="panel" style="margin-top:14px"><h3 class="hdr">Window tightened — ±${w.oldTol} → ±${w.newTol} (${w.newlyFlagged.length} newly flagged)</h3><div class="small muted" style="margin-bottom:6px">Cards inside the old ±${w.oldTol} band but outside the tighter ±${w.newTol} one — the budget the tightening newly enforces.</div>${flagged}</div>
       <div class="panel" style="margin-top:14px"><h3 class="hdr">Overall — ${cs.under} under · ${cs.within} within · ${cs.over} over</h3>${statusStack}</div>
       <div class="grid two" style="margin-top:14px">
         <div class="panel"><h3 class="hdr">By faction — status mix &amp; mean Δ</h3><div class="bars">${groupBars(b.byFaction, F, fc)}</div></div>

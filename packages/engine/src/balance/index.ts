@@ -5,11 +5,22 @@
 export { abilityContribution, computeCardPower } from './card-power.js';
 export { computeDeckValue, type DeckInput } from './deck-value.js';
 export { effectStaticValue, sumEffects } from './effect-value.js';
+export {
+  abilityThrottle,
+  detectAbilityLoop,
+  detectCardLoops,
+  isRepeatableTrigger,
+  type AbilityLoopRisk,
+  type CardLoopRisk,
+  type LoopLevel,
+  type LoopRisk,
+} from './loop-detector.js';
 export { emitDemands, emitSignals, heroDemands } from './signals.js';
 export { deckInterSynergy, intraSynergy, pairSynergy, type CardSignals } from './synergy.js';
 export { INTERACTION_MATRIX, interactionWeight } from './interaction-matrix.js';
 export { regenerationValue, traitValue } from './trait-scaling.js';
-export { recurrence } from './weights.js';
+export { recurrence, PAIR_CAP } from './weights.js';
+export { flattenEffects } from './signal-extract.js';
 export type {
   CardIndex,
   CardPowerBreakdown,
