@@ -95,3 +95,25 @@ export function budgetModel(cards) {
   const tol = r1(Math.max(MIN_TOL, RMSE_MULT * rmse));
   return { slope, intercept, tol, rmse: Math.round(rmse * 100) / 100, expectedFor };
 }
+
+/**
+ * Characters and spells/equipment are different POPULATIONS: a character's power
+ * scales steeply with cost (stats), a spell/equipment's scales gently (situational
+ * effects) -- fitting one shared line for both is a bad statistical model for
+ * either. At cost 3 Common on the starter pool this mixed model expects ~4.5,
+ * while characters alone expect ~7.4 and spells/equipment alone expect ~2.2 -- a
+ * ~3.4x gap. The shared line over-flags characters as over-budget (dragged down
+ * by weaker spells) and invents false "under-budget" spell buffs (dragged up by
+ * stronger bodies), while structurally hiding genuinely over-costed spells (their
+ * power never clears the body-inflated line). Fits TWO models and dispatches by
+ * cardType. cards: [{cost, power, rarity, cardType}].
+ */
+export function budgetModelByType(cards) {
+  const isBody = (c) => c.cardType === 'C';
+  const characters = budgetModel(cards.filter(isBody));
+  const spellsEquip = budgetModel(cards.filter((c) => !isBody(c)));
+  const modelFor = (cardType) => (cardType === 'C' ? characters : spellsEquip);
+  const expectedFor = (cost, rarity, cardType) => modelFor(cardType).expectedFor(cost, rarity);
+  const tolFor = (cardType) => modelFor(cardType).tol;
+  return { characters, spellsEquip, expectedFor, tolFor };
+}

@@ -8,7 +8,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { computeCardPower } from './dist/balance/index.js';
-import { loadBalanceData, indexFromRaw, budgetModel } from './balance-data.mjs';
+import { loadBalanceData, indexFromRaw, budgetModelByType } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
@@ -55,13 +55,17 @@ export function computeSuggestions(rawOverride) {
       const sc = index.get(id);
       if (!sc) continue;
       const bd = computeCardPower(sc);
-      cards.push({ sc, id, faction: f, copies: counts.get(id), cost: totalCost(sc), rarity: sc.rarity, power: round(bd.power, 2), statBase: bd.statBase, abilityValue: bd.abilityValue });
+      cards.push({ sc, id, faction: f, copies: counts.get(id), cost: totalCost(sc), rarity: sc.rarity, cardType: sc.cardType, power: round(bd.power, 2), statBase: bd.statBase, abilityValue: bd.abilityValue });
     }
   }
-  const model = budgetModel(cards);
-  const { slope, tol, expectedFor } = model;
+  // Characters and spells/equipment are different populations (steep stat-driven
+  // power-for-cost vs gentle effect-driven power-for-cost) -- one shared line is a
+  // bad fit for either. See budgetModelByType's doc comment.
+  const model = budgetModelByType(cards);
+  const { expectedFor, tolFor } = model;
   for (const c of cards) {
-    const exp = expectedFor(c.cost, c.rarity);
+    const exp = expectedFor(c.cost, c.rarity, c.cardType);
+    const tol = tolFor(c.cardType);
     c.expected = round(exp, 1);
     c.lo = round(exp - tol, 1);
     c.hi = round(exp + tol, 1);
@@ -128,7 +132,9 @@ export function computeSuggestions(rawOverride) {
     c.statEdit = searchStatEdit(c);
     c.kwEdit = searchKeywordEdit(c);
     c.abilityShare = c.power > 0 ? c.abilityValue / c.power : 0;
-    const exp = expectedFor(c.cost, c.rarity);
+    const exp = expectedFor(c.cost, c.rarity, c.cardType);
+    const tol = tolFor(c.cardType);
+    const slope = model[c.cardType === 'C' ? 'characters' : 'spellsEquip'].slope;
     if (c.status === 'over') {
       c.costK = Math.max(1, Math.ceil((c.power - (exp + tol)) / slope));
       c.costAfter = c.cost + c.costK;
@@ -137,9 +143,15 @@ export function computeSuggestions(rawOverride) {
       // body, slows it). Never trim an ability-driven card's stats (its power isn't
       // the body) and never below viability (searchStatEdit already enforces that).
       const cleanTrim = c.statEdit && c.abilityShare < 0.5 && c.statEdit.mag <= STAT_TRIM_MAX;
-      c.after = cleanTrim
-        ? { static: withStats(c.sc, c.statEdit.da, c.statEdit.dh, c.statEdit.dr), totalCost: c.cost, lever: `stats ${c.statEdit.desc}` }
-        : { static: withCostDelta(c.sc, c.costK), totalCost: c.costAfter, lever: `cost +${c.costK}` };
+      // An ability-driven card's overage lives in its EFFECT, not its stats or its
+      // cost -- a cost raise doesn't shrink an overpowered ability, it just delays
+      // the same effect. Don't pretend a numeric lever fixes it: leave the card
+      // unedited and flag it for a human to rewrite the ability itself.
+      c.after = c.abilityShare >= 0.5
+        ? { static: c.sc, totalCost: c.cost, lever: 'ability (manual review — not mechanically edited)' }
+        : cleanTrim
+          ? { static: withStats(c.sc, c.statEdit.da, c.statEdit.dh, c.statEdit.dr), totalCost: c.cost, lever: `stats ${c.statEdit.desc}` }
+          : { static: withCostDelta(c.sc, c.costK), totalCost: c.costAfter, lever: `cost +${c.costK}` };
     } else {
       c.costK = Math.max(1, Math.ceil((exp - tol - c.power) / slope));
       c.costAfter = Math.max(0, c.cost - c.costK);
@@ -151,28 +163,32 @@ export function computeSuggestions(rawOverride) {
 
 // ── Markdown ─────────────────────────────────────────────────────────────────
 function buildMarkdown({ model, over, under, cards, effectText }) {
-  const { slope, intercept, tol, rmse, expectedFor } = model;
+  const tolFor = (c) => model.tolFor(c.cardType);
+  const expFor = (c, cost) => model.expectedFor(cost, c.rarity, c.cardType);
   const costLeverText = (c) => {
+    const tol = tolFor(c);
     if (c.status === 'over') {
-      const ne = expectedFor(c.costAfter, c.rarity);
+      const ne = expFor(c, c.costAfter);
       return `raise cost ${c.cost}→${c.costAfter} (+${c.costK}) → window [${round(ne - tol, 1)}, ${round(ne + tol, 1)}]`;
     }
     if (c.costAfter < c.cost) {
-      const ne = expectedFor(c.costAfter, c.rarity);
+      const ne = expFor(c, c.costAfter);
       return `lower cost ${c.cost}→${c.costAfter} (−${c.cost - c.costAfter}) → window [${round(ne - tol, 1)}, ${round(ne + tol, 1)}]`;
     }
     return 'already at minimum cost — buff the card instead';
   };
   const suggestionLines = (c) => {
     const lines = [];
+    const abilityEdited = c.after.lever.startsWith('ability');
     if (c.statEdit) lines.push(`  - **Stats:** ${c.statEdit.desc} (${c.statEdit.from} → ${c.statEdit.to}) → power ${c.statEdit.newPower} ✓`);
     if (c.kwEdit) lines.push(`  - **Keyword:** ${c.kwEdit.desc} → power ${c.kwEdit.newPower} ✓`);
     if (c.sc.cardType !== 'C' || c.abilityShare >= 0.5) {
       const fx = effectText.get(c.id);
       const verb = c.status === 'over' ? 'scale down / add a cooldown / raise its activation cost' : 'scale up / lower its activation cost';
-      lines.push(`  - **Ability** (${round(c.abilityValue, 1)} of ${round(c.power, 1)} power): ${verb}${fx ? ` — "${fx.slice(0, 120)}${fx.length > 120 ? '…' : ''}"` : ''}`);
+      const flag = abilityEdited ? ' — **chosen lever: this card was left unedited, needs a human ability rewrite**' : '';
+      lines.push(`  - **Ability** (${round(c.abilityValue, 1)} of ${round(c.power, 1)} power): ${verb}${flag}${fx ? ` — "${fx.slice(0, 120)}${fx.length > 120 ? '…' : ''}"` : ''}`);
     }
-    lines.push(`  - **Cost:** ${costLeverText(c)}`);
+    if (!abilityEdited) lines.push(`  - **Cost:** ${costLeverText(c)}`);
     return lines.join('\n');
   };
   const entry = (c) => {
@@ -205,13 +221,22 @@ a batch of changes._
 > and never below combat viability (**ATK ≥ 1, HP+ARM ≥ 2**). The stat / keyword / ability lines below
 > each entry remain as alternatives to hand-pick from.
 
-**Budget model:** expected = ${intercept} + ${slope}·cost + rarity (E +0.75, M +1.5, L +2.5); window ±${tol} (RMSE ${rmse}).
+**Budget model** (fit SEPARATELY per card type — a character's power scales steeply with cost via
+stats, a spell/equipment's scales gently via situational effects, so one shared line under-serves both):
+- **Characters:** expected = ${model.characters.intercept} + ${model.characters.slope}·cost + rarity; window ±${model.characters.tol} (RMSE ${model.characters.rmse}).
+- **Spells/Equipment:** expected = ${model.spellsEquip.intercept} + ${model.spellsEquip.slope}·cost + rarity; window ±${model.spellsEquip.tol} (RMSE ${model.spellsEquip.rmse}).
+
 **Outliers:** ${over.length} over budget · ${under.length} under budget · ${cards.length - over.length - under.length} within.
 
 **Levers** — pick what fits the card's role:
 - **Stats / keyword** — surgical power change for characters (re-scored to land in-window).
 - **Cost** — re-cost to move the window onto the card; works for any type but changes its curve slot.
-- **Ability** — when the ability drives the score (≥ half), target it (qualitative — the score can't re-grade arbitrary DSL edits).
+- **Ability** — when the ability drives the score (≥ half of an OVER-budget card), it is left
+  **unedited** here — a cost raise doesn't shrink an overpowered effect, it only delays it, so no
+  mechanical lever is applied; it needs a human ability rewrite (qualitative — the score can't
+  re-grade arbitrary DSL edits). Under-budget ability-driven cards still get the cost-cut lever
+  (a cautious buff is safe even if the ability turns out fine; a cautious nerf that undercounts an
+  overpowered ability is not).
 
 ## Over budget — suggested nerfs (tone down)
 ${byFaction(over)}
