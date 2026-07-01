@@ -125,15 +125,23 @@ function report(p) {
 
 // ── Run the panel ────────────────────────────────────────────────────────────
 console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  skipRollout=${SKIP_ROLLOUT}`);
+// exileDiscardForEnergy is a RULE toggle (discard_for_energy exiles instead of
+// binning) — applies to every pilot. reachDiscard/valuePilot are HEURISTIC bot
+// policies (read only by that policy — see sim-runner.mjs), so only the
+// 'heuristic' pilot gets them. Without these, 'heuristic' reproduces the blind,
+// self-handicapping discard bot §11a-c found (~76% of its discards wasted, which
+// specifically subsidized Onyx's graveyard) — invalidating any verdict built on
+// it. See docs/balance-diagnosis.md §11 for why this pilot was adopted as standard.
+const RULE = { exileDiscardForEnergy: true };
 const pilots = [];
-console.log('Running random (floor)…'); pilots.push(runMatrixPilot('random', { botPolicy: 'random' })); console.log(report(pilots.at(-1)));
-console.log('\nRunning heuristic…'); pilots.push(runMatrixPilot('heuristic', { botPolicy: 'heuristic' })); console.log(report(pilots.at(-1)));
+console.log('Running random (floor)…'); pilots.push(runMatrixPilot('random', { botPolicy: 'random', ...RULE })); console.log(report(pilots.at(-1)));
+console.log('\nRunning heuristic…'); pilots.push(runMatrixPilot('heuristic', { botPolicy: 'heuristic', ...RULE, reachDiscard: true, valuePilot: true })); console.log(report(pilots.at(-1)));
 if (!SKIP_ROLLOUT) {
   console.log('\nRunning rollout-low (r4 d2 c5)…');
-  pilots.push(runAggPilot('rollout-low (r4 d2 c5)', { botPolicy: 'rollout', rollouts: 4, rolloutDepth: 2, maxCandidates: 5 }, RL_GPP));
+  pilots.push(runAggPilot('rollout-low (r4 d2 c5)', { botPolicy: 'rollout', ...RULE, rollouts: 4, rolloutDepth: 2, maxCandidates: 5 }, RL_GPP));
   console.log(report(pilots.at(-1)));
   console.log('\nRunning rollout-high (r8 d3 c8) — convergence probe…');
-  pilots.push(runAggPilot('rollout-high (r8 d3 c8)', { botPolicy: 'rollout', rollouts: 8, rolloutDepth: 3, maxCandidates: 8 }, RH_GPP));
+  pilots.push(runAggPilot('rollout-high (r8 d3 c8)', { botPolicy: 'rollout', ...RULE, rollouts: 8, rolloutDepth: 3, maxCandidates: 8 }, RH_GPP));
   console.log(report(pilots.at(-1)));
 }
 

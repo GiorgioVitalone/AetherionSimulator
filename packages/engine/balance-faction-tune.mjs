@@ -5,20 +5,31 @@
 // (reach+exile+value) exposed. Additive (not multiplicative) so it moves low-stat
 // bodies under integer rounding. Round 1 showed the lever is extreme (a flat ±1 on a
 // whole faction swings 25–50 pp), so target the top-N highest-stat bodies per faction.
+// Top-N is scoped to the cards actually PLAYED (default: the official starter deck via
+// getDeck) — ranking across the whole faction pool would pick cards the simulated
+// deck never draws, spending the delta budget on cards with zero in-game effect.
 // Exports a pure applyFactionDeltas(); the CLI reads/writes JSON.
 // Env: SRC, OUT, FDELTAS='{"Radiant":{"hp":-1}}', FCOUNT='{"Radiant":4}' (default: all).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { getDeck } from './deck-loader.mjs';
 
-/** Apply per-faction character-stat deltas to the top-N highest-stat bodies, on a
- * COPY of `rawInput`. Returns { raw, applied }. Never mutates input. */
-export function applyFactionDeltas(rawInput, fdeltas = {}, fcount = {}) {
+/** Apply per-faction character-stat deltas to the top-N highest-stat bodies AMONG the
+ * cards a faction's deck actually plays, on a COPY of `rawInput`. Returns
+ * { raw, applied }. Never mutates input.
+ * @param {object} deckIds - optional { [faction]: iterable<cardId> } to scope against
+ *   a deck other than the official starter (e.g. a sampled archetype); default looks
+ *   up getDeck(faction).mainDeckDefIds. */
+export function applyFactionDeltas(rawInput, fdeltas = {}, fcount = {}, deckIds = {}) {
   const cards = JSON.parse(JSON.stringify(rawInput));
   const statSum = (c) => (c.stats?.hp ?? 0) + (c.stats?.atk ?? 0);
   const applied = {};
   for (const [faction, d] of Object.entries(fdeltas)) {
+    const allowed = new Set(deckIds[faction] ?? getDeck(faction)?.mainDeckDefIds ?? []);
     const chars = cards
-      .filter((c) => c.cardType === 'C' && c.stats && (c.alignment || []).includes(faction))
+      .filter(
+        (c) => c.cardType === 'C' && c.stats && (c.alignment || []).includes(faction) && allowed.has(c.id),
+      )
       .sort((a, b) => statSum(b) - statSum(a) || a.id - b.id);
     const targets = fcount[faction] !== undefined ? chars.slice(0, fcount[faction]) : chars;
     for (const c of targets) {
