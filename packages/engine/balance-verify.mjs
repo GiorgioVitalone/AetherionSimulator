@@ -32,7 +32,20 @@ const OUT = process.env.GAUGE_OUT || '/tmp/balance-verify-result.json';
 const WORKERS = +(process.env.WORKERS || availableParallelism());
 const run = (cfg) => (WORKERS > 1 ? runSimParallel(cfg, WORKERS) : Promise.resolve(runSim(cfg)));
 
-const BASE = { firstPlayer: 'alternating', fixHandSizeStall: true, termination: 'tiebreak', abilitiesOn: true, turnCap: 80, seedBase: 12345 };
+// armFirstInstanceOnly + terminationMode=resource_deck_empty_transform: two rules
+// changes adopted into the standard baseline (both pre-existing, fully wired
+// engine features, gated off by default until now). See balance-standard-sim.mjs
+// for the measured isolated effect on the raw baseline before adopting them here.
+const BASE = {
+  firstPlayer: 'alternating',
+  fixHandSizeStall: true,
+  termination: 'tiebreak',
+  abilitiesOn: true,
+  turnCap: 80,
+  seedBase: 12345,
+  armFirstInstanceOnly: true,
+  terminationMode: 'resource_deck_empty_transform',
+};
 
 // Wilson 95% score interval -> [lowPct, pPct, highPct].
 function wilson(w, n, z = 1.96) {

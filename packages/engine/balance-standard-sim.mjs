@@ -14,6 +14,16 @@
 //      silently falls back to an AUTO-BUILT deck, not the actual starter —
 //      completely different games than intended, no error, no warning.
 //
+// Also folds in two rules changes adopted into the standard baseline:
+//   - armFirstInstanceOnly: ARM only reduces the FIRST damage instance a body
+//     takes each turn, not every instance (was the sharpest, most swingy stat
+//     lever per §11e's breakpoint-sensitivity finding).
+//   - terminationMode=resource_deck_empty_transform: a hero can transform once
+//     its resource deck is empty at upkeep, before that turn's draw (in addition
+//     to the existing LP<=10 gate) -- a lategame accelerant so stalled games end.
+// Both already existed in the engine, fully wired and tested, gated off by
+// default; this just turns them on as part of what "standard" now means.
+//
 // Use this for any one-off measurement instead of hand-typing the CLI.
 // Usage: node balance-standard-sim.mjs <cardsPath> [gamesPerPairing=300] [parallel=cores]
 // Parallel is byte-identical to serial (proven via runHash) — a pure speedup.
@@ -34,6 +44,8 @@ const args = [
   '--termination', 'tiebreak',
   '--firstPlayer', 'alternating',
   '--fixHandSizeStall', 'true',
+  '--armFirstInstanceOnly', 'true',
+  '--terminationMode', 'resource_deck_empty_transform',
   '--gamesPerPairing', gpp || '300',
   '--parallel', parallel || String(availableParallelism()),
 ];
