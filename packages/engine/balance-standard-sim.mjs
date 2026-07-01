@@ -15,12 +15,14 @@
 //      completely different games than intended, no error, no warning.
 //
 // Use this for any one-off measurement instead of hand-typing the CLI.
-// Usage: node balance-standard-sim.mjs <cardsPath> [gamesPerPairing=300]
+// Usage: node balance-standard-sim.mjs <cardsPath> [gamesPerPairing=300] [parallel=cores]
+// Parallel is byte-identical to serial (proven via runHash) — a pure speedup.
 import { execFileSync } from 'node:child_process';
+import { availableParallelism } from 'node:os';
 
-const [, , cardsPath, gpp] = process.argv;
+const [, , cardsPath, gpp, parallel] = process.argv;
 if (!cardsPath) {
-  console.error('usage: node balance-standard-sim.mjs <cardsPath> [gamesPerPairing=300]');
+  console.error('usage: node balance-standard-sim.mjs <cardsPath> [gamesPerPairing=300] [parallel=cores]');
   process.exit(1);
 }
 const args = [
@@ -33,6 +35,7 @@ const args = [
   '--firstPlayer', 'alternating',
   '--fixHandSizeStall', 'true',
   '--gamesPerPairing', gpp || '300',
+  '--parallel', parallel || String(availableParallelism()),
 ];
 const out = execFileSync('node', args, {
   env: { ...process.env, AETHERION_CARDS: cardsPath },

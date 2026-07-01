@@ -84,6 +84,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { isMainThread } from 'node:worker_threads';
 import { createActor } from 'xstate';
 import {
   createGame,
@@ -1160,21 +1161,58 @@ function computeRunHash(results, config, deckLabels = []) {
 
 // ── Public: runSim ───────────────────────────────────────────────────────────
 
-export function runSim(rawConfig = {}) {
-  const config = resolveConfig(rawConfig);
-  const plan = buildPairingPlan(config);
+// Play the per-game results for `plan`. When `shard = {index, count}` is given,
+// only games whose GLOBAL index ≡ index (mod count) are actually played. Because
+// each seed is a pure function of (seedBase, pairing p, game g), any shard produces
+// byte-identical games to the serial run for its slice — and every result carries
+// __gi (its global index) so a parallel driver can restore exact serial order.
+function generateResults(plan, config, shard = null) {
   const results = [];
-  // Seed is a pure function of (seedBase, pairing index, game index): deterministic.
+  let gi = 0;
   for (let p = 0; p < plan.length; p++) {
     const { fA, fB, deckA, deckB } = plan[p];
     for (let g = 0; g < config.gamesPerPairing; g++) {
-      const seed = (config.seedBase + p * 100003 + g * 7919) >>> 0;
-      results.push(playGame(fA, fB, seed, config, deckA, deckB, g));
+      if (!shard || gi % shard.count === shard.index) {
+        const seed = (config.seedBase + p * 100003 + g * 7919) >>> 0;
+        const r = playGame(fA, fB, seed, config, deckA, deckB, g);
+        r.__gi = gi; // ignored by summarize + computeRunHash; used only for reassembly
+        results.push(r);
+      }
+      gi++;
     }
   }
+  return results;
+}
+
+// Reduce a full, serial-ORDERED results array to the public summary + runHash.
+function finalize(results, config, plan) {
   const summary = summarize(results, config);
   const deckLabels = plan.map(p => p.label);
   return { ...summary, deckLabels, runHash: computeRunHash(results, config, deckLabels) };
+}
+
+export function runSim(rawConfig = {}) {
+  const config = resolveConfig(rawConfig);
+  const plan = buildPairingPlan(config);
+  return finalize(generateResults(plan, config, null), config, plan);
+}
+
+// ── Parallel building blocks (orchestrated by sim-parallel.mjs) ───────────────
+// A worker runs ONE shard via runSimShard and returns its partial results (each
+// tagged __gi); the driver concatenates all shards, sorts by __gi to restore
+// serial order, then calls finalizeResults — yielding a result byte-identical to
+// runSim (same runHash). That identity is the whole point: parallelism must never
+// change a number. Verified by scratch-verify-parallel + the CLI --parallel path.
+export function runSimShard(rawConfig, shardIndex, shardCount) {
+  const config = resolveConfig(rawConfig);
+  const plan = buildPairingPlan(config);
+  return generateResults(plan, config, { index: shardIndex, count: shardCount });
+}
+
+export function finalizeResults(rawConfig, results) {
+  const config = resolveConfig(rawConfig);
+  const plan = buildPairingPlan(config);
+  return finalize(results, config, plan);
 }
 
 // ── Thin CLI ─────────────────────────────────────────────────────────────────
@@ -1190,6 +1228,7 @@ function parseCliConfig(argv) {
     // for every faction in the run (per-faction override for all 4 factions).
     if (key === 'realDecks') { cfg.decks = Object.fromEntries(FACTIONS.map(f => [f, f])); continue; }
     const val = argv[i + 1]; i++;
+    if (key === 'parallel') { cfg.__parallel = Number(val); continue; } // driver-only; not part of the sim config/hash
     if (['gamesPerPairing', 'turnCap', 'seedBase', 'lpScale', 'healScale', 'defenderForceCap', 'damageScale', 'frontlineSlots', 'highGroundSlots', 'equalizeHeroLp', 'atkBonus', 'startingCardBonus', 'resourceRampBonus'].includes(key)) cfg[key] = Number(val);
     else if (key === 'abilitiesOn') cfg[key] = val !== 'false';
     else if (key === 'armBuffsTakeMax') cfg[key] = val === 'true';
@@ -1210,19 +1249,30 @@ function parseCliConfig(argv) {
 }
 
 function isMain() {
-  return import.meta.url === `file://${process.argv[1]}`;
+  // isMainThread guards against worker threads (sim-worker.mjs) inheriting the
+  // main thread's process.argv and re-running the CLI block on import.
+  return isMainThread && import.meta.url === `file://${process.argv[1]}`;
 }
 
-if (isMain()) {
+// NOT top-level await: kicking off an async runCli() lets THIS module finish
+// evaluating before runCli dynamically imports sim-parallel.mjs (which imports
+// this module back). A top-level await here would freeze sim-runner mid-eval and
+// deadlock that circular import.
+async function runCli() {
   const cfg = parseCliConfig(process.argv.slice(2));
-  if (cfg.__verify) {
-    delete cfg.__verify;
-    const a = runSim(cfg), b = runSim(cfg);
+  // __parallel / __verify are DRIVER flags, not sim config — strip them so they
+  // never reach runSim (and so a parallel run hashes identically to a serial one).
+  const { __parallel, __verify, ...simCfg } = cfg;
+  if (__verify) {
+    const a = runSim(simCfg), b = runSim(simCfg);
     const ok = a.runHash === b.runHash;
     console.log(`determinism: ${ok ? 'PASS' : 'FAIL'} (hash ${a.runHash} vs ${b.runHash})`);
     process.exit(ok ? 0 : 1);
   }
-  const res = runSim(cfg);
+  const res =
+    __parallel > 1
+      ? await (await import('./sim-parallel.mjs')).runSimParallel(simCfg, __parallel)
+      : runSim(simCfg);
   if (process.env.AETHERION_SIM_OUT) {
     writeFileSync(process.env.AETHERION_SIM_OUT, JSON.stringify(res, null, 1));
   }
@@ -1230,4 +1280,11 @@ if (isMain()) {
   console.log(`firstPlayer ${res.firstPlayerPct}% | mirrorFP ${res.mirrorFirstPlayerPct}% | decided ${res.decidedPct}% | timeout ${res.timeoutPct}% | avgTurns ${res.gameLength.avg} (median ${res.gameLength.median})`);
   console.log(`snowball leader@10 ${res.snowball.leaderAtTurn10WinPct}% | comeback ${res.snowball.comebackPct}%`);
   console.log(`equipmentPlayed/game ${res.equipmentPlayedPerGame} | gamesWithEquip ${res.gamesWithEquipPct}%`);
+}
+
+if (isMain()) {
+  runCli().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
 }
