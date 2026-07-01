@@ -8,6 +8,10 @@ dist/
 # Generated card data (build artifact)
 packages/cards/data/*.json
 
+# Deterministically-regenerable balance pools (node make-pools.mjs) -- committed
+# tooling + constants reproduce these bit-for-bit; the JSON itself is not source.
+packages/engine/generated-pools/
+
 # Environment files
 .env
 .env.*

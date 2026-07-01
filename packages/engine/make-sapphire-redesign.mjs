@@ -7,7 +7,8 @@
 // card ids touched (75, 86, 88, 80, 90, 100, 81, 93, 94, 141, 82); every other
 // card (including the 2 untouchable walls, Sapphire Sentinel/Crystal Golem, and
 // all 32 non-Sapphire-redesign cards) passes through unchanged.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 function ability(dsl, { type, effect, cooldown = null }) {
   return { dsl, cost: { mana: 0, xMana: false, energy: 0, xEnergy: false, flexible: false }, type, effect, cooldown };
@@ -196,11 +197,12 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   // wrong-dataset runs in this investigation. SRC is required; fail loudly.
   const SRC = process.env.SRC;
   if (!SRC) {
-    console.error('SRC env var required (no silent default) — e.g. SRC=/tmp/aetherion-current/BASELINE.json');
+    console.error('SRC env var required (no silent default) — e.g. SRC=./generated-pools/aetherion-CURRENT.json');
     process.exit(1);
   }
-  const OUT = process.env.OUT || '/tmp/aetherion-sapphire-redesign.json';
+  const OUT = process.env.OUT || './generated-pools/aetherion-sapphire-redesign.json';
   const { raw, changed } = applySapphireRedesign(JSON.parse(readFileSync(SRC, 'utf8')));
+  mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, JSON.stringify(raw));
   console.log(`Wrote ${OUT} — ${changed.length} cards touched: ${changed.join(', ')}`);
 }
