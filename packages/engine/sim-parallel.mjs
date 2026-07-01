@@ -2,11 +2,14 @@
 // result BYTE-IDENTICAL to the serial runSim (same runHash, same win rates).
 //
 // How the identity holds: each game's seed is a pure function of (seedBase,
-// pairing p, game g), so sharding the (p,g) grid by global index changes only
-// WHERE a game runs, never its outcome. Workers return partial results tagged with
-// __gi; we concatenate, sort by __gi to restore exact serial order, then reuse the
-// same finalize (summarize + computeRunHash) the serial path uses. Parallelism is
-// a speed change only — it must never move a number, and the hash proves it.
+// pairing p, game g), so which worker plays a game changes only WHERE it runs,
+// never its outcome. Workers share ONE atomic counter (a SharedArrayBuffer) and
+// pull the next global game index until the pool is exhausted (dynamic
+// work-stealing — no core idles at the tail). They return partial results tagged
+// with __gi; we concatenate, sort by __gi to restore exact serial order, then
+// reuse the same finalize (summarize + computeRunHash) the serial path uses.
+// Parallelism is a speed change only — it must never move a number, and the hash
+// proves it.
 import { Worker } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -15,9 +18,13 @@ import { finalizeResults } from './sim-runner.mjs';
 const WORKER = new URL('./sim-worker.mjs', import.meta.url);
 
 /** Run `config` across `workers` threads (default: all cores). Async. Returns the
- * same object shape as runSim. Falls back to fewer workers than games. */
+ * same object shape as runSim. Excess workers past the game count simply pull
+ * nothing and exit. */
 export function runSimParallel(config, workers = availableParallelism()) {
   const n = Math.max(1, Math.min(workers, 64));
+  // Shared game cursor (index 0 = next global game index). All workers Atomics.add
+  // on it, so each game is claimed exactly once — no dup, no gap, no coordination.
+  const counterBuffer = new SharedArrayBuffer(4);
   return new Promise((resolve, reject) => {
     const all = [];
     let done = 0;
@@ -33,7 +40,7 @@ export function runSimParallel(config, workers = availableParallelism()) {
       // URL (its CLI guard stays false); env is copied so AETHERION_CARDS carries.
       const w = new Worker(fileURLToPath(WORKER), {
         argv: [],
-        workerData: { config, shardIndex: i, shardCount: n },
+        workerData: { config, counterBuffer },
       });
       w.on('message', (results) => {
         for (const r of results) all.push(r);

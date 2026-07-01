@@ -1209,6 +1209,33 @@ export function runSimShard(rawConfig, shardIndex, shardCount) {
   return generateResults(plan, config, { index: shardIndex, count: shardCount });
 }
 
+// Dynamic work-stealing variant: instead of a fixed 1/N slice, every worker shares
+// one atomic counter (an Int32Array over a SharedArrayBuffer) and pulls the NEXT
+// global game index until the pool is exhausted. This keeps all cores busy to the
+// end even when games/worker is small and per-game cost varies wildly (the rollout
+// pilots) — static sharding leaves fast workers idle waiting on the slowest slice.
+// gi maps to (pairing p, game g) exactly as the serial loop: p = gi/G, g = gi%G, so
+// each game keeps its serial seed and the merged runHash is unchanged.
+export function runSimQueue(rawConfig, counterBuffer) {
+  const config = resolveConfig(rawConfig);
+  const plan = buildPairingPlan(config);
+  const G = config.gamesPerPairing;
+  const total = plan.length * G;
+  const counter = new Int32Array(counterBuffer);
+  const results = [];
+  let gi;
+  while ((gi = Atomics.add(counter, 0, 1)) < total) {
+    const p = Math.floor(gi / G);
+    const g = gi - p * G;
+    const { fA, fB, deckA, deckB } = plan[p];
+    const seed = (config.seedBase + p * 100003 + g * 7919) >>> 0;
+    const r = playGame(fA, fB, seed, config, deckA, deckB, g);
+    r.__gi = gi;
+    results.push(r);
+  }
+  return results;
+}
+
 export function finalizeResults(rawConfig, results) {
   const config = resolveConfig(rawConfig);
   const plan = buildPairingPlan(config);
