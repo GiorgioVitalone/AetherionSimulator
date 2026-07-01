@@ -13,7 +13,9 @@
 //   GPP_MATRIX (random/heuristic per-cell games), RL_GPP / RH_GPP (rollout low/high
 //   all-pairs games), SKIP_ROLLOUT=1. Deterministic (seeded); writes JSON to GAUGE_OUT.
 import { writeFileSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { runSim } from './sim-runner.mjs';
+import { runSimParallel } from './sim-parallel.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f])); // faction name -> real official deck
@@ -23,6 +25,12 @@ const RL_GPP = +(process.env.RL_GPP || 16);
 const RH_GPP = +(process.env.RH_GPP || 8);
 const SKIP_ROLLOUT = process.env.SKIP_ROLLOUT === '1';
 const OUT = process.env.GAUGE_OUT || '/tmp/balance-verify-result.json';
+// Parallel is byte-identical to serial (proven via runHash — see sim-parallel.mjs),
+// so this is a pure speedup and every number/verdict below is unchanged. WORKERS=1
+// forces the old serial path. This harness is the slow one (rollout pilots), so the
+// win is large — an hour-plus run becomes minutes on a many-core machine.
+const WORKERS = +(process.env.WORKERS || availableParallelism());
+const run = (cfg) => (WORKERS > 1 ? runSimParallel(cfg, WORKERS) : Promise.resolve(runSim(cfg)));
 
 const BASE = { firstPlayer: 'alternating', fixHandSizeStall: true, termination: 'tiebreak', abilitiesOn: true, turnCap: 80, seedBase: 12345 };
 
@@ -38,7 +46,7 @@ const pct = x => `${x.toFixed(1)}%`;
 const ci = (w, n) => { const [lo, p, hi] = wilson(w, n); return `${pct(p)} [${pct(lo)}–${pct(hi)}]`; };
 
 // ── Matrix pilots (random, heuristic): per-cell runs give the matrix + marginals ──
-function runMatrixPilot(label, pilotCfg) {
+async function runMatrixPilot(label, pilotCfg) {
   const counts = Object.fromEntries(FACTIONS.map(f => [f, { w: 0, n: 0 }])); // marginal non-mirror
   const matrix = {}; // matrix[A][B] = {w,n}  (A beats B)
   for (const f of FACTIONS) matrix[f] = {};
@@ -48,7 +56,7 @@ function runMatrixPilot(label, pilotCfg) {
   for (let i = 0; i < FACTIONS.length; i++) {
     for (let j = i; j < FACTIONS.length; j++) {
       const A = FACTIONS[i], B = FACTIONS[j];
-      const r = runSim({ ...BASE, ...pilotCfg, matchups: [{ p0Deck: A, p1Deck: B }], gamesPerPairing: GPP_MATRIX });
+      const r = await run({ ...BASE, ...pilotCfg, matchups: [{ p0Deck: A, p1Deck: B }], gamesPerPairing: GPP_MATRIX });
       games += r.games; decided += Math.round((r.decidedPct / 100) * r.games);
       timeouts += Math.round((r.timeoutPct / 100) * r.games); turnsSum += r.gameLength.avg * r.games;
       if (i === j) { // mirror: first-player control
@@ -80,8 +88,8 @@ function runMatrixPilot(label, pilotCfg) {
 }
 
 // ── Aggregate pilots (rollout): single all-pairs run, marginal-only (cells too thin) ──
-function runAggPilot(label, pilotCfg, gpp) {
-  const r = runSim({ ...BASE, ...pilotCfg, decks: realDecks, matchups: 'all-pairs', gamesPerPairing: gpp });
+async function runAggPilot(label, pilotCfg, gpp) {
+  const r = await run({ ...BASE, ...pilotCfg, decks: realDecks, matchups: 'all-pairs', gamesPerPairing: gpp });
   const marg = {};
   for (const f of FACTIONS) { const c = r.factionCounts[f] || { w: 0, n: 0 }; marg[f] = { ...c, wilson: wilson(c.w, c.n) }; }
   const wps = FACTIONS.map(f => marg[f].wilson[1]);
@@ -133,16 +141,16 @@ console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP
 // specifically subsidized Onyx's graveyard) — invalidating any verdict built on
 // it. See docs/balance-diagnosis.md §11 for why this pilot was adopted as standard.
 const RULE = { exileDiscardForEnergy: true };
+console.log(`Workers: ${WORKERS} (parallel — byte-identical to serial)`);
 const pilots = [];
-console.log('Running random (floor)…'); pilots.push(runMatrixPilot('random', { botPolicy: 'random', ...RULE })); console.log(report(pilots.at(-1)));
-console.log('\nRunning heuristic…'); pilots.push(runMatrixPilot('heuristic', { botPolicy: 'heuristic', ...RULE, reachDiscard: true, valuePilot: true })); console.log(report(pilots.at(-1)));
+const add = async (p) => { pilots.push(p); console.log(report(p)); };
+console.log('Running random (floor)…'); await add(await runMatrixPilot('random', { botPolicy: 'random', ...RULE }));
+console.log('\nRunning heuristic…'); await add(await runMatrixPilot('heuristic', { botPolicy: 'heuristic', ...RULE, reachDiscard: true, valuePilot: true }));
 if (!SKIP_ROLLOUT) {
   console.log('\nRunning rollout-low (r4 d2 c5)…');
-  pilots.push(runAggPilot('rollout-low (r4 d2 c5)', { botPolicy: 'rollout', ...RULE, rollouts: 4, rolloutDepth: 2, maxCandidates: 5 }, RL_GPP));
-  console.log(report(pilots.at(-1)));
+  await add(await runAggPilot('rollout-low (r4 d2 c5)', { botPolicy: 'rollout', ...RULE, rollouts: 4, rolloutDepth: 2, maxCandidates: 5 }, RL_GPP));
   console.log('\nRunning rollout-high (r8 d3 c8) — convergence probe…');
-  pilots.push(runAggPilot('rollout-high (r8 d3 c8)', { botPolicy: 'rollout', ...RULE, rollouts: 8, rolloutDepth: 3, maxCandidates: 8 }, RH_GPP));
-  console.log(report(pilots.at(-1)));
+  await add(await runAggPilot('rollout-high (r8 d3 c8)', { botPolicy: 'rollout', ...RULE, rollouts: 8, rolloutDepth: 3, maxCandidates: 8 }, RH_GPP));
 }
 
 // ── Cross-pilot agreement (the validity gate) ────────────────────────────────
