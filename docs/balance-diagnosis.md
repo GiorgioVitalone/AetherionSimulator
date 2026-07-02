@@ -1212,7 +1212,8 @@ any knob that targets an Aura ability** so the class of mistake cannot recur.
 Bloom Assembly cd 2→6 + gains cost 2E (the battery governor routes entirely through the activated
 half; Harvest untouched); Vanguard Overgrowth 5E→2E + Synthetic Evolution 10E→3E (the flip becomes
 reachable and impactful); Lich King Deathly Resurgence cd 1→2 + Plague of Shadows cost 7→9 (the
-over-window flip trims around the untouchable Horde); Seraphina Bulwark 3→1 + cd 3→1
+over-window flip trims around Horde — aura SCHEDULING is off-limits, though aura EFFECT VALUES
+remain a legal design surface, unused this pass); Seraphina Bulwark 3→1 + cd 3→1
 (un-negatives the base kit); Valkyrie's cry gains cost 3M; Lyria Singularity 5→1 + cd 3→2 and
 Convergence's printed cooldown removed (§13d: the starved button on the only flip measured to
 help). Plus the **Grovekeeper 3000 hand-fix** (per direction — no DB regen): restored as the
