@@ -1092,3 +1092,30 @@ Sentinel +1, Crystal Golem −1 HP, and Archon's Guardian/Uriel −1 HP (both on
 calls the sims will judge); Angelic Strike/Morgath/Sprout routed to manual review (ability-driven).
 Not yet a runnable pool for verdicts: it awaits the Grovekeeper DB regen + the Sapphire v2 trims
 before becoming Pool α′ per the approved plan.
+
+### 13b. Transform autopsy — instrument + static audit (2026-07-02; B3 measurement pending)
+
+Design-review challenge: transformed kits READ strong (auras/triggers/ultimates), so why do they
+swing nothing? §12c's win-when-transformed (33–50%) cannot say — it is conditioned on mostly-losing
+flips. Instrumented instead:
+
+**B1 (in every run now, hash-exempt — standard reference `d4614969ee101895` unchanged):** per
+faction — LP at flip (how dead was the hero), turns survived after the flip, and hero-ability
+USES per game split pre/post flip with a per-ability-index breakdown (the "were the buttons
+pressed" question, answerable per ultimate). Printed as the "Transform autopsy" block and carried
+in `factionDetail`.
+
+**B2 static kit audit (`balance-hero-audit.mjs`):** all 8 hero sides with activation cost /
+cooldown / once-per-game / §13-corrected value. Highlights: Kaelthar's transformed kit reads
+**21.7 points on paper** (Undead Horde 8.4/turn + Plague of Shadows 8.4 + Resurgence 4.9) yet
+Onyx's measured transform payoff is flat; Valkyrie's ATK=ARM aura alone reads **11.7**; and one
+§13 pricing hole surfaced — **Synthetic Evolution (RIA transformed ultimate) values 0** (the
+`multiply` dynamic modifier is priced 0) while costing 10 at flip time.
+
+**Smoke-scale preview (NOT conclusions — n is tiny):** flips happen near-death (heuristic avg LP
+at flip 9–14.7, i.e. the LP≤10 gate dominates even though the resource-empty gate opens ~turn 16),
+heroes live only ~5–10 turns after, and the buttons ARE pressed (ultimates fire in most flipped
+games). If B3 confirms at scale, the story is "flips are last rites — too late, from too far
+behind", pointing at the sanctioned timing knob (LP gate 10 → 12–15, config-able) and per-kit
+cost/cooldown tuning rather than at bot-usage bugs. The rollout's depth-3 horizon may also
+undervalue flip timing (a long-horizon payoff) — read B3's rollout rungs with that caveat.

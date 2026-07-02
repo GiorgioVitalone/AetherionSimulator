@@ -561,6 +561,13 @@ function gameDiagnostics(fin, winner, decided, timedOut) {
   const resAt = [[0, 0, 0], [0, 0, 0]]; // cumulative RESOURCE_GAINED by turn ≤5 / ≤10 / ≤15
   const deploys = [0, 0], deploysEarly = [0, 0], spellsEarly = [0, 0], discards = [0, 0];
   const transformTurn = [null, null];
+  // §13b transform autopsy: hero-ability USAGE per side of the flip (counts of
+  // hero_* ABILITY_ACTIVATED per ability index, pre vs post transform) plus the
+  // hero's LP when the flip happened — distinguishes "kits are weak" from "bots
+  // never press the buttons" from "flipped while already dead".
+  const heroUsesPre = [{}, {}], heroUsesPost = [{}, {}];
+  const lpDelta = [0, 0]; // cumulative heals−damage; LP ≈ maxLp + delta
+  const lpAtFlip = [null, null];
   for (const e of fin.log) {
     switch (e.type) {
       case 'TURN_START':
@@ -578,14 +585,25 @@ function gameDiagnostics(fin, winner, decided, timedOut) {
         // NOTE: hand-size, effect, and discard-for-energy pitches all share this
         // event — total discards, not valve uses (the valve has no distinct event).
         discards[e.playerId]++; break;
-      case 'ABILITY_ACTIVATED':
+      case 'HERO_DAMAGED':
+        lpDelta[e.playerId] -= e.amount; break;
+      case 'HERO_HEALED':
+        lpDelta[e.playerId] += e.amount; break;
+      case 'ABILITY_ACTIVATED': {
+        if (typeof e.cardInstanceId !== 'string' || !e.cardInstanceId.startsWith('hero_')) break;
         // Hero transform is the only abilityIndex:-1 hero_* activation (see
         // executeDeclareTransform); it happens on the transformer's own turn.
-        if (e.abilityIndex === -1 && typeof e.cardInstanceId === 'string'
-          && e.cardInstanceId.startsWith('hero_') && transformTurn[active] === null) {
-          transformTurn[active] = turn;
+        if (e.abilityIndex === -1) {
+          if (transformTurn[active] === null) {
+            transformTurn[active] = turn;
+            lpAtFlip[active] = fin.players[active].hero.maxLp + lpDelta[active];
+          }
+          break;
         }
+        const bucket = transformTurn[active] === null ? heroUsesPre : heroUsesPost;
+        bucket[active][e.abilityIndex] = (bucket[active][e.abilityIndex] || 0) + 1;
         break;
+      }
     }
   }
   return {
@@ -593,6 +611,13 @@ function gameDiagnostics(fin, winner, decided, timedOut) {
     winnerLp: decided ? fin.players[winner].hero.currentLp : null,
     transformed: [fin.players[0].hero.transformed, fin.players[1].hero.transformed],
     transformTurn,
+    lpAtFlip,
+    survivedAfterFlip: [
+      transformTurn[0] !== null ? fin.turnNumber - transformTurn[0] : null,
+      transformTurn[1] !== null ? fin.turnNumber - transformTurn[1] : null,
+    ],
+    heroUsesPre,
+    heroUsesPost,
     resAt,
     deploys,
     deploysEarly,
@@ -1237,6 +1262,8 @@ function summarize(results, config) {
         games: 0, transforms: 0, transformTurnSum: 0, transformTurnN: 0,
         winsT: 0, decT: 0, winsN: 0, decN: 0,
         res5: 0, res10: 0, res15: 0, deploys: 0, deploysEarly: 0, spellsEarly: 0, discards: 0,
+        flipLpSum: 0, flipLpN: 0, flipSurvSum: 0, flipSurvN: 0, heroPre: 0, heroPost: 0,
+        heroPostIdx: {},
       });
       d.games++;
       const dx = r.dx;
@@ -1245,6 +1272,13 @@ function summarize(results, config) {
       if (t) {
         d.transforms++;
         if (dx.transformTurn[seat] != null) { d.transformTurnSum += dx.transformTurn[seat]; d.transformTurnN++; }
+        if (dx.lpAtFlip?.[seat] != null) { d.flipLpSum += dx.lpAtFlip[seat]; d.flipLpN++; }
+        if (dx.survivedAfterFlip?.[seat] != null) { d.flipSurvSum += dx.survivedAfterFlip[seat]; d.flipSurvN++; }
+      }
+      for (const [idx, n] of Object.entries(dx.heroUsesPre?.[seat] || {})) { d.heroPre += n; void idx; }
+      for (const [idx, n] of Object.entries(dx.heroUsesPost?.[seat] || {})) {
+        d.heroPost += n;
+        d.heroPostIdx[idx] = (d.heroPostIdx[idx] || 0) + n;
       }
       if (r.decided) {
         const won = r.winner === seat;
@@ -1264,6 +1298,15 @@ function summarize(results, config) {
       transformAvgTurn: d.transformTurnN ? +(d.transformTurnSum / d.transformTurnN).toFixed(1) : null,
       winPctWhenTransformed: d.decT ? pct1(d.winsT, d.decT) : null,
       winPctWhenNot: d.decN ? pct1(d.winsN, d.decN) : null,
+      // §13b transform autopsy: how dead was the hero at flip time, how long did
+      // it live after, and were the (base/transformed) kit buttons ever pressed?
+      avgLpAtFlip: d.flipLpN ? +(d.flipLpSum / d.flipLpN).toFixed(1) : null,
+      avgTurnsAfterFlip: d.flipSurvN ? +(d.flipSurvSum / d.flipSurvN).toFixed(1) : null,
+      heroAbilityUsesPerGame: {
+        preFlip: +(d.heroPre / d.games).toFixed(2),
+        postFlip: d.transforms ? +(d.heroPost / d.transforms).toFixed(2) : null,
+      },
+      postFlipUsesByIndex: d.heroPostIdx,
       resourcesByTurn: {
         t5: +(d.res5 / d.games).toFixed(2),
         t10: +(d.res10 / d.games).toFixed(2),

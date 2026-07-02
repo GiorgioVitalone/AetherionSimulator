@@ -71,8 +71,16 @@ function mergeFactionDetail(into, fd) {
       games: 0, transforms: 0, transformTurnSum: 0, transformTurnN: 0,
       winsT: 0, decT: 0, winsN: 0, decN: 0,
       res5: 0, res10: 0, res15: 0, deploys: 0, deploysEarly: 0, spellsEarly: 0, discards: 0,
+      flipLpSum: 0, flipLpN: 0, flipSurvSum: 0, flipSurvN: 0, heroPre: 0, heroPost: 0,
+      heroPostIdx: {},
     });
-    for (const k of Object.keys(t)) t[k] += d[k] || 0;
+    for (const k of Object.keys(t)) {
+      if (k === 'heroPostIdx') continue; // object-valued: merged below
+      t[k] += d[k] || 0;
+    }
+    for (const [idx, n] of Object.entries(d.heroPostIdx || {})) {
+      t.heroPostIdx[idx] = (t.heroPostIdx[idx] || 0) + n;
+    }
   }
 }
 function finishFactionDetail(sums) {
@@ -85,6 +93,13 @@ function finishFactionDetail(sums) {
       transformAvgTurn: d.transformTurnN ? +(d.transformTurnSum / d.transformTurnN).toFixed(1) : null,
       winPctWhenTransformed: d.decT ? pct1(d.winsT, d.decT) : null,
       winPctWhenNot: d.decN ? pct1(d.winsN, d.decN) : null,
+      avgLpAtFlip: d.flipLpN ? +(d.flipLpSum / d.flipLpN).toFixed(1) : null,
+      avgTurnsAfterFlip: d.flipSurvN ? +(d.flipSurvSum / d.flipSurvN).toFixed(1) : null,
+      heroAbilityUsesPerGame: {
+        preFlip: +(d.heroPre / Math.max(d.games, 1)).toFixed(2),
+        postFlip: d.transforms ? +(d.heroPost / d.transforms).toFixed(2) : null,
+      },
+      postFlipUsesByIndex: d.heroPostIdx,
       resourcesByTurn: {
         t5: +(d.res5 / Math.max(d.games, 1)).toFixed(2),
         t10: +(d.res10 / Math.max(d.games, 1)).toFixed(2),
@@ -210,6 +225,15 @@ function report(p) {
       lines.push(
         `    ${f.padEnd(9)} ${String(d.transformPct).padStart(5)}% @${d.transformAvgTurn ?? '—'} (${d.winPctWhenTransformed ?? '—'} vs ${d.winPctWhenNot ?? '—'}) | ` +
         `${d.resourcesByTurn.t5}/${d.resourcesByTurn.t10}/${d.resourcesByTurn.t15} | ${d.deploysPerGame} (${d.earlyDeploysPerGame}) | ${d.earlySpellsPerGame} | ${d.discardsPerGame}`,
+      );
+    }
+    lines.push('  Transform autopsy (§13b): LP at flip | turns lived after | hero-ability uses/game pre → post flip (post by index):');
+    for (const f of FACTIONS) {
+      const d = p.factionDetail[f];
+      if (!d || d.avgLpAtFlip == null) continue;
+      const idx = Object.entries(d.postFlipUsesByIndex || {}).map(([i, n]) => `#${i}:${n}`).join(' ') || 'none';
+      lines.push(
+        `    ${f.padEnd(9)} lp ${String(d.avgLpAtFlip).padStart(5)} | +${d.avgTurnsAfterFlip}t | ${d.heroAbilityUsesPerGame.preFlip} → ${d.heroAbilityUsesPerGame.postFlip ?? '—'} (${idx})`,
       );
     }
   }
