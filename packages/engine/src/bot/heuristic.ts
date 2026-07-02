@@ -16,7 +16,7 @@ import { getAllCards, hasOpenSlot } from '../zones/zone-manager.js';
 import { getAvailableResources, effectiveCost } from '../actions/cost-checker.js';
 import { cardResourceType } from '../actions/card-resource.js';
 import { reachAffordTypes } from './reach-discard.js';
-import { deployValue, intrinsicValue } from './value-pilot.js';
+import { deployValue, intrinsicValue, rampDeployBonus } from './value-pilot.js';
 import { calculateHeroDamage } from '../combat/damage-calculator.js';
 import { scoreSpell } from './spell-eval.js';
 import { chooseSpellTargets } from './target-select.js';
@@ -241,7 +241,13 @@ function chooseStrategyAction(
   if (activate !== null) return activate;
 
   // 4. Deploy the strongest affordable creature to the best zone.
-  const deploy = chooseDeploy(player, acts, state.config?.valuePilot === true);
+  const deploy = chooseDeploy(
+    player,
+    acts,
+    state.config?.valuePilot === true,
+    state.config?.rampPilot === true,
+    state.turnNumber,
+  );
   if (deploy !== null) return deploy;
 
   // 5. Equip the best creature on board.
@@ -350,11 +356,16 @@ function chooseDeploy(
   player: PlayerState,
   acts: ReturnType<typeof computeAvailableActions>,
   valuePilot: boolean,
+  rampPilot: boolean,
+  turnNumber: number,
 ): PlayerAction | null {
   // Strongest first. Default: highest (atk + hp). Under valuePilot: first-principles
-  // card power + board/hero synergy. Tie-break: cheaper first so we curve out.
+  // card power + board/hero synergy; under rampPilot additionally an early-game ramp
+  // tempo bonus (the cost-free score's ramp blind spot). Tie-break: cheaper first so
+  // we curve out.
   const rank = valuePilot
-    ? (card: CardInstance): number => deployValue(card, player)
+    ? (card: CardInstance): number =>
+        deployValue(card, player) + (rampPilot ? rampDeployBonus(card, turnNumber) : 0)
     : (card: CardInstance): number => power(card);
   const ranked = [...acts.canDeploy]
     .map((opt) => ({ opt, card: handCard(player, opt.cardInstanceId) }))

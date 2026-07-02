@@ -456,6 +456,9 @@ function allTraits(card: CardInstance): readonly Trait[] {
 // ── Discard for Energy ────────────────────────────────────────────────────────
 
 function computeCanDiscardForEnergy(player: PlayerState, state: GameState): boolean {
+  // Rule-ablation probe (diagnostic): measures the rule's balance contribution.
+  // Energy only pays Energy costs, so in this pool the valve is Verdant-only.
+  if (state.config?.disableDiscardForEnergy === true) return false;
   return player.hand.length > 0 && !state.turnState.discardedForEnergy;
 }
 

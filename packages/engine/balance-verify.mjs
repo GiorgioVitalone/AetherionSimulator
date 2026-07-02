@@ -23,6 +23,7 @@ const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f])); // faction name
 const GPP_MATRIX = +(process.env.GPP_MATRIX || 1000);
 const RL_GPP = +(process.env.RL_GPP || 16);
 const RH_GPP = +(process.env.RH_GPP || 8);
+const RX_GPP = +(process.env.RX_GPP || 0); // >0 adds a 3rd rollout rung (r12 d3 c8)
 const SKIP_ROLLOUT = process.env.SKIP_ROLLOUT === '1';
 const OUT = process.env.GAUGE_OUT || '/tmp/balance-verify-result.json';
 // Parallel is byte-identical to serial (proven via runHash — see sim-parallel.mjs),
@@ -145,7 +146,7 @@ function report(p) {
 }
 
 // ── Run the panel ────────────────────────────────────────────────────────────
-console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  skipRollout=${SKIP_ROLLOUT}`);
+console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}`);
 // exileDiscardForEnergy is a RULE toggle (discard_for_energy exiles instead of
 // binning) — applies to every pilot. reachDiscard/valuePilot are HEURISTIC bot
 // policies (read only by that policy — see sim-runner.mjs), so only the
@@ -159,11 +160,26 @@ const pilots = [];
 const add = async (p) => { pilots.push(p); console.log(report(p)); };
 console.log('Running random (floor)…'); await add(await runMatrixPilot('random', { botPolicy: 'random', ...RULE }));
 console.log('\nRunning heuristic…'); await add(await runMatrixPilot('heuristic', { botPolicy: 'heuristic', ...RULE, reachDiscard: true, valuePilot: true }));
+// HEUR_RAMP=1 adds a second heuristic with the rampPilot deploy bonus (the in-game
+// analogue of computeDeckValue's acceleration term). Same seeds as 'heuristic', so
+// the per-faction delta between the two IS the measured ramp-blindness component of
+// pilot error — the instrument for the §12 causal decomposition.
+if (process.env.HEUR_RAMP === '1') {
+  console.log('\nRunning heuristic+ramp (pilot A/B)…');
+  await add(await runMatrixPilot('heuristic+ramp', { botPolicy: 'heuristic', ...RULE, reachDiscard: true, valuePilot: true, rampPilot: true }));
+}
 if (!SKIP_ROLLOUT) {
   console.log('\nRunning rollout-low (r4 d2 c5)…');
   await add(await runAggPilot('rollout-low (r4 d2 c5)', { botPolicy: 'rollout', ...RULE, rollouts: 4, rolloutDepth: 2, maxCandidates: 5 }, RL_GPP));
   console.log('\nRunning rollout-high (r8 d3 c8) — convergence probe…');
   await add(await runAggPilot('rollout-high (r8 d3 c8)', { botPolicy: 'rollout', ...RULE, rollouts: 8, rolloutDepth: 3, maxCandidates: 8 }, RH_GPP));
+  // RX_GPP>0 adds a third, stronger rung (r12 d3 c8) — the convergence probe's probe:
+  // if a faction's win% is still moving low→high→max, its true number is undetermined
+  // and needs an even stronger pilot, per docs/balance-targets.md §4's gate.
+  if (RX_GPP > 0) {
+    console.log('\nRunning rollout-max (r12 d3 c8) — convergence ladder rung 3…');
+    await add(await runAggPilot('rollout-max (r12 d3 c8)', { botPolicy: 'rollout', ...RULE, rollouts: 12, rolloutDepth: 3, maxCandidates: 8 }, RX_GPP));
+  }
 }
 
 // ── Cross-pilot agreement (the validity gate) ────────────────────────────────
@@ -173,5 +189,5 @@ for (const p of pilots) { const [tf, tw] = top(p); console.log(`  ${p.label.padE
 const tops = new Set(pilots.map(p => top(p)[0]));
 console.log(`  → pilots agree on #1 faction: ${tops.size === 1 ? 'YES (' + [...tops][0] + ')' : 'NO — ' + [...tops].join('/') + ' (measurement-limited where they disagree)'}`);
 
-writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', config: { GPP_MATRIX, RL_GPP, RH_GPP }, pilots }, null, 1));
+writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', config: { GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, heurRamp: process.env.HEUR_RAMP === '1' }, pilots }, null, 1));
 console.log(`\nWrote ${OUT}`);

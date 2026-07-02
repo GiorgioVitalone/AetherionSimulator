@@ -614,6 +614,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       ...(config.reachDiscard ? { reachDiscard: true } : {}),
       ...(config.exileDiscardForEnergy ? { exileDiscardForEnergy: true } : {}),
       ...(config.valuePilot ? { valuePilot: true } : {}),
+      ...(config.rampPilot ? { rampPilot: true } : {}),
+      ...(config.disableDiscardForEnergy ? { disableDiscardForEnergy: true } : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -1004,6 +1006,12 @@ function resolveConfig(config = {}) {
     // VALUE-PILOT — opt-in bot policy: rank deploy/keep by the card-power+synergy engine.
     // Read only by the heuristic; emitted (and hashed) only when ON ⇒ default is no-op.
     ...(config.valuePilot ? { valuePilot: true } : {}),
+    // RAMP-PILOT — opt-in bot policy on top of valuePilot: early-game deploy bonus for
+    // ramp signals (the cost-free score's blind spot). Heuristic-only; ON-only hashed.
+    ...(config.rampPilot ? { rampPilot: true } : {}),
+    // DISCARD-FOR-ENERGY ABLATION — diagnostic rule probe: remove the action entirely
+    // (a universal rule only the pool's Energy faction can exploit). ON-only hashed.
+    ...(config.disableDiscardForEnergy ? { disableDiscardForEnergy: true } : {}),
     // RAW-POWER DECOMP — hero-LP head-start override: pin ONE faction's Hero
     // starting+max LP to a fixed value ({ faction, lp }). Only emitted (and hashed)
     // when a valid spec is given ⇒ default run is byte-identical to the v10 baseline.
@@ -1267,6 +1275,8 @@ function parseCliConfig(argv) {
     else if (key === 'directHighGroundDeploy') cfg[key] = val === 'true';
     else if (key === 'armOneTimeAbsolute') cfg[key] = val === 'true';
     else if (key === 'armChargeAbsorb') cfg[key] = val === 'true';
+    else if (key === 'rampPilot') cfg[key] = val === 'true';
+    else if (key === 'disableDiscardForEnergy') cfg[key] = val === 'true';
     else if (key === 'disableFactionHeroReach') cfg[key] = { faction: val };
     else if (key === 'factions') cfg.matchups = val.split(',');
     else if (key === 'disableEffectTypes') cfg[key] = val.split(',').filter(Boolean);

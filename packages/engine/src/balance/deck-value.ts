@@ -38,7 +38,9 @@ const IDEAL_CURVE: readonly number[] = [0.06, 0.12, 0.2, 0.2, 0.16, 0.12, 0.08, 
 const ACCEL_TOP_COST = 5; // a "finisher" — what early tempo deploys ahead of curve
 const ACCEL_CHEAP_COST = 1; // sub-2-cost development that buys tempo for ~no cost
 const ACCEL_CHEAP_TEMPO = 2; // tempo value of one cheap play (~a vanilla 1-drop body)
-const ACCEL_RAMP_TEMPO = 1.5; // tempo per point of resource ramp (deploys ~1.5 stat/turn)
+// Exported: the value pilot's rampPilot deploy bonus uses the SAME tempo weight, so
+// the in-game pilot and the deck-level formula price ramp identically.
+export const ACCEL_RAMP_TEMPO = 1.5; // tempo per point of resource ramp (deploys ~1.5 stat/turn)
 const ACCEL_COEF = 1.0; // snowball value ≈ min(tempo generated, payoff to deploy), once
 
 function round2(x: number): number {

@@ -3,7 +3,7 @@
  * Pure, deterministic balance/design tooling — see docs/balance-valuation.md.
  */
 export { abilityContribution, computeCardPower } from './card-power.js';
-export { computeDeckValue, type DeckInput } from './deck-value.js';
+export { computeDeckValue, ACCEL_RAMP_TEMPO, type DeckInput } from './deck-value.js';
 export { effectStaticValue, sumEffects } from './effect-value.js';
 export {
   abilityThrottle,

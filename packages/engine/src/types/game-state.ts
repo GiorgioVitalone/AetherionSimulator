@@ -278,6 +278,24 @@ export interface GameConfig {
    * ONLY by the bot (src/bot/*); the engine's resolution path never consults it, so it
    * cannot affect any runHash on its own. Absent/false ⇒ byte-identical no-op. */
   readonly valuePilot?: boolean;
+  /** BOT-POLICY KNOB (default absent/false ⇒ no change; only meaningful on top of
+   * `valuePilot`). The per-card power score is cost-free, so ramp enablers score ~0
+   * and the value pilot structurally under-deploys the ramp archetype (the same
+   * blindness computeDeckValue's `acceleration` term fixes at the DECK level). When
+   * true, the deploy ranking adds an early-game tempo bonus for `ramp` signals
+   * (weight × ACCEL_RAMP_TEMPO, fading linearly to 0 by the resource-deck horizon),
+   * so the pilot actually starts the ramp plan it was dealt. Read ONLY by the bot
+   * (src/bot/*); the engine's resolution path never consults it, so it cannot affect
+   * any runHash on its own. Absent/false ⇒ byte-identical no-op. */
+  readonly rampPilot?: boolean;
+  /** RULE ABLATION PROBE (default absent/false ⇒ engine-default: any player may
+   * discard a hand card for +1 temporary Energy once per turn). When true, the
+   * `discard_for_energy` action is never offered. Exists to MEASURE the rule's
+   * contribution to faction balance: the rule is nominally universal, but Energy
+   * only pays Energy costs and Verdant is the pool's only Energy faction — so in
+   * practice it is a Verdant-only conversion valve. Diagnostic, not a proposed
+   * rules change. Absent/false ⇒ byte-identical no-op. */
+  readonly disableDiscardForEnergy?: boolean;
 }
 
 /** Mutable diagnostic accumulator (see GameConfig.diag). Written by the engine
