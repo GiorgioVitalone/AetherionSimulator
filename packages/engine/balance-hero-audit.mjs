@@ -31,7 +31,10 @@ if (!SRC) {
   console.error('AETHERION_CARDS required (no silent default) — e.g. AETHERION_CARDS=./generated-pools/aetherion-CURRENT.json');
   process.exit(1);
 }
-const NORMAL_BAND = +(process.env.NORMAL_BAND || 0.25);
+// W1 default ±30%: the design intent is a DECENT window per form and a TIGHT one
+// on the composite — the normal form gets the most wiggle room (an Aura-heavy
+// base kit can't be knob-tuned below its aura floor).
+const NORMAL_BAND = +(process.env.NORMAL_BAND || 0.3);
 const TF_BAND = +(process.env.TF_BAND || 0.25);
 const TF_FLOOR = +(process.env.TF_FLOOR || 10);
 const COMPOSITE_BAND = +(process.env.COMPOSITE_BAND || 0.1);

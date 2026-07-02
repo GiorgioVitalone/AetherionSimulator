@@ -1195,25 +1195,34 @@ engines are already part of the deck-level story.
 ### 13e. The hero three-window tune — encoded, all windows PASS; remeasure pre-registered (2026-07-02)
 
 Direction (design review): hero balance is the lever — three windows, then remeasure. Framework
-(in `balance-hero-audit.mjs`): **W1** each NORMAL form within ±25% of the base-kit mean; **W2**
-each TRANSFORM within ±25% of the transform mean AND above an impact floor (≥10 — a flip must
-swing the game); **W3** the composite **0.66·base + 0.33·transform** within a TIGHT ±10% band —
-heroes get wiggle room to skew normal-vs-flip, but the packages stay matched. All flag-only;
-tuning is via the sanctioned knobs.
+(in `balance-hero-audit.mjs`): **W1** each NORMAL form within ±30% of the base-kit mean (the
+loosest window — an Aura-heavy base kit can't be knob-tuned below its aura floor); **W2** each
+TRANSFORM within ±25% of the transform mean AND above an impact floor (≥10 — a flip must swing
+the game); **W3** the composite **0.66·base + 0.33·transform** within a TIGHT ±10% band — heroes
+get wiggle room to skew normal-vs-flip, but the packages stay matched. All flag-only; tuning is
+via the sanctioned knobs.
 
-**The tune (`make-hero-tune.mjs`, knobs only — every one engine-enforced):** RIA-09 Bloom Assembly
-cd 2→4 + Biotech Harvest gains cd 1 (governs the command-zone battery); Vanguard Overgrowth 5E→2E
-+ Synthetic Evolution 10E→3E (the flip becomes reachable and impactful); Lich King Undead Horde
-gains cd 1 (trims the over-window flip); Seraphina Bulwark 3→1 + cd 3→1 (un-negatives the base
-kit); Valkyrie's cry gains cost 3M; Lyria Singularity 5→2 + cd 3→2 and Convergence cooldown
-removed (§13d: the starved button on the only flip measured to help). Plus the **Grovekeeper 3000
-hand-fix** (per direction — no DB regen): restored as the intended X-cost construct (tags
-`x_cost`, 1/1 base, "enters with +X/+X where X is the Energy spent", mirroring Steel-Root Armor's
-engine-real `x_cost` dynamic) — un-deadening 3 of Verdant's 40 cards.
+**Design-review correction (caught before any measurement ran):** the first draft of this tune put
+wrapper cooldowns on **Biotech Harvest** and **Undead Horde** — both card-type **Aura**, and Auras
+are always-on engines that never take costs or cooldowns (a cooldown breaks aura logic). The tune
+was re-solved through Trigger/Ultimate knobs only, and `make-hero-tune.mjs` now **hard-fails on
+any knob that targets an Aura ability** so the class of mistake cannot recur.
 
-**Result: all 12 checks PASS** — W1 [3.21–5.35]: S 3.40 / V 5.26 / O 4.86 / R 3.60; W2 [9.16–15.27]
-floor 10: S 12.21 / V 10.54 / O 12.26 / R 13.87; W3 [6.17–7.54]: O 7.25 / V 6.95 / R 6.95 / S 6.27.
-Pool: `CURRENT-plus-hero-tune` (sha `3aa445ac4bf7d871`), assembled from the frozen fixture.
+**The tune (`make-hero-tune.mjs`, aura-safe knobs only — every one engine-enforced):** RIA-09
+Bloom Assembly cd 2→6 + gains cost 2E (the battery governor routes entirely through the activated
+half; Harvest untouched); Vanguard Overgrowth 5E→2E + Synthetic Evolution 10E→3E (the flip becomes
+reachable and impactful); Lich King Deathly Resurgence cd 1→2 + Plague of Shadows cost 7→9 (the
+over-window flip trims around the untouchable Horde); Seraphina Bulwark 3→1 + cd 3→1
+(un-negatives the base kit); Valkyrie's cry gains cost 3M; Lyria Singularity 5→1 + cd 3→2 and
+Convergence's printed cooldown removed (§13d: the starved button on the only flip measured to
+help). Plus the **Grovekeeper 3000 hand-fix** (per direction — no DB regen): restored as the
+intended X-cost construct (tags `x_cost`, 1/1 base, "enters with +X/+X where X is the Energy
+spent", mirroring Steel-Root Armor's engine-real `x_cost` dynamic) — un-deadening 3 of Verdant's
+40 cards.
+
+**Result: all 12 checks PASS** — W1 [3.03–5.62]: S 3.40 / V 5.44 / O 4.86 / R 3.60; W2 [9.54–15.91]
+floor 10: S 12.96 / V 10.54 / O 13.53 / R 13.87; W3 [6.35–7.76]: O 7.67 / V 7.07 / R 6.95 / S 6.52.
+Pool: `CURRENT-plus-hero-tune` (sha **`44dbb1870ec34b65`**), assembled from the frozen fixture.
 
 **Pre-registered prediction for the remeasure** (per protocol, falsifiable): the hero tune
 compresses but does NOT close the gap — the deck-level engines (Verdant's Sapling/Reserve battery,

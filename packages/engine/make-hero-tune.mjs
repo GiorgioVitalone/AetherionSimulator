@@ -16,24 +16,35 @@
 // Both pure: deep-clone in, {raw, changed} out.
 const cost = (mana, energy = 0) => ({ mana, energy, flexible: 0 });
 
+// AURA CONTRACT: abilities whose card-level type is 'Aura' are always-on
+// engines — they NEVER take cooldowns or costs (a cooldown breaks aura logic).
+// Knobs may only touch Trigger/Ultimate abilities; enforced by assertKnobable.
 const HERO_KNOBS = [
   // Verdant RIA-09: base kit over-window (the always-on battery §12c measured).
-  { id: 136, i: 0, why: 'Bloom Assembly cd 2→4', patch: (ab) => { ab.dsl.trigger.cooldown = 4; ab.cooldown = 4; } },
-  { id: 136, i: 1, why: 'Biotech Harvest gains cooldown 1', patch: (ab) => { ab.dsl.cooldown = 1; ab.cooldown = 1; } },
+  // Harvest is an Aura (untouchable) — the governor routes through Bloom Assembly.
+  { id: 136, i: 0, why: 'Bloom Assembly cd 2→6, gains cost 2E', patch: (ab) => { ab.dsl.trigger.cooldown = 6; ab.cooldown = 6; ab.dsl.trigger.cost = cost(0, 2); } },
   // Verdant Vanguard: transform under-window AND below impact floor.
   { id: 103, i: 0, why: 'Overgrowth Protocol cost 5E→2E', patch: (ab) => { ab.dsl.trigger.cost = cost(0, 2); } },
   { id: 103, i: 2, why: 'Synthetic Evolution cost 10E→3E', patch: (ab) => { ab.dsl.trigger.cost = cost(0, 3); } },
-  // Onyx Lich King: transform over-window (composite over).
-  { id: 3, i: 1, why: 'Undead Horde gains cooldown 1', patch: (ab) => { ab.dsl.cooldown = 1; ab.cooldown = 1; } },
+  // Onyx Lich King: transform over-window (composite over). Horde is an Aura
+  // (untouchable) — the trim routes through Resurgence + Plague instead.
+  { id: 3, i: 0, why: 'Deathly Resurgence cd 1→2', patch: (ab) => { ab.dsl.trigger.cooldown = 2; ab.cooldown = 2; } },
+  { id: 3, i: 2, why: 'Plague of Shadows cost 7→9', patch: (ab) => { ab.dsl.trigger.cost = cost(9); } },
   // Radiant Seraphina: base under-window (negative-net Bulwark).
   { id: 134, i: 0, why: "Protector's Bulwark cost 3→1, cd 3→1", patch: (ab) => { ab.dsl.trigger.cost = cost(1); ab.dsl.trigger.cooldown = 1; ab.cooldown = 1; } },
   // Radiant Valkyrie: transform over-window.
   { id: 41, i: 2, why: "Valkyrie's cry gains cost 3M", patch: (ab) => { ab.dsl.trigger.cost = cost(3); } },
   // Sapphire Lyria Supreme: transform below impact floor; starved button (§13d:
   // 0.6–0.8 presses/game — the only flip measured to actually help).
-  { id: 74, i: 4, why: 'Arcane Singularity cost 5→2, cd 3→2', patch: (ab) => { ab.dsl.trigger.cost = cost(2); ab.dsl.trigger.cooldown = 2; } },
+  { id: 74, i: 4, why: 'Arcane Singularity cost 5→1, cd 3→2', patch: (ab) => { ab.dsl.trigger.cost = cost(1); ab.dsl.trigger.cooldown = 2; } },
   { id: 74, i: 2, why: 'Arcane Convergence cooldown removed', patch: (ab) => { ab.dsl.cooldown = null; ab.cooldown = null; } },
 ];
+
+function assertKnobable(card, ab, why) {
+  if (ab.type === 'Aura') {
+    throw new Error(`hero tune: "${why}" targets an Aura ability on ${card.name} — Auras are always-on and never take costs/cooldowns`);
+  }
+}
 
 export function applyHeroTune(rawInput) {
   const raw = JSON.parse(JSON.stringify(rawInput));
@@ -44,6 +55,7 @@ export function applyHeroTune(rawInput) {
     if (!card) throw new Error(`hero tune: card id ${k.id} not found`);
     const ab = card.abilities[k.i];
     if (!ab) throw new Error(`hero tune: card ${k.id} has no ability #${k.i}`);
+    assertKnobable(card, ab, k.why);
     k.patch(ab);
     changed.push(`${card.name} — ${k.why}`);
   }
