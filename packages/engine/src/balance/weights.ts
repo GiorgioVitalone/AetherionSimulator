@@ -36,6 +36,22 @@ export const HEAL_URGENCY = 0.7; // spell-eval heal urgency, averaged (1.0 low /
 export const FLAT_ONE = 1.0; // spell-eval flat for hard-to-value effects
 export const BOUNCE_MULT = 0.7; // spell-eval bounce discount
 
+// ── Resource & token anchors (§13 mispricing repair — Rulebook-derived, NOT
+// fitted to win rates). The §12 buff-arm autopsy showed every engine effect
+// class priced at ~0.7–2.0 while the cost line demands 5–15 at those costs;
+// these anchor the repaired values to the game's own rules and existing
+// constants (ACCEL_RAMP_TEMPO in deck-value.ts, the recurrence table above). ──
+export const RESOURCE_VALUE = 1.5; // one banked resource ≈ ACCEL_RAMP_TEMPO stats of tempo per turn earlier
+export const RESOURCE_VALUE_TEMP = 0.75; // a this-turn-only resource: half a banked one (must be used NOW)
+export const TOKEN_BODY_FACTOR = 0.8; // token stats vs printed-card stats: a real body, but no hand/equip value
+export const EMPTY_SLOTS_EXPECTED = 2.5; // in-each-empty Frontline deploys: 3-slot zone, expected ~2.5 open when it lands
+// Rulebook 8, Upkeep 4: a ready Reserve character taps for +1 TEMPORARY resource
+// each turn. A token parked in Reserve is therefore a small engine, not just
+// stats: RESOURCE_VALUE_TEMP × the on_turn_start recurrence (2.4).
+export const RESERVE_TAP_VALUE = 1.8;
+export const SELECTION_MULT_DISCARD = 1.5; // choose-from-known-pile beats a blind draw (copy_card)
+export const SELECTION_MULT_DECK = 2.0; // tutor the best card of the whole deck (search_deck → hand)
+
 // ── Caps ─────────────────────────────────────────────────────────────────────
 export const EFFECT_SUM_CAP = 12; // per-ability effect-sum cap before recurrence
 export const INTRA_CAP = 0.5; // intra-card synergy lifts a card at most +50%

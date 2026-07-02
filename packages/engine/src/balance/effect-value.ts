@@ -8,7 +8,8 @@ import type { AmountExpr, DynamicStatSource, StatModifier } from '../types/commo
 import type { Effect } from '../types/effects.js';
 import type { TargetExpr } from '../types/targets.js';
 import type { EffectValue } from './types.js';
-import { isAlliedCharacter, isAoE, isEnemyFacing, isEnemyHero } from './target-util.js';
+import { isAlliedCharacter, isAoE, isEnemyFacing, isEnemyHero, targetSide } from './target-util.js';
+import { traitValue } from './trait-scaling.js';
 import {
   AOE_WIDTH,
   AVG_BODY_HP,
@@ -17,14 +18,24 @@ import {
   BOUNCE_MULT,
   CARD_VALUE,
   CONDITIONAL_P,
+  EMPTY_SLOTS_EXPECTED,
   EXPECTED_COUNT,
   EXPECTED_X,
   FACE_WEIGHT,
   FLAT_ONE,
   HEAL_URGENCY,
   REMOVAL_WEIGHT,
+  RESERVE_TAP_VALUE,
+  RESOURCE_VALUE,
+  RESOURCE_VALUE_TEMP,
   SAC_COST,
+  SELECTION_MULT_DECK,
+  SELECTION_MULT_DISCARD,
   TEMPO_WEIGHT,
+  TOKEN_BODY_FACTOR,
+  W_ARM,
+  W_ATK,
+  W_HP,
 } from './weights.js';
 
 const ZERO: EffectValue = { value: 0, isRemoval: false };
@@ -89,11 +100,17 @@ function buffValue(
   dyn: DynamicStatSource | undefined,
   target: TargetExpr,
 ): EffectValue {
-  if (isEnemyFacing(target)) {
-    return { value: Math.min(Math.abs(modifierGain(modifier)), AVG_BODY_HP), isRemoval: false };
+  // Sign decides buff vs debuff (an `any`-side target says nothing — Haunting's
+  // -ATK is cast at enemies, a +stat "any" is cast at allies). §13 repair: the
+  // old enemy-facing branch dropped both the dynamic part and the AoE width.
+  const total = modifierGain(modifier) + dynamicBonus(dyn);
+  if (total < 0) {
+    if (targetSide(target) === 'allied') return ZERO; // self-drawback rider, not a weapon
+    // Debuff: per-body value capped at neutralizing an average body; AoE multiplies.
+    return { value: Math.min(Math.abs(total), AVG_BODY_HP) * aoeFactor(target), isRemoval: false };
   }
-  const gain = Math.max(0, modifierGain(modifier)) + dynamicBonus(dyn);
-  return { value: gain * (isAoE(target) ? AOE_WIDTH : 1) * TEMPO_WEIGHT, isRemoval: false };
+  if (targetSide(target) === 'enemy') return ZERO; // positive buff on enemies: worthless
+  return { value: total * aoeFactor(target) * TEMPO_WEIGHT, isRemoval: false };
 }
 
 /** Sum a list of effects; isRemoval propagates if ANY sub-effect is removal. */
@@ -134,18 +151,37 @@ export function effectStaticValue(effect: Effect): EffectValue {
         ? ZERO
         : { value: amountVal(effect.count) * CARD_VALUE, isRemoval: false };
     case 'heal':
-      return isEnemyFacing(effect.target)
+      // §13 repair: `any`-side heals are cast on YOUR side (the enemy-facing
+      // convention is for damage/removal); heal-ALL was missing the AoE width.
+      return targetSide(effect.target) === 'enemy'
         ? ZERO
-        : { value: amountVal(effect.amount) * HEAL_URGENCY, isRemoval: false };
+        : {
+            value: amountVal(effect.amount) * HEAL_URGENCY * aoeFactor(effect.target),
+            isRemoval: false,
+          };
     case 'gain_resource':
-      return { value: effect.amount * (effect.temporary === true ? 0.5 : 1.0), isRemoval: false };
+      // §13 repair: a banked resource ≈ ACCEL_RAMP_TEMPO stats of tempo (was 1.0).
+      return {
+        value: effect.amount * (effect.temporary === true ? RESOURCE_VALUE_TEMP : RESOURCE_VALUE),
+        isRemoval: false,
+      };
     case 'deploy_token': {
-      const n = effect.inEachEmpty === true ? 2 : effect.count;
-      const stats = effect.token.atk + effect.token.hp + (effect.token.arm ?? 0);
-      return { value: stats * n * 0.5, isRemoval: false };
+      // §13 repair: tokens are real bodies (were priced at half stats, no traits,
+      // no zone). A Reserve token additionally taps +1 temp resource per turn
+      // (Rulebook 8 Upkeep 4) — the battery the §12c run measured.
+      const n = effect.inEachEmpty === true ? EMPTY_SLOTS_EXPECTED : effect.count;
+      const t = effect.token;
+      const stats = t.atk * W_ATK + t.hp * W_HP + (t.arm ?? 0) * W_ARM;
+      let per = stats * TOKEN_BODY_FACTOR;
+      const tokenStats = { atk: t.atk, hp: t.hp, arm: t.arm ?? 0 };
+      for (const tr of t.traits ?? []) per += traitValue(tr, tokenStats, {});
+      if (effect.zone === 'reserve') per += RESERVE_TAP_VALUE;
+      return { value: per * n, isRemoval: false };
     }
     case 'counter_spell':
-      return { value: 0.5, isRemoval: false };
+      // §13 repair: a counter trades 1-for-1 with the opponent's CHOSEN best
+      // spell (≥ a card) plus initiative — 0.5 was the legacy bot's blind spot.
+      return { value: CARD_VALUE + 0.5, isRemoval: false };
     case 'deploy_from_deck':
       return { value: 4, isRemoval: false };
     case 'composite':
@@ -167,17 +203,22 @@ export function effectStaticValue(effect: Effect): EffectValue {
       return best;
     }
     case 'return_from_discard':
+      // §13 repair: reanimating to the battlefield is a body IN PLAY plus the
+      // card economy (was 1.5× a draw) — Onyx's engine, priced at ~1.8 before.
       return {
-        value: effect.destination === 'battlefield' ? CARD_VALUE * 1.5 : CARD_VALUE,
+        value: effect.destination === 'battlefield' ? AVG_WEAK_BODY + CARD_VALUE : CARD_VALUE,
         isRemoval: false,
       };
     case 'search_deck':
+      // §13 repair: a tutor takes the BEST card of the whole deck, not 1.2 draws.
       return {
-        value: effect.destination === 'battlefield' ? 4 : CARD_VALUE * 1.2,
+        value: effect.destination === 'battlefield' ? 4 : CARD_VALUE * SELECTION_MULT_DECK,
         isRemoval: false,
       };
     case 'copy_card':
-      return { value: CARD_VALUE, isRemoval: false };
+      // §13 repair: choose-from-a-known-pile beats a blind draw. (The degenerate
+      // self-copy case is handled by the loop guards, not by pricing it higher.)
+      return { value: CARD_VALUE * SELECTION_MULT_DISCARD, isRemoval: false };
     case 'scry':
       return { value: Math.min(effect.lookCount, 3) * 0.3, isRemoval: false };
     case 'discard':

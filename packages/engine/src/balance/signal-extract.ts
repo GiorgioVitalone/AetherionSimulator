@@ -66,6 +66,9 @@ function tokenProvides(e: DeployTokenEffect): ProvideSpec[] {
   const out: ProvideSpec[] = [
     { kind: n >= 2 ? 'wide_bodies' : 'body', weight: Math.max(1, stats) },
   ];
+  // §13 repair: a token parked in Reserve taps for +1 temporary resource each
+  // upkeep (Rulebook 8.4) — deploy-to-Reserve IS ramp, at temp-resource weight.
+  if (e.zone === 'reserve') out.push({ kind: 'ramp', weight: n * 0.75 });
   for (const tag of e.token.tags ?? []) {
     out.push({ kind: 'tag', weight: n, tag });
     out.push({ kind: 'death_trigger', weight: n, tag });
@@ -100,7 +103,8 @@ export function effectProvides(e: Effect): ProvideSpec[] {
     case 'scry':
       return [{ kind: 'card_flow', weight: 2 }];
     case 'gain_resource':
-      return [{ kind: 'ramp', weight: Math.max(1, e.amount) }];
+      // Temporary gains ramp at half weight — burst, not banked acceleration.
+      return [{ kind: 'ramp', weight: Math.max(1, e.amount) * (e.temporary === true ? 0.5 : 1) }];
     case 'modify_stats':
       return modifyProvides(e);
     case 'grant_trait':

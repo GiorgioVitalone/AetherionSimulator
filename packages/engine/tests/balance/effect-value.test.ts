@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { effectStaticValue, sumEffects } from '../../src/balance/effect-value.js';
+import { RESOURCE_VALUE, RESOURCE_VALUE_TEMP } from '../../src/balance/weights.js';
 import type { Effect } from '../../src/types/effects.js';
 import { allAllied, alliedCharacter, enemyCharacter, enemyHero, fixed } from './factory.js';
 
@@ -49,9 +50,11 @@ describe('effectStaticValue — mirrors spell-eval coefficients, context-free', 
   });
 
   it('values permanent ramp above temporary ramp', () => {
+    // §13 repair re-anchored the per-resource value (was 1.0/0.5); the 2:1
+    // permanent-vs-temporary relation this test exists for is preserved.
     expect(
       effectStaticValue({ type: 'gain_resource', resourceType: 'energy', amount: 3 }).value,
-    ).toBeCloseTo(3.0);
+    ).toBeCloseTo(3 * RESOURCE_VALUE);
     expect(
       effectStaticValue({
         type: 'gain_resource',
@@ -59,7 +62,7 @@ describe('effectStaticValue — mirrors spell-eval coefficients, context-free', 
         amount: 3,
         temporary: true,
       }).value,
-    ).toBeCloseTo(1.5);
+    ).toBeCloseTo(3 * RESOURCE_VALUE_TEMP);
   });
 
   it('propagates removal out of a conditional rider at the probability discount', () => {

@@ -1004,3 +1004,57 @@ risk — §11f's "don't auto-buff blind-spot spells" warning now has its concret
 par and Verdant **+23.4 pp** above par ARE the spread; Onyx +4.8 (watch), Radiant +2.1 — but
 Radiant's number is Sapphire-subsidized and will fall when Sapphire is fixed. Plus one pool defect
 (Echoes×Robe loop) to remove in the next revision.
+
+---
+
+## 13. The mispricing autopsy — why the buff arm over-buffed, and the repair (2026-07-02)
+
+Direction (design review): **no blind reverts** — find out WHY the formula under-priced the
+buff-arm cards, repair the valuation so the formula itself re-derives correct costs, and keep
+formula-outlier cards to a bare minimum. Method: score all 19 buff-arm cost cuts with
+`computeCardPower`, trace each gap to an effect-class weight, fix the class from Rulebook/engine
+anchors (never from win rates), re-audit. All repairs in `src/balance/effect-value.ts` +
+`signal-extract.ts` + `weights.ts`, each pinned by a unit test (`effect-value-repair.test.ts`).
+
+### What was actually wrong (bugs first, weights second)
+
+| Defect | Exhibit | Old → new |
+|---|---|---|
+| **`any`-side heals priced ZERO** (enemy-facing convention misapplied to beneficial effects) | Vinecall Elder's heal scored 0.00 | side=`enemy` only ⇒ zero; `any` heals ≈ allied |
+| **Heal/debuff AoE width dropped** (damage had it; heal and the enemy-modify branch didn't) | Celestial Aegis 1.54; Plague Burst 2.0 | × AOE_WIDTH (2.5) |
+| **Debuffs ignored their dynamic part** + sign confusion | Haunting 0.9 | sign decides buff/debuff; dynamic counted; capped at AVG_BODY_HP per body |
+| Tokens at half stats, no traits, no zone | Guardian Spirit's 3×4/1 = 5.0; Chorus's Defender angels = 2.0 | stats × TOKEN_BODY_FACTOR (0.8) + traitValue + **RESERVE_TAP_VALUE (1.8) for Reserve tokens** (Rulebook 8.4: a Reserve body taps +1 temp resource/turn — the §12c battery, now priced AND signalled as `ramp`) |
+| Resources at 1.0/unit | Tech Bloom 3.0 | RESOURCE_VALUE 1.5 (≈ ACCEL_RAMP_TEMPO), temporary 0.75 |
+| Tutors/copies/counters/reanimation ~flat | Archivist 1.44, Echoes 1.2, counters 0.5, reanimate 1.8 | selection premiums (×1.5 discard / ×2 deck), counter = CARD_VALUE+0.5, reanimate-to-play = AVG_WEAK_BODY+CARD_VALUE |
+
+### Re-audit at ORIGINAL costs (the falsifiable check)
+
+Seven of the implicated cuts are **de-justified** — the corrected formula prices them at/near their
+printed costs, so their discounts came from mispricing: **Guardian Spirit 15.0 → 20.0 (dead on the
+8E line — the 6E cut evaporates), Biomass Surge 2.0 → 6.8 (WITHIN at 5E), Heavenly Chorus → 4.4
+(WITHIN), Plague Burst → 5.0 (≈ON), Illusionist Adept → 6.72 (ON)**, Tech Bloom → 4.5 and Celestial
+Aegis → 3.85 (both most of the way). The new over-list stays sane and adds **Protector of Faith**
+(its heal-all was invisible before) while dropping **Archon's Guardian and Uriel to +0.1** — their
+CURRENT −1 HP nerfs were likely mispricing-driven too and become un-nerf candidates.
+
+### The two honest residual classes
+
+1. **Line-shape bias (documented, deliberately NOT auto-corrected).** The linear characters fit
+   (power ≈ 0.8 + 2.3·cost) demands 12–19 power at costs 5–8 while the pool's actual bodies deliver
+   8–14 — so Vinecall (7.4), Biosteel (13.9), Archivist (9.4), Zombie Horde (8.4) still read
+   "under" at original cost. That is the regression extrapolating past its support, not an effect
+   weight. Per §11f discipline the line is not re-fit here; per standing policy these unders are
+   review-only. (If a line change is ever wanted, it goes through the pre-registration protocol.)
+2. **True outliers (the bare-minimum list, guard-enforced): Arcane Echoes.** Even corrected, the
+   formula wants to cheapen it (−3.3) — recursion/self-copy value is unbounded in cost-space, so
+   recursion cards are never auto-buffed; the min-effective-cost guard (§13a) enforces this
+   structurally rather than by hand-maintained exceptions.
+
+### Instrument version bump (measured, explicit)
+
+`computeCardPower` is shared with the value pilot by design, so the repairs change HEURISTIC bot
+behavior: the standard GPP=20 reference moves `a576f66296c4c11f` → `4eab42890b61a849`. Heuristic
+numbers before/after this commit are not directly comparable. **The verdict instrument is
+unaffected**: the rollout pilot's candidate selection is kind-ordered + lexicographic (verified —
+no value ranking) with random playouts, and the random pilot never consults the pricer — the §12c
+ladder stays comparable. 768 tests pass.
