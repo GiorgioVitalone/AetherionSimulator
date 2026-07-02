@@ -150,3 +150,24 @@ Heuristic CIs ±~1 pp; rollout CIs ±~8–11 pp (low) / ±~11–12 pp (high).
 **Two caveats on Verdant.** (1) The heuristic-vs-rollout gap (54.3 vs 65–79) confirms the heuristic under-pilots ramp — but the rollout has no archetype prior, so Verdant's strength is *real*, needing card nerfs, not just a better bot. (2) Verdant posts these numbers with **3 dead cards** — Grovekeeper 3000 ×3 is a broken all-zero entry in the committed fixture (X-cost design never made it into the data; DB regeneration pending). Its true strength is a **floor**.
 
 **Headline.** The budget patch + LP-30 + two rules changes cut the heuristic spread 44.5 → 14.3 pp and fixed Radiant and Onyx under strong play. Remaining work, in evidence order: apply the Sapphire redesign (worst FAIL), regenerate the fixture from the DB (Grovekeeper), then nerf Verdant — re-running this exact panel after each step.
+
+---
+
+## 8. Verification run — 2026-07-02 (Sapphire redesign pool)
+
+**Method.** Identical protocol and sizes as §7, on **CURRENT-plus-sapphire-redesign** (sha256 `396fd91fac214ef3`; regenerate with `node make-pools.mjs`) — the §7 pool with `docs/sapphire-redesign-proposal.md`'s 9 redesigns + 2 tweaks applied to 11 Sapphire cards. Cross-verified two ways: the rollout-low leg reproduced bit-for-bit in a clean environment (`runHash c704cddab229029f`), and all six non-Sapphire random-pilot matrix cells are **byte-identical** to §7's (deterministic seeds + only Sapphire cards changed ⇒ non-Sapphire matchups replay exactly; all six Sapphire cells moved in Sapphire's favor).
+
+| Pilot | Games | Radiant | Verdant | Onyx | Sapphire (§7 →) | Parity spread |
+|---|---|---|---|---|---|---|
+| `random` (floor) | 30,000 | 72.6% | 55.6% | 29.9% | 26.7 → **41.9%** | 42.7 pp |
+| `heuristic` | 30,000 | 47.0% | 45.2% | 37.5% | 42.7 → **71.5%** | 34.0 pp |
+| `rollout` r4/d2/c5 | 480 | 44.4% | 51.4% | 43.8% | 25.7 → **60.4%** | **16.7 pp** |
+| `rollout` r8/d3/c8 | 240 | 37.5% | 58.3% | 36.1% | 16.7 → **68.1%** | 31.9 pp |
+
+**Result: the redesign works — and overshoots hard.** Sapphire goes from last under every pilot to **first under every strong pilot** (heuristic CI 70.5–72.4 clears the 57% line massively), beating all three factions near-uniformly (76/64/74% heuristic cells) — a flat power overshoot, not one polarized matchup. Two findings worth keeping: the deck is now **pilotable at every skill level** (even random play rose 26.7 → 41.9 — a win condition exists), and rollout-low's 16.7 pp is the healthiest rollout-level spread yet measured — the pool is close, just centered on the wrong faction.
+
+**The instructive failure: the budget model approves this pool.** Refit on the redesign itself, only Arcane Focus Blade (+0.5) and Arcane Echoes (+0.2) sit marginally over the line, and Spellbound Adept grades *under*-budget — while the sim reads 60–72%. §11f's budget-blind-spot lesson, mirrored in the buff direction: per-card budgets cannot see a synergy engine. Mechanism: the §7 budget patch had already discounted Sapphire's costs for its *old, weak* effects (deck avg cost 3.13 → 2.67; 18/40 cards ≤2 mana); the redesign then made those effects strong **without the stale discounts moving** — strong effects at weak-effect prices.
+
+**Staged next step (v2 trim, function-preserving, stale discounts first):** Arcane Echoes 1→3 mana; Master Archivist 3→4 mana (keeps the ATK-4 redesign); Arcane Focus Blade 2→3 mana; Arcane Storm reach cap 6→4. Engine cores (Scholar, Adept, Librarian, draw spells) deliberately untouched — they are the archetype. Re-run the panel; if Sapphire still >55%, the engine cores are the next lever.
+
+**Hygiene:** mirror FP +3.0 pp (heuristic) — PASS, third consecutive run on the 17Lands anchor. Decided 96.5% — PASS. Worst cell Sapphire→Onyx 76.4% — FLAG (>70/30). Verdant reads 58.3% at rollout-high *while suppressed by super-Sapphire* — its too-strong verdict from §7 stands and returns to the top of the queue once Sapphire is trimmed.
