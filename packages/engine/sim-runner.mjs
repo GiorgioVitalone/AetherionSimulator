@@ -668,6 +668,9 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       ...(config.valuePilot ? { valuePilot: true } : {}),
       ...(config.rampPilot ? { rampPilot: true } : {}),
       ...(config.disableDiscardForEnergy ? { disableDiscardForEnergy: true } : {}),
+      // COST FLOOR — rule guard: discounts never take effective cost below 1
+      // unless printed 0 (kills the §12c Echoes×Robe 0-cost loop class). ON-only hashed.
+      ...(config.costFloor ? { costFloor: true } : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -1066,6 +1069,9 @@ function resolveConfig(config = {}) {
     // DISCARD-FOR-ENERGY ABLATION — diagnostic rule probe: remove the action entirely
     // (a universal rule only the pool's Energy faction can exploit). ON-only hashed.
     ...(config.disableDiscardForEnergy ? { disableDiscardForEnergy: true } : {}),
+    // COST FLOOR — rule guard: discounts never take effective cost below 1 unless
+    // printed 0 (kills the §12c Echoes×Robe 0-cost loop class). ON-only hashed.
+    ...(config.costFloor ? { costFloor: true } : {}),
     // RAW-POWER DECOMP — hero-LP head-start override: pin ONE faction's Hero
     // starting+max LP to a fixed value ({ faction, lp }). Only emitted (and hashed)
     // when a valid spec is given ⇒ default run is byte-identical to the v10 baseline.
@@ -1422,6 +1428,7 @@ function parseCliConfig(argv) {
     else if (key === 'armOneTimeAbsolute') cfg[key] = val === 'true';
     else if (key === 'armChargeAbsorb') cfg[key] = val === 'true';
     else if (key === 'rampPilot') cfg[key] = val === 'true';
+    else if (key === 'costFloor') cfg[key] = val === 'true';
     else if (key === 'disableDiscardForEnergy') cfg[key] = val === 'true';
     else if (key === 'disableFactionHeroReach') cfg[key] = { faction: val };
     else if (key === 'factions') cfg.matchups = val.split(',');

@@ -34,6 +34,7 @@ const BASE = {
   seedBase: 12345,
   armFirstInstanceOnly: true,
   terminationMode: 'resource_deck_empty_transform',
+  costFloor: true,
   botPolicy: 'heuristic',
   exileDiscardForEnergy: true,
   reachDiscard: true,

@@ -288,6 +288,15 @@ export interface GameConfig {
    * (src/bot/*); the engine's resolution path never consults it, so it cannot affect
    * any runHash on its own. Absent/false ⇒ byte-identical no-op. */
   readonly rampPilot?: boolean;
+  /** RULE GUARD (default absent/false ⇒ engine-default: cost reductions floor at
+   * zero). When true, stacked cost reductions can never take a card below an
+   * effective TOTAL cost of 1 unless its printed cost is already 0 — the
+   * engine-wide "(minimum 1)" Lyria's Supreme Intellect already prints, applied
+   * to every discount. Exists because an unfloored discount × a cheap self-copy
+   * spell produced a 0-cost infinite loop (§12c: budget-cut Arcane Echoes ×
+   * Wizard's Robe — 7,990 casts in one game, step-cap abort). Read by
+   * effectiveCost only. Absent/false ⇒ byte-identical no-op. */
+  readonly costFloor?: boolean;
   /** RULE ABLATION PROBE (default absent/false ⇒ engine-default: any player may,
    * once per turn, discard a hand card for +1 temporary resource MATCHING the
    * card's type — Mana if Magic-aligned, Energy if Tech-aligned, per Rulebook 11;

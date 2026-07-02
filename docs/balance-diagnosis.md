@@ -1058,3 +1058,37 @@ numbers before/after this commit are not directly comparable. **The verdict inst
 unaffected**: the rollout pilot's candidate selection is kind-ordered + lexicographic (verified —
 no value ranking) with random playouts, and the random pilot never consults the pricer — the §12c
 ladder stays comparable. 768 tests pass.
+
+### 13a. Loop guards + the frozen baseline + the re-derived candidate (2026-07-02)
+
+**Cost floor (rule guard, `config.costFloor`).** Stacked cost reductions can no longer take a card
+below an effective TOTAL of 1 unless its printed cost is already 0 — the engine-wide "(minimum 1)"
+Lyria's Supreme Intellect already prints, now true for every discount (`effectiveCost`,
+cost-checker.ts; threaded through all engine call sites; the bot's reach-estimate site stays
+legacy — the engine gate is authoritative). Adopted into the standard configs
+(balance-standard-sim / balance-verify BASE / the denergy probe). Proven: flag off reproduces the
+post-§13 heuristic reference `4eab42890b61a849` byte-for-byte; the new standard reference (floor
+on) is **`d4614969ee101895`**.
+
+**Static loop guards in `applyEdits` (§12c would have been caught before a single sim).** Every
+cost-LOWERING edit must now pass: (1) *min-effective-cost* — new cost minus the max cost_reduction
+the pool can stack at that card must stay >0 if the card has a recursion-class effect
+(copy/search/return); (2) `detectCardLoops` — any non-'none' risk level vetoes. First live run:
+**"Arcane Echoes: cost −3 — VETOED (min-effective-cost 2−2 ≤ 0 on a recursion card)"** (Robe −1 +
+Lyria −1 stack to 2) and a bonus catch, "Spellbound Adept: cost −1 — VETOED (loop risk 'watch')".
+
+**The baseline is now a frozen fixture.** The §13 repairs change `computeSuggestions`, so
+re-deriving CURRENT through the live formula would silently produce different bytes
+(`7ea3048881b0f9fc` ≠ `6928b4ab3b7ef915`). CURRENT's derivation era is over: its exact bytes are
+committed at `sim-data/pools/aetherion-CURRENT-frozen.json` (+ the §8 Sapphire variant), and
+`make-pools.mjs` COPIES them with a hard hash check at generation time — a mismatch is a fatal
+error, never drift. Live derivations are clearly renamed `derived-*` with changes-as-formula-
+improves notes.
+
+**The A2 re-derived candidate — `derived-nerfs-lp30` (sha `cdbe44a3c1930df3`).** Corrected-formula
+nerf arm + LP→30, buff arm review-only per policy. 10 edits, 7 mechanical: the Radiant wall cluster
+(Shieldbearer Paladin −1/−1, **Protector of Faith cost +2 — new**, Faithkeeper −2 HP), Sapphire
+Sentinel +1, Crystal Golem −1 HP, and Archon's Guardian/Uriel −1 HP (both only +0.1 over — marginal
+calls the sims will judge); Angelic Strike/Morgath/Sprout routed to manual review (ability-driven).
+Not yet a runnable pool for verdicts: it awaits the Grovekeeper DB regen + the Sapphire v2 trims
+before becoming Pool α′ per the approved plan.

@@ -309,7 +309,7 @@ function castReactiveSpell(
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
-  const cost = addXCost(effectiveCost(player, card), action.xValue ?? 0);
+  const cost = addXCost(effectiveCost(player, card, state.config), action.xValue ?? 0);
   if (!canAfford(player, cost)) return { state, events: [] };
   const paidPlayer = consumeReductions(payCost(player, cost), card);
   const newPlayer: PlayerState = {
@@ -507,7 +507,7 @@ function executeDeploy(
     (card.traits.includes('elite') || card.grantedTraits.some((g) => g.trait === 'elite'))
       ? ELITE_HIGH_GROUND_SURCHARGE
       : 0;
-  const baseCost = effectiveCost(player, card);
+  const baseCost = effectiveCost(player, card, state.config);
   const surchargedCost: ResourceCost = {
     ...baseCost,
     flexible: baseCost.flexible + eliteSurcharge,
@@ -575,7 +575,7 @@ function executeCastSpell(
 
   const card = player.hand[cardIndex]!;
   const xPaid = action.xValue;
-  const spellCost = addXCost(effectiveCost(player, card), xPaid ?? 0);
+  const spellCost = addXCost(effectiveCost(player, card, state.config), xPaid ?? 0);
   if (!canAfford(player, spellCost)) return { state, events: [] };
   const paidPlayer = consumeReductions(payCost(player, spellCost), card);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
@@ -627,7 +627,7 @@ function executeAttachEquipment(
   // Honor the equipment's alignment/Tag requirement (Rulebook 13).
   if (target === null || !meetsEquipRequirement(equipCard, target)) return { state, events: [] };
   const xPaid = action.xValue;
-  const equipCost = addXCost(effectiveCost(player, equipCard), xPaid ?? 0);
+  const equipCost = addXCost(effectiveCost(player, equipCard, state.config), xPaid ?? 0);
   if (!canAfford(player, equipCost)) return { state, events: [] };
   const paidPlayer = consumeReductions(payCost(player, equipCost), equipCard);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
@@ -733,13 +733,13 @@ function executeTransferEquipment(
   const equip = holder.equipment!;
   if (equip.transferredThisTurn === true) return { state, events: [] };
   const player = state.players[state.activePlayerIndex];
-  if (!meetsEquipRequirement(equip, target) || !canAfford(player, effectiveCost(player, equip))) {
+  if (!meetsEquipRequirement(equip, target) || !canAfford(player, effectiveCost(player, equip, state.config))) {
     return { state, events: [] };
   }
   const paid = setPlayer(
     state,
     state.activePlayerIndex,
-    payCost(player, effectiveCost(player, equip)),
+    payCost(player, effectiveCost(player, equip, state.config)),
   );
   const movedEquip: CardInstance = { ...equip, transferredThisTurn: true };
   const detached = updateCardInState(paid, holder.instanceId, (c) => ({ ...c, equipment: null }));

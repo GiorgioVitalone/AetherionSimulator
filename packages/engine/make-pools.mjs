@@ -1,62 +1,74 @@
-// make-pools.mjs — regenerate the exact card pools this investigation evaluated,
-// deterministically, from the COMMITTED tooling (budget model + function-preserving
-// levers + LP flatten). Same commit ⇒ BIT-IDENTICAL pools: the printed sha256 lets
-// you confirm your machine generated the same bytes as mine, so a sim you run
-// locally reproduces one here exactly (the sim runHash will match too).
+// make-pools.mjs — materialize the card pools this investigation evaluates.
 //
-// Pools use only committed constants (RMSE_MULT, RARITY_BONUS, the type-segmented
-// budget model). No top-N faction re-tune is baked in — those were hand-tuned
-// "crutch" layers; the budget-patch pool below is the reproducible baseline.
+// TWO KINDS of pool, deliberately separated after the §13 formula repair:
 //
-// Naming note: the raw, never-edited committed cards are called "raw-unpatched"
-// here, NOT "baseline" — a prior version of this file called it "baseline" and
-// that ambiguity (raw vs. "the current working reference") directly caused a
-// real wrong-dataset mistake mid-investigation. "CURRENT" below is the one
-// unambiguous working reference; everything else is explicitly labeled.
+//   FROZEN references (CURRENT + its Sapphire-redesign variant): committed
+//   fixtures under sim-data/pools/ — the EXACT bytes every §7–§13 measurement
+//   ran against. They were originally derived, but the pricing formula now
+//   evolves, so re-deriving would silently change the baseline. This script
+//   COPIES them and HASH-VERIFIES the bytes at generation time; any mismatch
+//   is a hard failure, never a silent drift.
 //
-// Usage: node make-pools.mjs [outDir=./generated-pools]  (relative to this file,
-// so the same command produces the same relative layout on any machine)
+//   DERIVED candidates: generated live from the committed tooling + the
+//   CURRENT formula. These CHANGE when the formula improves — that is the
+//   point — and their notes say so. Never call a derived pool "the baseline".
+//
+// Usage: node make-pools.mjs [outDir=./generated-pools]  (run from packages/engine)
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { applyEdits } from './balance-apply-edits.mjs';
-import { applySapphireRedesign } from './make-sapphire-redesign.mjs';
 
-// Relative to CWD (this repo's convention: run from packages/engine/), not to
-// this script's own location — so the printed path is relative and portable,
-// not an absolute path baked to one machine.
 const outDir = `${(process.argv[2] || './generated-pools').replace(/\/$/, '')}/`;
 mkdirSync(outDir, { recursive: true });
 
-const rawUnpatched = JSON.parse(readFileSync(new URL('./sim-data/aetherion-cards.json', import.meta.url)));
-const narrowPatchLp30 = applyEdits(rawUnpatched, { mode: 'all', flattenLp: 30 }).raw;
+const sha = (obj) => createHash('sha256').update(JSON.stringify(obj)).digest('hex').slice(0, 16);
+const loadFrozen = (name, expected) => {
+  const pool = JSON.parse(readFileSync(new URL(`./sim-data/pools/${name}`, import.meta.url)));
+  const h = sha(pool);
+  if (h !== expected) {
+    console.error(`FATAL: frozen fixture ${name} hashes ${h}, expected ${expected} — the baseline bytes changed. STOP.`);
+    process.exit(1);
+  }
+  return pool;
+};
 
-// name -> { pool, note }. "CURRENT" is the one file to point at as "the baseline"
-// going forward — everything else is a labeled variant for a specific comparison.
+const rawUnpatched = JSON.parse(readFileSync(new URL('./sim-data/aetherion-cards.json', import.meta.url)));
+const frozenCurrent = loadFrozen('aetherion-CURRENT-frozen.json', '6928b4ab3b7ef915');
+const frozenSapphire = loadFrozen('aetherion-CURRENT-plus-sapphire-redesign-frozen.json', '396fd91fac214ef3');
+
+// Live derivations (current formula — §13-repaired weights, §13a loop guards).
+const derivedPatch = applyEdits(rawUnpatched, { mode: 'all', flattenLp: 30 });
+const derivedNerfs = applyEdits(rawUnpatched, { mode: 'nerfs', flattenLp: 30 });
+
+// name -> { pool, note }. "CURRENT" is the one name to point at as "the baseline".
 const pools = {
   'raw-unpatched': { pool: rawUnpatched, note: 'raw committed cards, never edited (NOT "the baseline")' },
-  'narrow-patch-lp30': {
-    pool: narrowPatchLp30,
-    note: '0.6 budget patch, all edits, + hero LP→30, NO faction re-tune',
-  },
-  'narrow-nerfs-lp30': {
-    pool: applyEdits(rawUnpatched, { mode: 'nerfs', flattenLp: 30 }).raw,
-    note: 'same but nerfs only (§10: the over-budget nerfs do nearly all the work)',
-  },
   CURRENT: {
-    pool: narrowPatchLp30,
-    note: 'THE working reference — identical bytes to narrow-patch-lp30, this is the name to remember',
+    pool: frozenCurrent,
+    note: 'THE frozen baseline (committed fixture, hash-verified) — all §7–§13 measurements',
   },
   'CURRENT-plus-sapphire-redesign': {
-    pool: applySapphireRedesign(narrowPatchLp30).raw,
-    note: 'CURRENT + docs/sapphire-redesign-proposal.md (9 redesigns + 2 tweaks) applied',
+    pool: frozenSapphire,
+    note: 'frozen §8 variant: CURRENT + the Sapphire redesign patch table',
+  },
+  'derived-nerfs-lp30': {
+    pool: derivedNerfs.raw,
+    note: `LIVE candidate: corrected-formula nerf arm only + LP→30 (${derivedNerfs.changes.length} edits, ${derivedNerfs.vetoed.length} vetoed) — changes as the formula improves`,
+  },
+  'derived-patch-lp30': {
+    pool: derivedPatch.raw,
+    note: `LIVE diagnostic: corrected-formula both arms + LP→30 (${derivedPatch.changes.length} edits, ${derivedPatch.vetoed.length} vetoed) — buff arm is review-only policy; exists to inspect what it WOULD do`,
   },
 };
 
-const sha = (obj) => createHash('sha256').update(JSON.stringify(obj)).digest('hex').slice(0, 16);
-console.log(`Wrote pools to ${outDir}\n(verify the sha256 matches the reference to confirm your bytes == mine)\n`);
+console.log(`Wrote pools to ${outDir}\n(CURRENT is a hash-verified frozen fixture; derived-* pools track the live formula)\n`);
 for (const [name, { pool, note }] of Object.entries(pools)) {
-  const path = `${outDir}aetherion-${name}.json`;
-  writeFileSync(path, JSON.stringify(pool));
-  console.log(`  ${name.padEnd(30)} sha256 ${sha(pool)}  — ${note}`);
+  writeFileSync(`${outDir}aetherion-${name}.json`, JSON.stringify(pool));
+  console.log(`  ${name.padEnd(34)} sha256 ${sha(pool)}  — ${note}`);
+}
+const vetoNotes = [...new Set([...derivedNerfs.vetoed, ...derivedPatch.vetoed])];
+if (vetoNotes.length) {
+  console.log('\nLoop-guard vetoes in live derivations:');
+  for (const v of vetoNotes) console.log(`  ✗ ${v}`);
 }
 console.log(`\nThen e.g.:  node balance-standard-sim.mjs ${outDir}aetherion-CURRENT.json 400`);

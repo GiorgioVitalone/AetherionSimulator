@@ -53,7 +53,7 @@ export function computeReactiveActions(
     const kind = reactiveKind(card);
     if (kind === null) continue;
     if (kind === 'counter' && !hasEnemySpell) continue;
-    if (!canAfford(player, effectiveCost(player, card))) continue;
+    if (!canAfford(player, effectiveCost(player, card, state.config))) continue;
     options.push({ cardInstanceId: card.instanceId, kind, cost: card.cost });
   }
   return options;

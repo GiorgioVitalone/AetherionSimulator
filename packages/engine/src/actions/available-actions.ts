@@ -78,8 +78,8 @@ export function computeAvailableActions(state: GameState): AvailableActions {
 
   return {
     canDeploy: isStrategy ? computeDeployOptions(player, state) : [],
-    canCastSpell: isStrategy ? computeSpellOptions(player) : [],
-    canAttachEquipment: isStrategy ? computeEquipOptions(player) : [],
+    canCastSpell: isStrategy ? computeSpellOptions(player, state) : [],
+    canAttachEquipment: isStrategy ? computeEquipOptions(player, state) : [],
     canMove: isStrategy ? computeMoveOptions(player) : [],
     canActivateAbility: isStrategy ? computeActivateOptions(player, state) : [],
     canAttack: isAction ? computeAttackOptions(player, opponent, state) : [],
@@ -99,7 +99,7 @@ function computeDeployOptions(player: PlayerState, state: GameState): readonly D
 
   for (const card of player.hand) {
     if (card.cardType !== 'C') continue;
-    const baseCost = effectiveCost(player, card);
+    const baseCost = effectiveCost(player, card, state.config);
     if (!canAfford(player, baseCost)) continue;
 
     // Only offer a slot group the player can actually pay for (the High-Ground
@@ -175,12 +175,12 @@ function getOpenSlotIndices(player: PlayerState, zone: ZoneType): readonly numbe
 
 // ── Spells ────────────────────────────────────────────────────────────────────
 
-function computeSpellOptions(player: PlayerState): readonly CastSpellOption[] {
+function computeSpellOptions(player: PlayerState, state: GameState): readonly CastSpellOption[] {
   const options: CastSpellOption[] = [];
 
   for (const card of player.hand) {
     if (card.cardType !== 'S') continue;
-    if (!canAfford(player, effectiveCost(player, card))) continue;
+    if (!canAfford(player, effectiveCost(player, card, state.config))) continue;
     options.push({ cardInstanceId: card.instanceId, cost: card.cost });
   }
 
@@ -189,13 +189,13 @@ function computeSpellOptions(player: PlayerState): readonly CastSpellOption[] {
 
 // ── Equipment ─────────────────────────────────────────────────────────────────
 
-function computeEquipOptions(player: PlayerState): readonly EquipOption[] {
+function computeEquipOptions(player: PlayerState, state: GameState): readonly EquipOption[] {
   const options: EquipOption[] = [];
   const boardCharacters = getAllCards(player.zones).filter((c) => c.cardType === 'C');
 
   for (const card of player.hand) {
     if (card.cardType !== 'E') continue;
-    if (!canAfford(player, effectiveCost(player, card))) continue;
+    if (!canAfford(player, effectiveCost(player, card, state.config))) continue;
 
     // Equipment may attach to any eligible character (Rulebook 13). A character that
     // already holds equipment is still a legal target — the old piece is destroyed

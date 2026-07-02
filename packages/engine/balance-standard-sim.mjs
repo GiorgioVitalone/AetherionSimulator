@@ -46,6 +46,7 @@ const args = [
   '--fixHandSizeStall', 'true',
   '--armFirstInstanceOnly', 'true',
   '--terminationMode', 'resource_deck_empty_transform',
+  '--costFloor', 'true',
   '--gamesPerPairing', gpp || '300',
   '--parallel', parallel || String(availableParallelism()),
 ];

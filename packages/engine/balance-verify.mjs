@@ -46,6 +46,7 @@ const BASE = {
   seedBase: 12345,
   armFirstInstanceOnly: true,
   terminationMode: 'resource_deck_empty_transform',
+  costFloor: true,
 };
 
 // Wilson 95% score interval -> [lowPct, pPct, highPct].
