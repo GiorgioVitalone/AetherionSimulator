@@ -1,67 +1,43 @@
-// balance-hero-audit.mjs — §13c hero power budget: a PARITY BAND, not a cost line.
+// balance-hero-audit.mjs — §13e hero power budget: the three-window framework.
 //
-// Heroes are free and singular (one per deck, cost nothing), so unlike cards
-// there is no cost axis to regress against — the constraint is that all four
-// heroes deliver comparable EFFECTIVE value (the same logic as the LP→30
-// equalization, extended to the kit axis):
+// Heroes are free and singular (one per deck, no cost axis), so hero balance is
+// PARITY, checked in three windows (all flag-only — out-of-band heroes are
+// cost/cooldown tuning candidates, never mechanically edited; §11f discipline):
 //
-//   heroBudget = baseKitNet + P(flip) × liveFraction × transformKitNet
+//   W1 NORMAL:    each hero's base-kit net value inside a window around the
+//                 four-hero base mean (default ±25%).
+//   W2 TRANSFORM: each transformed kit inside a window around the transform
+//                 mean (default ±25%) AND above an IMPACT FLOOR — a flip must
+//                 swing the game, not fizzle (default ≥10 ≈ a strong top-end
+//                 card's §13 power).
+//   W3 COMPOSITE: 0.66 × baseNet + 0.33 × transformNet inside a TIGHTER band
+//                 (default ±10%) — heroes get wiggle room to skew normal-vs-
+//                 transformed, but their overall packages stay tightly matched.
 //
-//   - netValue per ability = abilityContribution (gross, §13-corrected)
-//     − activationCost × RESOURCE_VALUE_TEMP × expectedUses (recurrence): a
-//     cost-7 ultimate is NOT a free one. Audit-layer netting only — cards keep
-//     gross pricing in the shared pricer until this is validated.
-//   - The transform side is availability-discounted: a flip kit is only live
-//     for P(flip) × (turns alive after flip ÷ game length). Measured per
-//     faction from a balance-verify JSON when MEASURED=<path> is given
-//     (factionDetail.transformPct / avgTurnsAfterFlip / avgTurns); otherwise
-//     §12c placeholders (P=0.70, live=0.25) with provenance below.
-//   - Band: PASS if every heroBudget is within ±20% of the four-hero mean.
-//     Out-of-band heroes are COST/COOLDOWN TUNING CANDIDATES (the sanctioned
-//     hero knobs) — never mechanically edited (§11f discipline).
-//
-// Pre-registered falsifiability (H5): heroBudget deltas should rank-agree with
-// the measured transform payoffs; if they disagree, the budget model — not the
-// measurement — goes back to the shop.
+//   netValue per ability = §13-corrected abilityContribution (gross) minus
+//   activationCost × RESOURCE_VALUE_TEMP × expectedUses (recurrence model):
+//   a cost-7 ultimate is not a free one. Netting is audit-layer only. (Known
+//   limitation: effect-INTERNAL payments — e.g. "you may pay 2" riders — are
+//   not netted; only trigger/activation costs are.)
 //
 // Usage:
-//   AETHERION_CARDS=./generated-pools/aetherion-CURRENT.json \
-//   [MEASURED=./bv-CURRENT-v2.json] [BAND=0.20] node balance-hero-audit.mjs
+//   AETHERION_CARDS=<pool.json> node balance-hero-audit.mjs
+//   [NORMAL_BAND=0.25] [TF_BAND=0.25] [TF_FLOOR=10] [COMPOSITE_BAND=0.10]
 import { readFileSync } from 'node:fs';
-import { toStatic } from './balance-data.mjs';
-import { abilityContribution, recurrence, RESOURCE_VALUE_TEMP, LP_VALUE } from './dist/balance/index.js';
+import { abilityContribution, recurrence, RESOURCE_VALUE_TEMP } from './dist/balance/index.js';
 
 const SRC = process.env.AETHERION_CARDS;
 if (!SRC) {
   console.error('AETHERION_CARDS required (no silent default) — e.g. AETHERION_CARDS=./generated-pools/aetherion-CURRENT.json');
   process.exit(1);
 }
-const BAND = +(process.env.BAND || 0.2);
+const NORMAL_BAND = +(process.env.NORMAL_BAND || 0.25);
+const TF_BAND = +(process.env.TF_BAND || 0.25);
+const TF_FLOOR = +(process.env.TF_FLOOR || 10);
+const COMPOSITE_BAND = +(process.env.COMPOSITE_BAND || 0.1);
+const W_NORMAL = 0.66, W_TRANSFORM = 0.33;
+
 const raw = JSON.parse(readFileSync(SRC, 'utf8'));
-
-// ── Availability: measured per faction when a balance-verify JSON is supplied ─
-// Placeholders provenance (§12c CURRENT ladder): transformPct 55–90% ⇒ ~0.70;
-// turns-after-flip ~5–10 of avgTurns ~37 ⇒ liveFraction ~0.25.
-const FALLBACK = { pFlip: 0.7, liveFraction: 0.25, source: '§12c placeholders' };
-function measuredAvailability() {
-  if (!process.env.MEASURED) return null;
-  const gauge = JSON.parse(readFileSync(process.env.MEASURED, 'utf8'));
-  // Last pilot with factionDetail = the strongest instrumented pilot in the file.
-  const pilots = (gauge.pilots || []).filter((p) => p.factionDetail);
-  const p = pilots[pilots.length - 1];
-  if (!p) return null;
-  const out = {};
-  for (const [f, d] of Object.entries(p.factionDetail)) {
-    out[f] = {
-      pFlip: (d.transformPct ?? 70) / 100,
-      liveFraction: d.avgTurnsAfterFlip != null && p.avgTurns ? d.avgTurnsAfterFlip / p.avgTurns : FALLBACK.liveFraction,
-      source: `${process.env.MEASURED} (${p.label})`,
-    };
-  }
-  return out;
-}
-const measured = measuredAvailability();
-
 const heroes = raw.filter((c) => c.cardType === 'H');
 const transformOf = (hero) => raw.find((c) => c.cardType === 'T' && c.originalHeroId === hero.id);
 
@@ -73,7 +49,7 @@ function abilityRows(card) {
     const cost = trig.cost || {};
     const costTotal = (cost.mana || 0) + (cost.energy || 0) + (cost.flexible || 0);
     const gross = dsl.effects || dsl.type ? +abilityContribution(dsl).toFixed(2) : 0;
-    const uses = dsl.type ? recurrence(dsl) : 0; // expected uses over a game
+    const uses = dsl.type ? recurrence(dsl) : 0;
     const net = +(gross - costTotal * RESOURCE_VALUE_TEMP * uses).toFixed(2);
     return {
       i,
@@ -106,32 +82,44 @@ function printSide(label, card) {
   return +rows.reduce((s, r) => s + r.net, 0).toFixed(2);
 }
 
-console.log(`Hero power budget (§13c) — pool: ${SRC}`);
-console.log(`availability: ${measured ? `measured from ${process.env.MEASURED}` : FALLBACK.source} | band ±${BAND * 100}% of mean\n`);
+console.log(`Hero power budget — three-window framework (§13e) — pool: ${SRC}`);
+console.log(`W1 normal ±${NORMAL_BAND * 100}% | W2 transform ±${TF_BAND * 100}% + floor ≥${TF_FLOOR} | W3 composite (${W_NORMAL}·base + ${W_TRANSFORM}·transform) ±${COMPOSITE_BAND * 100}%\n`);
 
-const budgets = [];
+const rows = [];
 for (const h of heroes) {
   const faction = h.alignment[0];
   console.log(`${faction} — ${h.name}`);
   const baseNet = printSide('base', h);
   const t = transformOf(h);
   const tNet = t ? printSide('TRANSFORMED', t) : 0;
-  const avail = (measured && measured[faction]) || FALLBACK;
-  // All transforms currently keep LP (hp:0 placeholder ⇒ lpDelta 0); the term
-  // exists so a future LP-shifting transform is priced automatically.
-  const lpDelta = 0;
-  const budget = +(baseNet + avail.pFlip * avail.liveFraction * tNet + lpDelta * LP_VALUE).toFixed(2);
-  budgets.push({ faction, hero: h.name, baseNet, tNet, pFlip: avail.pFlip, liveFraction: +avail.liveFraction.toFixed(2), budget });
-  console.log(`  → baseNet ${baseNet} + ${avail.pFlip} × ${avail.liveFraction.toFixed(2)} × ${tNet} = heroBudget ${budget}\n`);
+  const composite = +(W_NORMAL * baseNet + W_TRANSFORM * tNet).toFixed(2);
+  rows.push({ faction, baseNet, tNet, composite });
+  console.log(`  → base ${baseNet} | transform ${tNet} | composite ${composite}\n`);
 }
 
-const mean = budgets.reduce((s, b) => s + b.budget, 0) / budgets.length;
-const lo = mean * (1 - BAND), hi = mean * (1 + BAND);
-console.log(`══ PARITY BAND ══  mean ${mean.toFixed(2)}, band [${lo.toFixed(2)} – ${hi.toFixed(2)}]`);
-for (const b of budgets.sort((a, z) => z.budget - a.budget)) {
-  const verdict = b.budget > hi ? 'FLAG (over — cost/cooldown-up candidate)' : b.budget < lo ? 'FLAG (under — cost/cooldown-down candidate)' : 'PASS';
-  console.log(`  ${b.faction.padEnd(9)} ${String(b.budget).padStart(7)}  (base ${b.baseNet}, flip ${b.tNet} × ${b.pFlip}·${b.liveFraction})  ${verdict}`);
+const mean = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
+const band = (m, w) => [m * (1 - w), m * (1 + w)];
+const inB = (v, [lo, hi]) => v >= lo && v <= hi;
+const fmtB = ([lo, hi]) => `[${lo.toFixed(2)} – ${hi.toFixed(2)}]`;
+
+const mBase = mean(rows.map((r) => r.baseNet));
+const mTf = mean(rows.map((r) => r.tNet));
+const mComp = mean(rows.map((r) => r.composite));
+const bBase = band(mBase, NORMAL_BAND);
+const bTf = band(mTf, TF_BAND);
+const bComp = band(mComp, COMPOSITE_BAND);
+
+console.log(`══ W1 NORMAL FORM ══  mean ${mBase.toFixed(2)}, window ${fmtB(bBase)}`);
+for (const r of rows) console.log(`  ${r.faction.padEnd(9)} ${String(r.baseNet).padStart(7)}  ${inB(r.baseNet, bBase) ? 'PASS' : r.baseNet > bBase[1] ? 'FLAG over' : 'FLAG under'}`);
+console.log(`══ W2 TRANSFORMED ══  mean ${mTf.toFixed(2)}, window ${fmtB(bTf)}, impact floor ≥${TF_FLOOR}`);
+for (const r of rows) {
+  const w = inB(r.tNet, bTf) ? 'PASS' : r.tNet > bTf[1] ? 'FLAG over' : 'FLAG under';
+  const fl = r.tNet >= TF_FLOOR ? '' : '  + BELOW IMPACT FLOOR';
+  console.log(`  ${r.faction.padEnd(9)} ${String(r.tNet).padStart(7)}  ${w}${fl}`);
 }
-console.log('\nH5 pre-registration: heroBudget ordering should rank-agree with measured transform');
-console.log('payoffs (factionDetail winPctWhenTransformed / §13b autopsy); disagreement sends the');
-console.log('budget model back to the shop, not the measurement.');
+console.log(`══ W3 COMPOSITE (tight) ══  mean ${mComp.toFixed(2)}, band ${fmtB(bComp)}`);
+for (const r of rows.sort((a, z) => z.composite - a.composite)) {
+  console.log(`  ${r.faction.padEnd(9)} ${String(r.composite).padStart(7)}  (${W_NORMAL}×${r.baseNet} + ${W_TRANSFORM}×${r.tNet})  ${inB(r.composite, bComp) ? 'PASS' : r.composite > bComp[1] ? 'FLAG over — knob-up candidate' : 'FLAG under — knob-down candidate'}`);
+}
+console.log('\nOut-of-window heroes are COST/COOLDOWN tuning candidates (the sanctioned hero');
+console.log('knobs) — never mechanically edited. Remeasure the panel after any hero tune.');

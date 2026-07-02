@@ -1191,3 +1191,34 @@ stands as the known open case (the winPctWhenTransformed confound is documented)
 is under-band, the button is starved, and its flip is the only one measured to help). Onyx/Verdant
 over-band flags fold into the Phase-C pool work rather than solo hero edits — both factions' hero
 engines are already part of the deck-level story.
+
+### 13e. The hero three-window tune — encoded, all windows PASS; remeasure pre-registered (2026-07-02)
+
+Direction (design review): hero balance is the lever — three windows, then remeasure. Framework
+(in `balance-hero-audit.mjs`): **W1** each NORMAL form within ±25% of the base-kit mean; **W2**
+each TRANSFORM within ±25% of the transform mean AND above an impact floor (≥10 — a flip must
+swing the game); **W3** the composite **0.66·base + 0.33·transform** within a TIGHT ±10% band —
+heroes get wiggle room to skew normal-vs-flip, but the packages stay matched. All flag-only;
+tuning is via the sanctioned knobs.
+
+**The tune (`make-hero-tune.mjs`, knobs only — every one engine-enforced):** RIA-09 Bloom Assembly
+cd 2→4 + Biotech Harvest gains cd 1 (governs the command-zone battery); Vanguard Overgrowth 5E→2E
++ Synthetic Evolution 10E→3E (the flip becomes reachable and impactful); Lich King Undead Horde
+gains cd 1 (trims the over-window flip); Seraphina Bulwark 3→1 + cd 3→1 (un-negatives the base
+kit); Valkyrie's cry gains cost 3M; Lyria Singularity 5→2 + cd 3→2 and Convergence cooldown
+removed (§13d: the starved button on the only flip measured to help). Plus the **Grovekeeper 3000
+hand-fix** (per direction — no DB regen): restored as the intended X-cost construct (tags
+`x_cost`, 1/1 base, "enters with +X/+X where X is the Energy spent", mirroring Steel-Root Armor's
+engine-real `x_cost` dynamic) — un-deadening 3 of Verdant's 40 cards.
+
+**Result: all 12 checks PASS** — W1 [3.21–5.35]: S 3.40 / V 5.26 / O 4.86 / R 3.60; W2 [9.16–15.27]
+floor 10: S 12.21 / V 10.54 / O 12.26 / R 13.87; W3 [6.17–7.54]: O 7.25 / V 6.95 / R 6.95 / S 6.27.
+Pool: `CURRENT-plus-hero-tune` (sha `3aa445ac4bf7d871`), assembled from the frozen fixture.
+
+**Pre-registered prediction for the remeasure** (per protocol, falsifiable): the hero tune
+compresses but does NOT close the gap — the deck-level engines (Verdant's Sapling/Reserve battery,
+Sapphire's missing closure) are untouched, and the Grovekeeper fix partially counteracts the RIA
+governor by un-deadening Verdant cards. Pooled r8+r12 predictions: **Verdant 64–72** (from 73.9),
+**Sapphire 21–28** (from 19.1), Onyx 49–55, Radiant 48–54; spread **40–52** (from 53.7); rank
+order unchanged (V top, S bottom). If Verdant lands BELOW 64 the hero share of its power was
+bigger than assessed; if Sapphire clears 28 the flip fix was bigger than assessed.

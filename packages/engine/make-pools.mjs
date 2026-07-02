@@ -17,6 +17,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { applyEdits } from './balance-apply-edits.mjs';
+import { applyHeroTune, applyGrovekeeperFix } from './make-hero-tune.mjs';
 
 const outDir = `${(process.argv[2] || './generated-pools').replace(/\/$/, '')}/`;
 mkdirSync(outDir, { recursive: true });
@@ -50,6 +51,10 @@ const pools = {
   'CURRENT-plus-sapphire-redesign': {
     pool: frozenSapphire,
     note: 'frozen §8 variant: CURRENT + the Sapphire redesign patch table',
+  },
+  'CURRENT-plus-hero-tune': {
+    pool: applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw,
+    note: '§13e candidate: frozen CURRENT + Grovekeeper X-cost fix + hero three-window knob tune (all 12 checks PASS)',
   },
   'derived-nerfs-lp30': {
     pool: derivedNerfs.raw,
