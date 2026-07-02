@@ -12,10 +12,24 @@
 // Sizes are env-tunable for a fast smoke run:
 //   GPP_MATRIX (random/heuristic per-cell games), RL_GPP / RH_GPP (rollout low/high
 //   all-pairs games), SKIP_ROLLOUT=1. Deterministic (seeded); writes JSON to GAUGE_OUT.
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
+import { createHash } from 'node:crypto';
 import { runSim } from './sim-runner.mjs';
 import { runSimParallel } from './sim-parallel.mjs';
+
+// Pool provenance, embedded in header + output JSON so every run self-certifies
+// which card bytes it ran on (same digest as make-pools.mjs: sha256/16 of the
+// re-serialized parsed pool, robust to file formatting). Verification of an
+// external run is then a read, not a re-simulation — full bit-for-bit rung
+// reproduction (§7/§8-era check) is reserved for runs whose internals look
+// inconsistent. Metadata only: runHash is computed inside sim-runner from the
+// sim config and is unaffected.
+const POOL_PATH = process.env.AETHERION_CARDS || new URL('./sim-data/aetherion-cards.json', import.meta.url);
+const POOL_SHA = createHash('sha256')
+  .update(JSON.stringify(JSON.parse(readFileSync(POOL_PATH, 'utf8'))))
+  .digest('hex')
+  .slice(0, 16);
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f])); // faction name -> real official deck
@@ -242,6 +256,7 @@ function report(p) {
 
 // ── Run the panel ────────────────────────────────────────────────────────────
 console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}`);
+console.log(`Pool: ${POOL_PATH}  sha256/16 ${POOL_SHA}`);
 // exileDiscardForEnergy is a RULE toggle (discard_for_energy exiles instead of
 // binning) — applies to every pilot. reachDiscard/valuePilot are HEURISTIC bot
 // policies (read only by that policy — see sim-runner.mjs), so only the
@@ -284,5 +299,5 @@ for (const p of pilots) { const [tf, tw] = top(p); console.log(`  ${p.label.padE
 const tops = new Set(pilots.map(p => top(p)[0]));
 console.log(`  → pilots agree on #1 faction: ${tops.size === 1 ? 'YES (' + [...tops][0] + ')' : 'NO — ' + [...tops].join('/') + ' (measurement-limited where they disagree)'}`);
 
-writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', config: { GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, heurRamp: process.env.HEUR_RAMP === '1' }, pilots }, null, 1));
+writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', pool: { path: String(POOL_PATH), sha256_16: POOL_SHA }, config: { GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, heurRamp: process.env.HEUR_RAMP === '1' }, pilots }, null, 1));
 console.log(`\nWrote ${OUT}`);
