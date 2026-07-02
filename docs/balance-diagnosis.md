@@ -695,3 +695,160 @@ human review) but a poor **mandate**: mechanically editing every card onto the l
 balance. The arbiter remains the **sim** (§11d's targeted, sim-guided re-tune to 6.0 stays the balance
 baseline); the budget audit narrows *where to look*, not *what the answer is*. This is exactly why the
 scalability toolkit pairs the static audit with the gauntlet/sim rather than trusting the budget alone.
+
+---
+
+## 12. The spread, decomposed — what causes it, what measures it, what no formula sees (2026-07-02)
+
+The question, precisely: **what causes the measured spread on the CURRENT pool** (sha `6928b4ab3b7ef915`;
+heuristic says 14.3 pp, rollout-high says 62.5 pp — see balance-targets.md §7), decomposed into
+(A) measurement/pilot error, (B) game-rules design, (C) card balance a power formula should catch,
+and (D) what no formula can capture. Everything below is anchored to verified runs (§7, §8, both
+runHash-authenticated) plus static tests run against the sha-verified pools.
+
+### The one-paragraph answer
+
+The CURRENT pool's *real* spread under the strongest trustworthy instrument is dominated by **two
+concentrated card/system defects**: Sapphire ~33 pp below par (no win condition — proven real AND
+proven fixable by §8's redesign experiment, which moved it +51 pp) and Verdant ~29 pp above par
+(ramp/snowball engine — ratified by the archetype-blind rollout, so it is NOT a pilot artifact;
+exact converged magnitude pending the ladder batch). Radiant and Onyx are approximately fine under
+strong play. The *disagreement between instruments* (14.3 vs 62.5 pp) is measurement, not reality:
+the heuristic's biases — pro-stat-wall, anti-engine — happen to compress the true extremes
+(it overrates weak-vs-strong-play Radiant by ~+8, underrates Verdant by ~−25, overrated
+pre-redesign Sapphire by ~+26 relative to rollout). Rules-design contributes little to the residual
+spread: the big rules wins (LP flatten, transform gates, discard hygiene) are already banked into
+CURRENT, first-player advantage is neutralized by protocol and healthy in mirrors (+2.8 pp), with
+one open probe (the discard-for-energy valve). The per-card budget formula already caught what it
+can catch (the 30-edit patch: heuristic spread 44.5→14.3, Radiant/Onyx fixed at rollout); what
+remains is dominated by dynamics that per-card — and to a large extent per-deck — formulas
+structurally miss, so the formula's role is *screening and candidate generation*, and the verdict
+instrument is the converged pilot panel.
+
+### Bucket A — measurement / pilot error
+
+**A1. Systematic heuristic bias (the dominant measurement term).** Per-faction heuristic-vs-rollout-high
+disagreement on CURRENT: Verdant 54.3 vs 79.2 (Δ+24.9), Sapphire 42.7 vs 16.7 (Δ−26.0), Onyx 45.6
+vs 55.6 (Δ+10.0), Radiant 57.0 vs 48.6 (Δ−8.4). Mechanisms (documented §3 Layer E, §11): the scorer
+has no model for card-advantage→inevitability, values ramp at ~0 in deploy ranking (cost-free
+per-card score — same blindness the deck formula's `acceleration` term patches), counters at 0.5,
+recursion flat 1. **Instrumented this session:** `rampPilot` (GameConfig knob, default off,
+byte-identical no-op proven via runHash `a576f66296c4c11f`) adds the acceleration analogue to the
+deploy ranking; `HEUR_RAMP=1` in balance-verify.mjs runs heuristic and heuristic+ramp on the same
+seeds so the delta IS the measured ramp-blindness component. Pending: the batch below.
+
+**A2. Reference-instrument uncertainty.** The rollout is archetype-blind (random playouts — verified:
+`playoutPolicy ?? 'random'`, no heuristic contamination) but (i) n=72/faction ⇒ ±11–12 pp CIs, and
+(ii) NOT converged for Verdant (65.3 → 79.2 rising with budget; §4's gate says "undetermined —
+needs stronger play"). Instrumented: third rung `RX_GPP` (r12 d3 c8). Pending: the batch.
+
+**A3. Data integrity (a fifth cause outside the four buckets — it has happened four times).**
+Three measurement bugs were found and fixed mid-investigation (faction-scoped re-tune, missing
+sim flags, missing `--realDecks`), and one data defect is STILL OPEN: Grovekeeper 3000 (id 142) is
+an all-zero stub — 3 dead cards (7.5%) in the tested Verdant deck. Verdant posts its numbers with a
+handicap, so its too-strong verdict is a *floor*. Fix pending: DB regeneration
+(`sim-data/generate-from-dump.py`, needs the CMS row completed first).
+
+**Verdict-trust rule that falls out of A:** on the redesign pool all strong pilots agree on #1
+(Sapphire) — that verdict is instrument-robust. On CURRENT they disagree on #1 (heuristic: Radiant;
+rollout: Verdant) — so CURRENT's exact ordering is partially measurement-limited until the ladder
+converges; its EXTREMES (Sapphire floor, Verdant ceiling) are already agreed by all instruments.
+
+### Bucket B — game-rules design
+
+- **First-player advantage: not a spread cause.** Neutralized by alternating + marginals; mirrors
+  measure it at +2.8 pp under competent play (PASS, third consecutive run on the 17Lands anchor).
+  Notable rules property: at random play it is +8.75 pp — initiative is strong under bad play and
+  competent play erases it. A curiosity, not a defect.
+- **Already banked into CURRENT:** hero-LP flatten (was −6.6 pp of spread), resource-deck-empty
+  transform gate (−5.0), ARM-first-instance (−0.7), discard hygiene (`exileDiscardForEnergy`,
+  `reachDiscard` — §11a–c). Historic rules levers beyond these were small or backfired (§3 Layer A).
+- **One open rules asymmetry, now instrumented:** `discard_for_energy` is universal in name but
+  Energy only pays Energy costs and Verdant is the pool's only Energy faction — a de-facto
+  Verdant-only conversion valve. Probe: `balance-probe-denergy.mjs` (identical config except the
+  ablation bit; arm-A runHash reproduces the standard reference exactly). Pending: the batch.
+- **Defender-forcing (deliberately NOT re-probed):** §3C measured ablating it at −15.7 pp in the
+  raw era, but post-patch Radiant is ~50 under strong play — the mechanic inflates Radiant only
+  against weak play (a bucket-D skill-conditional effect, not a rules defect to fix). Nerfing it
+  now would overshoot the balanced-at-strength Radiant.
+
+### Bucket C — card balance a formula should catch (and whether to tweak the formula)
+
+**What the per-card budget DID catch:** the additive, gross component. The 30-edit budget patch took
+heuristic spread 44.5 → 14.3 and fixed Radiant (73.3 → 48.6) and Onyx (40.0 → 55.6) at rollout-high.
+That is the formula working exactly as intended.
+
+**What it structurally cannot catch — proven twice, in both directions:**
+1. §11f: *mandating* the budget (fit all 64 cards to the line) breaks balance (spread 6 → 35–44).
+2. §8: the Sapphire redesign **passes the budget while playing at 60–72%** — refit on the redesign
+   pool itself, only 2 of 11 redesigned cards sit marginally over the line and Spellbound Adept
+   grades *under*; the sim refutes it by ~+30 pp. Mechanism: engines (spells-matter web on stale
+   cost discounts) are invisible to per-card, cost-conditioned pricing.
+
+**The deck-level formula (with this session's `acceleration` + synergy terms) — tested today against
+all three measured pools** (Spearman vs rollout-high): raw ρ=0.80, CURRENT **ρ=0.00**, redesign
+ρ=0.40. On CURRENT it puts Verdant (79.2% actual) and Sapphire (16.7% actual) **2.1 points apart**
+out of ~200, and ranks Radiant #1 by +65 while Radiant plays at 48.6. Systematic bias direction:
+**overvalues reactive stat-power, undervalues engine/tempo power** — precisely the axis separating
+weak-play outcomes from strong-play outcomes. The formula explained the raw pool because raw
+imbalances were additive stat/cost errors; after the patch compressed those, the residual is
+dominated by the dynamics it is worst at.
+
+**Should the power calc be tweaked? Split answer:**
+- **Per-card budget: no.** Keep it as a gross-outlier gate and trim-candidate generator (its two
+  proven wins), never as a verdict or a mandate (its two proven failures).
+- **Deck-level: bounded improvements are possible but must be falsifiable, not fitted.** With only
+  4 decks × 3 measured pools = 12 anchor points, re-weighting to match sims is memorization.
+  Protocol adopted instead: any formula change must **pre-register a prediction** for the next pool
+  variant (e.g. predict the Sapphire-v2-trim panel BEFORE it is run) and is judged on that. Candidate
+  improvements, in evidence order: (i) a *closure/threshold* term (can the deck convert advantage
+  into lethal? — the exact thing §8 changed), (ii) magnitude recalibration of acceleration/synergy
+  (currently ~10% of deckValue; the §8 experiment moved win rate ~51 pp on a ~10% deckValue change),
+  (iii) a skill-reference declaration (the formula predicts *converged-play* value, not
+  weak-play value — Radiant's punish-value is out of scope by definition).
+
+### Bucket D — what no formula of the cards can capture (provable limits)
+
+1. **Skill-conditional value.** The same Radiant deck measures 80.7 / 57.0 / 52.8 / 48.6 as the
+   opponent policy strengthens. Win rate is a property of the *joint policy distribution*, not of
+   the decklist alone; a deck-text formula outputs one number and cannot output the curve. The
+   resolution is a convention, not a formula: we DEFINE balance at converged archetype-blind play
+   (§4's ladder), and §12's decomposition is stated relative to that reference.
+2. **Threshold discontinuities.** §8: a ~10% deckValue change produced a +51.4 pp win-rate change —
+   "can close a game" is a cliff, not a slope. Smooth additive scores cannot represent cliffs; only
+   playing the games finds them.
+3. **Pairwise (matchup) structure.** Best-scalar check on the CURRENT heuristic matrix (Bradley-Terry
+   odds model calibrated on the marginals): residuals up to **±7.9 pp** per cell (Radiant→Verdant
+   44.8 actual vs 52.7 scalar-predicted; Verdant→Sapphire −6.4; Sapphire→Verdant +6.4). Four per-deck
+   scalars mathematically cannot encode six independent pairwise cells; matchup polarization is
+   irreducibly relational. (A pairwise formula could — but fitting it IS measuring the matrix.)
+4. **The integral itself.** Expected win rate is an average over draw orders, mulligans, and
+   trajectory branches. The simulator is that integral's estimator; any static formula is a model of
+   it. "Complexify the formula until it captures everything" converges, literally, to re-implementing
+   the simulator. The practical boundary: formulas screen (cheap, per-card/per-deck, explain WHY),
+   sims verdict (expensive, exact, explain THAT).
+
+### Composition of the 62.5 pp rollout-high spread on CURRENT (pending batch confirmation)
+
+| Component | Size (pp of spread) | Bucket | Status |
+|---|---|---|---|
+| Sapphire's missing win condition | ~33 below par | C (system-level card design) | PROVEN real + fixable (§8: +51 pp); v2 trim staged |
+| Verdant's ramp/snowball engine | ~29 above par (floor: 3 dead cards) | C (system) ± B (energy valve) | Real per all pilots; converged size + valve share pending batch |
+| Radiant / Onyx residuals | ~5–6 combined | C (minor) | Inside/near target; watch |
+| Heuristic-vs-rollout gap (14.3 vs 62.5) | measurement, not balance | A1 | rampPilot A/B quantifies the ramp share |
+| Rules-design residual | ~0 known + 1 open probe | B | denergy probe pending |
+
+### The batch that pins down the pending numbers (run locally, commit `10380ea`+)
+
+All three items are deterministic and runHash-verifiable; nothing here changes any default behavior.
+
+1. **Instrument panel on CURRENT** — pilot A/B + convergence ladder + tighter CIs, one command:
+   `HEUR_RAMP=1 RX_GPP=32 GPP_MATRIX=3000 RL_GPP=96 RH_GPP=48 AETHERION_CARDS=./generated-pools/aetherion-CURRENT.json GAUGE_OUT=./bv-CURRENT-ladder.json node balance-verify.mjs`
+   Reads: heuristic+ramp − heuristic deltas (A1's ramp share); rollout-low/high/max trend for
+   Verdant (converged or still rising); ±5–6 pp rollout CIs.
+2. **Discard-for-energy ablation on CURRENT** (bucket B's open probe):
+   `AETHERION_CARDS=./generated-pools/aetherion-CURRENT.json GPP=2000 node balance-probe-denergy.mjs`
+   Reads: per-faction delta of removing the valve; Verdant's share of it.
+3. *(Optional, remediation not diagnosis)* the Sapphire v2 trim panel once the trim numbers are
+   approved — and per bucket C's new protocol, the deck formula's prediction for it will be
+   pre-registered before the run.
