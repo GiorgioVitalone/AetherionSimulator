@@ -1232,3 +1232,112 @@ governor by un-deadening Verdant cards. Pooled r8+r12 predictions: **Verdant 64�
 **Sapphire 21–28** (from 19.1), Onyx 49–55, Radiant 48–54; spread **40–52** (from 53.7); rank
 order unchanged (V top, S bottom). If Verdant lands BELOW 64 the hero share of its power was
 bigger than assessed; if Sapphire clears 28 the flip fix was bigger than assessed.
+
+### 13f. Hero-tune remeasure — Sapphire fixed by hero work alone; three factions at parity; Verdant is the remainder (2026-07-02)
+
+External batch on **`CURRENT-plus-hero-tune`** (sha256 `44dbb1870ec34b65`), same sizes as §13d
+(GPP_MATRIX=3000, RL=300, RH=200, RX=120), v2 instrument. Provenance, verified without
+re-simulation: the pool re-derives bit-identically to the pre-registered sha (`make-pools.mjs`
+fatal fixture check), the config echo matches the standard, and the run carries the tune's own
+mechanism fingerprints (below: Resurgence presses exactly halved, Singularity presses doubled,
+Bulwark presses tripled, Bloom presses cut to a third) — signatures only the tuned pool can
+produce. **Protocol change from this run on:** full bit-for-bit rung reproduction (the §7/§8
+check) is dropped as disproportionate — it re-spends a rung's full compute to confirm what the
+mechanism diagnostics already pin — and `balance-verify.mjs` now embeds the pool path + sha in
+its header and output JSON, so every future run self-certifies and verification is a read, not a
+re-simulation. Bit-repro stays reserved for runs whose internals look inconsistent (the reported
+rung hashes `9e8abe51fa4e1f18` / `153902d4526f35c9` / `09d68d0720c1fe7b` are on record for any
+future spot-check).
+
+**Prediction scorecard (§13e, judged bound by bound):**
+
+| Pre-registered (pooled r8+r12) | Actual (n=960/faction) | Verdict |
+|---|---|---|
+| Verdant 64–72 | **67.4** [64.4–70.3] | ✓ dead center |
+| Sapphire 21–28 | **44.3** [41.2–47.4] | ✗ over by +16 — the registered clause fires: *the flip fix was bigger than assessed* (much bigger) |
+| Onyx 49–55 | **42.3** [39.2–45.4] | ✗ under by ~7 |
+| Radiant 48–54 | **46.0** [42.9–49.2] | ✗ under by ~2 |
+| Spread 40–52 | **25.1** | ✗ — under half the §13d spread; far better than predicted |
+| Rank unchanged (V top, S bottom) | V top ✓ — but S is 3rd and Onyx bottom | ✗ half |
+
+**Post-mortem — one root miss, the rest is bookkeeping.** Marginals sum to 200 (wins are
+conserved), so Sapphire's +20-over-midpoint had to be paid by someone. The exact pooled cell
+deltas (§13d → here) show who: S gained **uniformly** against every opponent (+25.9 vs O, +25.3
+vs R, +24.4 vs V — the signature of a real power fix, not a matchup artifact), which deleted the
+farm cells that defined every panel since §7 (Onyx-farms-Sapphire 75.0→49.1, Radiant-farms-
+Sapphire 82.8→57.5). Decomposing each marginal (Δmarginal = mean of its three cell Δs):
+**Onyx −12.5 = −8.6 from losing the S farm, −2.5 vs Verdant, −1.4 vs Radiant** (those last two
+are the Resurgence-cd/Plague trim's own bite, ≈ −4 pp); **Radiant −6.3 = −8.4 from losing the S
+farm, +1.4 vs Onyx, +0.8 vs Verdant** — Radiant's own knobs net *positive* head-to-head (the
+Bulwark cheapening outweighed the Valkyrie trim); **Verdant −6.5 = −8.1 from S's fix, +2.5 vs
+the trimmed Onyx, −0.8 vs Radiant**. The O/R "misses" are composition, not new surprises; the S
+bound was the real error, and the pre-registered escape clause names it.
+
+**The headline: three factions now sit at parity; the entire remaining spread is Verdant's
+altitude.** Pack-internal pooled win% (O/R/S among themselves): **Onyx 47.3 / Radiant 55.9 /
+Sapphire 46.7**. Against Verdant: 32.2 / 26.3 / 39.4 — Verdant farms the whole pack at 67.4% and
+is the only faction outside every window. Spread 54.8 → **25.1 pp**.
+
+**Knob-by-knob mechanism audit (r8 detail, §13d → here) — every knob did its mechanical job:**
+- **Sapphire** (Singularity 5→1 cd 2, Convergence cd removed): presses/flip 0.81 → 1.53; **T-win
+  32.6 → 53.4 while N-win 25.4 → 24.7** — only the treated arm moved: the cleanest causal
+  signature this program has produced. The flip is now a genuine wincon (S wins the majority of
+  flipped games at every rollout rung) — worth +20–28 pp of marginal from two knobs on one hero.
+- **Onyx** (Resurgence cd 1→2, Plague 7→9): post-flip presses exactly halved (6.08 → 3.52 per
+  flipped game; #0 total presses 4421 → 2276). T-win 53.4 → 44.3 — the flip no longer out-earns
+  staying normal.
+- **Radiant** (Bulwark 3E/cd3 → 1E/cd1, Valkyrie's cry +3M): Bulwark presses 1.89 → 5.72/game and
+  N-win **71.7 → 71.7, exactly flat** — cheap Bulwark spam does not convert into wins (defensive
+  value without a closer). The Valkyrie trim shows as T-win 38.9 → 32.1.
+- **Verdant** (Bloom Assembly cd 2→6 + 2E): hero presses 3.77 → 1.39 — the governor bit — **and
+  the resource curve moved −0.16** (res@t10 8.11 → 7.95). The battery survives its hero governor.
+- **Grovekeeper fix**: strictly positive at every skill level, as predicted — random-pilot Verdant
+  +5.4 pp with res@t10 8.95 → 9.84 (the X-cost body is a sink converting battery output into
+  stats, and at X=0 it is another free Reserve tapper); random/heuristic Verdant ROSE despite the
+  governor (heuristic +9.5, also fed by Onyx's decline redistributing wins).
+
+**Cross-pilot note:** first panel where heuristic AND all three rollout rungs agree top=Verdant
+(random still says Radiant — the long-documented big-body artifact). The heuristic spread widened
+15.8 → 31.6 for an instrument reason worth recording: heuristic Onyx flips at LP 9.3 and leaned
+on Resurgence spam (6.79 presses/flip in §13d), so the cd knob hit the heuristic pilot hardest —
+heuristic Onyx 33.4 vs rollout 41.0–44.4; heuristic-only reads on Onyx are now biased low.
+Rollouts are the verdict layer, as established in §11.
+
+**Convergence ladder:** Verdant 62.8 → 65.7 → 70.3, still RISING with pilot strength — by §4's
+gate its true strong-play number is not converged: read 67.4 as a floor. Sapphire dips at r12
+(46.8 → 40.0, n=360, CI ±5): direction-consistent with a flip-dependent plan being punished by
+stronger opposition, but within noise — watch, not a verdict.
+
+**Where Verdant's altitude actually lives (why the hero governor couldn't touch it).** The
+compounder is **Biotech Harvest — the Aura**: "at end of your turn, if you gained temporary
+Energy this turn, create a 1/1 Bio-Construct" — and ready Reserve bodies tap +1 temp Energy per
+turn (Rulebook 8.4), so any tap breeds a tapper. The deck feeds the loop from turn 1:
+Bio-Seedling ×3 (0E 0/2 — a FREE Reserve tapper, the only battery piece the corrected formula
+flags, +0.7 over), Sprout ×3 (2E → 1 Sapling), Biomass Surge ×2 (3E → 2 Saplings), Tech Bloom ×2,
+Grovekeeper ×3 as the X-cost sink, and post-flip Symbiotic Expansion pays +2/+2 on every
+temp-resource deploy. Each card prices fairly in isolation — this is a Bucket-D system effect
+(§12): the rate constant of a loop spanning a rule × an aura × token density, invisible to
+per-card pricing by construction. The measurement isolates it cleanly: with the activated half
+governed (presses −63%) the resource curve barely moved, and Verdant still beats every faction
+(67.8 / 73.7 / 60.6 per-cell).
+
+**Queue for the next round (proposals — nothing encoded yet):**
+1. **Verdant, recommended lever: Harvest's effect values** — the aura surface explicitly
+   sanctioned for design edits (thresholds/amounts, never scheduling). E.g. fire on 3+ temp
+   Energy gained this turn (not 1+), or downgrade the created token to 0/1. One edit, aimed at
+   the compounding term itself; the deck untouched.
+2. **Verdant, deck-side alternative/supplement:** Bio-Seedling 0E→1E (removes the free-tapper
+   opening; the one formula-flagged battery piece) ± Sprout 2E→3E (battery payback 2→3 turns;
+   formula-fair, so it would be a documented measurement-driven outlier — the Echoes precedent).
+3. **Onyx: NO give-back**, despite 42.3 looking low — pack-internal 47.3 IS parity; the marginal
+   is depressed by Verdant suppression, not by over-trimming. Any Verdant fix mathematically
+   lifts all three pack marginals. Re-judge after that lands.
+4. **Sapphire §8 avenue: shelve.** The redesign (and its staged v2 trims) addressed "no win
+   condition" — the hero flip fix solved that on the ORIGINAL cards (uniform +25, farm cells
+   gone). Applying the deck buffs now would overshoot exactly as §8 measured; the frozen fixture
+   stays as the record.
+5. **Radiant: leave.** Its knobs measured net-positive head-to-head; pack-internal 55.9 is the
+   pack's top and the first re-center candidate only if a later round needs one.
+
+Prediction discipline holds: whichever Verdant lever is picked gets encoded as a frozen-derived
+candidate (`CURRENT-plus-hero-tune-plus-…`), pre-registered before the next batch.

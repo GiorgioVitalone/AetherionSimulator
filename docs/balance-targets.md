@@ -171,3 +171,22 @@ Heuristic CIs ±~1 pp; rollout CIs ±~8–11 pp (low) / ±~11–12 pp (high).
 **Staged next step (v2 trim, function-preserving, stale discounts first):** Arcane Echoes 1→3 mana; Master Archivist 3→4 mana (keeps the ATK-4 redesign); Arcane Focus Blade 2→3 mana; Arcane Storm reach cap 6→4. Engine cores (Scholar, Adept, Librarian, draw spells) deliberately untouched — they are the archetype. Re-run the panel; if Sapphire still >55%, the engine cores are the next lever.
 
 **Hygiene:** mirror FP +3.0 pp (heuristic) — PASS, third consecutive run on the 17Lands anchor. Decided 96.5% — PASS. Worst cell Sapphire→Onyx 76.4% — FLAG (>70/30). Verdant reads 58.3% at rollout-high *while suppressed by super-Sapphire* — its too-strong verdict from §7 stands and returns to the top of the queue once Sapphire is trimmed.
+
+---
+
+## 9. Verification run — 2026-07-02 (hero-tune pool)
+
+**Method.** Identical protocol and sizes as the §13d v2 baseline (GPP_MATRIX=3000; rollout rungs 300/200/120 gpp; v2 instrument incl. cost floor), on **CURRENT-plus-hero-tune** (sha256 `44dbb1870ec34b65`; regenerate with `node make-pools.mjs`) — the frozen CURRENT + the §13e hero three-window knob tune (9 aura-safe cost/cooldown knobs across all four heroes) + the Grovekeeper 3000 X-cost hand-fix. Provenance verified without re-simulation: pool re-derives bit-identically to the pre-registered sha, config echo matches, and the run carries the tune's mechanism fingerprints (`balance-diagnosis.md` §13f) — from this run on, `balance-verify.mjs` embeds the pool path + sha in its header and output JSON, so runs self-certify (rung hashes on record: `9e8abe51fa4e1f18` / `153902d4526f35c9` / `09d68d0720c1fe7b`).
+
+| Pilot | Games | Radiant | Verdant | Onyx | Sapphire | Parity spread |
+|---|---|---|---|---|---|---|
+| `random` (floor) | 30,000 | 78.0% | 66.3% | 28.7% | 27.0% | 51.0 pp |
+| `heuristic` | 30,000 | 51.3% | 65.0% | 33.4% | 50.3% | 31.6 pp |
+| `rollout` r4/d2/c5 | 3,000 | 49.6% | 62.8% | 41.0% | 46.7% | 21.8 pp |
+| `rollout` r8/d3/c8 | 2,000 | 46.5% | 65.7% | 41.0% | 46.8% | 24.7 pp |
+| `rollout` r12/d3/c8 | 1,200 | 45.3% | 70.3% | 44.4% | 40.0% | 30.3 pp |
+| **pooled r8+r12** (§13d →) | n=960/faction | 52.3 → **46.0%** | 73.9 → **67.4%** | 54.8 → **42.3%** | 19.1 → **44.3%** | 54.8 → **25.1 pp** |
+
+**Result: the hero tune alone halves the strong-play spread and produces the first three-at-parity pack.** Radiant/Onyx/Sapphire land PASS-or-FLAG at every rollout rung and are at parity among themselves (pack-internal 55.9 / 47.3 / 46.7); Sapphire is fixed **without any of its §8 deck changes** (hero flip knobs only: 19.1 → 44.3, uniform ~+25 against every opponent, the farm cells gone). Verdant is the sole FAIL and is **not converged** — still rising with pilot strength (62.8 → 65.7 → 70.3), so read 67.4 as a floor. First panel where heuristic and all rollout rungs agree on the top faction. Full mechanism analysis, prediction scorecard, and next-round queue: `balance-diagnosis.md` **§13f**.
+
+**Hygiene:** mirror FP heuristic +1.6 pp, rollouts +0.7/+2.3/+1.0 — PASS everywhere. Decided **100.0%** on every pilot — PASS (the §13a cost floor keeps the §12c loop class dead at scale). Worst heuristic cell Onyx→Verdant 28.4% — FLAG (just outside 30/70); worst pooled rollout cell Radiant→Verdant 26.3%.
