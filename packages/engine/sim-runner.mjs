@@ -549,6 +549,58 @@ function applyZoneCapacity(gs, frontlineSlots, highGroundSlots) {
 
 // ── Single game ──────────────────────────────────────────────────────────────
 
+// ── Per-game diagnostics (reporting only) ─────────────────────────────────────
+// One post-game walk over the final state's event log. Runs AFTER the game ends
+// and writes only result fields computeRunHash never reads — provably unable to
+// change outcomes or hashes. Powers the per-matchup/per-faction mechanism evidence
+// (§12: win method, transform usage, resource curves, tempo) so verdicts rest on
+// in-game data, not marginal win rates alone.
+function gameDiagnostics(fin, winner, decided, timedOut) {
+  let turn = 0;
+  let active = 0;
+  const resAt = [[0, 0, 0], [0, 0, 0]]; // cumulative RESOURCE_GAINED by turn ≤5 / ≤10 / ≤15
+  const deploys = [0, 0], deploysEarly = [0, 0], spellsEarly = [0, 0], discards = [0, 0];
+  const transformTurn = [null, null];
+  for (const e of fin.log) {
+    switch (e.type) {
+      case 'TURN_START':
+        turn = e.turnNumber; active = e.playerId; break;
+      case 'RESOURCE_GAINED':
+        if (turn <= 5) resAt[e.playerId][0] += e.amount;
+        if (turn <= 10) resAt[e.playerId][1] += e.amount;
+        if (turn <= 15) resAt[e.playerId][2] += e.amount;
+        break;
+      case 'CARD_DEPLOYED':
+        deploys[e.playerId]++; if (turn <= 6) deploysEarly[e.playerId]++; break;
+      case 'SPELL_CAST':
+        if (turn <= 6) spellsEarly[e.playerId]++; break;
+      case 'CARD_DISCARDED':
+        // NOTE: hand-size, effect, and discard-for-energy pitches all share this
+        // event — total discards, not valve uses (the valve has no distinct event).
+        discards[e.playerId]++; break;
+      case 'ABILITY_ACTIVATED':
+        // Hero transform is the only abilityIndex:-1 hero_* activation (see
+        // executeDeclareTransform); it happens on the transformer's own turn.
+        if (e.abilityIndex === -1 && typeof e.cardInstanceId === 'string'
+          && e.cardInstanceId.startsWith('hero_') && transformTurn[active] === null) {
+          transformTurn[active] = turn;
+        }
+        break;
+    }
+  }
+  return {
+    winMethod: timedOut ? (decided ? 'tiebreak' : 'draw') : 'kill',
+    winnerLp: decided ? fin.players[winner].hero.currentLp : null,
+    transformed: [fin.players[0].hero.transformed, fin.players[1].hero.transformed],
+    transformTurn,
+    resAt,
+    deploys,
+    deploysEarly,
+    spellsEarly,
+    discards,
+  };
+}
+
 function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   let gs = createGame(deckA, deckB, registry, seed);
   if (config.abilitiesOn) gs = hydrate(gs);
@@ -766,6 +818,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     spellsCastA,
     spellsCastB,
     spellsCounters,
+    // Post-game diagnostics — computeRunHash never reads this field (hash-exempt).
+    dx: gameDiagnostics(fin, winner, decided, timedOut),
   };
 }
 
@@ -1128,6 +1182,95 @@ function summarize(results, config) {
   const totalCounters = results.reduce((a, r) => a + (r.spellsCounters || 0), 0);
   const reactiveCastsPerGame = +(totalCounters / Math.max(games, 1)).toFixed(3);
 
+  // ── Mechanism diagnostics (reporting only; nothing here is hashed) ──────────
+  // Per ordered matchup cell: enough to judge each pairing on evidence, not just
+  // a marginal — win split, first-player split, length percentiles, HOW games end,
+  // comeback rate (turn-10 leader overturned), victory margin.
+  const cells = {};
+  for (const r of results) {
+    const c = (cells[`${r.fA}|${r.fB}`] ??= {
+      fA: r.fA, fB: r.fB, n: 0, wA: 0, wB: 0, draws: 0,
+      fpDecided: 0, fpWon: 0, turns: [], kill: 0, tiebreak: 0, undecided: 0,
+      snapN: 0, comebacks: 0, winnerLps: [],
+    });
+    c.n++;
+    if (r.winner === 0) c.wA++; else if (r.winner === 1) c.wB++; else c.draws++;
+    if (r.decided) { c.fpDecided++; if (r.firstPlayerWon) c.fpWon++; }
+    c.turns.push(r.turns);
+    const m = r.dx?.winMethod;
+    if (m === 'kill') c.kill++; else if (m === 'tiebreak') c.tiebreak++; else c.undecided++;
+    if (r.decided && (r.leaderAt10 === 0 || r.leaderAt10 === 1)) {
+      c.snapN++; if (r.winner !== r.leaderAt10) c.comebacks++;
+    }
+    if (r.dx && r.dx.winnerLp != null) c.winnerLps.push(r.dx.winnerLp);
+  }
+  const pct1 = (w, n) => +(100 * w / Math.max(n, 1)).toFixed(1);
+  const matchupDetail = {};
+  for (const [k, c] of Object.entries(cells)) {
+    c.turns.sort((a, b) => a - b);
+    const pTurn = (q) => c.turns[Math.min(c.turns.length - 1, Math.floor(q * c.turns.length))] ?? 0;
+    matchupDetail[k] = {
+      fA: c.fA, fB: c.fB, n: c.n, wA: c.wA, wB: c.wB, draws: c.draws,
+      aWinPct: pct1(c.wA, c.wA + c.wB),
+      firstPlayerWinPct: pct1(c.fpWon, c.fpDecided),
+      turnsP: { p25: pTurn(0.25), p50: pTurn(0.5), p75: pTurn(0.75), p90: pTurn(0.9) },
+      winMethod: { kill: c.kill, tiebreak: c.tiebreak, undecided: c.undecided },
+      comeback: { n: c.snapN, overturned: c.comebacks, pct: pct1(c.comebacks, c.snapN) },
+      winnerLpMedian: median(c.winnerLps.sort((a, b) => a - b)),
+    };
+  }
+
+  // Per faction (both seats): the mechanism evidence — transform usage + payoff,
+  // resource-development curve (upkeep + reserve + ramp effects), tempo curve.
+  // `raw` keeps mergeable sums so multi-run drivers can pool without re-deriving.
+  const fdet = {};
+  for (const r of results) {
+    for (const seat of [0, 1]) {
+      const f = seat === 0 ? r.fA : r.fB;
+      const d = (fdet[f] ??= {
+        games: 0, transforms: 0, transformTurnSum: 0, transformTurnN: 0,
+        winsT: 0, decT: 0, winsN: 0, decN: 0,
+        res5: 0, res10: 0, res15: 0, deploys: 0, deploysEarly: 0, spellsEarly: 0, discards: 0,
+      });
+      d.games++;
+      const dx = r.dx;
+      if (!dx) continue;
+      const t = dx.transformed[seat] === true;
+      if (t) {
+        d.transforms++;
+        if (dx.transformTurn[seat] != null) { d.transformTurnSum += dx.transformTurn[seat]; d.transformTurnN++; }
+      }
+      if (r.decided) {
+        const won = r.winner === seat;
+        if (t) { d.decT++; if (won) d.winsT++; }
+        else { d.decN++; if (won) d.winsN++; }
+      }
+      d.res5 += dx.resAt[seat][0]; d.res10 += dx.resAt[seat][1]; d.res15 += dx.resAt[seat][2];
+      d.deploys += dx.deploys[seat]; d.deploysEarly += dx.deploysEarly[seat];
+      d.spellsEarly += dx.spellsEarly[seat]; d.discards += dx.discards[seat];
+    }
+  }
+  const factionDetail = {};
+  for (const [f, d] of Object.entries(fdet)) {
+    factionDetail[f] = {
+      games: d.games,
+      transformPct: pct1(d.transforms, d.games),
+      transformAvgTurn: d.transformTurnN ? +(d.transformTurnSum / d.transformTurnN).toFixed(1) : null,
+      winPctWhenTransformed: d.decT ? pct1(d.winsT, d.decT) : null,
+      winPctWhenNot: d.decN ? pct1(d.winsN, d.decN) : null,
+      resourcesByTurn: {
+        t5: +(d.res5 / d.games).toFixed(2),
+        t10: +(d.res10 / d.games).toFixed(2),
+        t15: +(d.res15 / d.games).toFixed(2),
+      },
+      deploysPerGame: +(d.deploys / d.games).toFixed(2),
+      earlyDeploysPerGame: +(d.deploysEarly / d.games).toFixed(2),
+      earlySpellsPerGame: +(d.spellsEarly / d.games).toFixed(2),
+      discardsPerGame: +(d.discards / d.games).toFixed(2),
+      raw: d,
+    };
+  }
+
   return {
     factionWinPct,
     paritySpread,
@@ -1148,6 +1291,9 @@ function summarize(results, config) {
     // CIs, worst-offender z). Reporting only ⇒ cannot perturb runHash.
     factionCounts: fc,
     stats: summarizeStats(fc),
+    // Mechanism diagnostics (§12) — per-cell + per-faction evidence, hash-exempt.
+    matchupDetail,
+    factionDetail,
     games,
     config,
   };

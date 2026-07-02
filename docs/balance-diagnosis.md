@@ -870,7 +870,8 @@ attack/hold policy, what to do WITH the ramp) — the kind of behavior a local s
 buy. Consequence, adopted as policy: **stop trying to patch the heuristic toward strong play.** Its
 role is cheap relative deltas on like-vs-like comparisons; verdicts come from the rollout ladder.
 
-**A2 — the ladder converged; the §7 extremes were real, slightly noise-inflated.**
+**A2 — the ladder is rank-stable; magnitude convergence is provisional at these n** *(see the
+caveat below — the first version of this section overclaimed "converged")*.
 
 | rung | n/faction | Onyx | Radiant | Sapphire | Verdant | spread |
 |---|---|---|---|---|---|---|
@@ -879,9 +880,14 @@ role is cheap relative deltas on like-vs-like comparisons; verdicts come from th
 | r12 d3 c8 | 96 | 52.1 | 51.0 | 25.0 | 71.9 | 46.9 |
 | **pooled r8+r12** | **240** | **53.3** | **50.4** | **21.7** | **74.6** | **52.9** |
 
-Rank order identical on every rung; r8 and r12 agree within CIs on every faction (§4's convergence
-gate: PASS — these verdicts are now "established"). Converged strong-play truth: **Verdant ~74.6
-[CI ±~5.5] — too strong; Sapphire ~21.7 [±~5.2] — too weak; Onyx ~53.3 and Radiant ~50.4 — healthy.**
+Rank order identical on every rung, and the EXTREME verdicts are CI-robust (Verdant's lower bounds
+clear 57% at r8 and r12; Sapphire's upper bounds clear 43% at every rung) — those two verdicts
+stand at any plausible resolution. **Honest caveat (added after review): the magnitude-convergence
+claim is weaker than first stated** — "r8 and r12 agree within CIs" at n=144/96 means CIs of
+±8–12 pp, wide enough to hide real movement (Verdant 76.4 vs 71.9 is compatible with anything in
+~66–80). Point estimates like "74.6" carry ±~5.5 even pooled. The high-n diagnostic rerun (§12c
+batch: r8 at n≥450, r12 at n≥300, with per-cell mechanism evidence) is what settles magnitudes;
+until then treat the pooled row as the best current estimate, not an established constant.
 Final instrument-bias table (heuristic − converged): Verdant −20.3, Sapphire +21.0, Onyx −7.7,
 Radiant +6.6 — the compression pattern §12 predicted, now quantified.
 
@@ -897,23 +903,28 @@ through pays for it (Sapphire). Verdant neither needs nor abuses it. Net spread 
 remembering when fine-tuning the post-redesign Sapphire (turning the rule off is worth about +4 pp
 of Sapphire at heuristic level, a bigger single lever than most card tweaks).
 
-### 12b. Final composition — every number now measured
+### 12b. Composition — best current estimates (magnitudes provisional pending §12c)
 
-| Component of the ~53 pp converged spread | Size | Bucket | Evidence |
+Sizes below carry ±~5 pp CIs and the A2 caveat; the SIGNS and ranks are CI-robust, the exact
+magnitudes are not yet. The §12c high-n diagnostic rerun replaces this table with tight numbers
+AND per-cell mechanism evidence (the first version of this section presented these point estimates
+as settled — they are estimates).
+
+| Component of the ~53 pp strong-play spread (est.) | Size (est.) | Bucket | Evidence |
 |---|---|---|---|
-| Sapphire: no win condition | **−28.3 pp** below par | C (system-level card design) | all pilots agree; §8 redesign moved it +51 pp — fixable, staged (v2 trim) |
-| Verdant: ramp/snowball engine | **+24.6 pp** above par (a floor — 3 dead Grovekeeper cards) | C (system) | archetype-blind rollout, converged, CI-clear of 57 |
-| Onyx / Radiant residuals | +3.3 / +0.4 pp | C (minor) | inside targets — done |
+| Sapphire: no win condition | **~−28 pp** below par | C (system-level card design) | all pilots agree; §8 redesign moved it +51 pp — fixable, staged (v2 trim) |
+| Verdant: ramp/snowball engine | **~+25 pp** above par (a floor — 3 dead Grovekeeper cards) | C (system) | archetype-blind rollout, rank-stable, CI-clear of 57 at r8+r12 |
+| Onyx / Radiant residuals | ~+3 / ~0 pp | C (minor) | inside targets — watch |
 | Heuristic-vs-rollout gap | measurement only | A1 (plan-level bot bias) | ramp-deploy share measured ≈ 0; compression pattern quantified |
-| Rollout noise/convergence | resolved | A2 | ladder converged, ±5.5 pp CIs |
-| Rules design | ~0 net (denergy ≈ −0.6 pp spread; ±4 pp Sapphire lever) | B | probe measured; big rules wins already banked |
+| Rollout noise/convergence | rank settled; magnitudes ±5 pp | A2 | §12c batch tightens to ±3 pp with mechanism detail |
+| Rules design | ~0 net (denergy ≈ −0.6 pp spread; ±4 pp Sapphire lever) | B | probe measured at 20k games/arm; big rules wins already banked |
 | First-player | 0 (protocol-neutralized; +2.8 pp mirrors, PASS) | B | three consecutive runs on the 17Lands anchor |
 | Data integrity | Verdant understated (unquantified until DB regen) | A3 | Grovekeeper stub ×3 still in deck |
 
 **The §12 question, answered in one line each:**
-- *Measuring error due to pilot imperfection?* — Yes, huge BETWEEN instruments (it compresses 53 pp
-  to 14 pp at heuristic level), now fully quantified per faction; but the verdict instrument (rollout
-  ladder) is converged, so the 53 pp itself is not measurement error.
+- *Measuring error due to pilot imperfection?* — Yes, huge BETWEEN instruments (it compresses ~53 pp
+  to 14 pp at heuristic level), quantified per faction; the verdict instrument (rollout ladder) is
+  rank-stable with CI-robust extremes, magnitudes still ±5 pp pending §12c.
 - *General game rules / setup favoring X?* — No. Every measured rules term is ≤ ~1 pp of net spread
   today (the big rules fixes are already in CURRENT); first-player is healthy; the one suspicious
   rule turned out to be a universal valve with a −4 pp Sapphire side-effect, not a faction subsidy.

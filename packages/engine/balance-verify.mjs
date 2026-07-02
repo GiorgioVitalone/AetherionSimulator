@@ -60,12 +60,52 @@ const pct = x => `${x.toFixed(1)}%`;
 const ci = (w, n) => { const [lo, p, hi] = wilson(w, n); return `${pct(p)} [${pct(lo)}–${pct(hi)}]`; };
 
 // ── Matrix pilots (random, heuristic): per-cell runs give the matrix + marginals ──
+// Merge per-run factionDetail raw sums so the pilot-level mechanism evidence pools
+// across all 10 cell runs (the `raw` block exists exactly for this).
+function mergeFactionDetail(into, fd) {
+  if (!fd) return;
+  for (const [f, det] of Object.entries(fd)) {
+    const d = det.raw;
+    const t = (into[f] ??= {
+      games: 0, transforms: 0, transformTurnSum: 0, transformTurnN: 0,
+      winsT: 0, decT: 0, winsN: 0, decN: 0,
+      res5: 0, res10: 0, res15: 0, deploys: 0, deploysEarly: 0, spellsEarly: 0, discards: 0,
+    });
+    for (const k of Object.keys(t)) t[k] += d[k] || 0;
+  }
+}
+function finishFactionDetail(sums) {
+  const pct1 = (w, n) => +(100 * w / Math.max(n, 1)).toFixed(1);
+  const out = {};
+  for (const [f, d] of Object.entries(sums)) {
+    out[f] = {
+      games: d.games,
+      transformPct: pct1(d.transforms, d.games),
+      transformAvgTurn: d.transformTurnN ? +(d.transformTurnSum / d.transformTurnN).toFixed(1) : null,
+      winPctWhenTransformed: d.decT ? pct1(d.winsT, d.decT) : null,
+      winPctWhenNot: d.decN ? pct1(d.winsN, d.decN) : null,
+      resourcesByTurn: {
+        t5: +(d.res5 / Math.max(d.games, 1)).toFixed(2),
+        t10: +(d.res10 / Math.max(d.games, 1)).toFixed(2),
+        t15: +(d.res15 / Math.max(d.games, 1)).toFixed(2),
+      },
+      deploysPerGame: +(d.deploys / Math.max(d.games, 1)).toFixed(2),
+      earlyDeploysPerGame: +(d.deploysEarly / Math.max(d.games, 1)).toFixed(2),
+      earlySpellsPerGame: +(d.spellsEarly / Math.max(d.games, 1)).toFixed(2),
+      discardsPerGame: +(d.discards / Math.max(d.games, 1)).toFixed(2),
+    };
+  }
+  return out;
+}
+
 async function runMatrixPilot(label, pilotCfg) {
   const counts = Object.fromEntries(FACTIONS.map(f => [f, { w: 0, n: 0 }])); // marginal non-mirror
   const matrix = {}; // matrix[A][B] = {w,n}  (A beats B)
   for (const f of FACTIONS) matrix[f] = {};
   let mirrorFpWon = 0, mirrorDecided = 0;
   let decided = 0, games = 0, timeouts = 0, turnsSum = 0;
+  const matchupDetail = {};
+  const fdSums = {};
 
   for (let i = 0; i < FACTIONS.length; i++) {
     for (let j = i; j < FACTIONS.length; j++) {
@@ -73,6 +113,8 @@ async function runMatrixPilot(label, pilotCfg) {
       const r = await run({ ...BASE, ...pilotCfg, matchups: [{ p0Deck: A, p1Deck: B }], gamesPerPairing: GPP_MATRIX });
       games += r.games; decided += Math.round((r.decidedPct / 100) * r.games);
       timeouts += Math.round((r.timeoutPct / 100) * r.games); turnsSum += r.gameLength.avg * r.games;
+      Object.assign(matchupDetail, r.matchupDetail); // one cell per run; keys never collide
+      mergeFactionDetail(fdSums, r.factionDetail);
       if (i === j) { // mirror: first-player control
         mirrorDecided += Math.round((r.decidedPct / 100) * r.games);
         mirrorFpWon += Math.round((r.mirrorFirstPlayerPct / 100) * Math.round((r.decidedPct / 100) * r.games));
@@ -98,17 +140,23 @@ async function runMatrixPilot(label, pilotCfg) {
   }
   const mirrorFp = mirrorDecided ? 100 * mirrorFpWon / mirrorDecided : 0;
   return { label, kind: 'matrix', marg, spread, matrix, worst, mirrorFp, mirrorDecided,
-    decidedPct: 100 * decided / games, timeoutPct: 100 * timeouts / games, avgTurns: turnsSum / games, games };
+    decidedPct: 100 * decided / games, timeoutPct: 100 * timeouts / games, avgTurns: turnsSum / games, games,
+    matchupDetail, factionDetail: finishFactionDetail(fdSums) };
 }
 
-// ── Aggregate pilots (rollout): single all-pairs run, marginal-only (cells too thin) ──
+// ── Aggregate pilots (rollout): single all-pairs run. Marginals PLUS the full
+// per-cell + per-faction mechanism diagnostics (matchupDetail/factionDetail from
+// summarize) — cells are only "too thin" at smoke sizes; at real GPP they carry
+// the evidence (win split w/ CI, fp split, length percentiles, win method,
+// comeback rate, victory margin, transform/resource/tempo curves). ──
 async function runAggPilot(label, pilotCfg, gpp) {
   const r = await run({ ...BASE, ...pilotCfg, decks: realDecks, matchups: 'all-pairs', gamesPerPairing: gpp });
   const marg = {};
   for (const f of FACTIONS) { const c = r.factionCounts[f] || { w: 0, n: 0 }; marg[f] = { ...c, wilson: wilson(c.w, c.n) }; }
   const wps = FACTIONS.map(f => marg[f].wilson[1]);
   return { label, kind: 'agg', marg, spread: Math.max(...wps) - Math.min(...wps), mirrorFp: r.mirrorFirstPlayerPct,
-    decidedPct: r.decidedPct, timeoutPct: r.timeoutPct, avgTurns: r.gameLength.avg, games: r.games, runHash: r.runHash };
+    decidedPct: r.decidedPct, timeoutPct: r.timeoutPct, avgTurns: r.gameLength.avg, games: r.games, runHash: r.runHash,
+    matchupDetail: r.matchupDetail, factionDetail: r.factionDetail };
 }
 
 // ── Verdict vs docs/balance-targets.md ───────────────────────────────────────
@@ -140,6 +188,28 @@ function report(p) {
     for (const A of FACTIONS) {
       const row = FACTIONS.map(B => { if (A === B) return '   —  '; const c = p.matrix[A][B]; return c && c.n ? (100 * c.w / c.n).toFixed(0).padStart(6) : '   ? '; }).join('');
       lines.push(`    ${A.padEnd(9)}${row}`);
+    }
+  }
+  // Mechanism evidence (per-cell): every pairing judged on data, not marginals.
+  if (p.matchupDetail) {
+    lines.push('  Cells (A vs B): A-win% [nAB], fp-win%, turns p50 (p25–p90), end kill/tb/undec, comeback%, winner-LP med:');
+    for (const d of Object.values(p.matchupDetail)) {
+      const mirror = d.fA === d.fB ? ' (mirror)' : '';
+      lines.push(
+        `    ${d.fA.slice(0, 4)} v ${d.fB.slice(0, 4).padEnd(4)} ${String(d.aWinPct).padStart(5)}% [${d.wA}/${d.wA + d.wB}]  fp ${String(d.firstPlayerWinPct).padStart(5)}%  t ${String(d.turnsP.p50).padStart(3)} (${d.turnsP.p25}–${d.turnsP.p90})  ` +
+        `end ${d.winMethod.kill}/${d.winMethod.tiebreak}/${d.winMethod.undecided}  cb ${String(d.comeback.pct).padStart(5)}%  lp ${d.winnerLpMedian}${mirror}`,
+      );
+    }
+  }
+  if (p.factionDetail) {
+    lines.push('  Faction mechanisms: transform% @avg-turn (win% T vs N) | res t5/t10/t15 | deploys (early) | early spells | discards:');
+    for (const f of FACTIONS) {
+      const d = p.factionDetail[f];
+      if (!d) continue;
+      lines.push(
+        `    ${f.padEnd(9)} ${String(d.transformPct).padStart(5)}% @${d.transformAvgTurn ?? '—'} (${d.winPctWhenTransformed ?? '—'} vs ${d.winPctWhenNot ?? '—'}) | ` +
+        `${d.resourcesByTurn.t5}/${d.resourcesByTurn.t10}/${d.resourcesByTurn.t15} | ${d.deploysPerGame} (${d.earlyDeploysPerGame}) | ${d.earlySpellsPerGame} | ${d.discardsPerGame}`,
+      );
     }
   }
   return lines.join('\n');
