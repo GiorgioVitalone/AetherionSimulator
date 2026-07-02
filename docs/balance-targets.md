@@ -120,3 +120,33 @@ Heuristic CIs are tight (±~1.5 pp); rollout CIs are wide (±~12–18 pp, small 
 **Confidence by faction.** *High* on the extremes — **Radiant is overpowered** and **Sapphire is weakest** under **every** pilot. *Medium* on the middle: **Verdant** looks mediocre under the heuristic (43%) but ties Radiant at the top (73%) under the rollout — the classic **under-piloted-faction** effect (the heuristic doesn't pilot Verdant's plan well; outcome-driven search does), so Verdant is plausibly *also* top-tier and its true rank is unsettled pending a larger rollout. **Onyx** is weak-to-mid.
 
 **Headline.** The starter pool is severely imbalanced — roughly **Radiant (/Verdant) ≫ Onyx ≫ Sapphire** — with a parity spread ~7–13× the target and multiple near-unwinnable matchups. **Turn order is not the culprit** (first-player advantage is healthy at ~+2.6 pp); raw faction power is. Next step is balance work on the decks/cards, then re-run this exact (deterministic) panel after each change to watch the spread close toward ≤6 pp.
+
+---
+
+## 7. Verification run — 2026-07-02 (post-patch, CURRENT pool)
+
+**Method.** Same protocol as §6, on the **CURRENT** pool — the narrow (0.6-window) budget patch (30 edits) + all hero LP flattened to 30 — regenerate with `node make-pools.mjs`, sha256 `6928b4ab3b7ef915`. Two rules changes now in the standard `BASE`: `armFirstInstanceOnly` and `terminationMode: 'resource_deck_empty_transform'`. Sizes: `GPP_MATRIX=3000` (30,000 games per matrix pilot), `RL_GPP=48`, `RH_GPP=24`. Run executed on external hardware; **cross-verified** by reproducing the rollout-low leg in a clean environment against the sha-verified pool — `runHash 3c016733bc4145cb` matched bit-for-bit.
+
+| Pilot | Games | Radiant | Verdant | Onyx | Sapphire | Parity spread |
+|---|---|---|---|---|---|---|
+| `random` (floor) | 30,000 | 80.7% | 61.0% | 31.7% | 26.7% | 54.0 pp |
+| `heuristic` | 30,000 | 57.0% | 54.3% | 45.6% | 42.7% | **14.3 pp** |
+| `rollout` r4/d2/c5 | 480 | 52.8% | 65.3% | 56.3% | 25.7% | 39.6 pp |
+| `rollout` r8/d3/c8 | 240 | 48.6% | **79.2%** | 55.6% | **16.7%** | 62.5 pp |
+
+Heuristic CIs ±~1 pp; rollout CIs ±~8–11 pp (low) / ±~11–12 pp (high).
+
+**Result: two factions fixed, two confirmed broken — in opposite directions.**
+
+| vs §6 (raw pool) | §6 rollout-high | Now | Verdict |
+|---|---|---|---|
+| Radiant | 73.3% | 48.6% | **fixed** — falls monotonically with pilot strength (80.7→57.0→52.8→48.6); its residual edge only punishes weak play |
+| Onyx | 40.0% | 55.6% | **fixed** — stable ~56 at both rollout budgets, watch |
+| Sapphire | 13.3% | 16.7% | **still FAIL (too weak)** — last under all four pilots; both rollout CI upper bounds (33.4, 26.9) clear the 43% fail line. The "no win condition" diagnosis; the Sapphire redesign pool is the staged fix |
+| Verdant | 73.3% | 79.2% | **FAIL (too strong)** — first at both rollout budgets with CI lower bounds (57.2, 68.4) clearing 57%; **rising** with budget, so not converged: read as "≥ ~65, possibly worse" |
+
+**Hygiene:** mirror first-player edge **+2.8 pp** (heuristic, 11.5k mirror games) — PASS, again matching the 17Lands +2.7 anchor. Decided 95.9% — PASS (17.7% hit the turn cap, tiebroken). Worst heuristic cell Radiant→Sapphire 67.8% — inside 70/30, watch. At *random* play the mirror first-mover edge is +8.75 pp — the rules reward going first heavily under bad play; competent play erases it (rollout mirrors +1.6).
+
+**Two caveats on Verdant.** (1) The heuristic-vs-rollout gap (54.3 vs 65–79) confirms the heuristic under-pilots ramp — but the rollout has no archetype prior, so Verdant's strength is *real*, needing card nerfs, not just a better bot. (2) Verdant posts these numbers with **3 dead cards** — Grovekeeper 3000 ×3 is a broken all-zero entry in the committed fixture (X-cost design never made it into the data; DB regeneration pending). Its true strength is a **floor**.
+
+**Headline.** The budget patch + LP-30 + two rules changes cut the heuristic spread 44.5 → 14.3 pp and fixed Radiant and Onyx under strong play. Remaining work, in evidence order: apply the Sapphire redesign (worst FAIL), regenerate the fixture from the DB (Grovekeeper), then nerf Verdant — re-running this exact panel after each step.
