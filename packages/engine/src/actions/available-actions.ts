@@ -457,7 +457,8 @@ function allTraits(card: CardInstance): readonly Trait[] {
 
 function computeCanDiscardForEnergy(player: PlayerState, state: GameState): boolean {
   // Rule-ablation probe (diagnostic): measures the rule's balance contribution.
-  // Energy only pays Energy costs, so in this pool the valve is Verdant-only.
+  // The grant matches the pitched card's resource type (see executeDiscardForEnergy),
+  // so the valve is universal — measured as a reach/aggro subsidy, not faction-bound.
   if (state.config?.disableDiscardForEnergy === true) return false;
   return player.hand.length > 0 && !state.turnState.discardedForEnergy;
 }

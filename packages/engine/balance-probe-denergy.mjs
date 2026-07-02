@@ -1,12 +1,13 @@
 // balance-probe-denergy.mjs — measure the discard_for_energy rule's contribution
 // to faction balance (§12 bucket B: rules-design causes).
 //
-// The rule is nominally universal (any player may pitch a hand card for +1
-// temporary Energy once per turn), but Energy only pays Energy costs and Verdant
-// is the pool's only Energy faction — so in practice it is a Verdant-only
-// conversion valve. This runs the standard heuristic panel twice, identical in
-// every way except config.disableDiscardForEnergy, and prints the per-faction
-// delta. The delta IS the rule's measured balance contribution at heuristic level.
+// NOTE the action is misnamed: the grant MATCHES the pitched card's resource type
+// (Mana if Magic-aligned, Energy if Tech-aligned — Rulebook 11), so the valve is
+// universal, not Energy-faction-bound. Measured at 20k games/arm (§12a): it is a
+// surprise-tempo subsidy — Onyx +2.9 pp, Radiant +1.3, Sapphire −4.0, Verdant
+// −0.3 (null). This runs the standard heuristic panel twice, identical in every
+// way except config.disableDiscardForEnergy, and prints the per-faction delta.
+// The delta IS the rule's measured balance contribution at heuristic level.
 //
 // Usage: AETHERION_CARDS=./generated-pools/aetherion-CURRENT.json \
 //        [GPP=1500] [WORKERS=cores] node balance-probe-denergy.mjs
@@ -56,7 +57,7 @@ const withoutRule = await runSimParallel({ ...BASE, disableDiscardForEnergy: tru
 console.log(`B (rule OFF, ablated) : runHash ${withoutRule.runHash}  ${JSON.stringify(marg(withoutRule))}`);
 
 const a = marg(withRule), b = marg(withoutRule);
-console.log('\nDelta (OFF − ON) — the rule\'s contribution, positive = rule was HELPING that faction:');
+console.log('\nDelta (ON − OFF) — the rule\'s contribution, positive = rule was HELPING that faction:');
 for (const f of FACTIONS) console.log(`  ${f.padEnd(9)} ${(a[f] - b[f]) >= 0 ? '+' : ''}${(a[f] - b[f]).toFixed(2)} pp  (${a[f]} → ${b[f]})`);
 const spread = (m) => Math.max(...FACTIONS.map((f) => m[f])) - Math.min(...FACTIONS.map((f) => m[f]));
 console.log(`  spread: ${spread(a).toFixed(2)} → ${spread(b).toFixed(2)} pp`);

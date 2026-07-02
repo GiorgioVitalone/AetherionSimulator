@@ -4,8 +4,8 @@
  *     in-game analogue of computeDeckValue's `acceleration` term, closing the
  *     cost-free per-card score's structural blindness to the ramp archetype.
  *   - disableDiscardForEnergy (rule-ablation probe): removes the discard_for_energy
- *     action so its balance contribution is measurable (universal rule, but Energy
- *     only pays Energy costs — a de-facto Verdant-only valve in this pool).
+ *     action so its balance contribution is measurable (the grant matches the
+ *     pitched card's resource type — a universal tempo valve, per Rulebook 11).
  * Both follow the established contract: absent/false ⇒ byte-identical no-op.
  */
 import { describe, it, expect, beforeEach } from 'vitest';

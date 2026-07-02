@@ -288,13 +288,15 @@ export interface GameConfig {
    * (src/bot/*); the engine's resolution path never consults it, so it cannot affect
    * any runHash on its own. Absent/false ⇒ byte-identical no-op. */
   readonly rampPilot?: boolean;
-  /** RULE ABLATION PROBE (default absent/false ⇒ engine-default: any player may
-   * discard a hand card for +1 temporary Energy once per turn). When true, the
-   * `discard_for_energy` action is never offered. Exists to MEASURE the rule's
-   * contribution to faction balance: the rule is nominally universal, but Energy
-   * only pays Energy costs and Verdant is the pool's only Energy faction — so in
-   * practice it is a Verdant-only conversion valve. Diagnostic, not a proposed
-   * rules change. Absent/false ⇒ byte-identical no-op. */
+  /** RULE ABLATION PROBE (default absent/false ⇒ engine-default: any player may,
+   * once per turn, discard a hand card for +1 temporary resource MATCHING the
+   * card's type — Mana if Magic-aligned, Energy if Tech-aligned, per Rulebook 11;
+   * the action's name understates it). When true, the `discard_for_energy` action
+   * is never offered. Exists to MEASURE the rule's contribution to faction
+   * balance. Measured (§12a, 20k games/arm): a universal surprise-tempo valve —
+   * props reach/aggro finishers (Onyx +2.9 pp, Radiant +1.3), suppresses the
+   * long-game counter deck (Sapphire −4.0), null on Verdant (−0.3). Diagnostic,
+   * not a proposed rules change. Absent/false ⇒ byte-identical no-op. */
   readonly disableDiscardForEnergy?: boolean;
 }
 

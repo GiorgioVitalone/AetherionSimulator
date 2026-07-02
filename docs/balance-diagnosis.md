@@ -763,10 +763,12 @@ converges; its EXTREMES (Sapphire floor, Verdant ceiling) are already agreed by 
 - **Already banked into CURRENT:** hero-LP flatten (was −6.6 pp of spread), resource-deck-empty
   transform gate (−5.0), ARM-first-instance (−0.7), discard hygiene (`exileDiscardForEnergy`,
   `reachDiscard` — §11a–c). Historic rules levers beyond these were small or backfired (§3 Layer A).
-- **One open rules asymmetry, now instrumented:** `discard_for_energy` is universal in name but
-  Energy only pays Energy costs and Verdant is the pool's only Energy faction — a de-facto
-  Verdant-only conversion valve. Probe: `balance-probe-denergy.mjs` (identical config except the
-  ablation bit; arm-A runHash reproduces the standard reference exactly). Pending: the batch.
+- **One open rules asymmetry, now instrumented:** `discard_for_energy` — hypothesized here as a
+  de-facto Verdant-only valve ("Energy only pays Energy costs"). **That premise was wrong**: the
+  executor grants a resource *matching the pitched card's type* (Rulebook 11 — the action's name
+  understates it), so the valve is universal. The probe measured what it actually does — see §12a.
+  Probe: `balance-probe-denergy.mjs` (identical config except the ablation bit; arm-A runHash
+  reproduces the standard reference exactly).
 - **Defender-forcing (deliberately NOT re-probed):** §3C measured ablating it at −15.7 pp in the
   raw era, but post-patch Radiant is ~50 under strong play — the mechanic inflates Radiant only
   against weak play (a bucket-D skill-conditional effect, not a rules defect to fix). Nerfing it
@@ -852,3 +854,74 @@ All three items are deterministic and runHash-verifiable; nothing here changes a
 3. *(Optional, remediation not diagnosis)* the Sapphire v2 trim panel once the trim numbers are
    approved — and per bucket C's new protocol, the deck formula's prediction for it will be
    pre-registered before the run.
+
+### 12a. Batch results — the pending numbers, measured (2026-07-02)
+
+Batch run externally on commit `fe456cd` tooling (ladder: `HEUR_RAMP=1 RX_GPP=32 GPP_MATRIX=3000
+RL_GPP=96 RH_GPP=48`; probe: `GPP=2000`), both on the sha-verified CURRENT pool. The ladder's
+random and heuristic legs reproduce §7's marginals exactly (same seeds — internal re-validation).
+
+**A1 — the ramp-deploy hypothesis is REFUTED (a clean null).** `heuristic+ramp` vs `heuristic`
+on identical seeds flipped **2 games out of 30,000** (Verdant 54.28 → 54.31, +0.02 pp; every other
+cell byte-identical or ±1 game). The heuristic's ~20 pp Verdant underrating is NOT a deploy-ranking
+failure: Verdant's ramp bodies were already being deployed (they have deployable stats; the bonus
+of ≤ ~2.8 rarely reorders anything). The remaining instrument bias is plan-level (sequencing,
+attack/hold policy, what to do WITH the ramp) — the kind of behavior a local scoring bonus cannot
+buy. Consequence, adopted as policy: **stop trying to patch the heuristic toward strong play.** Its
+role is cheap relative deltas on like-vs-like comparisons; verdicts come from the rollout ladder.
+
+**A2 — the ladder converged; the §7 extremes were real, slightly noise-inflated.**
+
+| rung | n/faction | Onyx | Radiant | Sapphire | Verdant | spread |
+|---|---|---|---|---|---|---|
+| r4 d2 c5 | 288 | 57.3 | 54.5 | 22.2 | 66.0 | 43.7 |
+| r8 d3 c8 | 144 | 54.2 | 50.0 | 19.4 | 76.4 | 56.9 |
+| r12 d3 c8 | 96 | 52.1 | 51.0 | 25.0 | 71.9 | 46.9 |
+| **pooled r8+r12** | **240** | **53.3** | **50.4** | **21.7** | **74.6** | **52.9** |
+
+Rank order identical on every rung; r8 and r12 agree within CIs on every faction (§4's convergence
+gate: PASS — these verdicts are now "established"). Converged strong-play truth: **Verdant ~74.6
+[CI ±~5.5] — too strong; Sapphire ~21.7 [±~5.2] — too weak; Onyx ~53.3 and Radiant ~50.4 — healthy.**
+Final instrument-bias table (heuristic − converged): Verdant −20.3, Sapphire +21.0, Onyx −7.7,
+Radiant +6.6 — the compression pattern §12 predicted, now quantified.
+
+**B — the discard-for-energy result, with the corrected mechanism.** 20k games/arm; removing the
+rule moves (ON→OFF): Onyx 44.66→41.81 (**the rule helps Onyx +2.85 pp**), Radiant 58.23→56.98
+(+1.25), Sapphire 42.42→46.40 (**the rule HURTS Sapphire −3.98 pp**), Verdant 54.37→54.71 (−0.34,
+null). Root cause of the wrong hypothesis: the action is misnamed — `executeDiscardForEnergy`
+grants +1 of the pitched card's OWN resource type (Rulebook 11), so every faction can use it. What
+it actually is: a **universal surprise-tempo valve** — reach/aggro finishers convert the once-per-
+turn +1 into extra lethal pushes (Onyx, Radiant), and the deck that wants long games and gets burst
+through pays for it (Sapphire). Verdant neither needs nor abuses it. Net spread effect ≈ −0.6 pp
+(15.8 → 15.2): **not a spread cause**, but a real ~4 pp lever on Sapphire specifically — worth
+remembering when fine-tuning the post-redesign Sapphire (turning the rule off is worth about +4 pp
+of Sapphire at heuristic level, a bigger single lever than most card tweaks).
+
+### 12b. Final composition — every number now measured
+
+| Component of the ~53 pp converged spread | Size | Bucket | Evidence |
+|---|---|---|---|
+| Sapphire: no win condition | **−28.3 pp** below par | C (system-level card design) | all pilots agree; §8 redesign moved it +51 pp — fixable, staged (v2 trim) |
+| Verdant: ramp/snowball engine | **+24.6 pp** above par (a floor — 3 dead Grovekeeper cards) | C (system) | archetype-blind rollout, converged, CI-clear of 57 |
+| Onyx / Radiant residuals | +3.3 / +0.4 pp | C (minor) | inside targets — done |
+| Heuristic-vs-rollout gap | measurement only | A1 (plan-level bot bias) | ramp-deploy share measured ≈ 0; compression pattern quantified |
+| Rollout noise/convergence | resolved | A2 | ladder converged, ±5.5 pp CIs |
+| Rules design | ~0 net (denergy ≈ −0.6 pp spread; ±4 pp Sapphire lever) | B | probe measured; big rules wins already banked |
+| First-player | 0 (protocol-neutralized; +2.8 pp mirrors, PASS) | B | three consecutive runs on the 17Lands anchor |
+| Data integrity | Verdant understated (unquantified until DB regen) | A3 | Grovekeeper stub ×3 still in deck |
+
+**The §12 question, answered in one line each:**
+- *Measuring error due to pilot imperfection?* — Yes, huge BETWEEN instruments (it compresses 53 pp
+  to 14 pp at heuristic level), now fully quantified per faction; but the verdict instrument (rollout
+  ladder) is converged, so the 53 pp itself is not measurement error.
+- *General game rules / setup favoring X?* — No. Every measured rules term is ≤ ~1 pp of net spread
+  today (the big rules fixes are already in CURRENT); first-player is healthy; the one suspicious
+  rule turned out to be a universal valve with a −4 pp Sapphire side-effect, not a faction subsidy.
+- *Card balance the power calc should catch?* — The additive part, yes — and it already did (patch:
+  44.5 → 14.3 heuristic, Radiant/Onyx fixed). The remaining 53 pp is TWO system-level design gaps
+  (Sapphire lacks closure, Verdant's engine compounds) that per-card budgets provably pass (§8) and
+  the deck formula currently misranks (ρ=0.00 on CURRENT). Tweak policy: per-card budget stays a
+  gate/generator; deck-formula changes only under pre-registered prediction (first test: Sapphire v2).
+- *Something no formula can capture?* — Yes, four proven limits (skill-conditional value, closure
+  cliffs, pairwise matchup structure, the trajectory integral) — which is exactly why the pipeline is
+  formula-screens → sim-verdicts, and why the rollout ladder, not a richer formula, is the arbiter.
