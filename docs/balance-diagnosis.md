@@ -908,7 +908,9 @@ of Sapphire at heuristic level, a bigger single lever than most card tweaks).
 Sizes below carry ±~5 pp CIs and the A2 caveat; the SIGNS and ranks are CI-robust, the exact
 magnitudes are not yet. The §12c high-n diagnostic rerun replaces this table with tight numbers
 AND per-cell mechanism evidence (the first version of this section presented these point estimates
-as settled — they are estimates).
+as settled — they are estimates). **→ §12c has since run: measured values are Verdant 73.4
+[70.6–76.2], Sapphire 19.7 [17.3–22.3], Onyx 54.8, Radiant 52.1 (Sapphire-subsidized) — read §12c
+for the final numbers and the two new findings (the Radiant subsidy, the Echoes×Robe loop).**
 
 | Component of the ~53 pp strong-play spread (est.) | Size (est.) | Bucket | Evidence |
 |---|---|---|---|
@@ -936,3 +938,69 @@ as settled — they are estimates).
 - *Something no formula can capture?* — Yes, four proven limits (skill-conditional value, closure
   cliffs, pairwise matchup structure, the trajectory integral) — which is exactly why the pipeline is
   formula-screens → sim-verdicts, and why the rollout ladder, not a richer formula, is the arbiter.
+
+### 12c. High-n mechanism run — magnitudes settled, one degenerate combo found (2026-07-02)
+
+The §12b "provisional" caveats are now resolved by the high-n run (rollout n/faction: 900 / 600 /
+360; 100–300 games per matchup CELL; full mechanism diagnostics from commit `d3a8412`'s reporting
+layer). Random/heuristic legs reproduce §7 byte-for-byte (same seeds).
+
+**Magnitudes (pooled r8+r12, n=960/faction):** Verdant **73.4 [70.6–76.2]**, Onyx **54.8
+[51.6–57.9]**, Radiant **52.1 [48.9–55.2]**, Sapphire **19.7 [17.3–22.3]** — true strong-play
+spread **~53.7 pp**. Convergence, properly: Verdant genuinely RISES r4→r8 (67.2 vs 74.3, CIs
+disjoint — the low-budget rollout underrates ramp), then r8→r12 is flat (74.3 vs 71.9, CIs nested).
+Sapphire is flat across all three rungs. The §12b estimates survived (+/−1.5 pp) — now they are
+measurements.
+
+**The subsidy finding (new — only visible with per-cell rollout data).** Radiant's "healthy" 52%
+is **Sapphire-subsidized**: it farms Sapphire at 82% while losing 20–29% to Verdant. Excluding all
+Sapphire cells, the 3-faction field reads **Verdant 69.3 / Onyx 44.0 / Radiant 36.8**. Every
+faction feasts on Sapphire (70–84% cells), so fixing Sapphire will DROP everyone else's marginal,
+Radiant's most. **Pre-registered matrix-carryover prediction for the post-Sapphire-fix panel**
+(assumes non-Sapphire cells hold, as §8 demonstrated for matrix pilots): Verdant ~65, Sapphire ~50
+(by construction if the fix lands), Onyx ~46, Radiant ~41. If that run shows Radiant near 41,
+"Radiant is fine" was an artifact of a broken opponent — judge the prediction then.
+
+**Mechanism evidence (per-faction detail, rollout rungs, stable across r4/r8/r12):**
+- *Verdant's engine is real and visible*: resource development 3.2 / 8.1 / 13.9 by turns 5/10/15 —
+  **+41% over Radiant/Sapphire at turn 10** and the gap widens; highest early deploys (2.4/game vs
+  Sapphire's 0.94). And the compounding signature: when Radiant LEADS Verdant at turn 10, Verdant
+  still wins **57–60%** of those games (the only cells where the turn-10 leader is a favorite to
+  LOSE, consistent on every rung) — early leads do not stick against ramp payoff.
+- *Sapphire is dominated, not "close but can't close"*: lowest early development, longest games,
+  and 100% of its rollout losses are KILLS with the winner at median 19–26 of 30 LP — opponents
+  finish barely scratched. It also transforms the MOST (79–81%) and LATEST (turn ~33) with the
+  worst transformed win rate (~33%) — the hero flip is not a comeback mechanism for it.
+- *Transform system, generally*: transformed win rates run far below untransformed for
+  Radiant/Verdant (~38–50 vs ~72–84) — mostly selection bias (transform triggers when losing or
+  late), but the design-relevant read is that transformed sides RESCUE almost nobody: no faction
+  except arguably Onyx (T 51–55% vs N 48–60%) converts the flip into wins.
+- *First-player, resolved*: rollout mirror FP = 50.6 / 54.0 / 50.6 across rungs — the earlier
+  58.9/64.6 readings were small-n noise, as suspected. One watch item: Onyx mirrors pooled ~62%
+  FP (n≈620) — the grindy Onyx mirror rewards initiative.
+
+**The degenerate combo (found BY the new reporting, then verified by hand).** The heuristic
+Sapphire row showed an impossible `earlySpellsPerGame: 344.87`. Traced: ~7–9% of every
+Sapphire-involving heuristic cell (205–490 games per cell) ends as a step-cap abort with **up to
+7,990 casts of Arcane Echoes in one game** (worst case: turn 4). Verified causal chain, each link
+checked in a captured game:
+1. The §7 budget patch mechanically cut **Arcane Echoes 5 → 1 mana** (under-budget "buff" lever).
+2. **Wizard's Robe** ("Arcane spells you cast cost 1 less Mana") has **no minimum-1 floor** — the
+   designers DID floor Lyria's own discount ("minimum 1"), the Robe just predates the danger.
+3. Echoes' effect (`copy_card` from discard, filter Arcane spell) can select **itself**; the copy
+   preserves cost 1 + the Arcane tag (verified on a live copy: `{mana:1}, isToken, tags:[Arcane]`).
+4. Robe in play ⇒ the copy casts for **0** ⇒ cast → recopy → cast… until the 8,000-step cap voids
+   the game as an undecided draw.
+Impact: heuristic-only (the rollout does not take the bait — looping never wins a playout — so all
+rollout verdicts are clean). It voids ~7–9% of Sapphire's heuristic games (inflating `timeoutPct`
+17.7%, shortening measured p25 lengths to 11–17, and explaining §11f's "Sapphire sims ~10× slower"
+note). **Fixes, pending approval (CURRENT stays byte-frozen until then):** (a) next pool revision
+reverts Echoes toward 3 mana — already the §8 v2-trim number; (b) card-design fix: Robe needs
+"minimum 1" like Lyria's; (c) systemic: `applyEdits` should run the balance core's EXISTING
+loop-detector (`detectCardLoops`) on the post-edit pool and veto/flag any edit that creates a loop
+risk — §11f's "don't auto-buff blind-spot spells" warning now has its concrete catastrophe.
+
+**Bottom line vs §12b:** composition unchanged in shape, now measured: Sapphire **−30.3 pp** below
+par and Verdant **+23.4 pp** above par ARE the spread; Onyx +4.8 (watch), Radiant +2.1 — but
+Radiant's number is Sapphire-subsidized and will fall when Sapphire is fixed. Plus one pool defect
+(Echoes×Robe loop) to remove in the next revision.
