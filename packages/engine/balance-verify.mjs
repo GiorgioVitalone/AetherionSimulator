@@ -39,6 +39,19 @@ const RL_GPP = +(process.env.RL_GPP || 16);
 const RH_GPP = +(process.env.RH_GPP || 8);
 const RX_GPP = +(process.env.RX_GPP || 0); // >0 adds a 3rd rollout rung (r12 d3 c8)
 const SKIP_ROLLOUT = process.env.SKIP_ROLLOUT === '1';
+// FOCUS=<faction>: run ONLY that faction's pairings (3 cross + mirror). For a
+// candidate pool that edits a single faction's cards, the other six pairings are
+// byte-identical replays of the reference panel (game seeds are a pure function
+// of (seedBase, pairing, game) and those games never instantiate the edited
+// cards — proven empirically in §13g), so this buys the SAME n on every
+// informative cell at ~40% of the compute. Non-focus marginals then contain
+// vs-FOCUS games only — reconstruct full marginals by combining with the
+// reference panel's unchanged pack-internal counts. Cross-pilot gate is skipped.
+const FOCUS = process.env.FOCUS || '';
+if (FOCUS && !FACTIONS.includes(FOCUS)) {
+  console.error(`FOCUS must be one of: ${FACTIONS.join(', ')}`);
+  process.exit(1);
+}
 const OUT = process.env.GAUGE_OUT || '/tmp/balance-verify-result.json';
 // Parallel is byte-identical to serial (proven via runHash — see sim-parallel.mjs),
 // so this is a pure speedup and every number/verdict below is unchanged. WORKERS=1
@@ -140,6 +153,7 @@ async function runMatrixPilot(label, pilotCfg) {
   for (let i = 0; i < FACTIONS.length; i++) {
     for (let j = i; j < FACTIONS.length; j++) {
       const A = FACTIONS[i], B = FACTIONS[j];
+      if (FOCUS && A !== FOCUS && B !== FOCUS) continue;
       const r = await run({ ...BASE, ...pilotCfg, matchups: [{ p0Deck: A, p1Deck: B }], gamesPerPairing: GPP_MATRIX });
       games += r.games; decided += Math.round((r.decidedPct / 100) * r.games);
       timeouts += Math.round((r.timeoutPct / 100) * r.games); turnsSum += r.gameLength.avg * r.games;
@@ -180,7 +194,11 @@ async function runMatrixPilot(label, pilotCfg) {
 // the evidence (win split w/ CI, fp split, length percentiles, win method,
 // comeback rate, victory margin, transform/resource/tempo curves). ──
 async function runAggPilot(label, pilotCfg, gpp) {
-  const r = await run({ ...BASE, ...pilotCfg, decks: realDecks, matchups: 'all-pairs', gamesPerPairing: gpp });
+  // FOCUS: explicit pairing list instead of all-pairs. Pairing indices differ
+  // from an all-pairs run, so focus cells are statistically (not byte-)
+  // comparable with previous full panels — same sizes, different seeds.
+  const matchups = FOCUS ? FACTIONS.map((f) => ({ p0Deck: FOCUS, p1Deck: f })) : 'all-pairs';
+  const r = await run({ ...BASE, ...pilotCfg, decks: realDecks, matchups, gamesPerPairing: gpp });
   const marg = {};
   for (const f of FACTIONS) { const c = r.factionCounts[f] || { w: 0, n: 0 }; marg[f] = { ...c, wilson: wilson(c.w, c.n) }; }
   const wps = FACTIONS.map(f => marg[f].wilson[1]);
@@ -255,8 +273,9 @@ function report(p) {
 }
 
 // ── Run the panel ────────────────────────────────────────────────────────────
-console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}`);
+console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}${FOCUS ? `  FOCUS=${FOCUS}` : ''}`);
 console.log(`Pool: ${POOL_PATH}  sha256/16 ${POOL_SHA}`);
+if (FOCUS) console.log(`FOCUS mode: only ${FOCUS}-involving pairings run — non-${FOCUS} marginals/grades are vs-${FOCUS} cells only; combine with the reference panel's pack-internal counts for full marginals.`);
 // exileDiscardForEnergy is a RULE toggle (discard_for_energy exiles instead of
 // binning) — applies to every pilot. reachDiscard/valuePilot are HEURISTIC bot
 // policies (read only by that policy — see sim-runner.mjs), so only the
@@ -293,11 +312,15 @@ if (!SKIP_ROLLOUT) {
 }
 
 // ── Cross-pilot agreement (the validity gate) ────────────────────────────────
-const top = p => FACTIONS.map(f => [f, p.marg[f].wilson[1]]).sort((a, b) => b[1] - a[1])[0];
-console.log('\n══ CROSS-PILOT AGREEMENT (validity gate) ══');
-for (const p of pilots) { const [tf, tw] = top(p); console.log(`  ${p.label.padEnd(24)} top=${tf} ${pct(tw)}  spread ${pct(p.spread)}`); }
-const tops = new Set(pilots.map(p => top(p)[0]));
-console.log(`  → pilots agree on #1 faction: ${tops.size === 1 ? 'YES (' + [...tops][0] + ')' : 'NO — ' + [...tops].join('/') + ' (measurement-limited where they disagree)'}`);
+if (FOCUS) {
+  console.log(`\n(cross-pilot agreement gate skipped in FOCUS mode — non-${FOCUS} marginals are partial)`);
+} else {
+  const top = p => FACTIONS.map(f => [f, p.marg[f].wilson[1]]).sort((a, b) => b[1] - a[1])[0];
+  console.log('\n══ CROSS-PILOT AGREEMENT (validity gate) ══');
+  for (const p of pilots) { const [tf, tw] = top(p); console.log(`  ${p.label.padEnd(24)} top=${tf} ${pct(tw)}  spread ${pct(p.spread)}`); }
+  const tops = new Set(pilots.map(p => top(p)[0]));
+  console.log(`  → pilots agree on #1 faction: ${tops.size === 1 ? 'YES (' + [...tops][0] + ')' : 'NO — ' + [...tops].join('/') + ' (measurement-limited where they disagree)'}`);
+}
 
-writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', pool: { path: String(POOL_PATH), sha256_16: POOL_SHA }, config: { GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, heurRamp: process.env.HEUR_RAMP === '1' }, pilots }, null, 1));
+writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', pool: { path: String(POOL_PATH), sha256_16: POOL_SHA }, focus: FOCUS || null, config: { GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, heurRamp: process.env.HEUR_RAMP === '1' }, pilots }, null, 1));
 console.log(`\nWrote ${OUT}`);

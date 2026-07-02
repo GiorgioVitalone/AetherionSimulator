@@ -1390,11 +1390,24 @@ at the fixed ceiling) and the next lever MUST be the compounding loop itself —
 condition threshold on Harvest ("gained 3+ temp Energy this turn"; needs a new `event_context`
 check, i.e. engine work, not data) or the §13f deck-side feeders.
 
-**Run (self-certifying — the header now prints the pool path + sha):**
+**Focused run protocol (new; ~40% of a full panel's wall clock for 100% of its information).**
+v2 edits Verdant cards only, and game seeds are a pure function of (seedBase, pairing, game) —
+so the six non-Verdant pairings of a full panel would replay the §13f reference **byte-for-byte**
+(proven empirically before adopting: rollout-low all-pairs at small gpp on both pools, all six
+non-Verdant cells byte-identical). `balance-verify.mjs` gained `FOCUS=<faction>`: it runs only
+the focus faction's four pairings at the SAME per-pairing sizes, so every informative cell keeps
+identical n (pooled Verdant marginal still n=960 at r8+r12, CI ±3.0 — the resolution the 62–68
+falsifier needs). Non-focus full marginals are reconstructed exactly at analysis time: two of
+each faction's three cells are byte-frozen §13f counts; only the vs-Verdant cell is new. The
+matrix layer also drops to GPP_MATRIX=1000 (context layer; ±1.8 pp is plenty). Cross-pilot gate
+is skipped in focus mode (partial marginals); the Verdant-per-rung ladder direction still reads.
 
 ```bash
 cd packages/engine && node make-pools.mjs   # confirm CURRENT-plus-hero-tune2 sha 75947cc9a0d1a7d7
-AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-hero-tune2.json \
-GPP_MATRIX=3000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
+FOCUS=Verdant AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-hero-tune2.json \
+GPP_MATRIX=1000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
 GAUGE_OUT=./bv-hero-tune2.json node balance-verify.mjs | tee bv-hero-tune2.txt
 ```
+
+(The full-panel command — same but without `FOCUS` and with `GPP_MATRIX=3000` — remains valid
+if a whole-pool re-baseline is ever wanted; it buys nothing extra for single-faction candidates.)
