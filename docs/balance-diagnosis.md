@@ -1145,3 +1145,49 @@ pre-registration survives its first contact. (2) Netting exposed four **negative
 −0.80 @4, Protector's Bulwark −0.60 @3, Arcane Singularity −0.28 @5 — concrete candidates for the
 sanctioned cost/cooldown knobs, to be confirmed against B3's usage data (an ability can net
 negative on paper and still be worth casting situationally; usage + payoff decides).
+
+### 13d. B3 results — v2-instrument baseline; the transform verdict; hero band with measured availability (2026-07-02)
+
+External batch on the frozen CURRENT (GPP_MATRIX=3000, RL=300, RH=200, RX=120), first run under
+the v2 instrument (§13 pricing + §13a cost floor).
+
+**The loop kill, confirmed at scale.** Heuristic decided% 95.9 → **100.0**, Sapphire
+earlySpellsPerGame 344.87 → **0.98**, step-cap draws zero, avgTurns 27.6 → 30.5 (the voided games
+were artificially short). The §12c Echoes×Robe class is closed.
+
+**The strong-play verdicts are instrument-robust.** Pooled r8+r12 (n=960/faction): **Verdant 73.9 /
+Onyx 54.8 / Radiant 52.3 / Sapphire 19.1** — statistically identical to §12c (73.4/54.8/52.1/19.7)
+despite the pricing repairs shifting heuristic behavior and the floor touching every pilot's games.
+Rank order stable on all rungs; the Radiant→Verdant comeback signature (56–59% overturns) and the
+Radiant-farms-Sapphire cell (82–83%) persist. The diagnosis does not depend on the instrument
+version. (Heuristic marginals: 44.6/57.9/42.1/55.5, spread 15.8 — the new heuristic reference.)
+
+**Transform autopsy at scale — the §13b question answered:**
+- *Strong play flips EARLIER and healthier than the heuristic* — rollout flips at LP 15–17 around
+  turn 29–33 (the resource-empty gate; the LP≤10 gate cannot produce LP-16 flips), heuristic at
+  LP 9–14 — **and still doesn't rescue** (lives +9–16 turns after, payoffs below).
+- *Usage is NOT the bottleneck* for Onyx/Radiant/Verdant: Kaelthar presses his flip kit 6+/game
+  (Plague of Shadows fires in most flipped games), Valkyrie's cry fires reliably. **Sapphire is
+  the exception: 0.6–0.8 presses/game post-flip** — Arcane Singularity (cost 5, cd 3) is starved
+  exactly when it matters.
+- *Payoff read (selection-confounded — flips correlate with losing):* Sapphire is the ONLY faction
+  where transformed win% EXCEEDS untransformed at rollout (32.6 vs 25.4 at r8; 32.5 vs 29.4 at
+  r12) — its flip genuinely helps when reached. Onyx roughly neutral-positive; Radiant/Verdant
+  "flip = was losing" markers.
+- *Evidence-based read on the LP-gate 12–15 idea:* strong play ALREADY flips at LP 15–17 via the
+  resource gate and it does not rescue — raising the LP gate would mostly replicate what strong
+  play already does. Weak lever. The measured picture is that transforms function as a mid-game
+  identity shift, not a comeback rescue; whether that is a design problem is a designer call, but
+  the balance work stays on the decks either way.
+
+**Hero parity band with MEASURED availability** (per-faction P(flip) × liveFraction from this
+batch, replacing placeholders): **Onyx 10.39 (over)** — its flip side is live 44% of the remaining
+game and hammered; **Verdant 8.65 (over)** — the always-on base battery; **Sapphire 5.05 (under),
+Radiant 4.25 (under)**. Band [5.67–8.50]. H5 verdict: partially survives — Onyx/Sapphire flags are
+direction-consistent with usage + payoff data; Valkyrie's paper-strong/practice-confounded gap
+stands as the known open case (the winPctWhenTransformed confound is documented).
+
+**The one clearly evidence-backed hero knob right now: Arcane Singularity cost 5 → 3** (Sapphire
+is under-band, the button is starved, and its flip is the only one measured to help). Onyx/Verdant
+over-band flags fold into the Phase-C pool work rather than solo hero edits — both factions' hero
+engines are already part of the deck-level story.
