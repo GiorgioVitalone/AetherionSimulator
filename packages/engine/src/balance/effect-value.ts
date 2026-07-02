@@ -80,7 +80,10 @@ function dynamicBonus(dyn: DynamicStatSource | undefined): number {
     case 'x_cost':
       return EXPECTED_X;
     case 'multiply':
-      return 0; // multiplies the base modifier (already counted); board-dependent, kept conservative
+      // §13c repair (was 0 — zeroed Synthetic Evolution entirely): multiplying a
+      // body's stats by k adds (k−1) × its stats. Priced per affected body at the
+      // conservative AVG_WEAK_BODY anchor; AoE width multiplies in buffValue.
+      return Math.max(0, dyn.factor - 1) * AVG_WEAK_BODY;
     default:
       return assertNever(dyn);
   }

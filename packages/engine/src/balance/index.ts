@@ -19,7 +19,7 @@ export { emitDemands, emitSignals, heroDemands } from './signals.js';
 export { deckInterSynergy, intraSynergy, pairSynergy, type CardSignals } from './synergy.js';
 export { INTERACTION_MATRIX, interactionWeight } from './interaction-matrix.js';
 export { regenerationValue, traitValue } from './trait-scaling.js';
-export { recurrence, PAIR_CAP } from './weights.js';
+export { recurrence, PAIR_CAP, RESOURCE_VALUE_TEMP, LP_VALUE } from './weights.js';
 export { flattenEffects } from './signal-extract.js';
 export type {
   CardIndex,

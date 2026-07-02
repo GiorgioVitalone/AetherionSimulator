@@ -195,3 +195,33 @@ mispricing (Radiant runs above budget; Ethereal/Mythic cards under-deliver on th
 per-deck cost curves; stat/trait/ability **value drivers**; intra-card synergy multipliers +
 inter-card pairs; and a sortable/filterable card table (filterable by budget status). The budget
 constants — `RARITY_BONUS`, `RMSE_MULT`, `MIN_TOL` — are tunable at the top of the budget block.
+
+## Hero power budget — the parity band (§13c)
+
+Heroes are free and singular (one per deck), so unlike cards there is no cost axis to regress
+against. The hero target is a **parity band**: all four heroes should deliver comparable EFFECTIVE
+value — the same logic as the LP→30 equalization, extended to the kit axis.
+
+```
+heroBudget = baseKitNet + P(flip) × liveFraction × transformKitNet   (+ lpDelta × LP_VALUE)
+```
+
+- `netValue` per ability = §13-corrected `abilityContribution` (gross) minus
+  `activationCost × RESOURCE_VALUE_TEMP × expectedUses` (the recurrence model) — a cost-7 ultimate
+  is not a free one. Netting is AUDIT-layer only; the shared pricer keeps gross values for cards.
+- The transform side is **availability-discounted**: a flip kit is live only for
+  `P(flip) × (turns alive after flip ÷ game length)`. `balance-hero-audit.mjs` reads these per
+  faction from a balance-verify JSON (`MEASURED=<path>`: `factionDetail.transformPct`,
+  `avgTurnsAfterFlip`, pilot `avgTurns`); fallback placeholders 0.70 × 0.25 (§12c provenance).
+- **Band: every heroBudget within ±20% of the four-hero mean** (`BAND` env, default 0.2; start
+  generous, tighten like the card window did). Out-of-band heroes are **cost/cooldown tuning
+  candidates** — the sanctioned hero knobs — never mechanically edited (§11f discipline).
+- Pre-registered falsifiability: heroBudget ordering must rank-agree with measured transform
+  payoffs; disagreement sends the budget model back to the shop, not the measurement.
+
+First run (frozen CURRENT, placeholder availability): Verdant 8.78 **FLAG over** (base kit 7.89 —
+the always-on §12c battery), Onyx 7.50 PASS, Sapphire 4.90 / Radiant 4.70 **FLAG under** — the
+band's first output independently rank-agrees with the measured §12c field. Netting also surfaced
+four negative-net abilities (paying more than the effect is worth): Synthetic Evolution −2.62
+(cost 10), Unflinching Charge −0.80 (cost 4), Protector's Bulwark −0.60 (cost 3), Arcane
+Singularity −0.28 (cost 5) — the immediate cost/cooldown candidates pending B3 usage data.

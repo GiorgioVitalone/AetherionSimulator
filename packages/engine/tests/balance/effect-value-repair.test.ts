@@ -93,6 +93,21 @@ describe('debuff pricing (sign decides, AoE counts — Haunting / Plague Burst)'
   });
 });
 
+describe('multiply dynamic modifier (§13c — Synthetic Evolution was priced 0)', () => {
+  it('should price doubling as adding the affected bodies once (AVG_WEAK_BODY per body)', () => {
+    const e: Effect = {
+      type: 'modify_stats',
+      target: { side: 'allied', type: 'all_characters', filter: { tag: 'Bio-Construct' } },
+      duration: { type: 'until_next_upkeep' },
+      modifier: { hp: 0, atk: 0 },
+      dynamicModifier: { type: 'multiply', factor: 2 },
+    };
+    // (factor−1) × AVG_WEAK_BODY per body × AoE width × tempo weight
+    expect(effectStaticValue(e).value).toBeCloseTo(AVG_WEAK_BODY * AOE_WIDTH * 0.6, 10);
+    expect(effectStaticValue(e).value).toBeGreaterThan(0);
+  });
+});
+
 describe('resource pricing (Tech Bloom / temporary gains)', () => {
   it('should price a banked resource at RESOURCE_VALUE', () => {
     const e: Effect = { type: 'gain_resource', resourceType: 'energy', amount: 3 };

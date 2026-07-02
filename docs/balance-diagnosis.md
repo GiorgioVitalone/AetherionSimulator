@@ -1119,3 +1119,29 @@ games). If B3 confirms at scale, the story is "flips are last rites — too late
 behind", pointing at the sanctioned timing knob (LP gate 10 → 12–15, config-able) and per-kit
 cost/cooldown tuning rather than at bot-usage bugs. The rollout's depth-3 horizon may also
 undervalue flip timing (a long-horizon payoff) — read B3's rollout rungs with that caveat.
+
+### 13c. Hero power budget — the parity band, first results (2026-07-02)
+
+Design question answered: heroes get a power target, but as a **parity band** (±20% of the
+four-hero mean), not a cost line — heroes are free and singular, so the constraint is comparable
+effective value (LP→30's logic extended to the kit axis). Definition + rationale in
+`docs/balance-valuation.md`; implementation in `balance-hero-audit.mjs` (H1 `multiply` pricing
+hole fixed first — card re-audit confirmed ZERO verdict flips, the modifier is hero-only today).
+
+First run (frozen CURRENT, §12c placeholder availability 0.70 × 0.25):
+
+| Hero | baseNet | transformNet | heroBudget | verdict |
+|---|---|---|---|---|
+| Verdant (RIA-09) | **7.89** | 5.07 | **8.78** | FLAG over — cost/cooldown-up candidate |
+| Onyx (Kaelthar) | 4.86 | 15.06 | 7.50 | PASS |
+| Sapphire (Lyria) | 3.40 | 8.59 | 4.90 | FLAG under |
+| Radiant (Seraphina) | 2.00 | 15.45 | 4.70 | FLAG under |
+
+Two reads worth recording: (1) the band **independently rank-agrees with the measured §12c
+field** — Verdant's flag is driven by the base kit (the always-on battery), exactly the measured
+mechanism, and the two flagged-under heroes are the two weak/subsidized factions; the H5
+pre-registration survives its first contact. (2) Netting exposed four **negative-net abilities**
+(activation cost exceeds priced value): Synthetic Evolution −2.62 @cost 10, Unflinching Charge
+−0.80 @4, Protector's Bulwark −0.60 @3, Arcane Singularity −0.28 @5 — concrete candidates for the
+sanctioned cost/cooldown knobs, to be confirmed against B3's usage data (an ability can net
+negative on paper and still be worth casting situationally; usage + payoff decides).
