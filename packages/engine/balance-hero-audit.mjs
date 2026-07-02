@@ -4,8 +4,10 @@
 // PARITY, checked in three windows (all flag-only — out-of-band heroes are
 // cost/cooldown tuning candidates, never mechanically edited; §11f discipline):
 //
-//   W1 NORMAL:    each hero's base-kit net value inside a window around the
-//                 four-hero base mean (default ±25%).
+//   W1 NORMAL:    each hero's base-kit net value inside a FIXED design window
+//                 (default [3.00 – 4.99] — absolute, set by design review after
+//                 the §13f remeasure; replaced the mean-relative ±30% band so a
+//                 single over-window hero can't drag the window up with it).
 //   W2 TRANSFORM: each transformed kit inside a window around the transform
 //                 mean (default ±25%) AND above an IMPACT FLOOR — a flip must
 //                 swing the game, not fizzle (default ≥10 ≈ a strong top-end
@@ -22,7 +24,7 @@
 //
 // Usage:
 //   AETHERION_CARDS=<pool.json> node balance-hero-audit.mjs
-//   [NORMAL_BAND=0.25] [TF_BAND=0.25] [TF_FLOOR=10] [COMPOSITE_BAND=0.10]
+//   [W1_LO=3.00] [W1_HI=4.99] [TF_BAND=0.25] [TF_FLOOR=10] [COMPOSITE_BAND=0.10]
 import { readFileSync } from 'node:fs';
 import { abilityContribution, recurrence, RESOURCE_VALUE_TEMP } from './dist/balance/index.js';
 
@@ -31,10 +33,12 @@ if (!SRC) {
   console.error('AETHERION_CARDS required (no silent default) — e.g. AETHERION_CARDS=./generated-pools/aetherion-CURRENT.json');
   process.exit(1);
 }
-// W1 default ±30%: the design intent is a DECENT window per form and a TIGHT one
-// on the composite — the normal form gets the most wiggle room (an Aura-heavy
-// base kit can't be knob-tuned below its aura floor).
-const NORMAL_BAND = +(process.env.NORMAL_BAND || 0.3);
+// W1 is a FIXED design window (post-§13f design review): the §13e mean-relative
+// ±30% band passed Verdant's 5.44 base kit while the measurement showed the base
+// battery is the outlier — an absolute ceiling can't be dragged up by the very
+// hero it should catch. W2/W3 stay mean-relative (parity among the four).
+const W1_LO = +(process.env.W1_LO || 3.0);
+const W1_HI = +(process.env.W1_HI || 4.99);
 const TF_BAND = +(process.env.TF_BAND || 0.25);
 const TF_FLOOR = +(process.env.TF_FLOOR || 10);
 const COMPOSITE_BAND = +(process.env.COMPOSITE_BAND || 0.1);
@@ -85,8 +89,8 @@ function printSide(label, card) {
   return +rows.reduce((s, r) => s + r.net, 0).toFixed(2);
 }
 
-console.log(`Hero power budget — three-window framework (§13e) — pool: ${SRC}`);
-console.log(`W1 normal ±${NORMAL_BAND * 100}% | W2 transform ±${TF_BAND * 100}% + floor ≥${TF_FLOOR} | W3 composite (${W_NORMAL}·base + ${W_TRANSFORM}·transform) ±${COMPOSITE_BAND * 100}%\n`);
+console.log(`Hero power budget — three-window framework (§13e, W1 fixed per §13g) — pool: ${SRC}`);
+console.log(`W1 normal [${W1_LO.toFixed(2)} – ${W1_HI.toFixed(2)}] fixed | W2 transform ±${TF_BAND * 100}% + floor ≥${TF_FLOOR} | W3 composite (${W_NORMAL}·base + ${W_TRANSFORM}·transform) ±${COMPOSITE_BAND * 100}%\n`);
 
 const rows = [];
 for (const h of heroes) {
@@ -108,11 +112,11 @@ const fmtB = ([lo, hi]) => `[${lo.toFixed(2)} – ${hi.toFixed(2)}]`;
 const mBase = mean(rows.map((r) => r.baseNet));
 const mTf = mean(rows.map((r) => r.tNet));
 const mComp = mean(rows.map((r) => r.composite));
-const bBase = band(mBase, NORMAL_BAND);
+const bBase = [W1_LO, W1_HI];
 const bTf = band(mTf, TF_BAND);
 const bComp = band(mComp, COMPOSITE_BAND);
 
-console.log(`══ W1 NORMAL FORM ══  mean ${mBase.toFixed(2)}, window ${fmtB(bBase)}`);
+console.log(`══ W1 NORMAL FORM ══  mean ${mBase.toFixed(2)}, fixed window ${fmtB(bBase)}`);
 for (const r of rows) console.log(`  ${r.faction.padEnd(9)} ${String(r.baseNet).padStart(7)}  ${inB(r.baseNet, bBase) ? 'PASS' : r.baseNet > bBase[1] ? 'FLAG over' : 'FLAG under'}`);
 console.log(`══ W2 TRANSFORMED ══  mean ${mTf.toFixed(2)}, window ${fmtB(bTf)}, impact floor ≥${TF_FLOOR}`);
 for (const r of rows) {

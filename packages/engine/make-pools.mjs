@@ -17,7 +17,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { applyEdits } from './balance-apply-edits.mjs';
-import { applyHeroTune, applyGrovekeeperFix } from './make-hero-tune.mjs';
+import { applyHeroTune, applyHeroTuneV2, applyGrovekeeperFix } from './make-hero-tune.mjs';
 
 const outDir = `${(process.argv[2] || './generated-pools').replace(/\/$/, '')}/`;
 mkdirSync(outDir, { recursive: true });
@@ -54,7 +54,11 @@ const pools = {
   },
   'CURRENT-plus-hero-tune': {
     pool: applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw,
-    note: '§13e candidate: frozen CURRENT + Grovekeeper X-cost fix + hero three-window knob tune (all 12 checks PASS)',
+    note: '§13e candidate (measured §13f): frozen CURRENT + Grovekeeper X-cost fix + hero three-window knob tune',
+  },
+  'CURRENT-plus-hero-tune2': {
+    pool: applyHeroTuneV2(applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw).raw,
+    note: '§13g candidate: hero-tune + W1-fixed-window Verdant re-split (Harvest token 0/1, Overgrowth cd 2, Synthetic 2E)',
   },
   'derived-nerfs-lp30': {
     pool: derivedNerfs.raw,

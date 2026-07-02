@@ -1341,3 +1341,60 @@ governed (presses −63%) the resource curve barely moved, and Verdant still bea
 
 Prediction discipline holds: whichever Verdant lever is picked gets encoded as a frozen-derived
 candidate (`CURRENT-plus-hero-tune-plus-…`), pre-registered before the next batch.
+
+### 13g. Hero-tune v2 — W1 becomes a FIXED window; Verdant's package re-split base→flip (2026-07-02)
+
+**Direction (design review of the §13e window table):** tighten W1 NORMAL to a **fixed
+[3.00 – 4.99]** window, nerf RIA-09's normal form into it, and buff her transform slightly so the
+W3 composite stays where it is. Window semantics change with it: W1 was mean-relative (±30%),
+which let the very hero it should catch drag the window up — Verdant's 5.44 *passed* a band whose
+ceiling its own value had lifted to 5.62. W1 is now absolute in `balance-hero-audit.mjs`
+(`W1_LO`/`W1_HI`, default 3.00/4.99); W2/W3 stay mean-relative (they measure parity among the
+four, not an absolute design ceiling).
+
+**The v2 edits (`applyHeroTuneV2`, layered on the §13e tune):**
+- **Biotech Harvest token 1/1 → 0/1** — an aura EFFECT VALUE, the explicitly sanctioned surface
+  (scheduling untouched). Base kit 5.44 → **4.38**, mid-window. Bloom Assembly's activated 1/1
+  token is deliberately left stronger — it is the paid, cd-6 unit; Harvest's passive byproduct is
+  now a fragile shell. Engine-real trivially: token stats are data
+  (`interpreter.ts` `executeDeployToken` reads `token.atk/hp`), and 0-ATK bodies have precedent
+  (Bio-Seedling is 0/2).
+- **Overgrowth Protocol cd 3→2** and **Synthetic Evolution 3E→2E** (engine-enforced knobs):
+  transform 10.54 → **12.77**. Both sized from the audit identity gross = per-use × recurrence,
+  so the moves were computed before they were made — and landed exactly.
+
+**Result (audit on the new pool): all 12 checks PASS under the tightened W1.**
+
+| Hero | W1 normal (fixed [3.00–4.99]) | W2 transform ([9.96–16.60], floor ≥10) | W3 composite ([6.35–7.77]) |
+|---|---|---|---|
+| Verdant RIA-09 | 5.44 → **4.38** | 10.54 → **12.77** | 7.07 → **7.10** |
+| Onyx Kaelthar | 4.86 | 13.53 | 7.67 |
+| Radiant Seraphina | 3.60 | 13.87 | 6.95 |
+| Sapphire Lyria | 3.40 | 12.96 | 6.52 |
+
+W2's pack tightened as a side effect (span 12.77–13.87, was 10.54–13.87). Pool:
+**`CURRENT-plus-hero-tune2`** (sha256 **`75947cc9a0d1a7d7`**), derived frozen-CURRENT → §13e tune
+→ v2 layer; the measured §13f pool (`44dbb1870ec34b65`) is untouched as the reference. Smoke run
+clean (300 games, runHash `fd11cc9156a42bd0` — engine-legality only, not a verdict).
+
+**Pre-registered prediction for the remeasure** (falsifiable): the real-game bite of v2 is
+MODEST by §13f's own mechanism evidence — the tap-loop compounder (any temp gain → new tapper)
+is untouched; the token nerf mostly trims Harvest bodies as pump targets and combat filler, and
+the transform buff moves power into a flip Verdant reaches in only ~52–59% of rollout games.
+Pooled r8+r12: **Verdant 62–68** (from 67.4 — a real but small step down), Radiant 43–49,
+Sapphire 41–47, Onyx 40–46, spread 17–27, Verdant still top at every rollout rung. Secondary
+signature: Verdant's T-win should RISE toward its N-win (the buffed flip converts better), and
+its transform% may tick up. **Falsifiers:** V below 62 → the token-stat share of the base
+battery was bigger than assessed; V at/above 68 → the hero axis is exhausted (all windows PASS
+at the fixed ceiling) and the next lever MUST be the compounding loop itself — an engine
+condition threshold on Harvest ("gained 3+ temp Energy this turn"; needs a new `event_context`
+check, i.e. engine work, not data) or the §13f deck-side feeders.
+
+**Run (self-certifying — the header now prints the pool path + sha):**
+
+```bash
+cd packages/engine && node make-pools.mjs   # confirm CURRENT-plus-hero-tune2 sha 75947cc9a0d1a7d7
+AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-hero-tune2.json \
+GPP_MATRIX=3000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
+GAUGE_OUT=./bv-hero-tune2.json node balance-verify.mjs | tee bv-hero-tune2.txt
+```

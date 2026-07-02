@@ -67,6 +67,49 @@ export function applyHeroTune(rawInput) {
   return { raw, changed };
 }
 
+// §13g v2 layer (applied ON TOP of applyHeroTune): design review after the §13f
+// remeasure tightened W1 to a FIXED [3.00–4.99] window — Verdant's 5.44 base kit
+// is the one hero out. Directive: nerf RIA-09's normal form into the window and
+// buff the transform slightly so the W3 composite stays ≈7.07.
+//   - Harvest token 1/1 → 0/1: an aura EFFECT VALUE (the sanctioned surface —
+//     scheduling stays untouched). Base 5.44 → ~4.38. Bloom Assembly's activated
+//     1/1 token is deliberately left stronger: it is the paid, cd-6 unit.
+//   - Overgrowth Protocol cd 3→2 and Synthetic Evolution 3E→2E (both engine-
+//     enforced knobs): transform 10.54 → ~12.77, composite held at ~7.10.
+export function applyHeroTuneV2(rawInput) {
+  const raw = JSON.parse(JSON.stringify(rawInput));
+  const byId = new Map(raw.map((c) => [c.id, c]));
+  const changed = [];
+
+  const ria = byId.get(136);
+  if (!ria) throw new Error('hero tune v2: RIA-09 (136) not found');
+  const harvest = ria.abilities[1];
+  const token = harvest?.dsl?.effects?.[0]?.ifTrue?.[0]?.token;
+  if (harvest?.type !== 'Aura' || !token || token.atk !== 1) {
+    throw new Error('hero tune v2: Biotech Harvest shape changed — expected Aura with a 1/1 token');
+  }
+  token.atk = 0;
+  const newText = harvest.effect.replace('a 1/1 Bio-Construct token', 'a 0/1 Bio-Construct token');
+  if (newText === harvest.effect) throw new Error('hero tune v2: Harvest effect text did not contain the expected token wording');
+  harvest.effect = newText;
+  changed.push('RIA-09 — Biotech Harvest token 1/1 → 0/1 (aura effect value)');
+
+  const van = byId.get(103);
+  if (!van) throw new Error('hero tune v2: Verdant Vanguard (103) not found');
+  const knobs = [
+    { i: 0, why: 'Overgrowth Protocol cd 3→2', patch: (ab) => { ab.dsl.trigger.cooldown = 2; ab.cooldown = 2; } },
+    { i: 2, why: 'Synthetic Evolution cost 3E→2E', patch: (ab) => { ab.dsl.trigger.cost = cost(0, 2); } },
+  ];
+  for (const k of knobs) {
+    const ab = van.abilities[k.i];
+    if (!ab) throw new Error(`hero tune v2: Vanguard has no ability #${k.i}`);
+    assertKnobable(van, ab, k.why);
+    k.patch(ab);
+    changed.push(`RIA-09 Verdant Vanguard — ${k.why}`);
+  }
+  return { raw, changed };
+}
+
 export function applyGrovekeeperFix(rawInput) {
   const raw = JSON.parse(JSON.stringify(rawInput));
   const c = raw.find((x) => x.id === 142);
