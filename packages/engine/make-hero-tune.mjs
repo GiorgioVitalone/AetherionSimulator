@@ -18,16 +18,21 @@ const cost = (mana, energy = 0) => ({ mana, energy, flexible: 0 });
 
 // AURA CONTRACT: abilities whose card-level type is 'Aura' are always-on
 // engines — they NEVER take cooldowns or costs (a cooldown breaks aura logic).
-// Knobs may only touch Trigger/Ultimate abilities; enforced by assertKnobable.
+// Their EFFECT VALUES are tunable (token stats, amounts, thresholds — a design
+// edit, not a knob); only their scheduling is off-limits. assertKnobable
+// enforces the scheduling half; effect-value aura tunes would be explicit
+// patch entries like the Grovekeeper fix below.
 const HERO_KNOBS = [
   // Verdant RIA-09: base kit over-window (the always-on battery §12c measured).
-  // Harvest is an Aura (untouchable) — the governor routes through Bloom Assembly.
+  // Harvest is an Aura (no cd/cost; its effect values stay as printed in this
+  // pass) — the governor routes through Bloom Assembly.
   { id: 136, i: 0, why: 'Bloom Assembly cd 2→6, gains cost 2E', patch: (ab) => { ab.dsl.trigger.cooldown = 6; ab.cooldown = 6; ab.dsl.trigger.cost = cost(0, 2); } },
   // Verdant Vanguard: transform under-window AND below impact floor.
   { id: 103, i: 0, why: 'Overgrowth Protocol cost 5E→2E', patch: (ab) => { ab.dsl.trigger.cost = cost(0, 2); } },
   { id: 103, i: 2, why: 'Synthetic Evolution cost 10E→3E', patch: (ab) => { ab.dsl.trigger.cost = cost(0, 3); } },
   // Onyx Lich King: transform over-window (composite over). Horde is an Aura
-  // (untouchable) — the trim routes through Resurgence + Plague instead.
+  // (no cd/cost; effect values kept as printed this pass) — the trim routes
+  // through Resurgence + Plague instead.
   { id: 3, i: 0, why: 'Deathly Resurgence cd 1→2', patch: (ab) => { ab.dsl.trigger.cooldown = 2; ab.cooldown = 2; } },
   { id: 3, i: 2, why: 'Plague of Shadows cost 7→9', patch: (ab) => { ab.dsl.trigger.cost = cost(9); } },
   // Radiant Seraphina: base under-window (negative-net Bulwark).
