@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { applyEdits } from './balance-apply-edits.mjs';
 import { applyHeroTune, applyHeroTuneV2, applyGrovekeeperFix } from './make-hero-tune.mjs';
-import { applyBatteryTrim } from './make-battery-trim.mjs';
+import { applyBatteryTrim, applyBatteryTrim2 } from './make-battery-trim.mjs';
 
 const outDir = `${(process.argv[2] || './generated-pools').replace(/\/$/, '')}/`;
 mkdirSync(outDir, { recursive: true });
@@ -63,7 +63,11 @@ const pools = {
   },
   'CURRENT-plus-hero-tune2-battery': {
     pool: applyBatteryTrim(applyHeroTuneV2(applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw).raw).raw,
-    note: '§13i candidate: hero-tune2 + tap-loop feeder trim (Bio-Seedling 0E→1E, Sprout 2E→3E)',
+    note: '§13i candidate (measured §13j): hero-tune2 + feeder trim (Bio-Seedling 0E→1E, Sprout 2E→3E)',
+  },
+  'CURRENT-plus-hero-tune2-battery2': {
+    pool: applyBatteryTrim2(applyBatteryTrim(applyHeroTuneV2(applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw).raw).raw).raw,
+    note: '§13j candidate: battery + last cheap-fodder holes (Grovekeeper 0E+X→1E+X, Biomass Surge 3E→4E)',
   },
   'derived-nerfs-lp30': {
     pool: derivedNerfs.raw,

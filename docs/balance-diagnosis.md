@@ -1308,8 +1308,11 @@ gate its true strong-play number is not converged: read 67.4 as a floor. Sapphir
 (46.8 → 40.0, n=360, CI ±5): direction-consistent with a flip-dependent plan being punished by
 stronger opposition, but within noise — watch, not a verdict.
 
-**Where Verdant's altitude actually lives (why the hero governor couldn't touch it).** The
-compounder is **Biotech Harvest — the Aura**: "at end of your turn, if you gained temporary
+**Where Verdant's altitude actually lives (why the hero governor couldn't touch it).**
+*[CORRECTED in §13j: engine recon showed Reserve taps never set Harvest's condition flag — the
+battery is the flat 2-slot Reserve tap annuity + cheap fodder, and Harvest is a minor piece. The
+resource-curve and deck-feeder evidence below stands; the "any tap breeds a tapper" loop does
+not exist in the engine.]* The claimed compounder was **Biotech Harvest — the Aura**: "at end of your turn, if you gained temporary
 Energy this turn, create a 1/1 Bio-Construct" — and ready Reserve bodies tap +1 temp Energy per
 turn (Rulebook 8.4), so any tap breeds a tapper. The deck feeds the loop from turn 1:
 Bio-Seedling ×3 (0E 0/2 — a FREE Reserve tapper, the only battery piece the corrected formula
@@ -1451,8 +1454,9 @@ remembering next time a composite-preserving swap is sized.
 **Verdict: the hero axis is spent.** All 12 window checks PASS at the fixed W1 ceiling; two full
 hero passes (knobs, then a window-tightened re-split) took Verdant 73.9 → 67.4 → 64.2, but the
 pack sits at 41.8–47.4 and Verdant still farms it at ~64 with a rising ladder. What remains is
-what §12/§13f identified all along: the compounding loop (tap → temp Energy → Harvest token →
-new tapper) whose rate no hero cost/cooldown/token-stat reaches. Next-round options:
+what §12/§13f identified all along: the battery *[§13j correction: the flat 2-slot Reserve tap
+annuity + cheap fodder — NOT a Harvest self-catalysis loop; taps never set Harvest's flag]*
+whose rate no hero cost/cooldown/token-stat reaches. Next-round options:
 1. **Deck feeders (data-only, recommended first):** Bio-Seedling 0E→1E — the turn-1 FREE Reserve
    tapper, ×3 copies, the one battery piece the corrected formula flags (+0.7 over). Optionally
    + Sprout 2E→3E (payback 2→3 turns; formula-fair ⇒ documented measurement-driven outlier).
@@ -1484,4 +1488,47 @@ cd packages/engine && node make-pools.mjs   # confirm CURRENT-plus-hero-tune2-ba
 FOCUS=Verdant AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-hero-tune2-battery.json \
 GPP_MATRIX=1000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
 GAUGE_OUT=./bv-battery.json node balance-verify.mjs | tee bv-battery.txt
+```
+
+### 13j. Feeder-trim results; threshold escalation CANCELLED by engine recon; round-2 fodder trim (2026-07-03)
+
+**Results (FOCUS run, self-certified `adec431841b82df5`):** pooled r8+r12 **Verdant 62.1**
+[59.0–65.1] (predicted 55–62 — landing ON the escalation line), reconstructed pack **Radiant
+49.0 / Onyx 46.5 / Sapphire 42.5** (sum 200.0), spread **19.6** — the four rounds read
+54.8 → 25.1 → 22.4 → 19.6. Per-cell: V beats O 55.3 / R 65.0 / S 65.9 — the altitude now lives
+vs Radiant/Sapphire; Onyx is near-even. Secondary predictions: random V 64.6 (60–65 ✓ at the
+edge); res@t10 −0.27 vs predicted ≥0.5 ✗ — the trim bit at half strength. Rung hashes
+`2f0d2d1d26675b03` / `e2d961c4ece667e7` / `31774d7046a58f01`.
+
+**The ≥62 escalation rule fired — and implementation recon KILLED the planned threshold,
+correcting §13f/§13h:** the only writer of `gainedTemporaryResource` is the `gain_resource`
+EFFECT; **Reserve taps (`generateReserveEnergy`) and discard-for-energy grant temp WITHOUT
+setting the flag** (game-state.ts documents the narrow scope). Harvest therefore fires only on
+rare effect-temp turns (Bloom's temp option, ~1.5–1.9 presses/game) — the "tap → token → tapper"
+self-catalysis previously described DOES NOT EXIST in the engine, and a threshold on that flag
+would govern nothing. **Corrected mechanism:** the battery is the flat Reserve annuity — 2 slots
+× (+1 temp per ready body per turn, Rulebook 8.4) ≈ +2/turn from ~turn 2 — fed by cheap bodies.
+(Harvest-as-printed would count taps; the engine's narrower flag is already a nerf vs card text.
+Left as-is.)
+
+**Round 2, replacing the threshold — the last cheap-fodder holes (`applyBatteryTrim2`):**
+- **Grovekeeper 3000 0E+X → 1E+X** — the bot pays X = spare (`chooseXValue`), so at printed 0E
+  it deploys as a FREE 1/1 tapper exactly when resources are tight (the hole Bio-Seedling 0E→1E
+  closed), ×3 copies.
+- **Biomass Surge 3E → 4E** — two tappers for 3E was the strongest remaining battery rate
+  (payback 1.5 → 2 turns).
+
+Pool **`CURRENT-plus-hero-tune2-battery2`** (sha **`2d85729c672d4b8f`**); all four prior edits
+verified in-bytes; hero windows untouched (12/12 PASS); smoke clean.
+
+**Pre-registered prediction (pooled r8+r12, FOCUS):** Verdant **57.5–61.5** (from 62.1), spread
+15–20, random V 62–65, res@t10 −0.2 to −0.4. **Falsifiers:** V ≥61.5 → the data-only card space
+is EXHAUSTED and the residual is the tap rule itself — next is a rules decision (present the
+non-vetoed options) or accept ~60 and re-center the pack. V <55 → Biomass reverts to 3E.
+
+```bash
+cd packages/engine && node make-pools.mjs   # confirm CURRENT-plus-hero-tune2-battery2 sha 2d85729c672d4b8f
+FOCUS=Verdant AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-hero-tune2-battery2.json \
+GPP_MATRIX=1000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
+GAUGE_OUT=./bv-battery2.json node balance-verify.mjs | tee bv-battery2.txt
 ```
