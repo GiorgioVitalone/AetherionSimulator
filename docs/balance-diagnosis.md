@@ -1655,3 +1655,46 @@ RESERVE_TAP=1 AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-ht2b2-pay
 GPP_MATRIX=3000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
 GAUGE_OUT=./bv-tapstrain.json node balance-verify.mjs | tee bv-tapstrain.txt
 ```
+
+### 13n. Tap-package remeasure — spread 13.2, the largest single improvement on record (2026-07-03)
+
+**Full panel, self-certified** (`34cf3a286ea726f6`, RULES PACKAGE ON in header; rung hashes
+`3bb88b0c1278878d` / `90fcd24a0bcb2c89` / r12 in JSON). **Prediction scorecard (§13m):**
+
+| Pre-registered (pooled r8+r12) | Actual | Verdict |
+|---|---|---|
+| Verdant 48–58 | **57.3** [54.1–60.4] (from 63.3) | ✓ top of band — the annuity was ~6 pp of the edge |
+| Radiant 48–58 | **47.2** [44.0–50.4] | ✗ grazes −0.8, inside CI |
+| Onyx 40–50 | **51.5** [48.3–54.6] (from 46.4) | ✗ grazes +1.5, inside CI — losing everyone's income HELPED Onyx |
+| Sapphire 44–54 | **44.1** [41.0–47.2] | ✓ low edge |
+| Spread ≤20 | **13.2** | ✓✓ — program history: 54.8 → 25.1 → 22.4 → 19.6 → 20.6 → 20.4 → 13.2 |
+| res@t10 collapse to ~5.0–5.6 | V 5.5 / O 5.1 at rollouts (from 7.2–8.4) | ✓ hard signature hit exactly |
+| decided 100% | 100% every pilot | ✓ |
+
+Neither falsifier fired (V under 58, above 45): the package landed in-band with no un-stacking
+forced. **Rollout-low posted the first three-PASS rung ever** (O 48.0 / R 54.8 / V 52.8 PASS,
+S 44.4 FLAG, spread 10.3).
+
+**Pooled cells:** Onyx v Verdant **50.9** (dead even — the §13f 67.8 farm is gone), Sapphire v
+Verdant **45.9** (near-even), Onyx v Radiant 46.9, Onyx v Sapphire 56.6, Radiant v Sapphire 57.2
+(the residual polarization), Radiant v Verdant **31.3** — Verdant's whole remaining altitude is
+now ONE matchup: it out-tempos slow Radiant 68.7% even without the battery.
+
+**Instrument caveats, honestly:** the heuristic layer diverged hard from the rollouts this panel
+(heuristic Onyx 27.7 vs rollout 51.5; heuristic Sapphire 57.2 vs 44.1) — the v1 heuristic tap
+policy (greedily tap every vanilla) plus heuristic Onyx's income-fueled early-flip plan do not
+represent strong play under the new rule; the rollout rungs SEARCH tap decisions by outcome and
+are the verdict layer. The cross-pilot top gate reads NO (Radiant/Verdant split) — at spread 13
+the "top faction" is genuinely contested between 47–57 values, which is what closing the gap
+looks like. Random remains the known artifact floor (Radiant 78.8).
+
+**Standing decisions now on the table:**
+1. **Adopt the package into the standard baseline** (recommended: `reserveTapChoice` is a
+   rules-accuracy fix and belongs in the default regardless; `reserveTapStrain` is measured at
+   −6 pp Verdant / +5 Onyx / spread −7 with games 100% decided). Adoption = flags into
+   balance-verify BASE unconditionally + Rulebook text for the strain rule.
+2. Residual work at spread 13.2: Verdant 57.3 rides one cell (v Radiant 68.7); Sapphire 44.1 is
+   hyper flip-dependent under the new economy (winPctWhenNot 25.9 at r8). Both are now
+   ordinary single-matchup/single-faction tuning problems, FOCUS-probeable at ~20 min.
+3. The six §13i–k cost edits were tuned under the old rule; with Verdant still on top they stay,
+   but any future Verdant relief should un-stack those before touching anything new.

@@ -207,3 +207,20 @@ Heuristic CIs ±~1 pp; rollout CIs ±~8–11 pp (low) / ±~11–12 pp (high).
 | **pooled r8+r12** | 960 | **64.2%** [61.1–67.1] (§9: 67.4) | 45.3 / 30.3 / 31.9 |
 
 **Reconstructed full marginals** (frozen §9 pack-internal cells + fresh vs-V cells; sum 200.0): **Verdant 64.2 / Radiant 47.4 / Onyx 46.7 / Sapphire 41.8 — spread 22.4 pp** (§9: 25.1). §13g prediction confirmed (V dead in band; only the Onyx bound grazed, inside reconstruction noise). All 12 hero-window checks PASS at the fixed W1 — the hero axis is spent; remaining work is the Verdant deck/loop (see `balance-diagnosis.md` §13h). Decided 100% everywhere; mirror FP −0.1 to −2.5 pp — PASS.
+
+---
+
+## 11. Verification run — 2026-07-03 (Reserve tap rules package, full panel)
+
+**Method.** Full panel at §13d sizes on **CURRENT-plus-ht2b2-payload** (`34cf3a286ea726f6`) with the **§13m rules package ON** (`RESERVE_TAP=1`): tapping is a player choice (Rulebook 8 step 4's "may" — rules-accuracy fix) and strains the tapper (1 direct damage; 1-HP characters can't tap — the designer's rule replacing the §13l cap proposal). Self-certified header; flags-off byte-identity to the pre-change engine proven at build time.
+
+| Pilot | Games | Radiant | Verdant | Onyx | Sapphire | Parity spread |
+|---|---|---|---|---|---|---|
+| `random` | 30,000 | 78.8% | 60.3% | 35.5% | 25.4% | 53.4 pp |
+| `heuristic` | 30,000 | 53.4% | 61.7% | 27.7% | 57.2% | 33.9 pp |
+| `rollout` r4 | 3,000 | 54.8% | 52.8% | 48.0% | 44.4% | **10.3 pp** |
+| `rollout` r8 | 2,000 | 47.0% | 57.3% | 51.2% | 44.5% | 12.8 pp |
+| `rollout` r12 | 1,200 | 47.5% | 57.2% | 51.9% | 43.3% | 13.9 pp |
+| **pooled r8+r12** (§13l →) | n=960/faction | 47.4 → **47.2%** | 63.3 → **57.3%** | 46.4 → **51.5%** | 42.9 → **44.1%** | 20.4 → **13.2 pp** |
+
+**Result: the largest single improvement on record.** Spread 13.2 pp at strong play (program history: 54.8 → … → 20.4 → 13.2); rollout-low posts the first three-PASS rung; Onyx—Verdant and Sapphire—Verdant are now even cells; Verdant's remaining altitude is a single matchup (beats Radiant 68.7). The tap-income collapse hit the pre-registered hard signature exactly (res@t10 7.2–8.4 → 5.1–5.6). Heuristic layer diverges under the new rule (v1 tap policy) — rollouts are the verdict layer. Full analysis: `balance-diagnosis.md` §13n. Decided 100% on every pilot.
