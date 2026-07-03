@@ -74,6 +74,11 @@ const BASE = {
   armFirstInstanceOnly: true,
   terminationMode: 'resource_deck_empty_transform',
   costFloor: true,
+  // §13m rules package (RESERVE_TAP=1): tap-as-choice (Rulebook "may") + strain
+  // (1 damage per tap, 1-HP bodies can't tap). Env-gated so the standard panel
+  // stays comparable; a run with the package on is a DIFFERENT ruleset and its
+  // runHashes are expected to differ from all prior panels.
+  ...(process.env.RESERVE_TAP === '1' ? { reserveTapChoice: true, reserveTapStrain: true } : {}),
 };
 
 // Wilson 95% score interval -> [lowPct, pPct, highPct].
@@ -275,6 +280,7 @@ function report(p) {
 // ── Run the panel ────────────────────────────────────────────────────────────
 console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}${FOCUS ? `  FOCUS=${FOCUS}` : ''}`);
 console.log(`Pool: ${POOL_PATH}  sha256/16 ${POOL_SHA}`);
+if (process.env.RESERVE_TAP === '1') console.log('RULES PACKAGE ON: reserveTapChoice + reserveTapStrain (§13m)');
 if (FOCUS) console.log(`FOCUS mode: only ${FOCUS}-involving pairings run — non-${FOCUS} marginals/grades are vs-${FOCUS} cells only; combine with the reference panel's pack-internal counts for full marginals.`);
 // exileDiscardForEnergy is a RULE toggle (discard_for_energy exiles instead of
 // binning) — applies to every pilot. reachDiscard/valuePilot are HEURISTIC bot

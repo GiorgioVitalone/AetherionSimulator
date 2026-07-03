@@ -230,6 +230,14 @@ function chooseStrategyAction(
     return { type: 'declare_transform' };
   }
 
+  // 1b. Reserve Energy Generation as a CHOICE (config.reserveTapChoice): tap
+  //     vanilla Reserve bodies before planning spends so the banked resources
+  //     widen every option below. Bodies with abilities or attached equipment
+  //     are spared — tapping disables ALL their abilities (and their
+  //     equipment's auras) until next Upkeep, which is the rule's real price.
+  const tap = chooseTapReserve(player, acts);
+  if (tap !== null) return tap;
+
   // 2. Proactive removal first: clear the opponent's biggest live threat before
   //    committing our own tempo (control sequencing on our priority window).
   if (best !== null && best.score.isRemoval && biggestEnemyThreat(opponent) >= REMOVAL_THREAT) {
@@ -318,6 +326,19 @@ function biggestEnemyThreat(opponent: PlayerState): number {
   return getAllCards(opponent.zones)
     .filter((c) => c.cardType === 'C')
     .reduce((m, c) => Math.max(m, c.currentAtk + c.currentHp), 0);
+}
+
+function chooseTapReserve(
+  player: PlayerState,
+  acts: ReturnType<typeof computeAvailableActions>,
+): PlayerAction | null {
+  for (const id of acts.canTapReserve) {
+    const card = player.zones.reserve.find((c) => c !== null && c.instanceId === id);
+    if (card == null) continue;
+    if (card.abilities.length > 0 || card.equipment !== null) continue;
+    return { type: 'tap_reserve', cardInstanceId: id };
+  }
+  return null;
 }
 
 function chooseActivate(

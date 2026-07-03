@@ -72,6 +72,7 @@ function candidateActions(acts) {
   for (const a of acts.canActivateAbility || []) out.push({ type: 'activate_ability', cardInstanceId: a.cardInstanceId, abilityIndex: a.abilityIndex });
   for (const e of acts.canAttachEquipment || []) { const t = (e.validTargets || [])[0]; if (t) out.push({ type: 'attach_equipment', cardInstanceId: e.cardInstanceId, targetInstanceId: t }); }
   for (const m of acts.canMove || []) { const dst = (m.validDestinations || [])[0]; if (dst) out.push({ type: 'move', cardInstanceId: m.cardInstanceId, toZone: dst }); }
+  for (const id of acts.canTapReserve || []) out.push({ type: 'tap_reserve', cardInstanceId: id });
   if (acts.canTransform) out.push({ type: 'declare_transform' });
   // Attacks: one candidate per (attacker, target) so the search can choose face vs
   // trade vs hold per body — no pre-baked combat heuristic decides for it.
@@ -101,6 +102,7 @@ function concreteActions(acts) {
   for (const a of acts.canActivateAbility || []) out.push({ type: 'activate_ability', cardInstanceId: a.cardInstanceId, abilityIndex: a.abilityIndex });
   for (const e of acts.canAttachEquipment || []) { const t = (e.validTargets || [])[0]; if (t) out.push({ type: 'attach_equipment', cardInstanceId: e.cardInstanceId, targetInstanceId: t }); }
   for (const m of acts.canMove || []) { const d = (m.validDestinations || [])[0]; if (d) out.push({ type: 'move', cardInstanceId: m.cardInstanceId, toZone: d }); }
+  for (const id of acts.canTapReserve || []) out.push({ type: 'tap_reserve', cardInstanceId: id });
   if (acts.canTransform) out.push({ type: 'declare_transform' });
   return out;
 }

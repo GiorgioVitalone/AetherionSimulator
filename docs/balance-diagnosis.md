@@ -1610,3 +1610,48 @@ substitution to the next converter; low confidence.)
   e.g. converter effect amounts. Available if (A) is unpalatable.
 
 No new pool is cut; the §13k candidate chain stops here pending the pick.
+
+### 13m. The Reserve tap rules package — choice (rules-accuracy) + strain (designer's rule), implemented (2026-07-03)
+
+**Direction (design review):** the §13l brief was answered with a designer's rule instead of the
+cap: tapping strains the character. Implementation recon first verified the engine against the
+Rulebook: (1) **tapping was AUTOMATIC** — every eligible ready Reserve body tapped at Upkeep,
+though Rulebook 8 step 4 (and the engine's own comment) says the player *may* — a rules-accuracy
+divergence; (2) exhaustion itself was correct (tap sets `exhausted` + `reserveEnergyExhausted`,
+recovery at next Upkeep's ready step); (3) the all-abilities-disable was correct and two-tiered
+(combat exhaustion leaves auras/triggers alive per Rulebook 3; Reserve-tap exhaustion disables
+everything: `aura-recompute.ts:177`, `trigger-registry.ts:122`, `available-actions.ts` gate).
+
+**The package (both config-gated; absent ⇒ byte-identical):**
+- **`reserveTapChoice`** (rules-accuracy fix): automatic upkeep generation off; a `tap_reserve`
+  Strategy-phase action per eligible body replaces it (same eligibility incl. the Sniper
+  exclusion, same +1 matching temp resource, same all-abilities exhaustion). Heuristic policy:
+  taps ability-less, equipment-less bodies first each turn (tapping an ability body silences its
+  auras AND its equipment's — the rule's real price, which fodder bypasses); random/rollout
+  pilots get tap actions in their enumerations (rollout searches them by outcome).
+- **`reserveTapStrain`** (the designer's rule): a tap deals **1 direct damage** — no ARM
+  mitigation, no damage triggers (wear, not an attack) — and a character with 1 HP left is too
+  weak to generate. Death-free by construction. Each body's lifetime income = HP − 1 (+heals).
+
+**Verification:** 784 tests green (9 new in `tests/actions/reserve-tap-choice.test.ts`); flags-off
+byte-identity proven (tiny rollout rung reproduces the pre-change baseline `8b4782f6ff56b5ed`
+bit-for-bit); flags-on smokes decided 100% at heuristic and rollout with the designed income
+collapse: res@t10 falls to the resource-draw baseline for every faction (Onyx 9.4 → 5.0
+heuristic; the 1-HP fodder class — Saplings, 0/1 Harvest tokens, X=0 Grovekeepers, Onyx
+skeletons — can no longer tap at all; 2HP+ bodies tap down to 1 HP and stop).
+
+**Pre-registered prediction (FULL panel — a rules change touches every pairing; wide bands, this
+is a new ruleset):** pooled r8+r12 **Verdant 48–58** (the surplus dies, and the six §13i–k cost
+edits — absorbed by surplus until now — start biting), Radiant 48–58, Onyx 40–50, Sapphire
+44–54; spread ≤20; the top slot genuinely open for the first time. Hard mechanism signatures:
+res@t10 for V and O collapses from 7.2–8.4 to ≈5.0–5.6 at the rollout rungs; decided% stays 100.
+**Falsifiers:** V ≥58 → the annuity was never the edge — deep re-diagnosis; V <45 → the package
+over-taxes on top of the stacked §13i–k cost edits — un-stack them (they were tuned under the
+old rule and are candidates for reversal once the surplus is gone either way).
+
+```bash
+cd packages/engine && node make-pools.mjs   # pool unchanged: CURRENT-plus-ht2b2-payload 34cf3a286ea726f6
+RESERVE_TAP=1 AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-ht2b2-payload.json \
+GPP_MATRIX=3000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
+GAUGE_OUT=./bv-tapstrain.json node balance-verify.mjs | tee bv-tapstrain.txt
+```

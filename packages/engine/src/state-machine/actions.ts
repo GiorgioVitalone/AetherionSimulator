@@ -19,6 +19,7 @@ import { deployToZone, moveCard } from '../zones/zone-manager.js';
 import { resolveCombat } from '../combat/combat-resolver.js';
 import { canAfford, payCost, effectiveCost, consumeReductions } from '../actions/cost-checker.js';
 import { cardResourceType } from '../actions/card-resource.js';
+import { isReserveTapEligible, tapReserveCard } from '../actions/reserve-tap.js';
 import { meetsEquipRequirement } from '../actions/equip-eligibility.js';
 import { runAbilityEffects } from '../effects/effect-runner.js';
 import { updateCardInState } from '../effects/state-helpers.js';
@@ -137,15 +138,19 @@ export function tickUpkeepStatuses(state: GameState): {
 // Deterministic policy for the autonomous sim: generate from every eligible Reserve
 // character — ready (not exhausted), not summoning-sick, and not a Sniper (Snipers
 // stay ready to attack from Reserve). This is the ramp the rule authorizes.
+//
+// Under `config.reserveTapChoice` (rules-accuracy fix — the Rulebook's "may") the
+// automatic path is OFF and generation happens via the `tap_reserve` player action.
 export function generateReserveEnergy(state: GameState): {
   readonly state: GameState;
   readonly events: readonly GameEvent[];
 } {
+  if (state.config?.reserveTapChoice === true) return { state, events: [] };
   const player = state.players[state.activePlayerIndex];
   const events: GameEvent[] = [];
   const tempGained: TemporaryResource[] = [];
   const reserve = player.zones.reserve.map((card) => {
-    if (card === null || !isReserveEnergyEligible(card)) return card;
+    if (card === null || !isReserveTapEligible(card, state.config)) return card;
     const resourceType = cardResourceType(card);
     tempGained.push({ resourceType, amount: 1 });
     events.push({
@@ -154,7 +159,7 @@ export function generateReserveEnergy(state: GameState): {
       resourceType,
       amount: 1,
     });
-    return { ...card, exhausted: true, reserveEnergyExhausted: true };
+    return tapReserveCard(card, state.config);
   });
 
   if (tempGained.length === 0) return { state, events: [] };
@@ -167,13 +172,46 @@ export function generateReserveEnergy(state: GameState): {
   return { state: recomputeAuras(setPlayer(state, state.activePlayerIndex, newPlayer)), events };
 }
 
-/** Eligible for Reserve Energy Generation: a ready (not exhausted), non-summoning-
- * sick character. Snipers are excluded — they stay ready to attack from Reserve. */
-function isReserveEnergyEligible(card: CardInstance): boolean {
-  if (card.cardType !== 'C') return false;
-  if (card.exhausted || card.summoningSick) return false;
-  return !card.traits.includes('sniper') && !card.grantedTraits.some((g) => g.trait === 'sniper');
+// The `tap_reserve` player action (config.reserveTapChoice — Rulebook 8 step 4's
+// "may"): exhaust ONE ready Reserve character for +1 temporary resource of its
+// type, disabling all its abilities until next Upkeep; under reserveTapStrain it
+// also suffers 1 direct damage (no ARM, no damage triggers — wear, not an attack;
+// eligibility floors at 2 HP so the wear never kills). Aura recompute happens in
+// the executePlayerAction wrapper, which turns the tapped body's auras off.
+function executeTapReserve(
+  state: GameState,
+  action: Extract<PlayerAction, { type: 'tap_reserve' }>,
+): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+  if (state.config?.reserveTapChoice !== true) return { state, events: [] };
+  const player = state.players[state.activePlayerIndex];
+  const idx = player.zones.reserve.findIndex(
+    (c) => c !== null && c.instanceId === action.cardInstanceId,
+  );
+  const card = idx === -1 ? null : player.zones.reserve[idx];
+  if (card == null || !isReserveTapEligible(card, state.config)) {
+    return { state, events: [] };
+  }
+  const resourceType = cardResourceType(card);
+  const reserve = [...player.zones.reserve];
+  reserve[idx] = tapReserveCard(card, state.config);
+  const newPlayer: PlayerState = {
+    ...player,
+    zones: { ...player.zones, reserve },
+    temporaryResources: [...player.temporaryResources, { resourceType, amount: 1 }],
+  };
+  return {
+    state: setPlayer(state, state.activePlayerIndex, newPlayer),
+    events: [
+      {
+        type: 'RESOURCE_GAINED',
+        playerId: state.activePlayerIndex,
+        resourceType,
+        amount: 1,
+      },
+    ],
+  };
 }
+
 
 export function drawResourceCard(state: GameState): {
   readonly state: GameState;
@@ -385,6 +423,8 @@ function resolvePlayerAction(
       return executeDeclareAttack(state, action);
     case 'declare_transform':
       return executeDeclareTransform(state);
+    case 'tap_reserve':
+      return executeTapReserve(state, action);
   }
 }
 

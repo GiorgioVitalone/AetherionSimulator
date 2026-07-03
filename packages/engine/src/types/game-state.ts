@@ -297,6 +297,24 @@ export interface GameConfig {
    * Wizard's Robe — 7,990 casts in one game, step-cap abort). Read by
    * effectiveCost only. Absent/false ⇒ byte-identical no-op. */
   readonly costFloor?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: Reserve
+   * Energy Generation happens AUTOMATICALLY at Upkeep for every eligible ready
+   * Reserve character). Rulebook 8 step 4 says the active player MAY exhaust
+   * them — it is a choice. When true, the automatic upkeep generation is off and
+   * a `tap_reserve` player action (Strategy phase, per character) replaces it:
+   * same eligibility, same +1 temporary resource of the card's type, same
+   * all-abilities-disabled exhaustion until next Upkeep. Absent/false ⇒
+   * byte-identical no-op. */
+  readonly reserveTapChoice?: boolean;
+  /** RULES CHANGE UNDER MEASUREMENT (§13m; default absent/false ⇒ tapping is
+   * free). When true, generating Reserve Energy STRAINS the character: it takes
+   * 1 direct damage (no ARM mitigation, no damage triggers — wear, not an
+   * attack), and a character with 1 HP left is too weak to generate at all.
+   * Exists because the free tap annuity is the measured source of Verdant's
+   * structural income surplus (§13l): this converts free income into income
+   * paid for in board material. Applies to both the automatic path and the
+   * `tap_reserve` action. Absent/false ⇒ byte-identical no-op. */
+  readonly reserveTapStrain?: boolean;
   /** RULE ABLATION PROBE (default absent/false ⇒ engine-default: any player may,
    * once per turn, discard a hand card for +1 temporary resource MATCHING the
    * card's type — Mana if Magic-aligned, Energy if Tech-aligned, per Rulebook 11;

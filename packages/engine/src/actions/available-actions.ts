@@ -9,6 +9,7 @@ import { hasOpenSlot, getAllCards, getCardsInZone } from '../zones/zone-manager.
 import { getValidAttackTargets, type AttackTarget } from '../zones/targeting.js';
 import { canAfford, effectiveCost } from './cost-checker.js';
 import { meetsEquipRequirement } from './equip-eligibility.js';
+import { isReserveTapEligible } from './reserve-tap.js';
 import { evaluateCondition } from '../effects/condition-evaluator.js';
 
 // ── Result Types ──────────────────────────────────────────────────────────────
@@ -23,6 +24,10 @@ export interface AvailableActions {
   readonly canDiscardForEnergy: boolean;
   readonly canTransform: boolean;
   readonly canEndPhase: boolean;
+  /** Instance ids of ready Reserve characters the active player MAY exhaust for
+   * +1 temporary resource (Rulebook 8 step 4). Non-empty only under
+   * `config.reserveTapChoice`; empty array otherwise (legacy automatic mode). */
+  readonly canTapReserve: readonly string[];
 }
 
 export interface DeployOption {
@@ -86,6 +91,12 @@ export function computeAvailableActions(state: GameState): AvailableActions {
     canDiscardForEnergy: isStrategy && computeCanDiscardForEnergy(player, state),
     canTransform: isStrategy && computeCanTransform(state, player, opponent),
     canEndPhase: isStrategy || isAction,
+    canTapReserve:
+      isStrategy && state.config?.reserveTapChoice === true
+        ? player.zones.reserve
+            .filter((c): c is NonNullable<typeof c> => c !== null && isReserveTapEligible(c, state.config))
+            .map((c) => c.instanceId)
+        : [],
   };
 }
 

@@ -296,6 +296,7 @@ function concreteActions(acts) {
   for (const a of (acts.canActivateAbility || [])) out.push({ type: 'activate_ability', cardInstanceId: a.cardInstanceId, abilityIndex: a.abilityIndex });
   for (const e of (acts.canAttachEquipment || [])) { const t = (e.validTargets || [])[0]; if (t) out.push({ type: 'attach_equipment', cardInstanceId: e.cardInstanceId, targetInstanceId: t }); }
   for (const m of (acts.canMove || [])) { const d = (m.validDestinations || [])[0]; if (d) out.push({ type: 'move', cardInstanceId: m.cardInstanceId, toZone: d }); }
+  for (const id of (acts.canTapReserve || [])) out.push({ type: 'tap_reserve', cardInstanceId: id });
   if (acts.canTransform) out.push({ type: 'declare_transform' });
   return out;
 }
@@ -696,6 +697,11 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       // COST FLOOR — rule guard: discounts never take effective cost below 1
       // unless printed 0 (kills the §12c Echoes×Robe 0-cost loop class). ON-only hashed.
       ...(config.costFloor ? { costFloor: true } : {}),
+      // RESERVE TAP PACKAGE (§13m): choice = Rulebook 8 step 4's "may" (tap is a
+      // player action, not automatic); strain = tapping costs 1 HP, 1-HP bodies
+      // can't tap. ON-only hashed; both absent ⇒ byte-identical.
+      ...(config.reserveTapChoice ? { reserveTapChoice: true } : {}),
+      ...(config.reserveTapStrain ? { reserveTapStrain: true } : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -1097,6 +1103,8 @@ function resolveConfig(config = {}) {
     // COST FLOOR — rule guard: discounts never take effective cost below 1 unless
     // printed 0 (kills the §12c Echoes×Robe 0-cost loop class). ON-only hashed.
     ...(config.costFloor ? { costFloor: true } : {}),
+    ...(config.reserveTapChoice ? { reserveTapChoice: true } : {}),
+    ...(config.reserveTapStrain ? { reserveTapStrain: true } : {}),
     // RAW-POWER DECOMP — hero-LP head-start override: pin ONE faction's Hero
     // starting+max LP to a fixed value ({ faction, lp }). Only emitted (and hashed)
     // when a valid spec is given ⇒ default run is byte-identical to the v10 baseline.
@@ -1472,6 +1480,8 @@ function parseCliConfig(argv) {
     else if (key === 'armChargeAbsorb') cfg[key] = val === 'true';
     else if (key === 'rampPilot') cfg[key] = val === 'true';
     else if (key === 'costFloor') cfg[key] = val === 'true';
+    else if (key === 'reserveTapChoice') cfg[key] = val === 'true';
+    else if (key === 'reserveTapStrain') cfg[key] = val === 'true';
     else if (key === 'disableDiscardForEnergy') cfg[key] = val === 'true';
     else if (key === 'disableFactionHeroReach') cfg[key] = { faction: val };
     else if (key === 'factions') cfg.matchups = val.split(',');
