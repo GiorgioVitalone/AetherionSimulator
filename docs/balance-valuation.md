@@ -225,3 +225,46 @@ band's first output independently rank-agrees with the measured §12c field. Net
 four negative-net abilities (paying more than the effect is worth): Synthetic Evolution −2.62
 (cost 10), Unflinching Charge −0.80 (cost 4), Protector's Bulwark −0.60 (cost 3), Arcane
 Singularity −0.28 (cost 5) — the immediate cost/cooldown candidates pending B3 usage data.
+
+## Does the formula measure RIA / Verdant correctly? — the traced answer (§13h-era, 2026-07-03)
+
+**Per-ability arithmetic: yes, exactly** (every audit number reproduces from the code path):
+Bloom = choose_one MAX(token 3.4, temp 0.75) × rec(cd 6)=0.5 → 1.70 gross; Harvest = token
+((0+1)×0.8 + RESERVE_TAP 1.8)=2.6 × CONDITIONAL_P 0.6 × on_turn_end 2.2 → 3.43; Overgrowth
+per-use 10 × rec(cd 2)=1.0; Synthetic = multiply (k−1)×AVG_WEAK_BODY (the §13 repair) × 0.7
+once/game; Grovekeeper x_cost at EXPECTED_X=2 (SHIPs); Bio-Seedling = a 0/2 on the 0-cost line
+(+0.7 over).
+
+**Verdant's actual power mechanism: no — biased in four specific, quantified ways**, all
+in-context under-counts of the tap loop:
+1. `CONDITIONAL_P 0.6` is generic; in THIS deck "gained temp Energy this turn" holds ~0.9+ of
+   turns from turn 2 (three free Bio-Seedling tappers + Sprout/Biomass/Grovekeeper + Harvest's
+   own output). ×1.5 under.
+2. `on_turn_end 2.2` is a scale convention (expected *discounted* landings), near-uniform across
+   repeatables (aura 2.6, turn-start 2.4, paid cd-activated ≤2.0) — real Harvest fires ≈ 25+/game.
+   Between-hero parity stays ~fair (every always-on engine shares the convention: Undead Horde
+   2.4, Knowledge Shield 2.6), but the always-on vs paid-activated gap is compressed ~5–10×
+   below reality.
+3. `RESERVE_TAP_VALUE 1.8` ≈ 2.4 taps' worth — a Reserve token is near-unkillable (High Ground
+   cannot target Reserve) and taps 10–25 turns, bounded only by spend-saturation, which Verdant
+   uniquely relieves (Grovekeeper X sink, Symbiotic Expansion paying +2/+2 per temp deploy).
+4. Priced at exactly **0**: Bloom's temp branch igniting Harvest (same-card cross-ability),
+   Harvest's output feeding its own condition next turn (self-catalysis), Bio-Seedling's tapper
+   role (RESERVE_TAP exists only inside `deploy_token` — character cards carry no zone
+   knowledge), and Overgrowth/Synthetic scaling with the token density the rest of the kit makes.
+
+**Measured calibration of the mismatch (both directions):** the v2 token nerf moved the formula
+−1.06 → random-pilot Verdant moved **0.00** and rollouts −3.2; the §13e Bloom governor moved the
+formula −2.45 → resource curve −0.16 (~0–2 pp); meanwhile the loop the formula prices at ~0 is
+the measured **+17–19 pp** over the pack, from a deck whose cards price on-line (sole flag:
+Bio-Seedling +0.7). Formula deltas on RIA buy 0–3 pp where they touch the wrong mechanism; the
+real mechanism carries the spread while priced at zero — §8's Sapphire lesson, mirrored.
+
+**This is partly by design.** Per-card pricing must stay deck-agnostic (Harvest in a temp-less
+deck IS near-worthless; 0.6 is right on average and wrong everywhere specific). System effects
+are owned one layer up, and that layer already exists and works: `computeDeckValue`'s
+acceleration+saturation terms rank the four decks in the measured order (ρ = 1.00), the static
+loop-detector flags net-positive engines, and the sims are the quantitative instrument. Keep the
+per-card formula for its two jobs — cost-line guardrail and hero-parity bookkeeping — and keep
+Verdant's altitude decisions measurement-driven (§13h levers), with the formula as sanity check,
+not judge.
