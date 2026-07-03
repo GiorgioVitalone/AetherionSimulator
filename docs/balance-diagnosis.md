@@ -1411,3 +1411,53 @@ GAUGE_OUT=./bv-hero-tune2.json node balance-verify.mjs | tee bv-hero-tune2.txt
 
 (The full-panel command — same but without `FOCUS` and with `GPP_MATRIX=3000` — remains valid
 if a whole-pool re-baseline is ever wanted; it buys nothing extra for single-faction candidates.)
+
+### 13h. Hero-tune v2 remeasure (first FOCUS run) — prediction confirmed, hero axis spent, the loop is what remains (2026-07-03)
+
+External FOCUS=Verdant batch on **`75947cc9a0d1a7d7`** — the first self-certified run (pool path +
+sha in header and JSON, matching the §13g pre-registration; no re-simulation verification needed).
+Rung hashes on record: `8bdd43d76fec5479` / `12f025f64f9b8d68` / `f51e01018fc76d85`.
+
+**Prediction scorecard (§13g).** Full marginals for the pack reconstructed exactly as designed:
+two frozen §13f pack-internal cells + the fresh vs-Verdant cell each (sum check 200.0 on the nose).
+
+| Pre-registered (pooled r8+r12) | Actual | Verdict |
+|---|---|---|
+| Verdant 62–68 | **64.2** [61.1–67.1] (from 67.4) | ✓ — the "real but small step down" called in advance |
+| Radiant 43–49 | **47.4** (reconstructed) | ✓ |
+| Sapphire 41–47 | **41.8** (reconstructed) | ✓ low edge |
+| Onyx 40–46 | **46.7** (reconstructed) | ✗ grazes +0.7 — inside reconstruction noise (±1.8), inconclusive |
+| Spread 17–27 | **22.4** | ✓ |
+| V top at every rollout rung | 58.9 / 63.0 / 66.1 | ✓ |
+
+**Secondary signature MISSED, and it teaches something.** T-win did NOT rise (r8: 41.0 vs §13f
+45.4; n_T=564) even though the buffed flip kit is pressed **+24% per flip** (Overgrowth at cd 2:
+1.74 presses/flip vs 1.40). Verdant's flips remain "was losing" markers (winPctWhenTransformed 41
+vs winPctWhenNot 79.6): paper value moved into Verdant's transform converts WORSE than the same
+value in its base — the composite's 0.33 transform weight is generous to V in practice. Worth
+remembering next time a composite-preserving swap is sized.
+
+**Where the −3.2 pp came from (cell anatomy):**
+- **Random-pilot Verdant is IDENTICAL: 66.3 → 66.3, res@t10 9.84 → 9.95.** The battery untouched
+  at weak play — the v2 design conserved exactly what it intended to conserve, to the decimal.
+- The entire bite is strong-play, concentrated in **V v Onyx: 67.8 → 54.7** (−13.1, >CI) — in the
+  long grind matchup (p50 ~40 turns) Harvest's 0/1 shells no longer trade or chip against Onyx's
+  token war; Onyx is now near-even with Verdant under rollouts (and WON the r4 rung 54.3).
+- V v Radiant 73.7 → 69.7 (−4, ns). **V v Sapphire 60.6 → 68.1 (+7.5, ~1.4σ — watch, don't
+  conclude)**: possibly the harder-flipping Verdant profile against Sapphire's flip plan, possibly
+  seed noise (focus runs use fresh pairing seeds).
+- Ladder rising again (58.9 → 63.0 → 66.1): not converged; 64.2 is a floor.
+
+**Verdict: the hero axis is spent.** All 12 window checks PASS at the fixed W1 ceiling; two full
+hero passes (knobs, then a window-tightened re-split) took Verdant 73.9 → 67.4 → 64.2, but the
+pack sits at 41.8–47.4 and Verdant still farms it at ~64 with a rising ladder. What remains is
+what §12/§13f identified all along: the compounding loop (tap → temp Energy → Harvest token →
+new tapper) whose rate no hero cost/cooldown/token-stat reaches. Next-round options:
+1. **Deck feeders (data-only, recommended first):** Bio-Seedling 0E→1E — the turn-1 FREE Reserve
+   tapper, ×3 copies, the one battery piece the corrected formula flags (+0.7 over). Optionally
+   + Sprout 2E→3E (payback 2→3 turns; formula-fair ⇒ documented measurement-driven outlier).
+   Data edits, FOCUS-verifiable at ~20 min.
+2. **The threshold (engine work):** Harvest fires only on 3+ temp Energy gained this turn — a new
+   parameterized `event_context` condition (evaluator + DSL type + tests), then priced into the
+   formula. The surgical loop governor; keeps the big-battery identity, kills the trickle
+   ignition. More build, bigger expected effect.

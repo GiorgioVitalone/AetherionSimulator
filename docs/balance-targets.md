@@ -190,3 +190,20 @@ Heuristic CIs ±~1 pp; rollout CIs ±~8–11 pp (low) / ±~11–12 pp (high).
 **Result: the hero tune alone halves the strong-play spread and produces the first three-at-parity pack.** Radiant/Onyx/Sapphire land PASS-or-FLAG at every rollout rung and are at parity among themselves (pack-internal 55.9 / 47.3 / 46.7); Sapphire is fixed **without any of its §8 deck changes** (hero flip knobs only: 19.1 → 44.3, uniform ~+25 against every opponent, the farm cells gone). Verdant is the sole FAIL and is **not converged** — still rising with pilot strength (62.8 → 65.7 → 70.3), so read 67.4 as a floor. First panel where heuristic and all rollout rungs agree on the top faction. Full mechanism analysis, prediction scorecard, and next-round queue: `balance-diagnosis.md` **§13f**.
 
 **Hygiene:** mirror FP heuristic +1.6 pp, rollouts +0.7/+2.3/+1.0 — PASS everywhere. Decided **100.0%** on every pilot — PASS (the §13a cost floor keeps the §12c loop class dead at scale). Worst heuristic cell Onyx→Verdant 28.4% — FLAG (just outside 30/70); worst pooled rollout cell Radiant→Verdant 26.3%.
+
+---
+
+## 10. Verification run — 2026-07-03 (hero-tune2, first FOCUS run)
+
+**Method.** First **FOCUS=Verdant** panel (only Verdant-involving pairings; per-pairing sizes unchanged, GPP_MATRIX=1000; ~40% of a full panel's compute for 100% of its information — the six non-Verdant pairings are byte-identical replays of §9, proven in §13g) on **CURRENT-plus-hero-tune2** (sha256 `75947cc9a0d1a7d7`). First self-certified run: pool path + sha embedded in header/JSON, matching the pre-registration — verification was a read.
+
+| Pilot | V games | Verdant | O / R / S vs Verdant |
+|---|---|---|---|
+| `random` | 3,000 | **66.3%** (§9: 66.3 — identical) | 13.3 / 65.4 / 22.5 |
+| `heuristic` | 3,000 | 63.5% (§9: 65.0) | 30.5 / 34.7 / 44.3 |
+| `rollout` r4 | 900 | 58.9% | — |
+| `rollout` r8 | 600 | 63.0% | — |
+| `rollout` r12 | 360 | 66.1% | — |
+| **pooled r8+r12** | 960 | **64.2%** [61.1–67.1] (§9: 67.4) | 45.3 / 30.3 / 31.9 |
+
+**Reconstructed full marginals** (frozen §9 pack-internal cells + fresh vs-V cells; sum 200.0): **Verdant 64.2 / Radiant 47.4 / Onyx 46.7 / Sapphire 41.8 — spread 22.4 pp** (§9: 25.1). §13g prediction confirmed (V dead in band; only the Onyx bound grazed, inside reconstruction noise). All 12 hero-window checks PASS at the fixed W1 — the hero axis is spent; remaining work is the Verdant deck/loop (see `balance-diagnosis.md` §13h). Decided 100% everywhere; mirror FP −0.1 to −2.5 pp — PASS.
