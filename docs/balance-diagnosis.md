@@ -1532,3 +1532,44 @@ FOCUS=Verdant AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-hero-tune
 GPP_MATRIX=1000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
 GAUGE_OUT=./bv-battery2.json node balance-verify.mjs | tee bv-battery2.txt
 ```
+
+### 13k. Fodder trim round 2 — the income thesis is DEAD; switching to the conversion thesis (2026-07-03)
+
+**Results (FOCUS run, self-certified `2d85729c672d4b8f`):** pooled r8+r12 **Verdant 62.6**
+[59.5–65.6] vs predicted 57.5–61.5 — **the ≥61.5 falsifier fires cleanly** (last round grazed;
+this one is unambiguous). Reconstructed pack: **Radiant 49.1 / Onyx 46.4 / Sapphire 42.0**,
+spread 20.6 (flat vs 19.6). Rung hashes `9712dfb50bc5266a` / `f51de5ca49d83c77` /
+`9adc77137124a174`.
+
+**Why this kills the income thesis rather than just the round:** every MECHANISM prediction hit —
+random res@t10 9.68 → 9.32 (predicted −0.2..−0.4 ✓), rollout curves down ~0.2–0.3, random V 64.2
+(62–65 ✓) — and the win rate did not move (62.1 → 62.6). Two rounds of income pricing: −2.1 pp,
+then ~0. The decisive comparative: **Onyx now out-taps Verdant** (res@t10 8.4 vs 7.2 at r8) and
+sits at parity — tap income per se does not confer the altitude. Verdant's is in CONVERSION:
+it wins 76–81% of its UNFLIPPED rollout games, deploying 18.5–19 bodies/game (R: 12), i.e. the
+engines that turn income into board and cards, which the per-card formula is structurally quiet
+about (§12 Bucket D; the traced-answer section in balance-valuation.md).
+
+**Round 3 — the last card-side thesis (conversion payloads, ×3-copy engines, never yet touched):**
+`applyPayloadTrim`: **Rampant Evolution 3E→4E** (destroy an ally → deploy from deck at cost+1 —
+the tutor-tempo engine; `deploy_from_deck` priced flat 4, novelty-flagged) and **Biotech Engineer
+3E→4E** (Aura: friendly gains stats → draw, fed by every buff and X-sink in the deck — the
+card-advantage engine; its synergy web is audit-capped by design). Card-cost data edits only;
+aura effect values untouched. Pool **`CURRENT-plus-ht2b2-payload`** (sha **`34cf3a286ea726f6`**);
+all six Verdant edits verified in-bytes; hero windows 12/12 PASS; smoke clean.
+
+**Pre-registered prediction (pooled r8+r12, FOCUS):** Verdant **57–61**; spread 15–19; Verdant
+deploys/game down ≥0.8 and its unflipped win% down ≥4 (the thesis-specific signature — if V drops
+WITHOUT those moving, the mechanism story is wrong even if the number is right). **Falsifiers:**
+V ≥61 → the card-side space is FULLY exhausted (income AND conversion theses dead) — the residual
+is systemic and the decision is: (a) rules knob — cap Reserve generation at 1/turn total (hits
+income leader Onyx hardest, would need an Onyx give-back; engine + tests), (b) starter-deck LIST
+changes (composition, not card data — a product decision), or (c) accept V ≈ 62 and re-center
+targets. V <55 → revert Biotech Engineer to 3E.
+
+```bash
+cd packages/engine && node make-pools.mjs   # confirm CURRENT-plus-ht2b2-payload sha 34cf3a286ea726f6
+FOCUS=Verdant AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-ht2b2-payload.json \
+GPP_MATRIX=1000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
+GAUGE_OUT=./bv-payload.json node balance-verify.mjs | tee bv-payload.txt
+```

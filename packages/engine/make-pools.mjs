@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import { applyEdits } from './balance-apply-edits.mjs';
 import { applyHeroTune, applyHeroTuneV2, applyGrovekeeperFix } from './make-hero-tune.mjs';
 import { applyBatteryTrim, applyBatteryTrim2 } from './make-battery-trim.mjs';
+import { applyPayloadTrim } from './make-payload-trim.mjs';
 
 const outDir = `${(process.argv[2] || './generated-pools').replace(/\/$/, '')}/`;
 mkdirSync(outDir, { recursive: true });
@@ -67,7 +68,11 @@ const pools = {
   },
   'CURRENT-plus-hero-tune2-battery2': {
     pool: applyBatteryTrim2(applyBatteryTrim(applyHeroTuneV2(applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw).raw).raw).raw,
-    note: '§13j candidate: battery + last cheap-fodder holes (Grovekeeper 0E+X→1E+X, Biomass Surge 3E→4E)',
+    note: '§13j candidate (measured §13k): battery + last cheap-fodder holes (Grovekeeper 0E+X→1E+X, Biomass Surge 3E→4E)',
+  },
+  'CURRENT-plus-ht2b2-payload': {
+    pool: applyPayloadTrim(applyBatteryTrim2(applyBatteryTrim(applyHeroTuneV2(applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw).raw).raw).raw).raw,
+    note: '§13k candidate: battery2 + conversion-payload trim (Rampant Evolution 3E→4E, Biotech Engineer 3E→4E)',
   },
   'derived-nerfs-lp30': {
     pool: derivedNerfs.raw,
