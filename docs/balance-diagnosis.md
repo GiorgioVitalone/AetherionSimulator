@@ -1573,3 +1573,40 @@ FOCUS=Verdant AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-ht2b2-pay
 GPP_MATRIX=1000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
 GAUGE_OUT=./bv-payload.json node balance-verify.mjs | tee bv-payload.txt
 ```
+
+### 13l. Round 3 null — the card-COST space is closed; the surplus-income insight; DECISION BRIEF (2026-07-03)
+
+**Results (FOCUS run, self-certified `34cf3a286ea726f6`):** pooled r8+r12 **Verdant 63.3**
+[60.2–66.3] vs predicted 57–61 — falsifier fires. The thesis-specific signatures are decisive:
+deploys/game FLAT (18.65 vs 18.55 at r8; predicted −0.8+), unflipped-win FLAT (77.1 vs 76.9;
+predicted −4+). Reconstructed pack: R 47.4 / O 46.4 / S 42.9, spread 20.4. Rung hashes
+`a86677aa2e86df43` / `b4ee9ba3e626cb7e` / `224c6f4dbec73ccd`.
+
+**The full card-nerf ledger on Verdant** (8 data edits across 4 rounds): 67.4 → 64.2 (hero
+re-split, −3.2) → 62.1 (feeders, −2.1) → 62.6 (fodder, +0.5) → **63.3** (converters, +0.7).
+The three COST rounds net to ~0, and random-pilot Verdant has been flat at ~64.3 since v2.
+
+**Why every cost edit failed — the unifying insight:** the Reserve annuity gives Verdant a
+structural income SURPLUS (+2–3/turn over Radiant/Sapphire, who essentially never tap — their
+res@t10 ≈ the resource-draw baseline). A deck with surplus income is **price-inelastic**: +1E on
+any card is paid out of surplus and changes nothing about what gets deployed. Cost-side card
+edits tax the one resource Verdant has too much of. (Effect-side card edits — weaker stat lines,
+smaller effect amounts — are the one untested card class, but the same surplus logic predicts
+substitution to the next converter; low confidence.)
+
+**DECISION BRIEF (pre-registered in §13k — this is a design-authority call):**
+- **(A) RECOMMENDED — rules knob: Reserve energy generation capped at 1/turn total** (config-
+  gated in `generateReserveEnergy`; one simple rule, less tracking than the vetoed per-token
+  ideas). Attacks the surplus itself. Expected: V −4–8 pp, Onyx −3–6 (it taps hardest: res@t10
+  8.3) → stage an Onyx give-back BEHIND the measurement (candidate: Deathly Resurgence cd 2→1
+  revert, the §13e knob). CAVEAT: a rules change touches ALL pairings — the next run is a FULL
+  panel, not FOCUS (~50 min class).
+- **(B) Starter-deck LIST change** (product decision): swap Verdant fodder copies for mid-cost
+  bodies. FOCUS-verifiable, zero engine work — but the same surplus logic that killed rounds
+  2–3 predicts the annuity persists with any playable 40.
+- **(C) Accept & re-center:** V ≈ 63 / pack 43–47 / spread ~20 as the shipped state — declares
+  the ≤10 pp target unreachable under the current tap rule and the vetoed-lever list.
+- **(D) Effect-side card edits** (untested class, low confidence per the surplus logic):
+  e.g. converter effect amounts. Available if (A) is unpalatable.
+
+No new pool is cut; the §13k candidate chain stops here pending the pick.
