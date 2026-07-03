@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { applyEdits } from './balance-apply-edits.mjs';
 import { applyHeroTune, applyHeroTuneV2, applyGrovekeeperFix } from './make-hero-tune.mjs';
+import { applyBatteryTrim } from './make-battery-trim.mjs';
 
 const outDir = `${(process.argv[2] || './generated-pools').replace(/\/$/, '')}/`;
 mkdirSync(outDir, { recursive: true });
@@ -58,7 +59,11 @@ const pools = {
   },
   'CURRENT-plus-hero-tune2': {
     pool: applyHeroTuneV2(applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw).raw,
-    note: '§13g candidate: hero-tune + W1-fixed-window Verdant re-split (Harvest token 0/1, Overgrowth cd 2, Synthetic 2E)',
+    note: '§13g candidate (measured §13h): hero-tune + W1-fixed-window Verdant re-split (Harvest token 0/1, Overgrowth cd 2, Synthetic 2E)',
+  },
+  'CURRENT-plus-hero-tune2-battery': {
+    pool: applyBatteryTrim(applyHeroTuneV2(applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw).raw).raw,
+    note: '§13i candidate: hero-tune2 + tap-loop feeder trim (Bio-Seedling 0E→1E, Sprout 2E→3E)',
   },
   'derived-nerfs-lp30': {
     pool: derivedNerfs.raw,

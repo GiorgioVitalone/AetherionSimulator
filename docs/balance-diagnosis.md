@@ -1461,3 +1461,27 @@ new tapper) whose rate no hero cost/cooldown/token-stat reaches. Next-round opti
    parameterized `event_context` condition (evaluator + DSL type + tests), then priced into the
    formula. The surgical loop governor; keeps the big-battery identity, kills the trickle
    ignition. More build, bigger expected effect.
+
+### 13i. The concrete plan + feeder-trim candidate, pre-registered (2026-07-03)
+
+**The plan, in order:** (1) trim the loop's ignition feeders, data-only — measure. (2) Only if
+Verdant still reads ≥62 pooled: build the Harvest threshold (parameterized `event_context`
+"gained N+ temp Energy this turn" — engine condition + tests + pricing) — measure. (3) Formula
+stays as-is (guardrail + hero bookkeeping; see balance-valuation.md traced-answer section).
+O/R/S stay untouched; re-judge the pack after Verdant lands.
+
+**Step 1 encoded:** `CURRENT-plus-hero-tune2-battery` (sha **`adec431841b82df5`**) =
+hero-tune2 + Bio-Seedling 0E→1E + Sprout 2E→3E (`make-battery-trim.mjs`, guarded). Hero windows
+untouched (12/12 PASS). Smoke clean (300 games).
+
+**Pre-registered prediction (pooled r8+r12, FOCUS reconstruction):** Verdant **55–62** (from
+64.2); this one SHOULD show at weak play too (unlike v2): random Verdant 60–65 (from 66.3),
+res@t10 down ≥0.5 (from 9.95). Falsifiers: V ≥62 → feeders insufficient, go to step 2 (threshold);
+V <55 → overshot, revert Sprout to 2E and keep Bio-Seedling 1E.
+
+```bash
+cd packages/engine && node make-pools.mjs   # confirm CURRENT-plus-hero-tune2-battery sha adec431841b82df5
+FOCUS=Verdant AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-hero-tune2-battery.json \
+GPP_MATRIX=1000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
+GAUGE_OUT=./bv-battery.json node balance-verify.mjs | tee bv-battery.txt
+```
