@@ -315,6 +315,14 @@ export interface GameConfig {
    * paid for in board material. Applies to both the automatic path and the
    * `tap_reserve` action. Absent/false ⇒ byte-identical no-op. */
   readonly reserveTapStrain?: boolean;
+  /** RULES CHANGE UNDER MEASUREMENT (§13o; default absent ⇒ deck-construction
+   * default: the full 15-card Resource Deck). When set, each player's Resource
+   * Deck is truncated to this many cards AFTER the setup shuffle (preserving the
+   * deck's resource-type mix in expectation). Smaller decks cap total permanent
+   * income and empty sooner — under `terminationMode:
+   * resource_deck_empty_transform` that opens the transform gate earlier.
+   * Read at game setup only. Absent ⇒ byte-identical no-op. */
+  readonly resourceDeckSize?: number;
   /** RULE ABLATION PROBE (default absent/false ⇒ engine-default: any player may,
    * once per turn, discard a hand card for +1 temporary resource MATCHING the
    * card's type — Mana if Magic-aligned, Energy if Tech-aligned, per Rulebook 11;

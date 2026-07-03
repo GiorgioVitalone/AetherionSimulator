@@ -1698,3 +1698,55 @@ looks like. Random remains the known artifact floor (Radiant 78.8).
    ordinary single-matchup/single-faction tuning problems, FOCUS-probeable at ~20 min.
 3. The six §13i–k cost edits were tuned under the old rule; with Verdant still on top they stay,
    but any future Verdant relief should un-stack those before touching anything new.
+
+### 13o. Package ADOPTED; the Sapphire-discard audit (answer: it's healthy); the 12-card Resource Deck probe (2026-07-03)
+
+**Adoption (design sign-off):** `reserveTapChoice` + `reserveTapStrain` are now unconditional in
+the standard baseline (`balance-verify.mjs` BASE, `balance-standard-sim.mjs`,
+`balance-probe-denergy.mjs`). Panels before 2026-07-03 predate the package. The engine flags
+remain opt-in (defaults off) so historical replays stay byte-identical; the Rulebook text for the
+strain rule is pending (Documentation submodule is not writable from this environment).
+
+**Sapphire discard audit — the bot does NOT overvalue discard-for-energy:**
+1. *Policy is tempo-gated by construction:* the standard heuristic runs `reachDiscard`
+   (`src/bot/heuristic.ts` chooseReachDiscard) — a discard fires ONLY to fund a specific play
+   that is short by exactly one resource, pitching the lowest-value matching-type card, and only
+   when the play out-values the pitch by REACH_MARGIN 1.5 with MIN_REACH_PLAY 2. Every heuristic
+   discard funds a same-turn tempo play — precisely the "discard for tempo-gaining plays"
+   principle. (Legacy blind pitching was the §11 self-handicap, fixed and adopted then.)
+2. *The measured value check:* the §12a A/B DISABLED the rule entirely — Sapphire dropped
+   **−4.0 pp**, the largest hit of any faction. The discards win games; they are not a leak.
+3. *Why the volume is high for Sapphire specifically:* it is the draw-engine faction — it holds
+   the most surplus cards, so its marginal card value is the lowest and converting excess cards
+   into tempo is correct play. The outcome-searching rollout pilot (no reach heuristic) also
+   discards most with Sapphire (2.5–3.4/game vs R/V 0) — independent confirmation.
+   Under the adopted tap package the rule's value rises further (it is now the main flexible
+   income source), so Sapphire leaning on it harder is rational adaptation, not bias.
+   No change made; if a re-quantification under the new economy is ever wanted, the §12a probe
+   (`balance-probe-denergy.mjs`) re-runs in ~20 min.
+
+**The 12-card Resource Deck (`resourceDeckSize`, config-gated, engine default 15):** each
+player's Resource Deck is truncated to N cards AFTER the setup shuffle (type mix preserved in
+expectation). Two effects by construction: total permanent income caps at 12, and under
+`resource_deck_empty_transform` the transform gate opens ~3 own-turns earlier. Threaded through
+setup → sim config → runHash → CLI (`resourceDeckSize`) → `RESOURCE_DECK=<n>` env in
+balance-verify. 788 tests green (4 new); flags-off byte-identity re-proven
+(`8b4782f6ff56b5ed`); smoke on the new ruleset: decided 100%, transformAvgTurn 25–27 (from
+30–33) — the earlier-transform effect is real and visible at smoke size.
+
+**Pre-registered prediction (full panel, RESOURCE_DECK=12, vs the §13n reference
+O 51.5 / R 47.2 / S 44.1 / V 57.3, spread 13.2):** earlier universal flips help the factions
+whose transformed kits WIN (§13n T-vs-N: Onyx ~50/53, Sapphire 54/26) and do nothing for those
+whose flips are losing markers (Radiant 31/69, Verdant 43/77). Pooled r8+r12: **Sapphire 46–53**
+(up — flip-dependent, biggest winner), **Onyx 49–56**, **Radiant 43–50** (down — expensive
+top-end under a 12-income cap), **Verdant 53–59** (flat); spread **10–16**. Hard signatures:
+rollout transformAvgTurn drops to ~25–27, transform% up ≥8 pp, decided 100%. **Falsifiers:**
+spread >16 → revert to 15 (the probe stays a probe); Radiant <43 → the income cap overhits its
+archetype — revert or pair with Radiant relief.
+
+```bash
+cd packages/engine && node make-pools.mjs   # pool unchanged: CURRENT-plus-ht2b2-payload 34cf3a286ea726f6
+RESOURCE_DECK=12 AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-ht2b2-payload.json \
+GPP_MATRIX=3000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
+GAUGE_OUT=./bv-rd12.json node balance-verify.mjs | tee bv-rd12.txt
+```

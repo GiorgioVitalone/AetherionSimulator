@@ -126,12 +126,13 @@ export function createGame(
   player2: DeckSelection,
   registry: CardDefinitionRegistry,
   seed?: number,
+  setupOptions?: { readonly resourceDeckSize?: number },
 ): GameState {
   resetSetupInstanceCounter();
   const rng = createRng(seed ?? Date.now());
 
-  const { player: p1, nextRng: rng1 } = buildPlayerState(player1, registry, 0, rng);
-  const { player: p2, nextRng: rng2 } = buildPlayerState(player2, registry, 1, rng1);
+  const { player: p1, nextRng: rng1 } = buildPlayerState(player1, registry, 0, rng, setupOptions);
+  const { player: p2, nextRng: rng2 } = buildPlayerState(player2, registry, 1, rng1, setupOptions);
 
   // Determine first player randomly
   const { value: firstPlayer, nextRng: rng3 } = randomInt(rng2, 0, 1);
@@ -168,6 +169,7 @@ function buildPlayerState(
   registry: CardDefinitionRegistry,
   owner: 0 | 1,
   rng: RngState,
+  setupOptions?: { readonly resourceDeckSize?: number },
 ): {
   readonly player: PlayerState;
   readonly nextRng: RngState;
@@ -199,7 +201,14 @@ function buildPlayerState(
 
   // Shuffle both decks
   const { result: shuffledMain, nextRng: rng1 } = shuffle(mainCards, rng);
-  const { result: shuffledResource, nextRng: rng2 } = shuffle(resourceCards, rng1);
+  const { result: shuffledFullResource, nextRng: rng2 } = shuffle(resourceCards, rng1);
+  // §13o rules variant: truncate the Resource Deck AFTER the shuffle (preserves
+  // the deck's resource-type mix in expectation). Absent ⇒ full deck, unchanged.
+  const size = setupOptions?.resourceDeckSize;
+  const shuffledResource =
+    size !== undefined && size > 0 && size < shuffledFullResource.length
+      ? shuffledFullResource.slice(0, size)
+      : shuffledFullResource;
 
   // Draw initial hand (5 cards)
   const handSize = Math.min(INITIAL_HAND_SIZE, shuffledMain.length);

@@ -628,7 +628,8 @@ function gameDiagnostics(fin, winner, decided, timedOut) {
 }
 
 function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
-  let gs = createGame(deckA, deckB, registry, seed);
+  let gs = createGame(deckA, deckB, registry, seed,
+    config.resourceDeckSize ? { resourceDeckSize: config.resourceDeckSize } : undefined);
   if (config.abilitiesOn) gs = hydrate(gs);
   gs = applyFirstPlayer(gs, config.firstPlayer, gameIndex);
   gs = applyZoneCapacity(gs, config.frontlineSlots, config.highGroundSlots);
@@ -702,6 +703,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       // can't tap. ON-only hashed; both absent ⇒ byte-identical.
       ...(config.reserveTapChoice ? { reserveTapChoice: true } : {}),
       ...(config.reserveTapStrain ? { reserveTapStrain: true } : {}),
+      // RESOURCE DECK SIZE (§13o): truncate each player's Resource Deck post-shuffle.
+      ...(config.resourceDeckSize ? { resourceDeckSize: config.resourceDeckSize } : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -1105,6 +1108,7 @@ function resolveConfig(config = {}) {
     ...(config.costFloor ? { costFloor: true } : {}),
     ...(config.reserveTapChoice ? { reserveTapChoice: true } : {}),
     ...(config.reserveTapStrain ? { reserveTapStrain: true } : {}),
+    ...(config.resourceDeckSize ? { resourceDeckSize: config.resourceDeckSize } : {}),
     // RAW-POWER DECOMP — hero-LP head-start override: pin ONE faction's Hero
     // starting+max LP to a fixed value ({ faction, lp }). Only emitted (and hashed)
     // when a valid spec is given ⇒ default run is byte-identical to the v10 baseline.
@@ -1467,7 +1471,7 @@ function parseCliConfig(argv) {
     if (key === 'realDecks') { cfg.decks = Object.fromEntries(FACTIONS.map(f => [f, f])); continue; }
     const val = argv[i + 1]; i++;
     if (key === 'parallel') { cfg.__parallel = Number(val); continue; } // driver-only; not part of the sim config/hash
-    if (['gamesPerPairing', 'turnCap', 'seedBase', 'lpScale', 'healScale', 'defenderForceCap', 'damageScale', 'frontlineSlots', 'highGroundSlots', 'equalizeHeroLp', 'atkBonus', 'startingCardBonus', 'resourceRampBonus'].includes(key)) cfg[key] = Number(val);
+    if (['gamesPerPairing', 'turnCap', 'seedBase', 'lpScale', 'healScale', 'defenderForceCap', 'damageScale', 'frontlineSlots', 'highGroundSlots', 'equalizeHeroLp', 'atkBonus', 'startingCardBonus', 'resourceRampBonus', 'resourceDeckSize'].includes(key)) cfg[key] = Number(val);
     else if (key === 'abilitiesOn') cfg[key] = val !== 'false';
     else if (key === 'armBuffsTakeMax') cfg[key] = val === 'true';
     else if (key === 'armFirstInstanceOnly') cfg[key] = val === 'true';

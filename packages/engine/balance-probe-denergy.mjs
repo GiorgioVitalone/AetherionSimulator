@@ -35,6 +35,8 @@ const BASE = {
   armFirstInstanceOnly: true,
   terminationMode: 'resource_deck_empty_transform',
   costFloor: true,
+  reserveTapChoice: true,
+  reserveTapStrain: true,
   botPolicy: 'heuristic',
   exileDiscardForEnergy: true,
   reachDiscard: true,

@@ -74,11 +74,15 @@ const BASE = {
   armFirstInstanceOnly: true,
   terminationMode: 'resource_deck_empty_transform',
   costFloor: true,
-  // §13m rules package (RESERVE_TAP=1): tap-as-choice (Rulebook "may") + strain
-  // (1 damage per tap, 1-HP bodies can't tap). Env-gated so the standard panel
-  // stays comparable; a run with the package on is a DIFFERENT ruleset and its
-  // runHashes are expected to differ from all prior panels.
-  ...(process.env.RESERVE_TAP === '1' ? { reserveTapChoice: true, reserveTapStrain: true } : {}),
+  // §13m rules package — ADOPTED into the standard baseline (design sign-off after
+  // the §13n panel: spread 20.4 → 13.2): tapping is a player choice (Rulebook 8
+  // step 4's "may") and strains the tapper (1 direct damage; 1-HP bodies can't
+  // tap). Panels before 2026-07-03 predate the package.
+  reserveTapChoice: true,
+  reserveTapStrain: true,
+  // §13o rules probe (RESOURCE_DECK=<n>): truncate each Resource Deck to n cards
+  // post-shuffle (deck-construction change: 15 → n). Env-gated until measured.
+  ...(process.env.RESOURCE_DECK ? { resourceDeckSize: Number(process.env.RESOURCE_DECK) } : {}),
 };
 
 // Wilson 95% score interval -> [lowPct, pPct, highPct].
@@ -280,7 +284,8 @@ function report(p) {
 // ── Run the panel ────────────────────────────────────────────────────────────
 console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}${FOCUS ? `  FOCUS=${FOCUS}` : ''}`);
 console.log(`Pool: ${POOL_PATH}  sha256/16 ${POOL_SHA}`);
-if (process.env.RESERVE_TAP === '1') console.log('RULES PACKAGE ON: reserveTapChoice + reserveTapStrain (§13m)');
+console.log('Standard ruleset: §13m tap package ADOPTED (reserveTapChoice + reserveTapStrain)');
+if (process.env.RESOURCE_DECK) console.log(`RULES PROBE ON: resourceDeckSize=${Number(process.env.RESOURCE_DECK)} (§13o)`);
 if (FOCUS) console.log(`FOCUS mode: only ${FOCUS}-involving pairings run — non-${FOCUS} marginals/grades are vs-${FOCUS} cells only; combine with the reference panel's pack-internal counts for full marginals.`);
 // exileDiscardForEnergy is a RULE toggle (discard_for_energy exiles instead of
 // binning) — applies to every pilot. reachDiscard/valuePilot are HEURISTIC bot
