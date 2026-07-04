@@ -1750,3 +1750,46 @@ RESOURCE_DECK=12 AETHERION_CARDS=./generated-pools/aetherion-CURRENT-plus-ht2b2-
 GPP_MATRIX=3000 RL_GPP=300 RH_GPP=200 RX_GPP=120 \
 GAUGE_OUT=./bv-rd12.json node balance-verify.mjs | tee bv-rd12.txt
 ```
+
+### 13p. The 12-card Resource Deck — first sub-10 spread; the game's imbalance reduces to ONE cell (2026-07-03)
+
+**Full panel, self-certified** (`34cf3a286ea726f6`, adopted ruleset + RESOURCE_DECK=12; rung
+hashes `32bfb71e5b4301e2` / `400aee98aec17cea` / r12 in JSON). **Prediction scorecard (§13o):**
+
+| Pre-registered (pooled r8+r12) | Actual | Verdict |
+|---|---|---|
+| Sapphire 46–53 (biggest winner) | **52.7** [49.5–55.8] (from 44.1) | ✓ high end — earlier flips, as predicted |
+| Onyx 49–56 | **51.5** [48.3–54.6] | ✓ |
+| Radiant 43–50 (down) | **43.1** [40.0–46.3] | ✓ bottom edge |
+| Verdant 53–59 | **52.7** [49.5–55.8] | ✗ grazes −0.3, inside CI |
+| Spread 10–16 | **9.6** | ✗ BETTER than the band — first sub-10 in program history |
+| Flip turn → ~25–27 | 25.3–27.6 at rollouts (from 29–31) | ✓ |
+| transform% up ≥8 pp | +7 to +13 by faction | ✓ |
+| decided 100% | 100% every pilot | ✓ |
+
+Neither falsifier fired. **Rollout-low posted the first ALL-PASS rung ever: spread 1.2**
+(O 50.6 / R 49.7 / S 50.4 / V 49.3). Program history: 54.8 → 25.1 → 22.4 → 19.6 → 20.6 → 20.4 →
+13.2 → **9.6** — inside the §3 starter-deck acceptance band (~8–10 pp "watch").
+
+**The structural read — five of six cells are healthy; ONE is not:** pooled r8+r12 cells:
+O v R 54.7, O v S 45.9, O v V 53.8, R v S 50.0, S v V 54.1 — all within 46–55 — and
+**Radiant v Verdant 34.1/65.9**, the game's entire residual imbalance. Verdant now LOSES to both
+Onyx (46.2) and Sapphire (45.9); its 52.7 marginal is propped solely by farming Radiant. Radiant
+is at parity with Onyx (45.3) and Sapphire (50.0); its whole 43.1 deficit is the Verdant cell.
+The cross-pilot "top" is fully contested (O/S/V within 1.2 pp) — deep parity at strong play.
+
+**One hygiene regression to watch: mirror first-player edge** rose under the tighter economy —
+r4 +5.1 / r8 +5.6 (FAIL vs the ≤+3 target), r12 −0.4, heuristic +4.6. Plausible mechanism: with
+12 total resources + chosen taps, first-mover tempo compounds harder. Needs a dedicated probe
+before RD12 adoption is finalized (could be pilot artifact: tap-order interactions).
+
+**Queue:**
+1. **Adopt resourceDeckSize 12** (recommended, pending the FP probe): measured beyond prediction,
+   spread inside the acceptance band, transforms ~3 turns earlier as designed.
+2. **The last cell (R v V 34/66):** formula-aligned Radiant relief — its top-end bodies are the
+   corrected formula's biggest over-budget flags (Shieldbearer +4.5, Protector of Faith +4.4,
+   Faithkeeper +4.3) and the 12-income cap squeezes exactly that top-end. A conservative 1E cut
+   on 2–3 of them lifts Radiant mostly where it races Verdant. Card-only change ⇒ FOCUS=Radiant
+   verifiable (~20 min).
+3. **Mirror-FP probe:** quantify the +5 edge's source (tap-choice ordering vs economy tempo);
+   instrument-level.

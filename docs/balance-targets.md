@@ -224,3 +224,20 @@ Heuristic CIs ±~1 pp; rollout CIs ±~8–11 pp (low) / ±~11–12 pp (high).
 | **pooled r8+r12** (§13l →) | n=960/faction | 47.4 → **47.2%** | 63.3 → **57.3%** | 46.4 → **51.5%** | 42.9 → **44.1%** | 20.4 → **13.2 pp** |
 
 **Result: the largest single improvement on record.** Spread 13.2 pp at strong play (program history: 54.8 → … → 20.4 → 13.2); rollout-low posts the first three-PASS rung; Onyx—Verdant and Sapphire—Verdant are now even cells; Verdant's remaining altitude is a single matchup (beats Radiant 68.7). The tap-income collapse hit the pre-registered hard signature exactly (res@t10 7.2–8.4 → 5.1–5.6). Heuristic layer diverges under the new rule (v1 tap policy) — rollouts are the verdict layer. Full analysis: `balance-diagnosis.md` §13n. Decided 100% on every pilot.
+
+---
+
+## 12. Verification run — 2026-07-03 (12-card Resource Deck probe, full panel)
+
+**Method.** Full panel at §13d sizes on `34cf3a286ea726f6` under the ADOPTED §13m ruleset + `RESOURCE_DECK=12` (§13o probe: Resource Deck 15 → 12, truncated post-shuffle; caps permanent income at 12 and opens the transform gate ~3 turns earlier).
+
+| Pilot | Games | Radiant | Verdant | Onyx | Sapphire | Parity spread |
+|---|---|---|---|---|---|---|
+| `random` | 30,000 | 77.4% | 61.3% | 38.8% | 22.4% | 55.0 pp |
+| `heuristic` | 30,000 | 54.0% | 63.9% | 32.3% | 49.8% | 31.6 pp |
+| `rollout` r4 | 3,000 | 49.7% | 49.3% | 50.6% | 50.4% | **1.2 pp — first ALL-PASS rung** |
+| `rollout` r8 | 2,000 | 42.3% | 52.8% | 53.0% | 51.8% | 10.7 pp |
+| `rollout` r12 | 1,200 | 44.4% | 52.5% | 48.9% | 54.2% | 9.7 pp |
+| **pooled r8+r12** (§11 →) | n=960/faction | 47.2 → **43.1%** | 57.3 → **52.7%** | 51.5 → **51.5%** | 44.1 → **52.7%** | 13.2 → **9.6 pp** |
+
+**Result: first sub-10 spread — inside the §3 starter-deck acceptance band.** Five of six pooled cells sit in 46–55; the game's entire residual imbalance is **Radiant v Verdant 34.1/65.9**. Verdant now loses to Onyx and Sapphire; earlier transforms fixed Sapphire's flip-dependence (44.1 → 52.7). Watch: mirror first-player edge rose to +5 at r4/r8 (FAIL vs ≤+3) — probe before final RD12 adoption. Decided 100% everywhere. Full analysis: `balance-diagnosis.md` §13p.
