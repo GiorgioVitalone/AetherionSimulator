@@ -1793,3 +1793,221 @@ before RD12 adoption is finalized (could be pilot artifact: tap-order interactio
    verifiable (~20 min).
 3. **Mirror-FP probe:** quantify the +5 edge's source (tap-choice ordering vs economy tempo);
    instrument-level.
+
+### 13q. Rule lock — verdict layer, FP gate, ablation battery, adoption (2026-07-10)
+
+Everything from here runs through the new pipeline: presets + thresholds from
+`sim-data/balance-targets.json` (single source of truth; the doc mirrors it), every run ledgered
+in `balance-runs/ledger.jsonl` with pool sha, resolved ruleset, and per-pilot runHashes.
+
+**Step 0 — the verdict layer, resolved.** The §4 validity gate ("pilots agree") has failed since
+§13n: the heuristic reads Verdant 63.9/Onyx 32.3 on the same pool where rollouts read near-parity.
+Before any lock decision, we scaled the rollout ladder to CI-resolving sizes
+(RL/RH/RX = 600/400/400 gpp, RD12, pool `34cf3a28`, ledger `2026-07-10_verify_34cf3a28_rd12-verdict`):
+
+| Faction | r4 (n=3600) | r8 (n=2400) | r12 (n=2400) | Δ(r8→r12) |
+|---|---|---|---|---|
+| Onyx     | 49.0 [46.7–51.3] | 53.4 [50.6–56.2] | 52.8 [50.0–55.6] | 0.6 |
+| Radiant  | 49.6 [47.3–51.9] | 41.8 [39.0–44.6] | 44.2 [41.4–47.0] | 2.4 |
+| Sapphire | 52.1 [49.8–54.4] | 52.2 [49.3–55.0] | 50.2 [47.3–53.0] | 2.0 |
+| Verdant  | 49.3 [47.0–51.6] | 52.7 [49.8–55.5] | 52.8 [50.0–55.6] | 0.1 |
+
+Pre-registered rule, graded: **every faction's r8→r12 drift is ≤3 pp OR its CIs overlap
+(either suffices — a small drift is convergent on its own, and overlapping CIs mean a larger
+drift is within sampling noise). All four pass — the ladder's top is converged; no r16
+escalation.** r4 is the outlier (calls Radiant parity where
+r8/r12 separate it below 50 with disjoint CIs) — the r4 searcher (depth 2, 5 candidates) sits
+below the skill knee and is demoted to a dose-response rung, not a grading rung.
+
+**DECISION: the grading layer for all lock decisions is pooled rollout r8+r12** (~2,400
+games/faction, CI ±2.0 pp). Current pooled read: Onyx 53.1, Radiant 43.0, Sapphire 51.2,
+Verdant 52.8 — spread ~10.1, all of it Radiant's known R-v-V card deficit (§13p queue 2).
+Random and heuristic remain diagnostic floors only.
+
+**The heuristic's demotion is mechanistic, not hand-waving** (autopsy of the §13p panel's
+factionDetail): under the heuristic, Verdant wins **92.8%** of games in which its hero never
+transforms (rollout: 68%) while deploying 4.3 fewer bodies/game (13.7 vs 18.0) and holding
+resources (7.84 vs 8.71 @t15) — the heuristic finds Verdant's degenerate hold-and-win line and
+never pays the transform risk. Onyx under the heuristic flips 2.5 turns earlier (22.7 vs 25.5)
+at a 90.6% rate yet wins LESS when flipped (38.3% vs 50%) — it commits without board readiness.
+The heuristic's tap policy predates the §13m package; its play pattern is stale on two engine
+generations. Its reads are useful as a floor and for mechanism instrumentation, not for grading.
+
+**Mirror-FP dose-response from the same panel** (context for Step 1): r4 +4.0, r8 +4.3,
+r12 **+2.0** — the edge falls at the strongest rung, the signature of a pilot-skill artifact
+(§7 precedent: random-play FP +8.75 erased to +1.6 under rollout). Dedicated mirror probes
+(4,000 mirror games/condition, CI ±1.5 pp) are running: E1 r12/r8/r4 @RD12, E2 r8 @RD15 control.
+
+**Step 1 — the mirror-FP probes overturned the panel's optimistic read: the seat edge is REAL,
+and it is NOT RD12's fault.** Dedicated mirror-only probes (4 mirrors × 1,000 games each,
+`balance-fp-probe.mjs`, ledgered `fp-r{4,8,12}-rd12`, `fp-r8-rd15`):
+
+| Condition | FP edge (pp over 50) | vs ≤+3 gate |
+|---|---|---|
+| E1 r4 @RD12  | +4.50 [2.95 … 6.04] | FLAG |
+| E1 r8 @RD12  | +6.43 [4.88 … 7.95] | FAIL |
+| E1 r12 @RD12 | **+6.63 [5.08 … 8.15]** | **FAIL** |
+| E2 r8 @RD15  | **+5.13 [3.58 … 6.66]** | **FAIL** |
+
+The pre-registered rule fires: the r12 CI lower bound (5.08) clears +3 → **real FAIL**, Step 2
+triggers. Two structural findings: (1) the edge RISES with pilot skill — the opposite of the
+artifact signature; stronger play exploits first-mover tempo harder, so E3 (tap-order mechanism
+split) is moot. (2) E2: RD15 fails too — **the seat edge is a base-game property** (~+5 at r8),
+not an RD12 regression (RD12 adds ~+1.3, inside joint noise). RD12 is exonerated; the §6–§9-era
+"+2.6/+2.8" reads were under-powered mirrors, not a healthier game. (The §13p panel's r12 mirror
+read of −0.4/+2.0 came from 1,600 mirror games vs the probes' 4,000; probes govern.)
+
+**Step 2 — compensation sweep (mirror-only, r8 @RD12): the Hearthstone-style lever works.**
+`firstPlayerCompensation: 'card'` (second player draws +1 at game start): FP edge
+**+2.08 [0.53 … 3.62] — PASS** (from +6.43 uncompensated; ledger `fp-comp-card-r8-rd12`).
+The sweep's `resource`/`both` arms were pre-empted: `card` is the minimal lever, it clears the
+gate, and it is the established genre solution (HS coin, MtG play/draw). r12 confirmation run
+queued (pooled r8+r12 will put ~8,000 mirror games on the estimate); `both` would only risk
+overshoot. `play_or_draw` is engine-modeled as `card` (sim-runner header) — same lever.
+
+**Step 3 — ablation battery (partial; compute-constrained).** One of seven completed before the
+shared machine reclaimed the cores: `RULE_OFF=armFirstInstanceOnly` @RD12 (ablation preset,
+ledger `abl-armFirstInstanceOnly`): rollout-low spread 1.6, rollout-high 8.8 — no collapse, no
+pathology; retained on the fidelity/no-harm grounds of the retention rule. The remaining six are
+queued (`balance-runs/lowimpact-chain.sh`); per the pre-registered retention rule, four of them
+have standing retention cases independent of the ablation data — `reserveTapChoice` (Rulebook 8
+step 4 "may" — rules fidelity, locked regardless), `reserveTapStrain` (designer sign-off, §13m),
+`costFloor` (§12c infinite-loop guard — named pathology), `terminationMode` (stall-class/
+transform-deadlock guard — named pathology). `exileDiscardForEnergy` additionally has the §13-era
+denergy A/B on record (spread 15.81 → 15.17 with the rule on). The battery remains worth running
+for the record, but no retention decision hinges on it alone.
+
+**Step 4 — adoption decision (PROVISIONAL, pending the ratification panel).** On the evidence
+above, the ruleset-v1 composition is:
+
+| Rule | Disposition | Basis |
+|---|---|---|
+| `reserveTapChoice` | LOCK | Rulebook fidelity + §13n panel |
+| `reserveTapStrain` | LOCK | Designer rule (§13m) + §13n panel (spread −7) |
+| `armFirstInstanceOnly` | LOCK | Ablation clean; adopted since pre-§13 |
+| `terminationMode: resource_deck_empty_transform` | LOCK | Stall-ender; decided 100% on every §13q panel |
+| `costFloor` | LOCK | §12c loop guard |
+| `exileDiscardForEnergy` | LOCK | §11 discard-bot fix + denergy A/B |
+| `resourceDeckSize: 12` | **ADOPT + LOCK** | §13p spread 9.6; §13q verdict-layer read 10.1; FP-exonerated by E2 |
+| `firstPlayerCompensation: 'card'` | **ADOPT + LOCK** | Step 1 real FAIL (+6.6 @r12) neutralized to +2.08 PASS; base-game defect, not RD12's |
+
+**Interlude — the card gate's first vetoes (the framework earning its keep).** The §13p queue-2
+prescription (1-cost cuts on Shieldbearer/Protector/Faithkeeper) FAILED the gate's static stage:
+those three are the pricer's biggest OVER-budget flags (+3.5/+6.0/+2.6 beyond tolerance after
+the cut) — cutting their cost pushes them further over; the §13p brief had read "over-budget"
+as "has headroom" when it means the opposite. Take 2 (buff arm by cost: Banner 4M→3M, Uriel
+7M→6M) also failed: the character budget slope is ~4.8 power/cost, so a full 1M step on Uriel
+overshoots to +3.3 over. **Take 3 — Symphonic Banner 4M→3M + Uriel +1 HP (4/3/0→4/4/0)** — is
+static-clean (SIM-NEEDED grade, synergy-cap notes only) and awaits its graded FOCUS=Radiant
+run: pool `CURRENT-plus-ht2b2-payload-radiant` sha `340607a91bb5cba3`. Two semantics lessons
+were codified: (a) budget deviations grade SIM-NEEDED, hard-stop only for loops/hero-band/
+egregious (>4 power points past tolerance — `cardGate.staticOverBudgetHardFail`), because the
+sim is the verdict layer and every deliberate rebalance moves cards relative to budget; (b) the
+suggestions module and the audit carry different budget models (Uriel: −1.5 vs +1.3 at
+baseline) — a known inconsistency; the audit is the gate's pricer, the sim arbitrates.
+
+**The gate's first graded verdict (take 3, FOCUS=Radiant, ledger
+`2026-07-10_card-gate_340607a9_gate-Radiant`): FAIL — and the rejection is the framework's
+strongest validation yet.** The patch FIXED the target cell (R v V 34.1 → 45.3) but collapsed
+Radiant v Onyx 45.3 → 30.2 (past 65/35, ~5σ beyond noise) and worsened the like-for-like spread
+16.8 → 26.6; Radiant's marginal net-DROPPED 45.8 → 44.1. Formula-blessed buffs shifted the
+faction's matchup texture without lifting it — the exact fixes-one-cell-breaks-another failure
+mode the gate exists to catch, invisible to the pricer and to any single-cell eyeball. Radiant
+relief iteration continues as ordinary post-lock card work (each take is one ~35-min gate run);
+the rule lock proceeds on the unpatched pool per the pre-registered plan, R v V logged as the
+open card-track item.
+
+**Takes 4 and 5 (Verdant side: Guardian Spirit MK-III 6E→7E, then −1 ATK): both "FAIL" — and
+the failure pattern exposed a measurement confound that RETRACTS all three gate verdicts.**
+Take 4 fixed the target cell (V v R 67.1 → 59.0) but read V v Onyx 48.1 → 32.4; take 5 (a pure
+stat trim, no cast-window change) read V v O 31.3 — three DIFFERENT edits (a Radiant buff, a
+cost bump, a stat trim) all "collapsing" the focus faction's Onyx cell by ~15 pp. Cards don't
+do that; instruments do. Diagnosis chain (2026-07-10 evening):
+1. **Shared seed stream:** game seeds are `seedBase + pairingIndex·100003 + gameIndex·7919`
+   (sim-runner ~:1391) and FOCUS mode always puts the Onyx cell at pairing index 0 — the three
+   "independent" collapses were ONE observation. Still ~6σ vs the full panel — not stream luck.
+2. **Seat-swap A/B (the decisive control, 2×2,000 heuristic games, same seeds):** V v O reads
+   **68.0% with Verdant in seat 0 vs 72.8% with Verdant in seat 1** (Δ4.8 pp, ~3.3σ) — and the
+   effect persists with comp on (69.3 vs 74.5) and with first-player% equal in both arms.
+   **The engine (or bot) carries a seat-index asymmetry**, distinct from the first-player axis.
+3. Scope of the taint: FOCUS mode seats the focus faction at p0 while all-pairs seats
+   alphabetically — so every FOCUS-vs-full comparison (the card gate's Stage B) measured the
+   seat effect, not the card. Worse: EVERY historical panel seated Onyx at p0 in all its cells
+   and Verdant at p1 in all of its — faction marginals, the R v V 33% cell, and the
+   ratification spread 10.6 all embed seat bias of unknown per-cell size. Mirror-FP probes
+   remain valid (identical decks cancel the seat axis). The earlier "RD12 quantization law"
+   note above is RETRACTED pending seat-clean re-measurement — the 15 pp swings it explained
+   were the instrument, not the income cap.
+4. Remediation in flight: (a) locate the seat-indexed code path (suspect: simultaneous
+   trigger/upkeep ordering by seat instead of active-player-relative — a rules-fidelity
+   question against the Rulebook's priority system); (b) regardless of the engine verdict,
+   add seat alternation to the measurement harness (the seat-axis twin of
+   `firstPlayer: 'alternating'`) so panels are seat-neutral by construction; (c) re-baseline
+   and re-run ratification seat-clean. The lock machinery (balance-lock.mjs) is unaffected
+   and waits on the clean panel.
+
+Pre-registered ratification acceptance (unchanged): pooled r8+r12 spread ≤10 (aspiration ≤6),
+no faction CI clearing 43/57, worst cell ≤70/30, mirror FP ≤+3 with comp, decided ≥85%, ladder
+converged. **The lock is NOT declared until that panel runs and passes** — with COMP=card in
+BASE for the first time, the panel is also the first full-matrix read of the compensated game
+(comp was measured on mirrors; the cross-matchup effect needs the panel). Known watch item
+going in: Radiant ~43.0 at the verdict layer — the R-v-V card fix (§13p queue 2) is the
+designated remedy and runs through the new card gate as its first client.
+
+**Ratification attempt 1 (seat-confounded, ledger `ruleset-v1-ratification`, 2026-07-10):
+5/6 PASS, spread 10.6 vs ≤10 — FAIL by 0.6 pp, all of it the R-v-V cell.** Routed to the card
+track per protocol; the card takes then exposed the seat confound (above), retracting both the
+takes AND this panel's read.
+
+**Ratification attempt 2 (seat-clean: apnapAnyOrderFix + seatAlternation adopted, ledger
+`2026-07-11_verify_34cf3a28_ruleset-v1-ratification-v2`): ALL 12 GRADE ROWS PASS — RULESET v1
+IS LOCKED** (`sim-data/ruleset-v1.json`, written by `balance-lock.mjs`, defended by
+`tests/sim/ruleset-v1-lock.test.ts`, 4/4 green):
+
+| Criterion | Measured | |
+|---|---|---|
+| Pooled r8+r12 spread | **6.3 pp** | PASS (target ≤10; a whisker from the ≤6 aspiration) |
+| Faction CIs | O 50.6–54.6, R 44.4–48.4, S 46.5–50.5, V 50.5–54.5 | PASS |
+| Worst cell | **R v V 37.6/62.4** (dev 12.4, n=800) | PASS — inside 65/35 |
+| Mirror FP (comp on) | **+0.5 pp** | PASS |
+| Decided | 100% | PASS |
+| Convergence r8→r12 | max drift 4.4 pp (Sapphire), all CIs overlap | PASS |
+
+**The denouement: the "one broken cell" was mostly instrument.** Seat-clean, R v V sits at
+37.6/62.4 without ANY card change — Verdant's seat-1 inflation and Onyx's fixed seat-0 history
+were carrying the 32.9/67.1 read. Card takes 1–5 are closed as unnecessary; the §13p queue-2
+item is resolved by measurement repair, not card surgery. Program parity-spread history, final:
+**54.8 → 25.1 → 22.4 → 19.6 → 20.6 → 20.4 → 13.2 → 9.6 → 6.3 (locked)**.
+
+Locked ruleset v1 (nine rules): `armFirstInstanceOnly`, `terminationMode:
+resource_deck_empty_transform`, `costFloor`, `reserveTapChoice`, `reserveTapStrain`,
+`exileDiscardForEnergy`, `resourceDeckSize: 12`, `firstPlayerCompensation: 'card'`,
+`apnapAnyOrderFix`. Measurement standard: alternating first player AND alternating seats.
+Amendment procedure per docs/balance-framework.md §1 — v1 never mutates. The §13 series closes
+here; future card work goes through the gate (`pnpm balance card`), future rule questions
+through the amendment procedure.
+
+### 13r. Post-lock probe — the "resource-skip" second-player compensation (2026-07-11)
+
+Designer proposal, evaluated under the amendment machinery two days after the lock: replace
+`firstPlayerCompensation: 'card'` with a package where the first player DRAWS normally on turn 1
+(removing the printed skip-draw penalty) but does NOT draw a resource card on their first Upkeep
+— a permanent one-resource-card offset that, under RD12 + transform-on-empty, also delays the
+first player's transform gate by one turn. Napkin from prior probes: one card swing ≈ 4–6 pp of
+first-player edge, so the resource package had to be worth ~10–12 pp to land at even.
+
+Engine variants `firstPlayerSkipsFirstResource` + `firstPlayerDrawsNormally` (default off,
+byte-identity tested), probed mirror-only via `FP_VARIANT=resource_skip` at 4,000 mirror
+games/condition (ledger `fp-rskip-r8-rd12`, `fp-rskip-r12-rd12`):
+
+| Condition | FP edge (pp over 50) | vs ±3 gate |
+|---|---|---|
+| r8 @RD12 | −3.83 [−5.37 … −2.28] | FLAG (over-corrects) |
+| r12 @RD12 | **−4.08 [−5.61 … −2.53]** | FLAG (over-corrects) |
+
+**REJECTED — the package over-corrects: the SECOND player becomes favored beyond the band**
+(the compounding resource+transform tax is worth ~14–16 pp of swing, more than the ~10–12
+needed). The locked `card` compensation stands (+2.08 probe / +0.45 ratification). The variant
+flags remain in the engine as measurement instruments; a softer sibling (first resource enters
+exhausted rather than skipped) is the noted next candidate if the no-free-cards aesthetic is
+ever revisited.

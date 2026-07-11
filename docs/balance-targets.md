@@ -34,6 +34,11 @@ Kept here so nobody re-adds the myths: the Hearthstone "going first = 51.65% / +
 
 ## 2. The targets (mapped to our metrics)
 
+> The machine-readable canonical copy of these thresholds lives at
+> `packages/engine/sim-data/balance-targets.json`; on any conflict between this
+> table and that file, **the JSON wins**. Threshold changes require a cited
+> full-panel ledger run id.
+
 Because our 4 factions only play **each other** (a closed round-robin), wins and losses sum to zero across the pool — the **field average is pinned to ~50% by construction**. So the meaningful quantity is the **spread around 50%**, not an absolute level. "Every faction inside 47–53%" is therefore read as "≤6 pp spread centered on 50%."
 
 | Metric | ✅ Healthy | ⚠️ Flag / watch | ❌ Imbalanced | Anchored to |
