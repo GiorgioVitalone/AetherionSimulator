@@ -335,6 +335,11 @@ function getPlayersBySide(
     case 'enemy':
       return [state.players[context.controllerId === 0 ? 1 : 0]];
     case 'any':
+      if (state.config?.apnapAnyOrderFix === true) {
+        const activeIdx = state.activePlayerIndex;
+        const nonActiveIdx = activeIdx === 0 ? 1 : 0;
+        return [state.players[activeIdx], state.players[nonActiveIdx]];
+      }
       return [...state.players];
   }
 }

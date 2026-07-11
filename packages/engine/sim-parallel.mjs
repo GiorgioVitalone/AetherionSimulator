@@ -17,10 +17,18 @@ import { finalizeResults } from './sim-runner.mjs';
 
 const WORKER = new URL('./sim-worker.mjs', import.meta.url);
 
-/** Run `config` across `workers` threads (default: all cores). Async. Returns the
- * same object shape as runSim. Excess workers past the game count simply pull
- * nothing and exit. */
-export function runSimParallel(config, workers = availableParallelism()) {
+// Measured ~2 GB RSS/worker unbounded (pilot-rollout.mjs spins ~100 XState
+// actors per decision; allocation churn outruns GC). Capping the old-gen heap
+// forces GC to run earlier and bounds total RSS to workers×~1 GB. A worker that
+// still exceeds the cap dies loudly with ERR_WORKER_OUT_OF_MEMORY — better than
+// a silent OS jetsam kill of the whole panel. Override with WORKER_HEAP_MB.
+const WORKER_HEAP_MB = +(process.env.WORKER_HEAP_MB || 1024);
+
+/** Run `config` across `workers` threads (default: cores capped at 8 — see
+ * WORKER_HEAP_MB above; ~1 GB/worker keeps a 64 GB desktop responsive). Async.
+ * Returns the same object shape as runSim. Excess workers past the game count
+ * simply pull nothing and exit. */
+export function runSimParallel(config, workers = Math.min(availableParallelism(), 8)) {
   const n = Math.max(1, Math.min(workers, 64));
   // Shared game cursor (index 0 = next global game index). All workers Atomics.add
   // on it, so each game is claimed exactly once — no dup, no gap, no coordination.
@@ -41,6 +49,7 @@ export function runSimParallel(config, workers = availableParallelism()) {
       const w = new Worker(fileURLToPath(WORKER), {
         argv: [],
         workerData: { config, counterBuffer },
+        resourceLimits: { maxOldGenerationSizeMb: WORKER_HEAP_MB, maxYoungGenerationSizeMb: 64 },
       });
       w.on('message', (results) => {
         for (const r of results) all.push(r);

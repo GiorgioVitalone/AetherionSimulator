@@ -627,6 +627,40 @@ function gameDiagnostics(fin, winner, decided, timedOut) {
   };
 }
 
+// SEAT ALTERNATION support: when a game's physical seats are swapped (deckB in
+// seat 0, deckA in seat 1) so playGame's internal per-seat logic (hero LP
+// override, gameplan, compensation — all keyed by the fA/fB param passed to
+// THAT call) stays correct, playGame's raw return labels itself from the seat-0
+// deck's point of view — the OPPOSITE of the pairing's true (deck-oriented) A/B.
+// This flips every seat-indexed field back so the caller always sees results
+// keyed to the pairing's true fA/fB, never a physical seat. `r.dx`'s fields are
+// ALL either scalar (winMethod, winnerLp — no seat encoding) or exactly
+// length-2 seat-indexed arrays, so a generic array swap is safe and exhaustive.
+// Exported for the unit test in tests/sim/seat-fix-knobs.test.ts: runHash does
+// not cover dx/spellsCast, so a remap regression on telemetry fields would be
+// invisible to the hash-based knob tests; the unit test closes that class.
+export function remapSeatSwap(r, trueFA, trueFB) {
+  const flip = (v) => (v === 0 ? 1 : v === 1 ? 0 : v); // 'draw'/'tie'/null pass through
+  const dx = r.dx
+    ? Object.fromEntries(
+        Object.entries(r.dx).map(([k, v]) =>
+          Array.isArray(v) && v.length === 2 ? [k, [v[1], v[0]]] : [k, v],
+        ),
+      )
+    : r.dx;
+  return {
+    ...r,
+    fA: trueFA,
+    fB: trueFB,
+    winner: flip(r.winner),
+    firstPlayer: flip(r.firstPlayer),
+    leaderAt10: flip(r.leaderAt10),
+    spellsCastA: r.spellsCastB,
+    spellsCastB: r.spellsCastA,
+    dx,
+  };
+}
+
 function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   let gs = createGame(deckA, deckB, registry, seed,
     config.resourceDeckSize ? { resourceDeckSize: config.resourceDeckSize } : undefined);
@@ -705,6 +739,15 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       ...(config.reserveTapStrain ? { reserveTapStrain: true } : {}),
       // RESOURCE DECK SIZE (§13o): truncate each player's Resource Deck post-shuffle.
       ...(config.resourceDeckSize ? { resourceDeckSize: config.resourceDeckSize } : {}),
+      // APNAP ANY-ORDER FIX (§13q): side:'any' target resolution returns
+      // [activePlayer, nonActivePlayer] instead of seat order. ON-only hashed;
+      // absent ⇒ byte-identical.
+      ...(config.apnapAnyOrderFix ? { apnapAnyOrderFix: true } : {}),
+      // FIRST-PLAYER COMPENSATION CANDIDATES (§13r): alternatives to the locked
+      // firstPlayerCompensation:'card' rule, under evaluation. ON-only hashed;
+      // absent ⇒ byte-identical.
+      ...(config.firstPlayerSkipsFirstResource ? { firstPlayerSkipsFirstResource: true } : {}),
+      ...(config.firstPlayerDrawsNormally ? { firstPlayerDrawsNormally: true } : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -1109,6 +1152,14 @@ function resolveConfig(config = {}) {
     ...(config.reserveTapChoice ? { reserveTapChoice: true } : {}),
     ...(config.reserveTapStrain ? { reserveTapStrain: true } : {}),
     ...(config.resourceDeckSize ? { resourceDeckSize: config.resourceDeckSize } : {}),
+    // APNAP ANY-ORDER FIX (§13q) — see game-state.ts. ON-only hashed.
+    ...(config.apnapAnyOrderFix ? { apnapAnyOrderFix: true } : {}),
+    // FIRST-PLAYER COMPENSATION CANDIDATES (§13r) — see game-state.ts. ON-only hashed.
+    ...(config.firstPlayerSkipsFirstResource ? { firstPlayerSkipsFirstResource: true } : {}),
+    ...(config.firstPlayerDrawsNormally ? { firstPlayerDrawsNormally: true } : {}),
+    // MEASUREMENT-HARNESS KNOB — seat-neutral panels (see playPairing). NOT a rule;
+    // affects only which seat each deck sits in per game, hashed so ON runs differ.
+    ...(config.seatAlternation ? { seatAlternation: true } : {}),
     // RAW-POWER DECOMP — hero-LP head-start override: pin ONE faction's Hero
     // starting+max LP to a fixed value ({ faction, lp }). Only emitted (and hashed)
     // when a valid spec is given ⇒ default run is byte-identical to the v10 baseline.
@@ -1389,7 +1440,21 @@ function generateResults(plan, config, shard = null) {
     for (let g = 0; g < config.gamesPerPairing; g++) {
       if (!shard || gi % shard.count === shard.index) {
         const seed = (config.seedBase + p * 100003 + g * 7919) >>> 0;
-        const r = playGame(fA, fB, seed, config, deckA, deckB, g);
+        // SEAT ALTERNATION (measurement-harness knob, not a rule): swap which deck
+        // sits in seat 0 on a 4-phase cycle vs firstPlayer's g%2 alternation, so the
+        // two axes stay UNCORRELATED — games 0,1 normal seats, 2,3 swapped, both
+        // first-player phases occur within each seat phase. playGame is called with
+        // fA/fB/deckA/deckB swapped together (so its internal per-seat faction logic
+        // stays correct for whichever seat each deck physically occupies); its raw
+        // return is then remapped back to the pairing's true (deck-oriented) fA/fB
+        // via remapSeatSwap so results never depend on physical seat. gamesPerPairing
+        // should be a multiple of 4 for exact seat/first-player neutrality (true of
+        // all presets; not enforced here). Default OFF ⇒ byte-identical to the
+        // unswapped call below.
+        const swapSeats = config.seatAlternation === true && (g >> 1) % 2 === 1;
+        const r = swapSeats
+          ? remapSeatSwap(playGame(fB, fA, seed, config, deckB, deckA, g), fA, fB)
+          : playGame(fA, fB, seed, config, deckA, deckB, g);
         r.__gi = gi; // ignored by summarize + computeRunHash; used only for reassembly
         results.push(r);
       }
@@ -1444,7 +1509,12 @@ export function runSimQueue(rawConfig, counterBuffer) {
     const g = gi - p * G;
     const { fA, fB, deckA, deckB } = plan[p];
     const seed = (config.seedBase + p * 100003 + g * 7919) >>> 0;
-    const r = playGame(fA, fB, seed, config, deckA, deckB, g);
+    // SEAT ALTERNATION — see the matching comment in generateResults; kept in sync
+    // so parallel (work-stealing) runs stay byte-identical to the serial run.
+    const swapSeats = config.seatAlternation === true && (g >> 1) % 2 === 1;
+    const r = swapSeats
+      ? remapSeatSwap(playGame(fB, fA, seed, config, deckB, deckA, g), fA, fB)
+      : playGame(fA, fB, seed, config, deckA, deckB, g);
     r.__gi = gi;
     results.push(r);
   }
@@ -1487,6 +1557,10 @@ function parseCliConfig(argv) {
     else if (key === 'reserveTapChoice') cfg[key] = val === 'true';
     else if (key === 'reserveTapStrain') cfg[key] = val === 'true';
     else if (key === 'disableDiscardForEnergy') cfg[key] = val === 'true';
+    else if (key === 'apnapAnyOrderFix') cfg[key] = val === 'true';
+    else if (key === 'firstPlayerSkipsFirstResource') cfg[key] = val === 'true';
+    else if (key === 'firstPlayerDrawsNormally') cfg[key] = val === 'true';
+    else if (key === 'seatAlternation') cfg[key] = val === 'true';
     else if (key === 'disableFactionHeroReach') cfg[key] = { faction: val };
     else if (key === 'factions') cfg.matchups = val.split(',');
     else if (key === 'disableEffectTypes') cfg[key] = val.split(',').filter(Boolean);

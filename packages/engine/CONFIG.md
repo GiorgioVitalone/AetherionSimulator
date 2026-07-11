@@ -23,6 +23,10 @@ const result = runSim({ matchups: 'all-pairs', gamesPerPairing: 60, seedBase: 12
 | `termination` | `"none"` \| `"tiebreak"` | `"none"` | How `turnCap`-reached games resolve. |
 | `seedBase` | number | `12345` | Root seed. Every game seed = pure fn of (seedBase, pairingIndex, gameIndex). |
 | `decks` | see below | _(auto)_ | EXPLICIT decks: per-faction overrides. Omit for the auto quota-builder. |
+| `apnapAnyOrderFix` | boolean | `false` | RULES FIX — side:`'any'` target resolution returns `[activePlayer, nonActivePlayer]` (APNAP) instead of seat order `[0,1]`. Fixes ~5pp matchup drift from which deck sits in seat 0. |
+| `firstPlayerSkipsFirstResource` | boolean | `false` | CANDIDATE VARIANT (§13r) — alternative to the locked `firstPlayerCompensation: "card"` rule. The first player draws no Resource Card on their first Upkeep only. |
+| `firstPlayerDrawsNormally` | boolean | `false` | CANDIDATE VARIANT (§13r) — disables ONLY the first-player-first-turn Main Deck draw skip; the turn-1 attack restriction is unaffected. |
+| `seatAlternation` | boolean | `false` | MEASUREMENT KNOB — swaps which deck sits in seat 0 on a 4-phase cycle (uncorrelated with `firstPlayer: "alternating"`'s `g%2`), so a matchup's two seat orderings both get measured within one run. `gamesPerPairing` should be a multiple of 4 for exact neutrality. Results stay deck-oriented (not seat-oriented). |
 
 ### `decks` / explicit decks
 

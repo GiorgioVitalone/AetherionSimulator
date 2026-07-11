@@ -333,6 +333,39 @@ export interface GameConfig {
    * long-game counter deck (Sapphire −4.0), null on Verdant (−0.3). Diagnostic,
    * not a proposed rules change. Absent/false ⇒ byte-identical no-op. */
   readonly disableDiscardForEnergy?: boolean;
+  /** RULES-ACCURACY FIX — §13q (default absent/false ⇒ legacy engine behavior:
+   * side:'any' target resolution returns players in SEAT order [0, 1] regardless
+   * of who is active). When true, side:'any' returns [activePlayer, nonActivePlayer]
+   * instead, matching the Rulebook's APNAP intent ("Active Player's triggers
+   * first" — see trigger-matcher.ts) already enforced downstream for per-event
+   * trigger ordering. Without this, a symmetric AoE effect (side:'any') emits its
+   * CARD_DESTROYED/DAMAGE_DEALT events seat-0-first no matter which player is
+   * active, and the downstream per-event trigger sort can't undo cross-card
+   * emission order — measured to shift a matchup's win rate ~5pp purely from
+   * which deck sits in seat 0. Only the player ORDER changes (same two players,
+   * same cards); no other resolution behavior is affected. Absent/false ⇒
+   * byte-identical no-op. */
+  readonly apnapAnyOrderFix?: boolean;
+  /** CANDIDATE RULE VARIANT UNDER EVALUATION (§13r; default absent/false ⇒ no
+   * change: the locked `firstPlayerCompensation: 'card'` rule stands). Alternative
+   * to that rule: when true, the FIRST PLAYER does not draw a Resource Card
+   * during their FIRST Upkeep (the game's very first turn only) — everything
+   * else about that Upkeep is unchanged. Under `resourceDeckSize` +
+   * `terminationMode: 'resource_deck_empty_transform'` this also delays that
+   * player's Resource Deck emptying by one turn (intended, not special-cased).
+   * Mutually exclusive with `firstPlayerCompensation` at the harness level —
+   * they are competing compensation levers under measurement, not stackable.
+   * Absent/false ⇒ byte-identical no-op. */
+  readonly firstPlayerSkipsFirstResource?: boolean;
+  /** CANDIDATE RULE VARIANT UNDER EVALUATION (§13r; default absent/false ⇒ no
+   * change: the engine-default first-player-first-turn Main Deck draw skip
+   * stays in force). When true, DISABLES ONLY that draw skip — the first
+   * player draws a card on their first turn like any other turn. The
+   * companion "first player cannot declare attacks on turn 1" restriction
+   * (available-actions.ts, combat-resolver.ts) is untouched and still applies;
+   * this flag narrows `turnState.firstPlayerFirstTurn`'s effect to that
+   * restriction alone. Absent/false ⇒ byte-identical no-op. */
+  readonly firstPlayerDrawsNormally?: boolean;
 }
 
 /** Mutable diagnostic accumulator (see GameConfig.diag). Written by the engine

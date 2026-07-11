@@ -212,7 +212,6 @@ function executeTapReserve(
   };
 }
 
-
 export function drawResourceCard(state: GameState): {
   readonly state: GameState;
   readonly events: readonly GameEvent[];
@@ -232,6 +231,18 @@ export function drawResourceCard(state: GameState): {
           },
         }
       : state;
+  // CANDIDATE RULE VARIANT (config.firstPlayerSkipsFirstResource, §13r): the first
+  // player draws NO Resource Card on their first Upkeep. Read `turnState.
+  // firstPlayerFirstTurn` here — it is still true at this point in the upkeep
+  // sequence (this action runs on upkeep entry, BEFORE the drawMain state
+  // consumes/reads the flag), so it reliably identifies "first player, first turn".
+  // Absent/false ⇒ byte-identical no-op.
+  if (
+    state.config?.firstPlayerSkipsFirstResource === true &&
+    state.turnState.firstPlayerFirstTurn
+  ) {
+    return { state: base, events: [] };
+  }
   // DESIGN-SWEEP (config.resourceRampBonus N): draw 1 + N this Upkeep (faster ramp),
   // never past the live Resource Deck. Absent / <= 0 ⇒ exactly 1 (byte-identical).
   const bonus = state.config?.resourceRampBonus ?? 0;
@@ -773,7 +784,10 @@ function executeTransferEquipment(
   const equip = holder.equipment!;
   if (equip.transferredThisTurn === true) return { state, events: [] };
   const player = state.players[state.activePlayerIndex];
-  if (!meetsEquipRequirement(equip, target) || !canAfford(player, effectiveCost(player, equip, state.config))) {
+  if (
+    !meetsEquipRequirement(equip, target) ||
+    !canAfford(player, effectiveCost(player, equip, state.config))
+  ) {
     return { state, events: [] };
   }
   const paid = setPlayer(

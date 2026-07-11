@@ -36,6 +36,13 @@ export const gameMachine = setup({
   },
   guards: {
     isFirstPlayerFirstTurn: ({ context }) => context.gameState.turnState.firstPlayerFirstTurn,
+    // CANDIDATE RULE VARIANT (config.firstPlayerDrawsNormally, §13r): gates ONLY the
+    // main-draw skip below — the attack restriction (available-actions.ts,
+    // combat-resolver.ts) reads turnState.firstPlayerFirstTurn directly and is
+    // untouched. Absent/false ⇒ byte-identical no-op.
+    skipMainDrawFirstPlayer: ({ context }) =>
+      context.gameState.turnState.firstPlayerFirstTurn &&
+      context.gameState.config?.firstPlayerDrawsNormally !== true,
     handExceedsLimit: ({ context }) => {
       const player = context.gameState.players[context.gameState.activePlayerIndex];
       return player.hand.length > MAX_HAND_SIZE;
@@ -276,9 +283,9 @@ export const gameMachine = setup({
         drawMain: {
           always: [
             {
-              // First player first turn skips main draw
+              // First player first turn skips main draw (unless firstPlayerDrawsNormally)
               target: 'reserveEnergy',
-              guard: { type: 'isFirstPlayerFirstTurn' },
+              guard: { type: 'skipMainDrawFirstPlayer' },
             },
             {
               target: '#aetherionGame.gameOver',
