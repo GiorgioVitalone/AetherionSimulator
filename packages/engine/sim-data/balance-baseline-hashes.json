@@ -1,0 +1,6 @@
+{
+  "smoke": {
+    "runHash": "ac779d73b7a4b195",
+    "note": "heuristic all-pairs GPP=8 under ruleset-v1 + real official starter decks (deck-loader's committed fixture, sim-data/aetherion-decks.json — hermetic, no Docker/Postgres); bump ONLY with a cited full-panel ledger run id in the commit message"
+  }
+}

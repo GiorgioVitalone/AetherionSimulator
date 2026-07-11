@@ -1,0 +1,94 @@
+{
+  "version": "1.0.0",
+  "rules": {
+    "armFirstInstanceOnly": true,
+    "terminationMode": "resource_deck_empty_transform",
+    "costFloor": true,
+    "reserveTapChoice": true,
+    "reserveTapStrain": true,
+    "exileDiscardForEnergy": true,
+    "resourceDeckSize": 12,
+    "firstPlayerCompensation": "card",
+    "apnapAnyOrderFix": true
+  },
+  "ratification": {
+    "ledgerId": "2026-07-11_verify_34cf3a28_ruleset-v1-ratification-v2",
+    "date": "2026-07-10T19:03:57.657Z",
+    "poolSha": "34cf3a286ea726f6",
+    "rungRunHashes": {
+      "rollout-high (r8 d3 c8)": "1f0012a977843f00",
+      "rollout-max (r12 d3 c8)": "fa4b1394e7a65e3a"
+    },
+    "grades": [
+      {
+        "criterion": "Pooled spread (max−min)",
+        "measured": "6.3%",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Pooled CI band: Onyx",
+        "measured": "50.6%–54.6%",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Pooled CI band: Radiant",
+        "measured": "44.4%–48.4%",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Pooled CI band: Sapphire",
+        "measured": "46.5%–50.5%",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Pooled CI band: Verdant",
+        "measured": "50.5%–54.5%",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Worst pooled cell win%",
+        "measured": "Radiant|Verdant 37.6% (dev 12.4%, n=800)",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Mirror FP edge (pooled)",
+        "measured": "0.5% over 50%",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Decided% (min of r8/r12)",
+        "measured": "100.0%",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Convergence (r8→r12): Onyx",
+        "measured": "drift 0.8%, CIs overlap",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Convergence (r8→r12): Radiant",
+        "measured": "drift 1.4%, CIs overlap",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Convergence (r8→r12): Sapphire",
+        "measured": "drift 4.4%, CIs overlap",
+        "verdict": "PASS"
+      },
+      {
+        "criterion": "Convergence (r8→r12): Verdant",
+        "measured": "drift 2.3%, CIs overlap",
+        "verdict": "PASS"
+      }
+    ]
+  },
+  "gameplayPin": {
+    "configDescription": "TINY_BASE (Onyx vs Radiant, 6 games, seedBase 31337) + ruleset-v1 rules",
+    "runHash": "a6ec99ffa18aca7e"
+  },
+  "legacyPin": {
+    "configDescription": "TINY_BASE (Onyx vs Radiant, 6 games, seedBase 31337) (flags off)",
+    "runHash": "744b9e75eb2e4292"
+  },
+  "amendment": "see docs/balance-framework.md §1 — v1 never mutates; changes produce ruleset-v2.json"
+}
