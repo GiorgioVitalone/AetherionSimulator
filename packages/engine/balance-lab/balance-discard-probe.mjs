@@ -7,7 +7,7 @@
 // energy evaporated unused. We reconstruct each turn's ordered action sequence via
 // the read-only __trace.onAction hook and classify every discard.
 // Env: GPP (default 5 = 50 games), AETHERION_CARDS (patched set).
-import { runSim } from './sim-runner.mjs';
+import { runSim } from '../sim-runner.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const decks = Object.fromEntries(FACTIONS.map((f) => [f, f]));

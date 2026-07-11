@@ -4,7 +4,7 @@
 // Onyx under-piloting does not bias). Small n (rollout is ~1.8s/game) ⇒ wide CIs;
 // we only need the direction + rough magnitude.
 import { writeFileSync } from 'node:fs';
-import { runSim } from './sim-runner.mjs';
+import { runSim } from '../sim-runner.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f]));

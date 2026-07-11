@@ -9,7 +9,7 @@
 // Heuristic is used for breadth (fast, tight CIs); the biggest drivers should be
 // re-checked under the rollout pilot separately. Env: GPP (games/cell, default 400).
 import { writeFileSync } from 'node:fs';
-import { runSim } from './sim-runner.mjs';
+import { runSim } from '../sim-runner.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f]));

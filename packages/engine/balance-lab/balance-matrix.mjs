@@ -4,8 +4,8 @@
 // as a cardStatOverride knob from computeSuggestions(), so it composes with the
 // rules levers. Heuristic + fairPilot, real decks, all-pairs. Env: GPP.
 import { writeFileSync } from 'node:fs';
-import { runSim } from './sim-runner.mjs';
-import { computeSuggestions } from './balance-suggestions.mjs';
+import { runSim } from '../sim-runner.mjs';
+import { computeSuggestions } from '../balance-suggestions.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map((f) => [f, f]));

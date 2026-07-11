@@ -31,6 +31,36 @@ const POOL_SHA = createHash('sha256')
   .digest('hex')
   .slice(0, 16);
 
+// Canonical thresholds — docs/balance-targets.md §2 mirrors this file; on conflict
+// this JSON wins (see the file's own $comment).
+const TARGETS_PATH = new URL('./sim-data/balance-targets.json', import.meta.url);
+const T = JSON.parse(readFileSync(TARGETS_PATH, 'utf8')).thresholds;
+
+// Locked ruleset manifest (sim-data/ruleset-v1.json) — the CONSUMED source of
+// truth for the 9 locked rule flags (docs/balance-framework.md §1: v1 never
+// mutates). This BASE no longer hardcodes those flags; it loads them from the
+// manifest. Missing manifest means a pre-lock checkout — fall back to the
+// pre-lock hardcoded defaults (RD/COMP absent, i.e. engine defaults) so old
+// worktrees keep working, with a loud warning.
+const MANIFEST_PATH = new URL('./sim-data/ruleset-v1.json', import.meta.url);
+const PRE_LOCK_FALLBACK_RULES = {
+  armFirstInstanceOnly: true,
+  terminationMode: 'resource_deck_empty_transform',
+  costFloor: true,
+  reserveTapChoice: true,
+  reserveTapStrain: true,
+  exileDiscardForEnergy: true,
+  apnapAnyOrderFix: true,
+};
+let manifest = null;
+let manifestRules = PRE_LOCK_FALLBACK_RULES;
+try {
+  manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+  manifestRules = manifest.rules;
+} catch {
+  console.warn(`WARNING: manifest not found at ${MANIFEST_PATH} — using pre-lock hardcoded BASE (this checkout predates the ruleset-v1 lock).`);
+}
+
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f])); // faction name -> real official deck
 
@@ -57,13 +87,13 @@ const OUT = process.env.GAUGE_OUT || '/tmp/balance-verify-result.json';
 // so this is a pure speedup and every number/verdict below is unchanged. WORKERS=1
 // forces the old serial path. This harness is the slow one (rollout pilots), so the
 // win is large — an hour-plus run becomes minutes on a many-core machine.
-const WORKERS = +(process.env.WORKERS || availableParallelism());
+// Default capped at 8 (~1 GB/worker under sim-parallel's heap cap keeps a 64 GB
+// desktop responsive); WORKERS env overrides for beefier machines.
+const WORKERS = +(process.env.WORKERS || Math.min(availableParallelism(), 8));
 const run = (cfg) => (WORKERS > 1 ? runSimParallel(cfg, WORKERS) : Promise.resolve(runSim(cfg)));
 
-// armFirstInstanceOnly + terminationMode=resource_deck_empty_transform: two rules
-// changes adopted into the standard baseline (both pre-existing, fully wired
-// engine features, gated off by default until now). See balance-standard-sim.mjs
-// for the measured isolated effect on the raw baseline before adopting them here.
+// Measurement fields (not rule flags — not in the manifest) stay local; the 9
+// locked rule flags come from manifestRules above.
 const BASE = {
   firstPlayer: 'alternating',
   fixHandSizeStall: true,
@@ -71,19 +101,52 @@ const BASE = {
   abilitiesOn: true,
   turnCap: 80,
   seedBase: 12345,
-  armFirstInstanceOnly: true,
-  terminationMode: 'resource_deck_empty_transform',
-  costFloor: true,
-  // §13m rules package — ADOPTED into the standard baseline (design sign-off after
-  // the §13n panel: spread 20.4 → 13.2): tapping is a player choice (Rulebook 8
-  // step 4's "may") and strains the tapper (1 direct damage; 1-HP bodies can't
-  // tap). Panels before 2026-07-03 predate the package.
-  reserveTapChoice: true,
-  reserveTapStrain: true,
-  // §13o rules probe (RESOURCE_DECK=<n>): truncate each Resource Deck to n cards
-  // post-shuffle (deck-construction change: 15 → n). Env-gated until measured.
-  ...(process.env.RESOURCE_DECK ? { resourceDeckSize: Number(process.env.RESOURCE_DECK) } : {}),
+  ...manifestRules,
+  // §13q seat-asymmetry fix (2026-07-10): side:'any' target resolution now returns
+  // APNAP order (active player first) instead of seat order, and the harness
+  // alternates seats per pairing so a matchup's win rate no longer depends on
+  // which deck happens to sit in seat 0 (~5pp drift measured before this fix).
+  seatAlternation: true,
 };
+
+// Env overrides (RESOURCE_DECK, COMP, RULE_OFF) are EXPERIMENT deviations from
+// the locked manifest, not the locked ruleset itself — loudly banner + record
+// any override that actually changes an effective rule value away from the
+// manifest's.
+const ruleOverrides = [];
+function override(key, effectiveValue) {
+  const manifestValue = manifestRules[key] ?? null;
+  if (manifestValue !== effectiveValue) {
+    console.log(`RULE OVERRIDE (experiment): ${key} ${JSON.stringify(manifestValue)} -> ${JSON.stringify(effectiveValue)} — not the locked ruleset`);
+    ruleOverrides.push({ rule: key, manifestValue, effectiveValue });
+  }
+  BASE[key] = effectiveValue;
+}
+// §13o rules probe (RESOURCE_DECK=<n>): truncate each Resource Deck to n cards
+// post-shuffle (deck-construction change). Locked at 12 (manifest); env deviates.
+if (process.env.RESOURCE_DECK) override('resourceDeckSize', Number(process.env.RESOURCE_DECK));
+// Rule-lock Step 2 (COMP=card|resource|both): firstPlayerCompensation. Locked at
+// 'card' (manifest); env deviates.
+if (process.env.COMP) override('firstPlayerCompensation', process.env.COMP);
+
+// One-flag-off ablation knob (rule-lock protocol): RULE_OFF=<flag> re-runs the
+// panel with that single locked rule removed from BASE (engine default takes
+// over), so each rule's retention case is one command. The removal is visible in
+// the output via the resolved config echoed by every runSim result.
+const RULE_OFF_ALLOWED = ['armFirstInstanceOnly', 'terminationMode', 'costFloor', 'reserveTapChoice', 'reserveTapStrain', 'exileDiscardForEnergy', 'apnapAnyOrderFix'];
+const RULE_OFF = process.env.RULE_OFF || '';
+if (RULE_OFF) {
+  if (!RULE_OFF_ALLOWED.includes(RULE_OFF)) {
+    console.error(`RULE_OFF=${RULE_OFF} is not an adopted rule flag (allowed: ${RULE_OFF_ALLOWED.join(', ')})`);
+    process.exit(1);
+  }
+  if (RULE_OFF in BASE) {
+    const manifestValue = manifestRules[RULE_OFF] ?? null;
+    delete BASE[RULE_OFF];
+    console.log(`RULE OVERRIDE (experiment): ${RULE_OFF} ${JSON.stringify(manifestValue)} -> off (removed) — not the locked ruleset`);
+    ruleOverrides.push({ rule: RULE_OFF, manifestValue, effectiveValue: null });
+  }
+}
 
 // Wilson 95% score interval -> [lowPct, pPct, highPct].
 function wilson(w, n, z = 1.96) {
@@ -221,13 +284,13 @@ function grade(v, healthy, flag, fail) { return fail(v) ? 'FAIL' : flag(v) ? 'FL
 function factionVerdict(p) {
   const out = {};
   for (const f of FACTIONS) { const wp = p.marg[f].wilson[1];
-    out[f] = grade(wp, null, x => x < 45 || x > 55, x => x < 43 || x > 57); }
+    out[f] = grade(wp, null, x => x < T.factionWinPct.flagBelow || x > T.factionWinPct.flagAbove, x => x < T.factionWinPct.failBelow || x > T.factionWinPct.failAbove); }
   return out;
 }
-const spreadVerdict = s => grade(s, null, x => x > 6, x => x > 10);
-const polVerdict = w => !w.A ? 'n/a' : grade(w.wp, null, x => Math.abs(x - 50) > 20, x => Math.abs(x - 50) > 30);
-const fpVerdict = fp => grade(Math.abs(fp - 50), null, x => x > 3, x => x > 5);
-const decidedVerdict = d => grade(d, null, x => x < 85, x => x < 70);
+const spreadVerdict = s => grade(s, null, x => x > T.spreadPp.flagAbove, x => x > T.spreadPp.failAbove);
+const polVerdict = w => !w.A ? 'n/a' : grade(w.wp, null, x => Math.abs(x - 50) > T.worstCellDevPp.flagAbove, x => Math.abs(x - 50) > T.worstCellDevPp.failAbove);
+const fpVerdict = fp => grade(Math.abs(fp - 50), null, x => x > T.mirrorFpEdgePp.flagAbove, x => x > T.mirrorFpEdgePp.failAbove);
+const decidedVerdict = d => grade(d, null, x => x < T.decidedPct.flagBelow, x => x < T.decidedPct.failBelow);
 
 function report(p) {
   const lines = [];
@@ -235,11 +298,11 @@ function report(p) {
   const fv = factionVerdict(p);
   lines.push('  Faction win% (non-mirror, Wilson 95% CI):');
   for (const f of FACTIONS) lines.push(`    ${f.padEnd(9)} ${ci(p.marg[f].w, p.marg[f].n).padEnd(26)} ${fv[f]}`);
-  lines.push(`  Parity spread (max−min): ${pct(p.spread)}  → ${spreadVerdict(p.spread)}  [target ≤6pp]`);
-  lines.push(`  Mirror first-player edge: ${pct(p.mirrorFp - 50)} over 50%  → ${fpVerdict(p.mirrorFp)}  [target ≤+3pp]`);
-  lines.push(`  Decided%: ${pct(p.decidedPct)}  → ${decidedVerdict(p.decidedPct)}  [target ≥85%]`);
+  lines.push(`  Parity spread (max−min): ${pct(p.spread)}  → ${spreadVerdict(p.spread)}  [target ≤${T.spreadPp.flagAbove}pp]`);
+  lines.push(`  Mirror first-player edge: ${pct(p.mirrorFp - 50)} over 50%  → ${fpVerdict(p.mirrorFp)}  [target ≤+${T.mirrorFpEdgePp.flagAbove}pp]`);
+  lines.push(`  Decided%: ${pct(p.decidedPct)}  → ${decidedVerdict(p.decidedPct)}  [target ≥${T.decidedPct.flagBelow}%]`);
   if (p.kind === 'matrix') {
-    if (p.worst.A) lines.push(`  Worst matchup: ${p.worst.A} beats ${p.worst.B} ${pct(p.worst.wp)} (n=${p.worst.n})  → ${polVerdict(p.worst)}  [target within 30/70]`);
+    if (p.worst.A) lines.push(`  Worst matchup: ${p.worst.A} beats ${p.worst.B} ${pct(p.worst.wp)} (n=${p.worst.n})  → ${polVerdict(p.worst)}  [target within ${100 - (50 + T.worstCellDevPp.flagAbove)}/${50 + T.worstCellDevPp.flagAbove}]`);
     lines.push('  Matchup matrix (row beats col, %):');
     lines.push('           ' + FACTIONS.map(f => f.slice(0, 4).padStart(6)).join(''));
     for (const A of FACTIONS) {
@@ -284,41 +347,39 @@ function report(p) {
 // ── Run the panel ────────────────────────────────────────────────────────────
 console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}${FOCUS ? `  FOCUS=${FOCUS}` : ''}`);
 console.log(`Pool: ${POOL_PATH}  sha256/16 ${POOL_SHA}`);
-console.log('Standard ruleset: §13m tap package ADOPTED (reserveTapChoice + reserveTapStrain)');
-if (process.env.RESOURCE_DECK) console.log(`RULES PROBE ON: resourceDeckSize=${Number(process.env.RESOURCE_DECK)} (§13o)`);
+console.log(`Ruleset: ${manifest ? `manifest v${manifest.version} (locked)` : 'pre-lock hardcoded fallback'}${ruleOverrides.length ? ` — ${ruleOverrides.length} override(s) in effect` : ''}`);
 if (FOCUS) console.log(`FOCUS mode: only ${FOCUS}-involving pairings run — non-${FOCUS} marginals/grades are vs-${FOCUS} cells only; combine with the reference panel's pack-internal counts for full marginals.`);
-// exileDiscardForEnergy is a RULE toggle (discard_for_energy exiles instead of
-// binning) — applies to every pilot. reachDiscard/valuePilot are HEURISTIC bot
-// policies (read only by that policy — see sim-runner.mjs), so only the
-// 'heuristic' pilot gets them. Without these, 'heuristic' reproduces the blind,
+// exileDiscardForEnergy (discard_for_energy exiles instead of binning) applies
+// to every pilot via BASE. reachDiscard/valuePilot are HEURISTIC bot policies
+// (read only by that policy — see sim-runner.mjs), so only the 'heuristic'
+// pilot gets them. Without these, 'heuristic' reproduces the blind,
 // self-handicapping discard bot §11a-c found (~76% of its discards wasted, which
 // specifically subsidized Onyx's graveyard) — invalidating any verdict built on
 // it. See docs/balance-diagnosis.md §11 for why this pilot was adopted as standard.
-const RULE = { exileDiscardForEnergy: true };
 console.log(`Workers: ${WORKERS} (parallel — byte-identical to serial)`);
 const pilots = [];
 const add = async (p) => { pilots.push(p); console.log(report(p)); };
-console.log('Running random (floor)…'); await add(await runMatrixPilot('random', { botPolicy: 'random', ...RULE }));
-console.log('\nRunning heuristic…'); await add(await runMatrixPilot('heuristic', { botPolicy: 'heuristic', ...RULE, reachDiscard: true, valuePilot: true }));
+console.log('Running random (floor)…'); await add(await runMatrixPilot('random', { botPolicy: 'random' }));
+console.log('\nRunning heuristic…'); await add(await runMatrixPilot('heuristic', { botPolicy: 'heuristic', reachDiscard: true, valuePilot: true }));
 // HEUR_RAMP=1 adds a second heuristic with the rampPilot deploy bonus (the in-game
 // analogue of computeDeckValue's acceleration term). Same seeds as 'heuristic', so
 // the per-faction delta between the two IS the measured ramp-blindness component of
 // pilot error — the instrument for the §12 causal decomposition.
 if (process.env.HEUR_RAMP === '1') {
   console.log('\nRunning heuristic+ramp (pilot A/B)…');
-  await add(await runMatrixPilot('heuristic+ramp', { botPolicy: 'heuristic', ...RULE, reachDiscard: true, valuePilot: true, rampPilot: true }));
+  await add(await runMatrixPilot('heuristic+ramp', { botPolicy: 'heuristic', reachDiscard: true, valuePilot: true, rampPilot: true }));
 }
 if (!SKIP_ROLLOUT) {
   console.log('\nRunning rollout-low (r4 d2 c5)…');
-  await add(await runAggPilot('rollout-low (r4 d2 c5)', { botPolicy: 'rollout', ...RULE, rollouts: 4, rolloutDepth: 2, maxCandidates: 5 }, RL_GPP));
+  await add(await runAggPilot('rollout-low (r4 d2 c5)', { botPolicy: 'rollout', rollouts: 4, rolloutDepth: 2, maxCandidates: 5 }, RL_GPP));
   console.log('\nRunning rollout-high (r8 d3 c8) — convergence probe…');
-  await add(await runAggPilot('rollout-high (r8 d3 c8)', { botPolicy: 'rollout', ...RULE, rollouts: 8, rolloutDepth: 3, maxCandidates: 8 }, RH_GPP));
+  await add(await runAggPilot('rollout-high (r8 d3 c8)', { botPolicy: 'rollout', rollouts: 8, rolloutDepth: 3, maxCandidates: 8 }, RH_GPP));
   // RX_GPP>0 adds a third, stronger rung (r12 d3 c8) — the convergence probe's probe:
   // if a faction's win% is still moving low→high→max, its true number is undetermined
   // and needs an even stronger pilot, per docs/balance-targets.md §4's gate.
   if (RX_GPP > 0) {
     console.log('\nRunning rollout-max (r12 d3 c8) — convergence ladder rung 3…');
-    await add(await runAggPilot('rollout-max (r12 d3 c8)', { botPolicy: 'rollout', ...RULE, rollouts: 12, rolloutDepth: 3, maxCandidates: 8 }, RX_GPP));
+    await add(await runAggPilot('rollout-max (r12 d3 c8)', { botPolicy: 'rollout', rollouts: 12, rolloutDepth: 3, maxCandidates: 8 }, RX_GPP));
   }
 }
 
@@ -333,5 +394,5 @@ if (FOCUS) {
   console.log(`  → pilots agree on #1 faction: ${tops.size === 1 ? 'YES (' + [...tops][0] + ')' : 'NO — ' + [...tops].join('/') + ' (measurement-limited where they disagree)'}`);
 }
 
-writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', pool: { path: String(POOL_PATH), sha256_16: POOL_SHA }, focus: FOCUS || null, config: { GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, heurRamp: process.env.HEUR_RAMP === '1' }, pilots }, null, 1));
+writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', pool: { path: String(POOL_PATH), sha256_16: POOL_SHA }, focus: FOCUS || null, config: { GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, heurRamp: process.env.HEUR_RAMP === '1' }, ruleset: BASE, ruleOff: RULE_OFF || null, ruleOverrides, pilots }, null, 1));
 console.log(`\nWrote ${OUT}`);

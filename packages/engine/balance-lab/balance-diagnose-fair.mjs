@@ -5,7 +5,7 @@
 // decomposed faithfully. Each lever neutralizes one driver; the move in each faction's
 // win% vs baseline is that driver's causal contribution. Env: GPP (games/cell).
 import { writeFileSync } from 'node:fs';
-import { runSim } from './sim-runner.mjs';
+import { runSim } from '../sim-runner.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map((f) => [f, f]));

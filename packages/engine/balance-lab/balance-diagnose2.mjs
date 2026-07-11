@@ -3,7 +3,7 @@
 // FP, deterministic). Tests the previously-tried levers that map onto engine knobs,
 // plus two stacked configs to see whether combining the real ones closes the gap.
 import { writeFileSync } from 'node:fs';
-import { runSim } from './sim-runner.mjs';
+import { runSim } from '../sim-runner.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f]));

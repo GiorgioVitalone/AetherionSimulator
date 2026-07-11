@@ -12,6 +12,14 @@ packages/cards/data/*.json
 # tooling + constants reproduce these bit-for-bit; the JSON itself is not source.
 packages/engine/generated-pools/
 
+# Balance run outputs: full per-run JSONs and pre-ledger legacy artifacts are
+# reproducible from the tracked ledger.jsonl (config + pool sha + runHash).
+# Exception: ratification archives are lock evidence, referenced by
+# sim-data/ruleset-v*.json and the lock tests — those stay tracked.
+packages/engine/balance-runs/runs/*
+!packages/engine/balance-runs/runs/*ratification*.json
+packages/engine/balance-runs/legacy/
+
 # Environment files
 .env
 .env.*

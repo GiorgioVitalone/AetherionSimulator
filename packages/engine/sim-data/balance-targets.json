@@ -1,0 +1,35 @@
+{
+  "$comment": "Single source of truth for balance targets and run presets. docs/balance-targets.md §2 mirrors this file; on conflict this JSON wins. Consumed by balance-verify.mjs (verdicts), balance-cli.mjs (presets), balance-card-gate.mjs (cardGate). Changing a threshold requires a cited full-panel ledger run id in the commit message.",
+  "version": 1,
+  "thresholds": {
+    "factionWinPct": { "flagBelow": 45, "flagAbove": 55, "failBelow": 43, "failAbove": 57 },
+    "spreadPp": { "flagAbove": 6, "failAbove": 10 },
+    "worstCellDevPp": { "flagAbove": 20, "failAbove": 30 },
+    "mirrorFpEdgePp": { "flagAbove": 3, "failAbove": 5 },
+    "decidedPct": { "flagBelow": 85, "failBelow": 70 },
+    "minCellGames": 100
+  },
+  "presets": {
+    "smoke": { "GPP_MATRIX": 100, "RL_GPP": 16, "RH_GPP": 8, "RX_GPP": 0 },
+    "focus": { "GPP_MATRIX": 1000, "RL_GPP": 300, "RH_GPP": 200, "RX_GPP": 120 },
+    "ablation": { "GPP_MATRIX": 200, "RL_GPP": 300, "RH_GPP": 200, "RX_GPP": 0 },
+    "verdict": { "GPP_MATRIX": 1000, "RL_GPP": 600, "RH_GPP": 400, "RX_GPP": 400 },
+    "full": { "GPP_MATRIX": 1000, "RL_GPP": 600, "RH_GPP": 400, "RX_GPP": 400 }
+  },
+  "cardGate": {
+    "marginalBand": [43, 57],
+    "maxCellWinPct": 65,
+    "minCellGames": 100,
+    "staticOverBudgetHardFail": 4,
+    "spreadRegressionRule": "candidate pooled-rollout spread must not exceed baseline beyond bootstrap-CI noise",
+    "rolloutMandatory": true,
+    "quickIsAdvisory": true
+  },
+  "provenance": {
+    "factionWinPct": "Hearthstone/vS viable-class band ~45-55%; HS devs treat sustained >55-57 as intervention territory",
+    "worstCellDevPp": "HS real matchup extremes run ~70/30; 65/35 target leaves margin",
+    "mirrorFpEdgePp": "17Lands first-player anchor +2.7pp; this instrument read +1.6 to +3.0 pre-RD12 (targets §6-§9)",
+    "decidedPct": "stall-class regression guard; >=85% of games must reach a decision",
+    "presetSizes": "precision lives in the rollout rungs (the graded verdict layer: pooled r8+r12 ~2400/faction = CI ±2.0pp vs the 43/57 FAIL lines); GPP_MATRIX=1000 (CI ±3pp) suffices for the diagnostic random/heuristic floors, which are not graded evidence"
+  }
+}

@@ -20,6 +20,8 @@ import { applyEdits } from './balance-apply-edits.mjs';
 import { applyHeroTune, applyHeroTuneV2, applyGrovekeeperFix } from './make-hero-tune.mjs';
 import { applyBatteryTrim, applyBatteryTrim2 } from './make-battery-trim.mjs';
 import { applyPayloadTrim } from './make-payload-trim.mjs';
+import { applyRadiantRelief } from './make-radiant-relief.mjs';
+import { applyVerdantTrim } from './make-verdant-trim.mjs';
 
 const outDir = `${(process.argv[2] || './generated-pools').replace(/\/$/, '')}/`;
 mkdirSync(outDir, { recursive: true });
@@ -73,6 +75,14 @@ const pools = {
   'CURRENT-plus-ht2b2-payload': {
     pool: applyPayloadTrim(applyBatteryTrim2(applyBatteryTrim(applyHeroTuneV2(applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw).raw).raw).raw).raw,
     note: '§13k candidate: battery2 + conversion-payload trim (Rampant Evolution 3E→4E, Biotech Engineer 3E→4E)',
+  },
+  'CURRENT-plus-ht2b2-payload-radiant': {
+    pool: applyRadiantRelief(applyPayloadTrim(applyBatteryTrim2(applyBatteryTrim(applyHeroTuneV2(applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw).raw).raw).raw).raw).raw,
+    note: '§13q candidate: payload + Radiant under-budget relief (Symphonic Banner 4M→3M, Uriel +1 HP) — card-gate first client; two earlier takes gate-vetoed',
+  },
+  'CURRENT-plus-ht2b2-payload-vtrim': {
+    pool: applyVerdantTrim(applyPayloadTrim(applyBatteryTrim2(applyBatteryTrim(applyHeroTuneV2(applyHeroTune(applyGrovekeeperFix(frozenCurrent).raw).raw).raw).raw).raw).raw).raw,
+    note: '§13q take 5: payload + Verdant stat trim (Guardian Spirit MK-III −1 ATK) — continuous trim, no cast-window cliff',
   },
   'derived-nerfs-lp30': {
     pool: derivedNerfs.raw,

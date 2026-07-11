@@ -4,8 +4,8 @@
 // with the default cards (before) and once with the edited set (after).
 // Env: PILOT (heuristic|rollout), GPP, RDEPTH, LABEL, OUT.
 import { writeFileSync } from 'node:fs';
-import { runSim } from './sim-runner.mjs';
-import { getDeck } from './deck-loader.mjs';
+import { runSim } from '../sim-runner.mjs';
+import { getDeck } from '../deck-loader.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const PILOT = process.env.PILOT || 'heuristic';

@@ -10,7 +10,7 @@
 // slower clock / a go-long payoff and falls with a faster clock; the TOP-vs-FLOOR gap
 // shrinks. If the floor barely moves, the rules-pacing story is weak. Env: GPP.
 import { writeFileSync } from 'node:fs';
-import { runSim } from './sim-runner.mjs';
+import { runSim } from '../sim-runner.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map((f) => [f, f]));

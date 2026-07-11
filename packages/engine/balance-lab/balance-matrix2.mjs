@@ -4,7 +4,7 @@
 // Reports spread, Δspread vs the patched baseline, and avg turns (pacing).
 // Heuristic + fairPilot, real decks, all-pairs. Env: GPP, AETHERION_CARDS.
 import { writeFileSync } from 'node:fs';
-import { runSim } from './sim-runner.mjs';
+import { runSim } from '../sim-runner.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map((f) => [f, f]));

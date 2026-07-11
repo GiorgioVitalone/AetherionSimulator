@@ -5,7 +5,7 @@
 // measurement (a) lifts the under-piloted control/value factions (Sapphire/Onyx),
 // (b) converges the heuristic and rollout rankings, and (c) leaves the Radiant+Verdant
 // top tier intact. Env: HGPP (heuristic games/cell), RGPP (rollout games/cell).
-import { runSim } from './sim-runner.mjs';
+import { runSim } from '../sim-runner.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map((f) => [f, f]));

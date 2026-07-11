@@ -2,8 +2,8 @@
 // Joins decks -> cards and reports, per faction: hero LP/abilities, type mix, cost
 // curve, raw stat totals + stat-for-cost, and keyword/effect density. Read-only.
 import { readFileSync } from 'node:fs';
-const cards = JSON.parse(readFileSync(new URL('./sim-data/aetherion-cards.json', import.meta.url)));
-const decks = JSON.parse(readFileSync(new URL('./sim-data/aetherion-decks.json', import.meta.url)));
+const cards = JSON.parse(readFileSync(new URL('../sim-data/aetherion-cards.json', import.meta.url)));
+const decks = JSON.parse(readFileSync(new URL('../sim-data/aetherion-decks.json', import.meta.url)));
 const byId = new Map(cards.map(c => [c.id, c]));
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const costOf = c => { const o = c.cost || {}; return (o.mana || 0) + (o.energy || 0) + (o.flexible || 0); };

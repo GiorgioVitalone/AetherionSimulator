@@ -14,10 +14,10 @@
 //     the balance judge; this tool only tees it up.
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { computeDeckValue } from './dist/balance/index.js';
-import { loadBalanceData, indexFromRaw } from './balance-data.mjs';
-import { computeSuggestions } from './balance-suggestions.mjs';
-import { getDeck } from './deck-loader.mjs';
+import { computeDeckValue } from '../dist/balance/index.js';
+import { loadBalanceData, indexFromRaw } from '../balance-data.mjs';
+import { computeSuggestions } from '../balance-suggestions.mjs';
+import { getDeck } from '../deck-loader.mjs';
 
 const FACTIONS = ['Radiant', 'Verdant', 'Onyx', 'Sapphire'];
 const STAT_TRIM_MAX = 2; // mirror the suggestions engine's "clean trim" threshold

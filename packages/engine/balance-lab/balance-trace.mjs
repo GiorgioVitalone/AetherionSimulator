@@ -3,7 +3,7 @@
 // a few full game traces, an early/mid/late stage summary, and end-of-game action
 // counts (cards played, spells, equipment, abilities, transforms). Heuristic +
 // fairPilot, real decks. Env: GPP (default 1 = one game per matchup), AETHERION_CARDS.
-import { runSim } from './sim-runner.mjs';
+import { runSim } from '../sim-runner.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const HERO_FAC = { Kaelthar: 'Onyx', Seraphina: 'Radiant', Lyria: 'Sapphire', 'RIA-09': 'Verdant' };

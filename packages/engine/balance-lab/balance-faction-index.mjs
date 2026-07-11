@@ -4,9 +4,9 @@
 // out of line with the pack is the signal to run a full sim — without one, this is
 // the fast drift check. Read-only (stdout + optional OUT). Env: DRIFT (flag %
 // off the cross-faction mean, default 8), OUT.
-import { computeCardPower, computeDeckValue } from './dist/balance/index.js';
-import { loadBalanceData } from './balance-data.mjs';
-import { getDeck } from './deck-loader.mjs';
+import { computeCardPower, computeDeckValue } from '../dist/balance/index.js';
+import { loadBalanceData } from '../balance-data.mjs';
+import { getDeck } from '../deck-loader.mjs';
 import { writeFileSync } from 'node:fs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];

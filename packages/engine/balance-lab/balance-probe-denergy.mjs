@@ -12,7 +12,7 @@
 // Usage: AETHERION_CARDS=./generated-pools/aetherion-CURRENT.json \
 //        [GPP=1500] [WORKERS=cores] node balance-probe-denergy.mjs
 import { availableParallelism } from 'node:os';
-import { runSimParallel } from './sim-parallel.mjs';
+import { runSimParallel } from '../sim-parallel.mjs';
 
 const GPP = +(process.env.GPP || 1500);
 const WORKERS = +(process.env.WORKERS || availableParallelism());

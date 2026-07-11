@@ -8,8 +8,8 @@
 // transform RATE (fraction of heroes that transformed — must be > 0 or the mechanic is
 // silently inert). Env: PILOT (heuristic|rollout), GPP, RDEPTH (rollout horizon), TURNCAP.
 import { writeFileSync } from 'node:fs';
-import { runSim } from './sim-runner.mjs';
-import { getDeck } from './deck-loader.mjs';
+import { runSim } from '../sim-runner.mjs';
+import { getDeck } from '../deck-loader.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const PROACTIVE = ['Radiant', 'Verdant'];

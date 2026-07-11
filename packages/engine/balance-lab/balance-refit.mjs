@@ -4,10 +4,10 @@
 // line); we MEASURE "within" against a FIXED baseline window so convergence is clean.
 // Env: PASSES (default 4), FLATTEN_LP (default 30), OUT (/tmp/aetherion-cards-refit.json).
 import { readFileSync, writeFileSync } from 'node:fs';
-import { computeCardPower } from './dist/balance/index.js';
-import { indexFromRaw, budgetModel } from './balance-data.mjs';
-import { applyEdits } from './balance-apply-edits.mjs';
-import { getDeck } from './deck-loader.mjs';
+import { computeCardPower } from '../dist/balance/index.js';
+import { indexFromRaw, budgetModel } from '../balance-data.mjs';
+import { applyEdits } from '../balance-apply-edits.mjs';
+import { getDeck } from '../deck-loader.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const PASSES = +(process.env.PASSES || 4);
@@ -38,7 +38,7 @@ function counts(cards, model) {
   return { c, outliers };
 }
 
-const base = JSON.parse(readFileSync(new URL('./sim-data/aetherion-cards.json', import.meta.url)));
+const base = JSON.parse(readFileSync(new URL('../sim-data/aetherion-cards.json', import.meta.url)));
 const fixed = budgetModel(starterCards(base)); // FIXED measurement window
 console.log(`Budget-fit iteration — tight window ±${fixed.tol}, LP→${FLATTEN_LP} (within measured vs the fixed baseline window)`);
 let cur = base;

@@ -13,7 +13,8 @@
   "scripts": {
     "build": "tsc --build",
     "test": "vitest run",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "balance": "node balance-cli.mjs"
   },
   "dependencies": {
     "xstate": "^5.19.0"

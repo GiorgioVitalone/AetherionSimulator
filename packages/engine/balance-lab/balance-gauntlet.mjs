@@ -9,8 +9,8 @@
 // so it only appears where a decklist names it) and pass a DECK whose mainDeckDefIds
 // include its id. Env: DECK (faction|deckId|name), GPP (default 100), LABEL, OUT,
 // AETHERION_CARDS, NO_REACH/NO_EXILE/NO_VALUE (ablate the standard pilot).
-import { runSim } from './sim-runner.mjs';
-import { getDeck } from './deck-loader.mjs';
+import { runSim } from '../sim-runner.mjs';
+import { getDeck } from '../deck-loader.mjs';
 import { writeFileSync } from 'node:fs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];

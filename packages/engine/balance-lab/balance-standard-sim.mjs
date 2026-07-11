@@ -25,18 +25,18 @@
 // default; this just turns them on as part of what "standard" now means.
 //
 // Use this for any one-off measurement instead of hand-typing the CLI.
-// Usage: node balance-standard-sim.mjs <cardsPath> [gamesPerPairing=300] [parallel=cores]
+// Usage: node balance-lab/balance-standard-sim.mjs <cardsPath> [gamesPerPairing=300] [parallel=cores]
 // Parallel is byte-identical to serial (proven via runHash) — a pure speedup.
 import { execFileSync } from 'node:child_process';
 import { availableParallelism } from 'node:os';
 
 const [, , cardsPath, gpp, parallel] = process.argv;
 if (!cardsPath) {
-  console.error('usage: node balance-standard-sim.mjs <cardsPath> [gamesPerPairing=300] [parallel=cores]');
+  console.error('usage: node balance-lab/balance-standard-sim.mjs <cardsPath> [gamesPerPairing=300] [parallel=cores]');
   process.exit(1);
 }
 const args = [
-  'sim-runner.mjs',
+  '../sim-runner.mjs',
   '--realDecks',
   '--reachDiscard', 'true',
   '--exileDiscardForEnergy', 'true',
