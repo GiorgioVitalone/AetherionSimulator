@@ -52,6 +52,18 @@ Because our 4 factions only play **each other** (a closed round-robin), wins and
 
 \* Only relevant once we model an actual *metagame* (e.g. the Nash-equilibrium deck distribution over the matchup matrix). At equal play it is moot.
 
+### Watch metrics (ungated)
+
+**Status:** WATCH-grade only — these are NOT part of the locked ruleset-v1 acceptance criteria above and never FAIL or affect an exit code. Added §13s-era per an external audit finding a blind spot: `decided%` counts turn-cap tiebreaks as decided, so a degenerate tiebreak-heavy meta would still pass that gate — natural-kill share is the missing guard. Bands measured on the 3 rollout pilots of the ratification archive (`balance-runs/runs/2026-07-11_verify_34cf3a28_ruleset-v1-ratification-v2.json`, 2026-07-11); see `sim-data/balance-targets.json` `thresholds.pacing.provenance` for the exact figures. `balance-verify.mjs` prints these per agg pilot as `Pacing (watch)`.
+
+| Metric | Measured (ratified baseline) | ⚠️ WATCH |
+|---|---|---|
+| **Natural-kill %** (winMethod.kill share) | ~100.0% | <85% |
+| **Tiebreak %** (winMethod.tiebreak share) | ~0.0% | >15% |
+| **Turns p50** (pooled, games-weighted) | 32–33 | <23 or >43 |
+| **Leader-at-10 win % conversion** (turn-10 leader who goes on to win) | ~51.7–52.7% | >64% |
+| **Comeback %** (turn-10 leader overturned) | ~47.3–48.3% | <36% |
+
 ---
 
 ## 3. Three caveats that govern how the targets are applied

@@ -19,6 +19,13 @@ interface Thresholds {
   mirrorFpEdgePp: { flagAbove: number; failAbove: number };
   decidedPct: { flagBelow: number; failBelow: number };
   minCellGames: number;
+  pacing: {
+    naturalKillPct: { watchBelow: number };
+    tiebreakPct: { watchAbove: number };
+    turnsP50: { watchBelow: number; watchAbove: number };
+    leaderAt10WinPct: { watchAbove: number };
+    comebackPct: { watchBelow: number };
+  };
 }
 
 const targets = JSON.parse(readFileSync(targetsPath, 'utf8')) as { thresholds: Thresholds };
@@ -67,5 +74,11 @@ describe('docs/balance-targets.md §2 matches sim-data/balance-targets.json', ()
 
   it('min cell games floor is documented somewhere in the doc', () => {
     expect(doc).toContain(`${T.minCellGames} games`);
+  });
+
+  it("watch-grade pacing turnsP50 band matches the doc's ungated watch table", () => {
+    expect(section2).toContain(
+      `<${T.pacing.turnsP50.watchBelow} or >${T.pacing.turnsP50.watchAbove}`,
+    );
   });
 });

@@ -160,6 +160,39 @@ compute; see §7).
 5. Instrument upgrades (below, §7 items 5–6 of the 2026-07-10 list): actor-free
    playouts (memory), neural playout policy (quality) — unchanged, post-lock
    engineering work.
+
+## 8. Measurement roadmap — balance vectors beyond match fairness
+
+Two independent audits (2026-07-12, this agent + an external GPT-5.6 review of
+the repo) agree: this framework fully covers MATCH FAIRNESS for the current
+product stage — four fixed starter decks under strong bot play — and that is
+the only claim it certifies. "The game is balanced" in the Hearthstone sense
+needs more vectors as the product grows. Priority order:
+
+1. **Pacing & completion health** (added as watch metrics, see targets §2):
+   natural-kill vs turn-cap-tiebreak share, turn percentiles, turn-10 leader
+   conversion, comeback rate. Rationale: "decided%" alone would pass a
+   degenerate tiebreak-grinding meta. Watch-grade now; candidates for gated
+   release criteria at the next ratification-class event.
+2. **Policy robustness / human validity**: grade how much every faction and
+   cell estimate moves across deliberately DIFFERENT competent pilots
+   (aggressive / reactive / mulligan-aware), not just across rollout budgets;
+   before launch, calibrate bot play against recorded human playtest decisions.
+   All current evidence is bot-vs-bot — internally converged, externally
+   unvalidated.
+3. **Deck/archetype space** (mandatory before constructed play opens): seeded
+   archetype gauntlet via deck-sampler.mjs (aggro/midrange/control/tempo/ramp
+   templates), faction × archetype win rates, best-list dominance share,
+   within-faction spread; per-card paired ablations (swap one card for a
+   baseline, measure the marginal win effect + drawn/played rates) — the
+   empirical card-power measurement the static pricer cannot provide.
+4. **Experience axes** (live-game territory): draw-luck/doomed-start incidence,
+   decision density, must-answer counterplay coverage, mirror health beyond
+   initiative. Out of scope for the simulator today; listed so nobody mistakes
+   silence for coverage.
+
+Known scope boundary, restated: Crimson Wastes and Amethyst Expanse have no
+card data — every claim in this document covers four of six factions.
 5. **Instrument upgrade — actor-free playouts** (`pilot-rollout.mjs`): each
    decision currently spins ~(candidates+1)×rollouts fresh XState actors from a
    persisted snapshot (~100 per decision); measured cost ~2 GB RSS/worker from

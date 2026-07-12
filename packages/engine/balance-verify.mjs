@@ -292,6 +292,55 @@ const polVerdict = w => !w.A ? 'n/a' : grade(w.wp, null, x => Math.abs(x - 50) >
 const fpVerdict = fp => grade(Math.abs(fp - 50), null, x => x > T.mirrorFpEdgePp.flagAbove, x => x > T.mirrorFpEdgePp.failAbove);
 const decidedVerdict = d => grade(d, null, x => x < T.decidedPct.flagBelow, x => x < T.decidedPct.failBelow);
 
+// ── Pacing/comeback watch metrics (§13s-era, external vector audit) ─────────
+// WATCH-grade only: these are NOT part of the locked ruleset-v1 acceptance
+// criteria (docs/balance-targets.md §2 / sim-data/balance-targets.json
+// thresholds.pacing carries the provenance + measured baseline). They exist to
+// catch a blind spot decidedPct can't see: decidedPct counts turn-cap
+// tiebreaks as "decided", so a degenerate tiebreak-heavy meta could pass that
+// gate — natural-kill share is the missing guard. Computed from the same
+// matchupDetail cells the report already prints (agg pilots only — the
+// per-cell winMethod/turnsP/comeback fields the matrix pilots also carry are
+// not pooled here since the pacing bands were measured against agg/rollout
+// pilots specifically). Never FAILs; never touches an exit code.
+function pacingMetrics(p) {
+  if (!p.matchupDetail) return null;
+  let games = 0, kill = 0, tiebreak = 0;
+  let cbN = 0, cbOver = 0;
+  const turnsP50 = [];
+  for (const d of Object.values(p.matchupDetail)) {
+    games += d.n; kill += d.winMethod.kill; tiebreak += d.winMethod.tiebreak;
+    cbN += d.comeback.n; cbOver += d.comeback.overturned;
+    turnsP50.push({ p50: d.turnsP.p50, n: d.n });
+  }
+  turnsP50.sort((a, b) => a.p50 - b.p50);
+  const total = turnsP50.reduce((s, x) => s + x.n, 0);
+  let acc = 0, medianP50 = null;
+  for (const x of turnsP50) { acc += x.n; if (acc >= total / 2) { medianP50 = x.p50; break; } }
+  return {
+    naturalKillPct: +(100 * kill / Math.max(games, 1)).toFixed(1),
+    tiebreakPct: +(100 * tiebreak / Math.max(games, 1)).toFixed(1),
+    turnsP50: medianP50,
+    // The cell-level comeback field IS the turn-10-leader-overturned rate
+    // (sim-runner.mjs: leaderAt10WinPct = 100 - comebackPct, same snapped-game
+    // denominator), so leaderAt10 conversion is its games-weighted complement.
+    leaderAt10WinPct: +(100 * (cbN - cbOver) / Math.max(cbN, 1)).toFixed(1),
+    comebackPct: +(100 * cbOver / Math.max(cbN, 1)).toFixed(1),
+  };
+}
+// Each metric tagged independently (OK/WATCH) — no combined verdict, no exit
+// code, no interaction with the locked ratification gate above.
+function pacingVerdicts(m) {
+  const P = T.pacing;
+  return {
+    naturalKillPct: m.naturalKillPct < P.naturalKillPct.watchBelow ? 'WATCH' : 'OK',
+    tiebreakPct: m.tiebreakPct > P.tiebreakPct.watchAbove ? 'WATCH' : 'OK',
+    turnsP50: (m.turnsP50 < P.turnsP50.watchBelow || m.turnsP50 > P.turnsP50.watchAbove) ? 'WATCH' : 'OK',
+    leaderAt10WinPct: m.leaderAt10WinPct > P.leaderAt10WinPct.watchAbove ? 'WATCH' : 'OK',
+    comebackPct: m.comebackPct < P.comebackPct.watchBelow ? 'WATCH' : 'OK',
+  };
+}
+
 function report(p) {
   const lines = [];
   lines.push(`\n══ PILOT: ${p.label} ══  (${p.games} games, decided ${pct(p.decidedPct)}, avgTurns ${p.avgTurns.toFixed(1)})`);
@@ -301,6 +350,17 @@ function report(p) {
   lines.push(`  Parity spread (max−min): ${pct(p.spread)}  → ${spreadVerdict(p.spread)}  [target ≤${T.spreadPp.flagAbove}pp]`);
   lines.push(`  Mirror first-player edge: ${pct(p.mirrorFp - 50)} over 50%  → ${fpVerdict(p.mirrorFp)}  [target ≤+${T.mirrorFpEdgePp.flagAbove}pp]`);
   lines.push(`  Decided%: ${pct(p.decidedPct)}  → ${decidedVerdict(p.decidedPct)}  [target ≥${T.decidedPct.flagBelow}%]`);
+  // Pacing/comeback watch metrics (agg/rollout pilots only — the bands were
+  // measured against agg-pilot matchupDetail; WATCH-grade, never affects the
+  // verdict or exit code — see thresholds.pacing provenance).
+  if (p.kind === 'agg') {
+    const pm = p.pacing ? p.pacing.metrics : pacingMetrics(p);
+    const pv = p.pacing ? p.pacing.verdicts : pacingVerdicts(pm);
+    lines.push(
+      `  Pacing (watch): natural-kill ${pct(pm.naturalKillPct)} [${pv.naturalKillPct}]  tiebreak ${pct(pm.tiebreakPct)} [${pv.tiebreakPct}]  ` +
+      `turns p50 ${pm.turnsP50} [${pv.turnsP50}]  leader@10 conv ${pct(pm.leaderAt10WinPct)} [${pv.leaderAt10WinPct}]  comeback ${pct(pm.comebackPct)} [${pv.comebackPct}]`,
+    );
+  }
   if (p.kind === 'matrix') {
     if (p.worst.A) lines.push(`  Worst matchup: ${p.worst.A} beats ${p.worst.B} ${pct(p.worst.wp)} (n=${p.worst.n})  → ${polVerdict(p.worst)}  [target within ${100 - (50 + T.worstCellDevPp.flagAbove)}/${50 + T.worstCellDevPp.flagAbove}]`);
     lines.push('  Matchup matrix (row beats col, %):');
@@ -358,7 +418,13 @@ if (FOCUS) console.log(`FOCUS mode: only ${FOCUS}-involving pairings run — non
 // it. See docs/balance-diagnosis.md §11 for why this pilot was adopted as standard.
 console.log(`Workers: ${WORKERS} (parallel — byte-identical to serial)`);
 const pilots = [];
-const add = async (p) => { pilots.push(p); console.log(report(p)); };
+const add = async (p) => {
+  // Attach watch-grade pacing metrics before push so they land in both the
+  // console report and the output JSON (see pacingMetrics/pacingVerdicts).
+  if (p.kind === 'agg') { const metrics = pacingMetrics(p); p.pacing = { metrics, verdicts: pacingVerdicts(metrics) }; }
+  pilots.push(p);
+  console.log(report(p));
+};
 console.log('Running random (floor)…'); await add(await runMatrixPilot('random', { botPolicy: 'random' }));
 console.log('\nRunning heuristic…'); await add(await runMatrixPilot('heuristic', { botPolicy: 'heuristic', reachDiscard: true, valuePilot: true }));
 // HEUR_RAMP=1 adds a second heuristic with the rampPilot deploy bonus (the in-game

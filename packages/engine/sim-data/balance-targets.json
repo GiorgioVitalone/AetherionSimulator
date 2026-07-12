@@ -7,7 +7,14 @@
     "worstCellDevPp": { "flagAbove": 20, "failAbove": 30 },
     "mirrorFpEdgePp": { "flagAbove": 3, "failAbove": 5 },
     "decidedPct": { "flagBelow": 85, "failBelow": 70 },
-    "minCellGames": 100
+    "minCellGames": 100,
+    "pacing": {
+      "naturalKillPct": { "watchBelow": 85 },
+      "tiebreakPct": { "watchAbove": 15 },
+      "turnsP50": { "watchBelow": 23, "watchAbove": 43 },
+      "leaderAt10WinPct": { "watchAbove": 64 },
+      "comebackPct": { "watchBelow": 36 }
+    }
   },
   "presets": {
     "smoke": { "GPP_MATRIX": 100, "RL_GPP": 16, "RH_GPP": 8, "RX_GPP": 0 },
@@ -30,6 +37,7 @@
     "worstCellDevPp": "HS real matchup extremes run ~70/30; 65/35 target leaves margin",
     "mirrorFpEdgePp": "17Lands first-player anchor +2.7pp; this instrument read +1.6 to +3.0 pre-RD12 (targets §6-§9)",
     "decidedPct": "stall-class regression guard; >=85% of games must reach a decision",
-    "presetSizes": "precision lives in the rollout rungs (the graded verdict layer: pooled r8+r12 ~2400/faction = CI ±2.0pp vs the 43/57 FAIL lines); GPP_MATRIX=1000 (CI ±3pp) suffices for the diagnostic random/heuristic floors, which are not graded evidence"
+    "presetSizes": "precision lives in the rollout rungs (the graded verdict layer: pooled r8+r12 ~2400/faction = CI ±2.0pp vs the 43/57 FAIL lines); GPP_MATRIX=1000 (CI ±3pp) suffices for the diagnostic random/heuristic floors, which are not graded evidence",
+    "pacing": "watch-grade only — NOT part of ruleset-v1 acceptance (§13s-era addition per external vector audit: decided% counts turn-cap tiebreaks as decided, so natural-kill/tiebreak share is the missing guard against a degenerate tiebreak-heavy meta passing). Measured on the 3 rollout (agg) pilots of balance-runs/runs/2026-07-11_verify_34cf3a28_ruleset-v1-ratification-v2.json (2026-07-11), games-weighted across matchupDetail cells: naturalKillPct 99.97-100.0 (pooled ~100.0), tiebreakPct 0.0-0.03 (pooled ~0.0), turnsP50 32-33 (pooled weighted-median 33), leaderAt10WinPct 51.7-52.7 (pooled ~52.3, derived as 100 - comeback.pct games-weighted by comeback.n — the cell-level comeback field already IS the turn-10-leader-overturned rate), comebackPct 47.3-48.3 (pooled ~47.7). Bands = measured +/- generous margin per metric (naturalKillPct watchBelow measured-15 floored; tiebreakPct watchAbove measured+15; turnsP50 watchBelow/watchAbove measured+/-10; leaderAt10WinPct watchAbove measured+12; comebackPct watchBelow measured-12), all rounded to whole numbers. Print WATCH/OK, never FAIL; do not affect exit codes or the locked ratification verdict."
   }
 }
