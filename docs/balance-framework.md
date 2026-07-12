@@ -145,20 +145,21 @@ compute; see §7).
 - **Instrument disagreement** (pilots diverge) → measurement work, not balance
   work; nothing is adopted on a non-converged read.
 
-## 7. Open items (as of 2026-07-11 — ruleset v1 LOCKED)
+## 7. Open items (as of 2026-07-12 — ruleset v1 LOCKED, audit items closed)
 
-1. ~~Rulebook text~~ — DONE 2026-07-11: all nine rules printed in
-   `Documentation/game/Rulebook.md` (edited in the submodule working tree;
-   commit in the submodule + bump the pointer when committing the lock).
-2. **Card-gate historical validation** (for the record): the sapphire-redesign
-   must-FAIL case needs a seat-clean baseline panel on the CURRENT pool first
-   (`balance-runs/record-chain.sh` step 3, re-run under the locked standard).
-   Note: takes 1–5 of the "Radiant relief" were retracted — seat-clean, R v V
-   is healthy (37.6/62.4) and no card change was needed.
-3. For-the-record batteries under the locked standard: remaining rule ablations
-   + comp r12 confirmation (no decision hinges on them; §13q Step 3 grounds).
+1. ~~Rulebook text~~ — DONE: all nine rules printed (PR #8 on AetherionDocs;
+   bump the submodule pointer after merge).
+2. ~~Card-gate historical validation~~ — DONE 2026-07-12 (§13s): no-op PASSes;
+   the §8 Sapphire redesign is rejected outright (Sapphire 71.5% marginal vs
+   a seat-clean CURRENT baseline) — the gate catches its target class.
+3. ~~For-the-record batteries~~ — DONE 2026-07-12 (§13s): comp r12 confirmed
+   (+2.33 PASS); all seven ablations run seat-clean; every pre-registered
+   retention ground held.
 4. Bot seat-correlated tie-breaks (instanceId.localeCompare — finder minor):
    neutralized in aggregate by seat alternation; clean up opportunistically.
+5. Instrument upgrades (below, §7 items 5–6 of the 2026-07-10 list): actor-free
+   playouts (memory), neural playout policy (quality) — unchanged, post-lock
+   engineering work.
 5. **Instrument upgrade — actor-free playouts** (`pilot-rollout.mjs`): each
    decision currently spins ~(candidates+1)×rollouts fresh XState actors from a
    persisted snapshot (~100 per decision); measured cost ~2 GB RSS/worker from

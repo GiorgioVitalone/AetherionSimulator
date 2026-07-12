@@ -2011,3 +2011,37 @@ needed). The locked `card` compensation stands (+2.08 probe / +0.45 ratification
 flags remain in the engine as measurement instruments; a softer sibling (first resource enters
 exhausted rather than skipped) is the noted next candidate if the no-free-cards aesthetic is
 ever revisited.
+
+### 13s. Completion battery — every §13q promise closed seat-clean (2026-07-12)
+
+All runs under the locked manifest (loud override banners otherwise), ledgered:
+
+**comp-card confirmation @r12 (ratified pool, 4,000 mirrors): +2.33 [0.78 … 3.87] — PASS.**
+The compensation rule is now confirmed at every rung it can be measured at.
+
+**Step-3 ablation battery, complete** (rollout-low/high spreads; locked baseline ≈ 5–11):
+
+| RULE_OFF | Spread (r4 / r8) | Reading |
+|---|---|---|
+| terminationMode | **37.1 / 32.0** | catastrophic — the transform-on-empty rule carries the late game |
+| apnapAnyOrderFix | 9.7 / **15.8** | clearly worse — the fidelity fix earns its place on balance too |
+| reserveTapChoice | 7.1 / **14.7** | worse — retained (also Rulebook-fidelity-locked) |
+| costFloor | 3.6 / 9.7 | spread-neutral — retained on the §12c loop-pathology ground |
+| reserveTapStrain | 5.1 / 7.5 | neutral — retained on designer sign-off + §13n package evidence |
+| exileDiscardForEnergy | 4.7 / 5.7 | neutral — retained on the §11 graveyard-fuel ground |
+| resourceDeckSize→15 | 14.7 / 5.7 | mixed at ablation n — RD12's case rests on the full panels |
+
+Every retention ground pre-registered in Step 3 held; two rules upgraded from
+principle-retained to evidence-retained.
+
+**Card-gate validation, both directions:** a byte-identical no-op pool PASSes (static
+short-circuit, no sim burned); the historical §8 Sapphire redesign — the pool the static pricer
+approved and the sim later read at 60–72% — is REJECTED outright by the hardened gate against a
+fresh seat-clean CURRENT-pool baseline (`sapphire-val-baseline`): Sapphire marginal **71.5%**,
+all three cross cells 70–72%, every acceptance rule FAILed (ledger
+`2026-07-12_card-gate_396fd91f_gate-Sapphire`). The gate demonstrably catches the class of
+destructive change it was built for, under the rules it governs.
+
+With that, the external audit's path-to-100% is closed: manifest consumed as the source of
+truth, gate hardened and validated, batteries complete, pre-registration committed. The
+balance program's evidentiary record is whole.
