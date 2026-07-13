@@ -7,10 +7,23 @@
  * event sequence; after EVERY event the two snapshots are compared on
  * machine state node, GameState (deep), machine-level pendingChoice, and
  * status. Any mismatch is reported with (seed, decisionIndex, eventIndex).
+ * Emitted events are covered by this deep GameState comparison too — every
+ * dispatched GameEvent is appended to `gameState.log`, so a divergence in
+ * emitted events surfaces as a `gameState` field mismatch without needing a
+ * separate events-only assertion.
  *
- * Also covers the spike's named risk: exception parity on an illegal send —
- * the actor path's catch-as-pass behavior in `playout()` must be reproduced
- * exactly by the pure-transition path.
+ * Also covers the spike's named risk: illegal-send parity — sending a
+ * well-typed-but-illegal action (unknown card instance) must be handled
+ * identically by both backends. Investigation (see the test body) found
+ * that xstate v5's `Actor.send()` never throws synchronously for an
+ * internal transition error — it swallows it into `snapshot.status:
+ * 'error'` and reports it asynchronously via `setTimeout` (by the library's
+ * own design, specifically so it can't be caught by the caller's try/catch).
+ * So the actor path's `try { fork.send(...) } catch {}` in `playout()` /
+ * `oneRollout` cannot be proven reachable for engine-internal errors; this
+ * fixture instead pins the real, provable contract — both backends silently
+ * no-op the illegal action (GameState unchanged) — and continues to prove
+ * the two playouts converge to identical outcomes.
  *
  * Skips gracefully when dist/ is missing (pilot-rollout.mjs imports dist),
  * mirroring rollout-pin.test.ts.
@@ -330,7 +343,7 @@ d('playout backend differential (T7)', () => {
     expect(mismatches).toEqual([]);
   }, 120000);
 
-  it('illegal-action exception parity: both backends take the identical catch-as-pass branch', async () => {
+  it('illegal-action no-op parity: both backends silently no-op an unknown-instance deploy identically', async () => {
     const dist = (await import(distPath)) as unknown as {
       createGame: (
         a: Record<string, unknown>,
@@ -384,8 +397,21 @@ d('playout backend differential (T7)', () => {
       slotIndex: 0,
     };
 
-    // Reproduce oneRollout's exact send-catch structure on both backends.
-    const outcomes: Array<{ threw: boolean; snapJson: string; finJson: string }> = [];
+    // Reproduce oneRollout's exact send-catch structure on both backends, and
+    // additionally pin that the illegal send is a true no-op (GameState
+    // unchanged), not merely "didn't throw". `threw` is retained and
+    // asserted false on both backends — see the file-header investigation
+    // note: xstate v5's Actor.send() never throws synchronously for an
+    // internal transition error (it defers via setTimeout by design), so
+    // `oneRollout`'s catch-as-pass branch cannot be proven reachable this
+    // way for the actor backend; the no-op-parity assertions below are the
+    // provable contract this fixture actually pins.
+    const outcomes: Array<{
+      threw: boolean;
+      gsUnchanged: boolean;
+      snapJson: string;
+      finJson: string;
+    }> = [];
     for (const backend of ['actor', 'snapshot'] as const) {
       let fork: ForkLike;
       if (backend === 'actor') {
@@ -400,22 +426,34 @@ d('playout backend differential (T7)', () => {
           pilot.hydratePersistedSnapshot(gameMachine, persisted),
         );
       }
+      const gsBefore = JSON.stringify(fork.getSnapshot().context.gameState);
       let threw = false;
       try {
         fork.send({ type: 'PLAYER_ACTION', action: ILLEGAL });
       } catch {
         threw = true; // production comment: "illegal in this fork: treat as a pass-equivalent rollout"
       }
+      const gsAfter = JSON.stringify(fork.getSnapshot().context.gameState);
       const snapJson = JSON.stringify({
         value: fork.getSnapshot().value,
         gs: fork.getSnapshot().context.gameState,
         pc: fork.getSnapshot().context.pendingChoice ?? null,
       });
       const fin = pilot.playout(fork, 'random', 20, rngf(4242), 200, Infinity);
-      outcomes.push({ threw, snapJson, finJson: JSON.stringify(fin) });
+      outcomes.push({
+        threw,
+        gsUnchanged: gsBefore === gsAfter,
+        snapJson,
+        finJson: JSON.stringify(fin),
+      });
       fork.stop?.();
     }
 
+    // Both backends: the illegal send neither throws nor mutates GameState.
+    expect(outcomes[0]?.threw).toBe(false);
+    expect(outcomes[1]?.threw).toBe(false);
+    expect(outcomes[0]?.gsUnchanged).toBe(true);
+    expect(outcomes[1]?.gsUnchanged).toBe(true);
     expect(outcomes[1]?.threw).toBe(outcomes[0]?.threw);
     expect(outcomes[1]?.snapJson).toBe(outcomes[0]?.snapJson);
     expect(outcomes[1]?.finJson).toBe(outcomes[0]?.finJson);

@@ -391,7 +391,16 @@ export function makeRolloutPilot(opts = {}) {
       try {
         if (cand != null) fork.send({ type: 'PLAYER_ACTION', action: cand });
         else fork.send({ type: 'END_PHASE' });
-      } catch { /* illegal in this fork: treat as a pass-equivalent rollout */ }
+      } catch {
+        // illegal in this fork: treat as a pass-equivalent rollout.
+        // Investigated (playout-backend-differential.test.ts): the makeSnapshotFork
+        // (transition()) path DOES throw synchronously here on a malformed action, but
+        // xstate v5's Actor.send() never does — internal transition errors are swallowed
+        // into `snapshot.status: 'error'` and reported asynchronously via setTimeout, by
+        // the library's own design, so this catch was not proven reachable for the actor
+        // backend with any input tried. Left in place for the transition() path (proven
+        // reachable there) and for any pre-transition send failure.
+      }
       const fin = playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall, fairPilot);
       const score = outcomeScore(fin, meSeat, turnCap, closingReward);
       fork.stop();
