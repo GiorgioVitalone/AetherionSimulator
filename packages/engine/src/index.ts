@@ -25,18 +25,11 @@ export {
   createEmptyZoneState,
 } from './zones/index.js';
 export type { CardLocation, RemoveResult } from './zones/index.js';
-export {
-  getValidAttackTargets,
-  isBoardEmpty,
-} from './zones/index.js';
+export { getValidAttackTargets, isBoardEmpty } from './zones/index.js';
 export type { AttackTarget } from './zones/index.js';
 
 // ── Combat ──────────────────────────────────────────────────────────────────
-export {
-  calculateCombatDamage,
-  calculateHeroDamage,
-  resolveCombat,
-} from './combat/index.js';
+export { calculateCombatDamage, calculateHeroDamage, resolveCombat } from './combat/index.js';
 export type { DamageResult, CombatResult } from './combat/index.js';
 
 // ── Events ──────────────────────────────────────────────────────────────────
@@ -66,6 +59,8 @@ export {
   canAfford,
   payCost,
   getAvailableResources,
+  enumerateConcretePlayerActions,
+  keyOfPlayerAction,
 } from './actions/index.js';
 export type {
   AvailableActions,
@@ -76,6 +71,7 @@ export type {
   ActivateOption,
   AttackOption,
   ReactiveOption,
+  CandidateGenMode,
 } from './actions/index.js';
 
 // ── Setup ───────────────────────────────────────────────────────────────────
@@ -96,11 +92,7 @@ export type {
 
 // ── State Machine ───────────────────────────────────────────────────────────
 export { gameMachine } from './state-machine/index.js';
-export type {
-  GameMachineContext,
-  GameMachineEvent,
-  PlayerAction,
-} from './state-machine/index.js';
+export type { GameMachineContext, GameMachineEvent, PlayerAction } from './state-machine/index.js';
 export {
   refreshCards,
   drawResourceCard,

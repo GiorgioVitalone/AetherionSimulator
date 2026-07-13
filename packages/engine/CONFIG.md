@@ -64,13 +64,16 @@ so heuristic/random runs stay byte-identical to the v10 baseline):
 
 | Field | Type | Default | Meaning |
 |-------|------|---------|---------|
-| `rollouts` | number | `1` | Playouts simulated per candidate (averaged). |
+| `rollouts` | number | `16` | Playouts simulated per candidate (averaged). |
 | `rolloutPlayout` | `"random"` \| `"heuristic"` | `"random"` | Default policy INSIDE a playout. `random` = no archetype prior (primary). |
-| `rolloutDepth` | number | `0` | Turns to simulate forward before scoring the leaf by LP-diff. `0` = roll to game end (truest win/loss signal). |
+| `rolloutDepth` | number | `3`, or `0` when `fairPilot` is set | Turns to simulate forward before scoring the leaf by LP-diff. `0` = roll to game end (truest win/loss signal). |
 | `maxCandidates` | number | `12` | Branching cap (candidates evaluated per decision). |
 
 Implemented in `pilot-rollout.mjs` (engine untouched). Determinism preserved: rollout
-seeds derive purely from `(seed, decisionIndex, candidateIndex, rolloutIndex)`.
+seeds derive purely from `(seed, decisionIndex, candidateIndex, rolloutIndex)`. The
+standard measurement panel (`balance-verify.mjs`) pins these per rung: rollout-low
+`rollouts:4 rolloutDepth:2 maxCandidates:5`; rollout-high `rollouts:8 rolloutDepth:3
+maxCandidates:8`; rollout-max `rollouts:12 rolloutDepth:3 maxCandidates:8`.
 
 ### `matchups`
 

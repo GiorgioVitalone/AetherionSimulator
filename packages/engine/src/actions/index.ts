@@ -17,3 +17,5 @@ export {
   effectiveCost,
   consumeReductions,
 } from './cost-checker.js';
+export { enumerateConcretePlayerActions, keyOfPlayerAction } from './enumerate-actions.js';
+export type { CandidateGenMode } from './enumerate-actions.js';
