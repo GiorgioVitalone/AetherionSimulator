@@ -12,6 +12,10 @@
 // Sizes are env-tunable for a fast smoke run:
 //   GPP_MATRIX (random/heuristic per-cell games), RL_GPP / RH_GPP (rollout low/high
 //   all-pairs games), SKIP_ROLLOUT=1. Deterministic (seeded); writes JSON to GAUGE_OUT.
+// T4 rollout-pilot A/B knobs (threaded into every rollout rung; unset ⇒
+//   byte-identical to today): CAND_GEN ('legacy'|'full') -> candidateGen,
+//   SEED_MODE ('index'|'actionKey') -> rolloutSeedMode, ROLLOUT_MAXC (int) ->
+//   overrides maxCandidates on every rung.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -80,6 +84,27 @@ const SKIP_ROLLOUT = process.env.SKIP_ROLLOUT === '1';
 const FOCUS = process.env.FOCUS || '';
 if (FOCUS && !FACTIONS.includes(FOCUS)) {
   console.error(`FOCUS must be one of: ${FACTIONS.join(', ')}`);
+  process.exit(1);
+}
+// CAND_GEN / SEED_MODE / ROLLOUT_MAXC (T4): thread the T2/T3 rollout-pilot
+// knobs (candidateGen, rolloutSeedMode, maxCandidates) into every rollout rung
+// (runAggPilot below), so the A/B panel is env-driven instead of hand-edited
+// per run. Unset ⇒ the key is simply omitted from the rung's config, so it's
+// byte-identical to every prior panel (matches runSim's unset-is-omitted
+// contract — see rollout-pin.test.ts).
+const CAND_GEN = process.env.CAND_GEN;
+if (CAND_GEN !== undefined && CAND_GEN !== 'legacy' && CAND_GEN !== 'full') {
+  console.error(`CAND_GEN must be 'legacy' or 'full' (got "${CAND_GEN}")`);
+  process.exit(1);
+}
+const SEED_MODE = process.env.SEED_MODE;
+if (SEED_MODE !== undefined && SEED_MODE !== 'index' && SEED_MODE !== 'actionKey') {
+  console.error(`SEED_MODE must be 'index' or 'actionKey' (got "${SEED_MODE}")`);
+  process.exit(1);
+}
+const ROLLOUT_MAXC = process.env.ROLLOUT_MAXC !== undefined ? +process.env.ROLLOUT_MAXC : undefined;
+if (ROLLOUT_MAXC !== undefined && (!Number.isInteger(ROLLOUT_MAXC) || ROLLOUT_MAXC <= 0)) {
+  console.error(`ROLLOUT_MAXC must be a positive integer (got "${process.env.ROLLOUT_MAXC}")`);
   process.exit(1);
 }
 const OUT = process.env.GAUGE_OUT || '/tmp/balance-verify-result.json';
@@ -270,7 +295,13 @@ async function runAggPilot(label, pilotCfg, gpp) {
   // from an all-pairs run, so focus cells are statistically (not byte-)
   // comparable with previous full panels — same sizes, different seeds.
   const matchups = FOCUS ? FACTIONS.map((f) => ({ p0Deck: FOCUS, p1Deck: f })) : 'all-pairs';
-  const r = await run({ ...BASE, ...pilotCfg, decks: realDecks, matchups, gamesPerPairing: gpp });
+  const r = await run({
+    ...BASE, ...pilotCfg,
+    ...(CAND_GEN !== undefined ? { candidateGen: CAND_GEN } : {}),
+    ...(SEED_MODE !== undefined ? { rolloutSeedMode: SEED_MODE } : {}),
+    ...(ROLLOUT_MAXC !== undefined ? { maxCandidates: ROLLOUT_MAXC } : {}),
+    decks: realDecks, matchups, gamesPerPairing: gpp,
+  });
   const marg = {};
   for (const f of FACTIONS) { const c = r.factionCounts[f] || { w: 0, n: 0 }; marg[f] = { ...c, wilson: wilson(c.w, c.n) }; }
   const wps = FACTIONS.map(f => marg[f].wilson[1]);
@@ -405,7 +436,7 @@ function report(p) {
 }
 
 // ── Run the panel ────────────────────────────────────────────────────────────
-console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}${FOCUS ? `  FOCUS=${FOCUS}` : ''}`);
+console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}${FOCUS ? `  FOCUS=${FOCUS}` : ''}${CAND_GEN !== undefined ? `  CAND_GEN=${CAND_GEN}` : ''}${SEED_MODE !== undefined ? `  SEED_MODE=${SEED_MODE}` : ''}${ROLLOUT_MAXC !== undefined ? `  ROLLOUT_MAXC=${ROLLOUT_MAXC}` : ''}`);
 console.log(`Pool: ${POOL_PATH}  sha256/16 ${POOL_SHA}`);
 console.log(`Ruleset: ${manifest ? `manifest v${manifest.version} (locked)` : 'pre-lock hardcoded fallback'}${ruleOverrides.length ? ` — ${ruleOverrides.length} override(s) in effect` : ''}`);
 if (FOCUS) console.log(`FOCUS mode: only ${FOCUS}-involving pairings run — non-${FOCUS} marginals/grades are vs-${FOCUS} cells only; combine with the reference panel's pack-internal counts for full marginals.`);
@@ -460,5 +491,10 @@ if (FOCUS) {
   console.log(`  → pilots agree on #1 faction: ${tops.size === 1 ? 'YES (' + [...tops][0] + ')' : 'NO — ' + [...tops].join('/') + ' (measurement-limited where they disagree)'}`);
 }
 
-writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', pool: { path: String(POOL_PATH), sha256_16: POOL_SHA }, focus: FOCUS || null, config: { GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, heurRamp: process.env.HEUR_RAMP === '1' }, ruleset: BASE, ruleOff: RULE_OFF || null, ruleOverrides, pilots }, null, 1));
+writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', pool: { path: String(POOL_PATH), sha256_16: POOL_SHA }, focus: FOCUS || null, config: {
+  GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, heurRamp: process.env.HEUR_RAMP === '1',
+  ...(CAND_GEN !== undefined ? { CAND_GEN } : {}),
+  ...(SEED_MODE !== undefined ? { SEED_MODE } : {}),
+  ...(ROLLOUT_MAXC !== undefined ? { ROLLOUT_MAXC } : {}),
+}, ruleset: BASE, ruleOff: RULE_OFF || null, ruleOverrides, pilots }, null, 1));
 console.log(`\nWrote ${OUT}`);

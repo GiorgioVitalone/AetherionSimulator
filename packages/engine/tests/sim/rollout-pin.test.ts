@@ -162,4 +162,67 @@ d('rolloutSeedMode helpers (T3)', () => {
     const seeds = new Set(KEYS.map((k) => rolloutBranchSeed(31337, 5, hashActionKey(k), 1)));
     expect(seeds.size).toBe(KEYS.length);
   });
+
+  // T4 — seedKeyOf fixes a flagged collision: keyOf's `default: return a.type`
+  // collapses every tap_reserve (and discard_for_energy) candidate onto one
+  // bare string, so under candidateGen:'full' + seedMode:'actionKey' distinct
+  // candidates of those kinds shared one seed stream. seedKeyOf keys those two
+  // kinds on cardInstanceId instead, while staying identical to keyOf for every
+  // kind keyOf already distinguishes.
+  it('seedKeyOf distinguishes tap_reserve/discard_for_energy candidates that keyOf collapses', async () => {
+    const pilot = (await import(join(here, '..', '..', 'pilot-rollout.mjs'))) as {
+      hashActionKey: (k: string) => number;
+      rolloutBranchSeed: (gameSeed: number, di: number, slot: number, r: number) => number;
+      seedKeyOf: (a: { type: string; cardInstanceId?: string }) => string;
+    };
+    const { hashActionKey, rolloutBranchSeed, seedKeyOf } = pilot;
+
+    const tapA = { type: 'tap_reserve', cardInstanceId: 'c-onyx-4' };
+    const tapB = { type: 'tap_reserve', cardInstanceId: 'c-onyx-9' };
+    expect(seedKeyOf(tapA)).not.toBe(seedKeyOf(tapB));
+    const tapSeedA = rolloutBranchSeed(31337, 5, hashActionKey(seedKeyOf(tapA)), 1);
+    const tapSeedB = rolloutBranchSeed(31337, 5, hashActionKey(seedKeyOf(tapB)), 1);
+    expect(tapSeedA).not.toBe(tapSeedB);
+
+    const dfeA = { type: 'discard_for_energy', cardInstanceId: 'c-onyx-4' };
+    const dfeB = { type: 'discard_for_energy', cardInstanceId: 'c-onyx-9' };
+    expect(seedKeyOf(dfeA)).not.toBe(seedKeyOf(dfeB));
+    const dfeSeedA = rolloutBranchSeed(31337, 5, hashActionKey(seedKeyOf(dfeA)), 1);
+    const dfeSeedB = rolloutBranchSeed(31337, 5, hashActionKey(seedKeyOf(dfeB)), 1);
+    expect(dfeSeedA).not.toBe(dfeSeedB);
+  });
+
+  it('seedKeyOf matches keyOf output for every legacy kind keyOf already distinguishes', async () => {
+    const pilot = (await import(join(here, '..', '..', 'pilot-rollout.mjs'))) as {
+      seedKeyOf: (a: Record<string, unknown>) => string;
+    };
+    const { seedKeyOf } = pilot;
+    // One representative action per legacy kind keyOf special-cases, plus the
+    // `default` fallback kind (declare_transform) that keyOf also leaves as
+    // the bare type string — unaffected by the seedKeyOf override.
+    const reps: Array<[Record<string, unknown>, string]> = [
+      [
+        { type: 'declare_attack', attackerInstanceId: 'c-onyx-17', targetId: 'c-rad-3' },
+        'c-onyx-17>c-rad-3',
+      ],
+      [
+        { type: 'deploy', cardInstanceId: 'c-onyx-4', zone: 'frontline', slotIndex: 0 },
+        'c-onyx-4@frontline:0',
+      ],
+      [
+        { type: 'attach_equipment', cardInstanceId: 'c-onyx-13', targetInstanceId: 'c-onyx-4' },
+        'c-onyx-13->c-onyx-4',
+      ],
+      [{ type: 'activate_ability', cardInstanceId: 'c-onyx-2', abilityIndex: 0 }, 'c-onyx-2#0'],
+      [
+        { type: 'move', cardInstanceId: 'c-onyx-13', toZone: 'high_ground' },
+        'c-onyx-13->high_ground',
+      ],
+      [{ type: 'cast_spell', cardInstanceId: 'c-rad-8' }, 'c-rad-8'],
+      [{ type: 'declare_transform' }, 'declare_transform'],
+    ];
+    for (const [action, expected] of reps) {
+      expect(seedKeyOf(action)).toBe(expected);
+    }
+  });
 });

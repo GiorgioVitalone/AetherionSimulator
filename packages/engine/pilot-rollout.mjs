@@ -327,7 +327,7 @@ export function makeRolloutPilot(opts = {}) {
     // seedMode 'actionKey' (T3): precompute each option's seed slot from its
     // stable identity. null (index mode) keeps the historical `ci` argument.
     const seedSlots = seedMode === 'actionKey'
-      ? options.map(o => hashActionKey(o.action ? keyOf(o.action) : 'end_phase'))
+      ? options.map(o => hashActionKey(o.action ? seedKeyOf(o.action) : 'end_phase'))
       : null;
 
     const persisted = actor.getPersistedSnapshot();
@@ -508,6 +508,26 @@ function keyOf(a) {
     case 'move': return `${a.cardInstanceId}->${a.toZone}`;
     case 'cast_spell': return a.cardInstanceId;
     default: return a.type;
+  }
+}
+
+// seedKeyOf (T4) — used ONLY for the 'actionKey' seed-slot computation, never
+// for orderCandidates/sameCandidate. keyOf's `default: return a.type` collapses
+// EVERY candidate of a kind it doesn't special-case (tap_reserve,
+// discard_for_energy) onto one bare string, so under candidateGen:'full' +
+// seedMode:'actionKey' distinct tap_reserve/discard_for_energy candidates share
+// one seed stream. seedKeyOf fixes that by keying on cardInstanceId for those
+// two kinds, and is identical to keyOf for every kind keyOf already
+// distinguishes. Do NOT fold this into keyOf itself: keyOf also drives
+// orderCandidates' tie-break sort, and extending it would re-sort legacy
+// same-kind candidates and break the pinned legacy hash (rollout-pin.test.ts
+// PINNED_HASH). Nothing pins actionKey-mode hashes yet (the full-mode test
+// only asserts inequality), so this change is safe to make now.
+export function seedKeyOf(a) {
+  switch (a.type) {
+    case 'tap_reserve': return `tap:${a.cardInstanceId}`;
+    case 'discard_for_energy': return `dfe:${a.cardInstanceId}`;
+    default: return keyOf(a);
   }
 }
 
