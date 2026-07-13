@@ -68,12 +68,38 @@ so heuristic/random runs stay byte-identical to the v10 baseline):
 | `rolloutPlayout` | `"random"` \| `"heuristic"` | `"random"` | Default policy INSIDE a playout. `random` = no archetype prior (primary). |
 | `rolloutDepth` | number | `3`, or `0` when `fairPilot` is set | Turns to simulate forward before scoring the leaf by LP-diff. `0` = roll to game end (truest win/loss signal). |
 | `maxCandidates` | number | `12` | Branching cap (candidates evaluated per decision). |
+| `candidateGen` | `"legacy"` \| `"full"` | `"legacy"` | Which enumerator sources the **candidates scored at each decision point** — see scoping note below. Emitted (and hashed) ONLY when explicitly set to `"full"`. |
+| `candidateKindCaps` | object (action kind → number) | 4 per kind | Explicit per-kind candidate-survivor cap (applied after ordering, before `maxCandidates`). Emitted (and hashed) ONLY when supplied. |
 
 Implemented in `pilot-rollout.mjs` (engine untouched). Determinism preserved: rollout
 seeds derive purely from `(seed, decisionIndex, candidateIndex, rolloutIndex)`. The
 standard measurement panel (`balance-verify.mjs`) pins these per rung: rollout-low
 `rollouts:4 rolloutDepth:2 maxCandidates:5`; rollout-high `rollouts:8 rolloutDepth:3
 maxCandidates:8`; rollout-max `rollouts:12 rolloutDepth:3 maxCandidates:8`.
+
+#### `candidateGen` scoping — two enumerators, only one changes
+
+`pilot-rollout.mjs` has two separate action enumerators: `candidateActions` (the
+CANDIDATES scored at each decision point) and `concreteActions` (moves taken
+INSIDE the random playouts that score those candidates). `candidateGen` affects
+**candidate enumeration only**:
+
+- `"legacy"` — the existing `candidateActions` code path, untouched (byte-identical
+  hashes to every historical run).
+- `"full"` — candidates come from the engine's canonical
+  `enumerateConcretePlayerActions(state, 'full')` (every legal
+  cardInstanceId/zone/target combination per kind, not just the first), then flow
+  through the same downstream pipeline (ordering, `candidateKindCaps`,
+  `maxCandidates`, scoring).
+
+Playout-internal enumeration (`concreteActions`) is **not** touched by this knob in
+either mode — changing both enumerators at once would confound the planned
+legacy-vs-full candidate-generation A/B.
+
+Pruning telemetry: every rollout run also accumulates a hash-exempt
+`candidatePruning` field (`{ raw, retained, prunedByKind }`, summed across all
+decisions in the run) onto the `runSim` result, the same way other read-only
+diagnostics (`dx`, `__diag`) are exposed — never part of `runHash`.
 
 ### `matchups`
 

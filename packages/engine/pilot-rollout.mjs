@@ -41,6 +41,7 @@ import {
   chooseReactiveAction,
   chooseChoiceResponse,
   shouldKeepHand,
+  enumerateConcretePlayerActions,
 } from './dist/index.js';
 
 // mulberry32 — identical generator to the runner's, seeded per decision branch.
@@ -61,6 +62,16 @@ function rngf(a) {
 // AvailableActions option into a sendable PlayerAction. Crucially we ALSO include
 // the "stop" candidate (END_PHASE / pass), so holding back is itself searched and
 // chosen when acting is worse by outcome.
+//
+// candidateGen (T2) SCOPING: this function is the 'legacy' candidate source and
+// stays UNTOUCHED — every historical runHash depends on its exact output. The
+// 'full' candidateGen option instead sources candidates from the engine's
+// canonical `enumerateConcretePlayerActions(gs, 'full')` (see chooseAction below),
+// which enumerates EVERY legal (cardInstanceId, zone/target) pair per kind instead
+// of only the first. This ONLY changes CANDIDATE enumeration (what gets scored at
+// a decision point) — the separate `concreteActions` enumerator below, used
+// INSIDE random playouts, is intentionally left alone in both modes so changing
+// both at once can't confound the planned A/B between the two enumerators.
 function candidateActions(acts) {
   const out = [];
   for (const d of acts.canDeploy || []) {
@@ -250,7 +261,18 @@ export function makeRolloutPilot(opts = {}) {
   const playoutPolicy = opts.playoutPolicy ?? 'random';
   const stepCap = opts.stepCap ?? 8000;
   const maxCandidates = opts.maxCandidates ?? 12; // cap branching for feasibility
-  const perKindCap = opts.perKindCap ?? 4;   // cap candidates kept per action kind
+  // candidateGen (T2): 'legacy' (default) runs the untouched candidateActions()
+  // path below — byte-identical to every historical run. 'full' sources
+  // candidates from the engine's canonical enumerateConcretePlayerActions(gs,
+  // 'full') instead, then flows through the SAME downstream pipeline (ordering,
+  // per-kind caps, maxCandidates, scoring). Candidate enumeration only — playout-
+  // internal enumeration (concreteActions) is unaffected in both modes.
+  const candidateGen = opts.candidateGen ?? 'legacy';
+  // candidateKindCaps (T2): explicit per-kind candidate-survivor cap, keyed by
+  // PlayerAction['type']. Defaults to DEFAULT_CANDIDATE_KIND_CAPS (every kind
+  // capped at 4 — the prior hardcoded `perKindCap` value), so an unset run is
+  // byte-identical to the v10 baseline.
+  const candidateKindCaps = opts.candidateKindCaps ?? DEFAULT_CANDIDATE_KIND_CAPS;
   const search = opts.search ?? 'flat';      // 'flat' | 'ucb' budget allocation
   const fairPilot = opts.fairPilot ?? false; // control/value-aware fairness (depth=0 + threat-aware counters)
   // Turn-depth horizon: simulate at most this many of the deciding player's future
@@ -263,20 +285,29 @@ export function makeRolloutPilot(opts = {}) {
   // A per-decision counter folded into the rollout seed for determinism. Reset by
   // the runner at game start via reset().
   let decisionIndex = 0;
+  // Pruning telemetry (hash-exempt; see sim-runner.mjs computeRunHash, which never
+  // reads result/summary fields like this one). Accumulated across every decision
+  // in this pilot's game: raw = pre-cap enumerated candidates, retained = post
+  // per-kind-cap + maxCandidates survivors, prunedByKind = per-kind drop counts.
+  const diag = { raw: 0, retained: 0, prunedByKind: {} };
 
-  function reset() { decisionIndex = 0; }
+  function reset() { decisionIndex = 0; diag.raw = 0; diag.retained = 0; diag.prunedByKind = {}; }
 
   function chooseAction(actor, gs, gameSeed, turnCap) {
     const di = decisionIndex++;
     const acts = computeAvailableActions(gs, gs.activePlayerIndex);
-    const cands = candidateActions(acts);
+    const cands = candidateGen === 'full'
+      ? enumerateConcretePlayerActions(gs, 'full')
+      : candidateActions(acts);
     if (cands.length === 0) return null; // nothing to do but end the phase
     // Deterministic candidate order (stable across runs); cap branching factor.
     // Per-kind cap keeps any single action kind (e.g. many deploys) from crowding
     // out the rest before the global maxCandidates slice — purely a branching
     // budget, not a value ranking; every kept candidate is still scored by outcome.
-    const ordered = capPerKind(orderCandidates(cands), perKindCap);
-    let limited = ordered.slice(0, maxCandidates);
+    const orderedAll = orderCandidates(cands);
+    const cappedByKind = capPerKind(orderedAll, candidateKindCaps);
+    let limited = cappedByKind.slice(0, maxCandidates);
+    recordPruning(diag, orderedAll, limited);
     // ALWAYS-INCLUDE the high_ground reach move (mirrors src/bot/heuristic.ts
     // chooseMove ~:366): promoting a ready, non-summoning-sick attacker from the
     // frontline to High Ground is the only way to threaten the enemy Hero, so it
@@ -323,7 +354,7 @@ export function makeRolloutPilot(opts = {}) {
     return best ? best.action : null;
   }
 
-  return { chooseAction, reset, meta: { rollouts, playoutPolicy, maxCandidates, perKindCap, depth, closingReward, search, fixHandSizeStall, fairPilot } };
+  return { chooseAction, reset, diag, meta: { rollouts, playoutPolicy, maxCandidates, candidateGen, candidateKindCaps, depth, closingReward, search, fixHandSizeStall, fairPilot } };
 }
 
 // ── Budget allocators (flat default; UCB1 optional behind opts.search==="ucb") ─
@@ -365,17 +396,53 @@ function evalUcb(nOptions, rollouts, oneRollout) {
   return stats;
 }
 
+// T2 — the per-kind survivor cap `capPerKind` applied uniformly (4 per kind) via
+// makeRolloutPilot's default `perKindCap`. Lifted into an explicit, overridable
+// map (`candidateKindCaps` on makeRolloutPilot) so callers can shape branching
+// per kind; unset ⇒ every kind capped at 4, byte-identical to the prior default.
+export const DEFAULT_CANDIDATE_KIND_CAPS = {
+  declare_attack: 4,
+  cast_spell: 4,
+  deploy: 4,
+  move: 4,
+  activate_ability: 4,
+  attach_equipment: 4,
+  declare_transform: 4,
+  tap_reserve: 4,
+  discard_for_energy: 4,
+};
+
 // Cap how many candidates of each action kind survive into the search (applied
 // AFTER orderCandidates, so the kept ones are the stable-ordered first `cap`).
-function capPerKind(ordered, cap) {
+// `kindCaps` is an object keyed by action kind; a kind absent from it falls back
+// to DEFAULT_CANDIDATE_KIND_CAPS' value for that kind (or 4 if wholly unknown).
+function capPerKind(ordered, kindCaps) {
   const seen = {};
   const out = [];
   for (const c of ordered) {
     const k = c.type;
     seen[k] = (seen[k] ?? 0) + 1;
+    const cap = kindCaps[k] ?? DEFAULT_CANDIDATE_KIND_CAPS[k] ?? 4;
     if (seen[k] <= cap) out.push(c);
   }
   return out;
+}
+
+// Pruning telemetry bookkeeping (Deliverable 3) — folds one decision's raw
+// (pre-cap, ordered) candidate list and its post-cap survivors into the running
+// `diag` accumulator, in place. Purely additive reporting; never read by
+// computeRunHash or the search itself.
+function recordPruning(diag, orderedAll, limited) {
+  diag.raw += orderedAll.length;
+  diag.retained += limited.length;
+  const rawByKind = {};
+  for (const c of orderedAll) rawByKind[c.type] = (rawByKind[c.type] ?? 0) + 1;
+  const retainedByKind = {};
+  for (const c of limited) retainedByKind[c.type] = (retainedByKind[c.type] ?? 0) + 1;
+  for (const k of Object.keys(rawByKind)) {
+    const pruned = rawByKind[k] - (retainedByKind[k] ?? 0);
+    if (pruned > 0) diag.prunedByKind[k] = (diag.prunedByKind[k] ?? 0) + pruned;
+  }
 }
 
 // High_ground reach moves, mirroring src/bot/heuristic.ts chooseMove: a ready,

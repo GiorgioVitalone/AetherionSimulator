@@ -761,7 +761,7 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   // forking THIS actor at each active-player decision point. Deterministic — its
   // rollout seeds derive purely from `seed`. Heuristic/random paths never touch it.
   const rolloutPilot = config.botPolicy === 'rollout'
-    ? makeRolloutPilot({ rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot })
+    ? makeRolloutPilot({ rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps })
     : null;
 
   let leaderAt10 = null; // 0|1|'tie' — side ahead on LP at SNOWBALL_TURN
@@ -900,6 +900,9 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     spellsCounters,
     // Post-game diagnostics — computeRunHash never reads this field (hash-exempt).
     dx: gameDiagnostics(fin, winner, decided, timedOut),
+    // Candidate-generation pruning telemetry (T2, rollout only) — computeRunHash
+    // never reads this field either (same hash-exemption as dx/__diag/__trace).
+    ...(rolloutPilot ? { candidatePruning: rolloutPilot.diag } : {}),
   };
 }
 
@@ -1011,6 +1014,21 @@ function resolveConfig(config = {}) {
           // Default true to match pilot-rollout; emitted (and hashed) ONLY under the
           // rollout policy, so heuristic/random runs stay byte-identical to v10.
           rolloutClosing: config.rolloutClosing ?? true,
+          // T2 — candidateGen: NEW candidate-enumeration dimension for the pilot's
+          // CANDIDATE search only (not the separate playout-internal enumerator —
+          // see CONFIG.md). Emitted (and hashed) ONLY when explicitly set to a
+          // non-'legacy' value, so an unset (or explicit 'legacy') run stays
+          // byte-identical to every historical runHash.
+          ...(config.candidateGen && config.candidateGen !== 'legacy'
+            ? { candidateGen: config.candidateGen }
+            : {}),
+          // T2 — candidateKindCaps: explicit per-kind candidate-survivor caps.
+          // Emitted (and hashed) ONLY when the caller supplies an override; the
+          // default (4 per kind, internal to pilot-rollout.mjs) is a byte-identical
+          // no-op.
+          ...(config.candidateKindCaps && typeof config.candidateKindCaps === 'object'
+            ? { candidateKindCaps: config.candidateKindCaps }
+            : {}),
         }
       : {}),
     // STALL-FIX knob: resolve the end-of-turn hand-size discard choice (which the
@@ -1383,6 +1401,22 @@ function summarize(results, config) {
     };
   }
 
+  // Candidate-generation pruning telemetry (T2, rollout only) — sums each game's
+  // hash-exempt `candidatePruning` (see playGame) across the whole run. Absent
+  // for non-rollout runs; never read by computeRunHash.
+  let candidatePruning;
+  if (config.botPolicy === 'rollout') {
+    const acc = { raw: 0, retained: 0, prunedByKind: {} };
+    for (const r of results) {
+      const cp = r.candidatePruning;
+      if (!cp) continue;
+      acc.raw += cp.raw;
+      acc.retained += cp.retained;
+      for (const [k, n] of Object.entries(cp.prunedByKind)) acc.prunedByKind[k] = (acc.prunedByKind[k] ?? 0) + n;
+    }
+    candidatePruning = acc;
+  }
+
   return {
     factionWinPct,
     paritySpread,
@@ -1396,6 +1430,7 @@ function summarize(results, config) {
     gamesWithEquipPct,
     spellsCastPerGame,
     reactiveCastsPerGame,
+    ...(candidatePruning ? { candidatePruning } : {}),
     // ADDITIVE balance-read output (NOT hashed; computed from the same non-mirror
     // decided games as factionWinPct). `factionCounts` surfaces the raw {w,n} per
     // faction (previously discarded); `stats` is the inferential summary (G-test
