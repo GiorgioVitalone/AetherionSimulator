@@ -15,7 +15,9 @@
 // T4 rollout-pilot A/B knobs (threaded into every rollout rung; unset ⇒
 //   byte-identical to today): CAND_GEN ('legacy'|'full') -> candidateGen,
 //   SEED_MODE ('index'|'actionKey') -> rolloutSeedMode, ROLLOUT_MAXC (int) ->
-//   overrides maxCandidates on every rung.
+//   overrides maxCandidates on every rung. T7: PLAYOUT_BACKEND ('actor'|
+//   'snapshot') -> playoutBackend, hash-exempt diagnostic (see sim-runner's
+//   computeRunHash).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -105,6 +107,15 @@ if (SEED_MODE !== undefined && SEED_MODE !== 'index' && SEED_MODE !== 'actionKey
 const ROLLOUT_MAXC = process.env.ROLLOUT_MAXC !== undefined ? +process.env.ROLLOUT_MAXC : undefined;
 if (ROLLOUT_MAXC !== undefined && (!Number.isInteger(ROLLOUT_MAXC) || ROLLOUT_MAXC <= 0)) {
   console.error(`ROLLOUT_MAXC must be a positive integer (got "${process.env.ROLLOUT_MAXC}")`);
+  process.exit(1);
+}
+// PLAYOUT_BACKEND (T7): 'actor' (default) | 'snapshot' — the playout stepping
+// machinery A/B. Hash-exempt (see sim-runner's computeRunHash) — this is a
+// harness dimension like WORKERS, not a rules dimension; both backends must
+// produce IDENTICAL runHashes (pinned in rollout-pin.test.ts).
+const PLAYOUT_BACKEND = process.env.PLAYOUT_BACKEND;
+if (PLAYOUT_BACKEND !== undefined && PLAYOUT_BACKEND !== 'actor' && PLAYOUT_BACKEND !== 'snapshot') {
+  console.error(`PLAYOUT_BACKEND must be 'actor' or 'snapshot' (got "${PLAYOUT_BACKEND}")`);
   process.exit(1);
 }
 const OUT = process.env.GAUGE_OUT || '/tmp/balance-verify-result.json';
@@ -300,6 +311,7 @@ async function runAggPilot(label, pilotCfg, gpp) {
     ...(CAND_GEN !== undefined ? { candidateGen: CAND_GEN } : {}),
     ...(SEED_MODE !== undefined ? { rolloutSeedMode: SEED_MODE } : {}),
     ...(ROLLOUT_MAXC !== undefined ? { maxCandidates: ROLLOUT_MAXC } : {}),
+    ...(PLAYOUT_BACKEND !== undefined ? { playoutBackend: PLAYOUT_BACKEND } : {}),
     decks: realDecks, matchups, gamesPerPairing: gpp,
   });
   const marg = {};

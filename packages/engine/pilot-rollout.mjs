@@ -32,7 +32,7 @@
 // analysis .mjs), reuses the built dist's exported helpers, and forks the actor the
 // runner already owns. The default `heuristic` botPolicy path is untouched.
 
-import { createActor } from 'xstate';
+import { createActor, transition } from 'xstate';
 import {
   gameMachine,
   computeAvailableActions,
@@ -105,6 +105,9 @@ const RANDOM_ACTION_PROB = 0.85;
 // counter (one the fair reactive bot would pick) — so counters matter inside playouts.
 const FAIR_COUNTER_PROB = 0.9;
 
+// Exported under an explicit alias for the T7 differential harness (which
+// drives base games with the exact playout-internal action surface).
+export { concreteActions as concretePlayoutActions };
 function concreteActions(acts) {
   const out = [];
   for (const d of acts.canDeploy || []) { const s = (d.validSlots || []).find(x => x.zone === 'frontline') || (d.validSlots || [])[0]; if (s && s.slots && s.slots.length) out.push({ type: 'deploy', cardInstanceId: d.cardInstanceId, zone: s.zone, slotIndex: s.slots[0] }); }
@@ -118,12 +121,43 @@ function concreteActions(acts) {
   return out;
 }
 
+// ── Playout stepping backends (T7) ───────────────────────────────────────────
+// `playout()` only needs `send(event)` + `getSnapshot()`, so the stepping
+// machinery is swappable. 'actor' (default) forks a live XState actor per
+// playout — the historical path, byte-untouched. 'snapshot' steps purely via
+// xstate's `transition()` from ONE hydrated snapshot per decision (shared,
+// never cloned — `transition()` does not mutate its input; spike-verified over
+// 1204 paired playouts). A harness dimension like WORKERS: hash-exempt, both
+// backends must produce identical runHashes (pinned in rollout-pin.test.ts).
+
+// `transition()` rejects getPersistedSnapshot() output — hydrate it into a live
+// snapshot first (createActor WITHOUT .start(): restoring does not re-run entry
+// actions, so this allocates one actor per DECISION instead of one per playout).
+export function hydratePersistedSnapshot(machine, persisted) {
+  return createActor(machine, { snapshot: persisted }).getSnapshot();
+}
+
+// A pure drop-in for the actor fork: same send/getSnapshot/stop surface.
+// Exceptions from `transition()` (e.g. an illegal action's assign throwing)
+// propagate synchronously exactly like actor `.send()` — the differential
+// harness pins this parity with an illegal-action fixture.
+export function makeSnapshotFork(machine, startSnapshot) {
+  let snap = startSnapshot;
+  return {
+    send(event) {
+      [snap] = transition(machine, snap, event);
+    },
+    getSnapshot: () => snap,
+    stop() {},
+  };
+}
+
 // Drive a forked actor forward with the chosen playout policy until a terminal
 // (winner set / machine done / turnCap) OR a turn-depth horizon is reached. Returns
 // the final GameState. `rnd` is the seeded RNG. `horizonTurn` (absolute turn number)
 // caps how far we simulate; beyond it we stop and the leaf is scored by LP-diff —
 // still archetype-neutral. horizonTurn === Infinity means roll to game end.
-function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall = false, fairPilot = false) {
+export function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall = false, fairPilot = false) {
   let steps = 0;
   let gs;
   while (steps++ < stepCap) {
@@ -280,6 +314,12 @@ export function makeRolloutPilot(opts = {}) {
   // coverage A/B (candidateGen legacy vs full) keeps identical streams for the
   // candidates both modes share — position shifts no longer reseed everything.
   const seedMode = opts.seedMode ?? 'index';
+  // T7 — playout stepping backend. 'actor' = historical per-playout actor fork
+  // (default, byte-identical); 'snapshot' = pure transition() stepping from one
+  // hydrated snapshot per decision. Hash-exempt harness dimension (see
+  // sim-runner.mjs computeRunHash): equal hashes across backends ARE the
+  // equivalence claim.
+  const playoutBackend = opts.playoutBackend ?? 'actor';
   const search = opts.search ?? 'flat';      // 'flat' | 'ucb' budget allocation
   const fairPilot = opts.fairPilot ?? false; // control/value-aware fairness (depth=0 + threat-aware counters)
   // Turn-depth horizon: simulate at most this many of the deciding player's future
@@ -331,6 +371,9 @@ export function makeRolloutPilot(opts = {}) {
       : null;
 
     const persisted = actor.getPersistedSnapshot();
+    // 'snapshot' backend: hydrate ONCE per decision; every playout's pure fork
+    // starts from this same live snapshot (transition() never mutates it).
+    const hydrated = playoutBackend === 'snapshot' ? hydratePersistedSnapshot(gameMachine, persisted) : null;
     const meSeat = gs.activePlayerIndex;
     const horizonTurn = depth > 0 ? gs.turnNumber + depth : Infinity;
 
@@ -338,8 +381,13 @@ export function makeRolloutPilot(opts = {}) {
     const oneRollout = (ci, r) => {
       const cand = options[ci].action;
       const rnd = rngf(mix(gameSeed, di, seedSlots ? seedSlots[ci] : ci, r));
-      const fork = createActor(gameMachine, { snapshot: persisted });
-      fork.start();
+      let fork;
+      if (hydrated != null) {
+        fork = makeSnapshotFork(gameMachine, hydrated);
+      } else {
+        fork = createActor(gameMachine, { snapshot: persisted });
+        fork.start();
+      }
       try {
         if (cand != null) fork.send({ type: 'PLAYER_ACTION', action: cand });
         else fork.send({ type: 'END_PHASE' });
@@ -366,7 +414,7 @@ export function makeRolloutPilot(opts = {}) {
     return best ? best.action : null;
   }
 
-  return { chooseAction, reset, diag, meta: { rollouts, playoutPolicy, maxCandidates, candidateGen, candidateKindCaps, seedMode, depth, closingReward, search, fixHandSizeStall, fairPilot } };
+  return { chooseAction, reset, diag, meta: { rollouts, playoutPolicy, maxCandidates, candidateGen, candidateKindCaps, seedMode, playoutBackend, depth, closingReward, search, fixHandSizeStall, fairPilot } };
 }
 
 // ── Budget allocators (flat default; UCB1 optional behind opts.search==="ucb") ─

@@ -88,6 +88,21 @@ d('rollout pin (T2)', () => {
     expect(keyed.runHash).not.toBe(legacy.runHash);
   }, 30000);
 
+  // T7 — the headline backend-equivalence check: the snapshot backend must
+  // reproduce the actor backend's pinned hash EXACTLY (playoutBackend is a
+  // harness dimension like WORKERS, hash-exempt by design — identical hashes
+  // ARE the equivalence claim, so it must never enter the hashed config).
+  it('playoutBackend:"snapshot" replays to the SAME pinned runHash; the knob is recorded but hash-exempt', async () => {
+    const { runSim } = (await import(runnerPath)) as { runSim: (c: unknown) => RunSimResult };
+    const legacy = runSim(TINY_ROLLOUT_BASE);
+    expect(legacy.config).not.toHaveProperty('playoutBackend');
+    expect(legacy.runHash).toBe(PINNED_HASH);
+
+    const snapshot = runSim({ ...TINY_ROLLOUT_BASE, playoutBackend: 'snapshot' });
+    expect(snapshot.config).toHaveProperty('playoutBackend', 'snapshot');
+    expect(snapshot.runHash).toBe(PINNED_HASH);
+  }, 60000);
+
   it('__diag-style candidatePruning telemetry is present for a rollout run and never affects runHash', async () => {
     const { runSim } = (await import(runnerPath)) as { runSim: (c: unknown) => RunSimResult };
     const runA = runSim(TINY_ROLLOUT_BASE);

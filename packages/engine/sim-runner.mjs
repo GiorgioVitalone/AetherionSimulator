@@ -761,7 +761,7 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   // forking THIS actor at each active-player decision point. Deterministic — its
   // rollout seeds derive purely from `seed`. Heuristic/random paths never touch it.
   const rolloutPilot = config.botPolicy === 'rollout'
-    ? makeRolloutPilot({ rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps, seedMode: config.rolloutSeedMode })
+    ? makeRolloutPilot({ rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps, seedMode: config.rolloutSeedMode, playoutBackend: config.playoutBackend })
     : null;
 
   let leaderAt10 = null; // 0|1|'tie' — side ahead on LP at SNOWBALL_TURN
@@ -1037,6 +1037,16 @@ function resolveConfig(config = {}) {
           // historical runHash.
           ...(config.rolloutSeedMode && config.rolloutSeedMode !== 'index'
             ? { rolloutSeedMode: config.rolloutSeedMode }
+            : {}),
+          // T7 — playoutBackend: 'snapshot' steps playouts purely (no actor
+          // forking). A HARNESS dimension like WORKERS, not a rules dimension:
+          // carried in the resolved config for provenance (results/ledger show
+          // which backend produced a run) but STRIPPED from the hash by
+          // computeRunHash — identical hashes across backends are the
+          // equivalence claim (pinned in rollout-pin.test.ts). Emitted only
+          // when explicitly set to a non-'actor' value.
+          ...(config.playoutBackend && config.playoutBackend !== 'actor'
+            ? { playoutBackend: config.playoutBackend }
             : {}),
         }
       : {}),
@@ -1462,9 +1472,14 @@ function computeRunHash(results, config, deckLabels = []) {
   // Decks used are part of the run's identity: fold their stable labels in so two
   // runs that differ only by deck selection produce different hashes. The diagnostic
   // accounting collector (__diag) is a read-only side-channel and is excluded.
-  const { __diag, __trace, ...hashedConfig } = config;
+  // playoutBackend is a harness dimension (like WORKERS): both stepping
+  // backends must hash identically — that equality IS the T7 equivalence
+  // claim. Stripping an absent key is a no-op, so historical hashes are
+  // untouched. Pinned in rollout-pin.test.ts.
+  const { __diag, __trace, playoutBackend, ...hashedConfig } = config;
   void __diag;
   void __trace;
+  void playoutBackend;
   const payload = JSON.stringify(hashedConfig) + '\n' + deckLabels.join(',') + '\n' + rows.join('\n');
   return createHash('sha256').update(payload).digest('hex').slice(0, 16);
 }
