@@ -77,6 +77,17 @@ d('rollout pin (T2)', () => {
     expect(full.runHash).not.toBe(legacy.runHash);
   }, 30000);
 
+  it('resolved config omits rolloutSeedMode when unset; "actionKey" both hashes and diverges (T3)', async () => {
+    const { runSim } = (await import(runnerPath)) as { runSim: (c: unknown) => RunSimResult };
+    const legacy = runSim(TINY_ROLLOUT_BASE);
+    expect(legacy.config).not.toHaveProperty('rolloutSeedMode');
+    expect(legacy.runHash).toBe(PINNED_HASH);
+
+    const keyed = runSim({ ...TINY_ROLLOUT_BASE, rolloutSeedMode: 'actionKey' });
+    expect(keyed.config).toHaveProperty('rolloutSeedMode', 'actionKey');
+    expect(keyed.runHash).not.toBe(legacy.runHash);
+  }, 30000);
+
   it('__diag-style candidatePruning telemetry is present for a rollout run and never affects runHash', async () => {
     const { runSim } = (await import(runnerPath)) as { runSim: (c: unknown) => RunSimResult };
     const runA = runSim(TINY_ROLLOUT_BASE);
@@ -90,4 +101,65 @@ d('rollout pin (T2)', () => {
     // Two runs, identical config, telemetry inspected in between — same runHash.
     expect(runA.runHash).toBe(runB.runHash);
   }, 30000);
+});
+
+// T3 — seed-derivation helpers: the load-bearing position-independence property.
+// In 'actionKey' mode a branch seed is mix(gameSeed, di, hashActionKey(key), r):
+// the ONLY candidate-specific input is the action's stable key string, so the
+// stream cannot depend on which other candidates exist or where this one sits.
+d('rolloutSeedMode helpers (T3)', () => {
+  // Realistic keyOf-shaped strings across every kind the pilot orders.
+  const KEYS = [
+    'c-onyx-17>c-rad-3',
+    'c-onyx-17>hero',
+    'c-onyx-9>c-rad-3',
+    'c-onyx-4@frontline:0',
+    'c-onyx-4@frontline:1',
+    'c-onyx-4@frontline:2',
+    'c-onyx-4@reserve:0',
+    'c-onyx-4@high_ground:1',
+    'c-onyx-21@reserve:1',
+    'c-rad-8',
+    'c-rad-11',
+    'c-onyx-2#0',
+    'c-onyx-2#1',
+    'c-rad-5#0',
+    'c-onyx-13->c-onyx-4',
+    'c-onyx-13->high_ground',
+    'c-rad-19->frontline',
+    'discard_for_energy',
+    'tap_reserve',
+    'declare_transform',
+    'end_phase',
+  ];
+
+  it('same action key -> same branch seed, regardless of hypothetical position; index mode differs by position', async () => {
+    const pilot = (await import(join(here, '..', '..', 'pilot-rollout.mjs'))) as {
+      hashActionKey: (k: string) => number;
+      rolloutBranchSeed: (gameSeed: number, di: number, slot: number, r: number) => number;
+    };
+    const { hashActionKey, rolloutBranchSeed } = pilot;
+    const [gameSeed, di, r] = [31337, 5, 1];
+    for (const k of KEYS) {
+      // Position-independent: the derivation consumes no candidate index at all.
+      const a = rolloutBranchSeed(gameSeed, di, hashActionKey(k), r);
+      const b = rolloutBranchSeed(gameSeed, di, hashActionKey(k), r);
+      expect(a).toBe(b);
+      expect(Number.isInteger(a) && a >= 0 && a <= 0xffffffff).toBe(true);
+    }
+    // Contrast: index mode is position-dependent (slot 0 vs slot 7 diverge).
+    expect(rolloutBranchSeed(gameSeed, di, 0, r)).not.toBe(rolloutBranchSeed(gameSeed, di, 7, r));
+  });
+
+  it('distinct realistic keys yield distinct hashes and distinct branch seeds (no collisions in sample)', async () => {
+    const pilot = (await import(join(here, '..', '..', 'pilot-rollout.mjs'))) as {
+      hashActionKey: (k: string) => number;
+      rolloutBranchSeed: (gameSeed: number, di: number, slot: number, r: number) => number;
+    };
+    const { hashActionKey, rolloutBranchSeed } = pilot;
+    const hashes = new Set(KEYS.map((k) => hashActionKey(k)));
+    expect(hashes.size).toBe(KEYS.length);
+    const seeds = new Set(KEYS.map((k) => rolloutBranchSeed(31337, 5, hashActionKey(k), 1)));
+    expect(seeds.size).toBe(KEYS.length);
+  });
 });

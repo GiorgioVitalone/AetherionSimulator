@@ -761,7 +761,7 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   // forking THIS actor at each active-player decision point. Deterministic — its
   // rollout seeds derive purely from `seed`. Heuristic/random paths never touch it.
   const rolloutPilot = config.botPolicy === 'rollout'
-    ? makeRolloutPilot({ rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps })
+    ? makeRolloutPilot({ rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps, seedMode: config.rolloutSeedMode })
     : null;
 
   let leaderAt10 = null; // 0|1|'tie' — side ahead on LP at SNOWBALL_TURN
@@ -1028,6 +1028,15 @@ function resolveConfig(config = {}) {
           // no-op.
           ...(config.candidateKindCaps && typeof config.candidateKindCaps === 'object'
             ? { candidateKindCaps: config.candidateKindCaps }
+            : {}),
+          // T3 — rolloutSeedMode: 'actionKey' keys each candidate's playout
+          // streams by its stable action identity instead of its position, so a
+          // coverage A/B (candidateGen legacy vs full) shares streams for common
+          // candidates. Emitted (and hashed) ONLY when explicitly set to a
+          // non-'index' value ⇒ unset/'index' runs stay byte-identical to every
+          // historical runHash.
+          ...(config.rolloutSeedMode && config.rolloutSeedMode !== 'index'
+            ? { rolloutSeedMode: config.rolloutSeedMode }
             : {}),
         }
       : {}),

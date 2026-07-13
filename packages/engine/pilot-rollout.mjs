@@ -273,6 +273,13 @@ export function makeRolloutPilot(opts = {}) {
   // capped at 4 — the prior hardcoded `perKindCap` value), so an unset run is
   // byte-identical to the v10 baseline.
   const candidateKindCaps = opts.candidateKindCaps ?? DEFAULT_CANDIDATE_KIND_CAPS;
+  // seedMode (T3): 'index' (default) derives each branch's playout stream from
+  // the candidate's POSITION — mix(gameSeed, di, ci, r), byte-identical to every
+  // historical run. 'actionKey' derives it from WHAT the action is (FNV-1a of
+  // its stable keyOf string; the END_PHASE option uses 'end_phase'), so a
+  // coverage A/B (candidateGen legacy vs full) keeps identical streams for the
+  // candidates both modes share — position shifts no longer reseed everything.
+  const seedMode = opts.seedMode ?? 'index';
   const search = opts.search ?? 'flat';      // 'flat' | 'ucb' budget allocation
   const fairPilot = opts.fairPilot ?? false; // control/value-aware fairness (depth=0 + threat-aware counters)
   // Turn-depth horizon: simulate at most this many of the deciding player's future
@@ -317,6 +324,11 @@ export function makeRolloutPilot(opts = {}) {
     }
     // The "stop" candidate (END_PHASE) is always evaluated: holding is a real option.
     const options = [...limited.map(a => ({ action: a })), { action: null }];
+    // seedMode 'actionKey' (T3): precompute each option's seed slot from its
+    // stable identity. null (index mode) keeps the historical `ci` argument.
+    const seedSlots = seedMode === 'actionKey'
+      ? options.map(o => hashActionKey(o.action ? keyOf(o.action) : 'end_phase'))
+      : null;
 
     const persisted = actor.getPersistedSnapshot();
     const meSeat = gs.activePlayerIndex;
@@ -325,7 +337,7 @@ export function makeRolloutPilot(opts = {}) {
     // One rollout of candidate `ci` with the deterministic per-branch seed.
     const oneRollout = (ci, r) => {
       const cand = options[ci].action;
-      const rnd = rngf(mix(gameSeed, di, ci, r));
+      const rnd = rngf(mix(gameSeed, di, seedSlots ? seedSlots[ci] : ci, r));
       const fork = createActor(gameMachine, { snapshot: persisted });
       fork.start();
       try {
@@ -354,7 +366,7 @@ export function makeRolloutPilot(opts = {}) {
     return best ? best.action : null;
   }
 
-  return { chooseAction, reset, diag, meta: { rollouts, playoutPolicy, maxCandidates, candidateGen, candidateKindCaps, depth, closingReward, search, fixHandSizeStall, fairPilot } };
+  return { chooseAction, reset, diag, meta: { rollouts, playoutPolicy, maxCandidates, candidateGen, candidateKindCaps, seedMode, depth, closingReward, search, fixHandSizeStall, fairPilot } };
 }
 
 // ── Budget allocators (flat default; UCB1 optional behind opts.search==="ucb") ─
@@ -497,6 +509,23 @@ function keyOf(a) {
     case 'cast_spell': return a.cardInstanceId;
     default: return a.type;
   }
+}
+
+// FNV-1a 32-bit over an action's stable key string — the 'actionKey' seed slot
+// (T3). Exported for the position-independence tests in rollout-pin.test.ts.
+export function hashActionKey(key) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+// The branch-seed derivation, exported for tests: 'index' mode passes the
+// candidate index as `slot`, 'actionKey' mode passes hashActionKey(keyOf(a)).
+export function rolloutBranchSeed(gameSeed, di, slot, r) {
+  return mix(gameSeed, di, slot, r);
 }
 
 // Deterministic seed mix for a rollout branch (no Math.random).
