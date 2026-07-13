@@ -943,6 +943,11 @@ export interface EquipmentAttachedEvent {
   readonly type: 'EQUIPMENT_ATTACHED';
   readonly equipmentId: string;
   readonly targetId: string;
+  /** DIAGNOSTIC: definition id + controller of the attached equipment, so
+   * usage telemetry can attribute attaches without state reconstruction
+   * (same pattern as the other card events). Not read by game logic. */
+  readonly cardDefId: number;
+  readonly playerId: 0 | 1;
 }
 export interface TurnStartEvent {
   readonly type: 'TURN_START';

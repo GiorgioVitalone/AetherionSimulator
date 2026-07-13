@@ -733,6 +733,8 @@ function executeAttachEquipment(
     type: 'EQUIPMENT_ATTACHED',
     equipmentId: equipCard.instanceId,
     targetId: action.targetInstanceId,
+    cardDefId: equipCard.cardDefId,
+    playerId: equipCard.owner,
   };
   // Run the equipment's deploy-time effects (e.g. Steel-Root Armor's +0/+X HP)
   // now that it is attached, threading the X paid so x_cost stat grants scale.
@@ -809,7 +811,13 @@ function executeTransferEquipment(
   return {
     state: recomputeAuras(attached),
     events: [
-      { type: 'EQUIPMENT_ATTACHED', equipmentId: equip.instanceId, targetId: target.instanceId },
+      {
+        type: 'EQUIPMENT_ATTACHED',
+        equipmentId: equip.instanceId,
+        targetId: target.instanceId,
+        cardDefId: equip.cardDefId,
+        playerId: equip.owner,
+      },
     ],
   };
 }

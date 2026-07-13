@@ -224,7 +224,7 @@ const factionEventTotal = new Map(); // faction -> {deployed, cast} — cross-ch
 
 function bump(deckKey, cardDefId, kind) {
   const m = usage.get(deckKey) ?? usage.set(deckKey, new Map()).get(deckKey);
-  const c = m.get(cardDefId) ?? m.set(cardDefId, { deployed: 0, cast: 0, discarded: 0, destroyed: 0 }).get(cardDefId);
+  const c = m.get(cardDefId) ?? m.set(cardDefId, { deployed: 0, cast: 0, discarded: 0, destroyed: 0, attached: 0 }).get(cardDefId);
   c[kind]++;
 }
 function bumpCoverage(deckKey, kind, resolved) {
@@ -276,12 +276,16 @@ function diagFor(aSide, bSide, gpp, seatAlt) {
         const pool = [...ps.hand, ...ps.mainDeck, ...ps.discardPile, ...ps.zones.reserve, ...ps.zones.frontline, ...ps.zones.highGround];
         for (const inst of pool) if (inst && inst.instanceId) instMap.set(inst.instanceId, inst.cardDefId);
       }
-      const KIND = { CARD_DEPLOYED: 'deployed', SPELL_CAST: 'cast', CARD_DISCARDED: 'discarded', CARD_DESTROYED: 'destroyed' };
+      // EQUIPMENT_ATTACHED joined the tally 2026-07-13: the step-4 screen showed
+      // ALL 122 equipment slots at zero uses — an instrument artifact (attaches
+      // fire EQUIPMENT_ATTACHED, which wasn't counted; ground truth ~8 attaches/
+      // game). Its instance field is equipmentId, hence the fallback below.
+      const KIND = { CARD_DEPLOYED: 'deployed', SPELL_CAST: 'cast', CARD_DISCARDED: 'discarded', CARD_DESTROYED: 'destroyed', EQUIPMENT_ATTACHED: 'attached' };
       for (const e of fin.log) {
         const kind = KIND[e.type];
         if (!kind) continue;
         const dk = seatDeckKey[e.playerId];
-        const defId = e.cardDefId !== undefined ? e.cardDefId : instMap.get(e.cardInstanceId);
+        const defId = e.cardDefId !== undefined ? e.cardDefId : instMap.get(e.cardInstanceId ?? e.equipmentId);
         if (defId === undefined) { uncoveredEvents++; bumpCoverage(dk, kind, false); continue; }
         bumpCoverage(dk, kind, true);
         bump(dk, defId, kind);
@@ -509,8 +513,8 @@ for (const [k, s] of deckStats) {
   const uniq = [...new Set(mainIds)];
   const rows = uniq.map((id) => {
     const copies = mainIds.filter((x) => x === id).length;
-    const u = byId.get(id) || { deployed: 0, cast: 0, discarded: 0, destroyed: 0 };
-    const uses = u.deployed + u.cast;
+    const u = byId.get(id) || { deployed: 0, cast: 0, discarded: 0, destroyed: 0, attached: 0 };
+    const uses = u.deployed + u.cast + (u.attached ?? 0);
     return { id, name: cardIndex.get(id)?.name || `#${id}`, copies, usesPerGame: games ? +(uses / games).toFixed(2) : 0, discardRate: games ? +(u.discarded / games).toFixed(2) : 0, totalUses: uses };
   });
   const neverUsed = rows.filter((r) => r.totalUses === 0).map((r) => r.name);
