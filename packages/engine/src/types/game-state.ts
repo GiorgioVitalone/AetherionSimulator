@@ -774,6 +774,10 @@ export interface StackItem {
   readonly id: string;
   readonly type: 'spell' | 'ability' | 'attack';
   readonly sourceInstanceId: string;
+  /** DIAGNOSTIC: the source's card def id, carried through to the SPELL_CAST
+   * event emitted on resolution. See CardDeployedEvent.cardDefId. Optional
+   * for non-spell stack items, which never emit SPELL_CAST. */
+  readonly sourceCardDefId?: number;
   readonly controllerId: 0 | 1;
   readonly effects: readonly Effect[];
   readonly targets: readonly string[];
@@ -832,18 +836,27 @@ export type GameEvent =
 export interface CardDeployedEvent {
   readonly type: 'CARD_DEPLOYED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: the definition id the instance was minted from. Lets Layer-2
+   * balance tooling (balance-deck-panel.mjs) attribute this event to a card
+   * without reconstructing identity from end-of-game zone state (which loses
+   * instances that left every zone, e.g. exiled). Not read by any trigger. */
+  readonly cardDefId: number;
   readonly zone: ZoneType;
   readonly playerId: 0 | 1;
 }
 export interface CardDestroyedEvent {
   readonly type: 'CARD_DESTROYED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   readonly cause: 'combat' | 'effect' | 'sacrifice';
   readonly playerId: 0 | 1;
 }
 export interface CardBouncedEvent {
   readonly type: 'CARD_BOUNCED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   /** Owner of the bounced card. Lets `on_leaves_battlefield` / ally variants apply
    * their side filter. Optional so existing literals stay valid. */
   readonly playerId?: 0 | 1;
@@ -851,12 +864,16 @@ export interface CardBouncedEvent {
 export interface CardExiledEvent {
   readonly type: 'CARD_EXILED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   /** Owner of the exiled card. See CardBouncedEvent.playerId. */
   readonly playerId?: 0 | 1;
 }
 export interface CardSacrificedEvent {
   readonly type: 'CARD_SACRIFICED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
 }
 export interface DamageDealtEvent {
   readonly type: 'DAMAGE_DEALT';
@@ -882,6 +899,11 @@ export interface HeroHealedEvent {
 export interface SpellCastEvent {
   readonly type: 'SPELL_CAST';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. Optional here (unlike the
+   * other DIAGNOSTIC cardDefId fields) because a StackItem's sourceCardDefId
+   * can be absent (see stack-resolver.ts); omitted rather than faked as 0 so
+   * consumers can distinguish "unknown" from a real def id of 0. */
+  readonly cardDefId?: number;
   readonly playerId: 0 | 1;
 }
 export interface SpellCounteredEvent {
@@ -907,6 +929,8 @@ export interface CardDrawnEvent {
 export interface CardDiscardedEvent {
   readonly type: 'CARD_DISCARDED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   readonly playerId: 0 | 1;
 }
 export interface ResourceGainedEvent {

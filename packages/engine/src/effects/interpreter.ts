@@ -218,6 +218,7 @@ function destroyOrReplace(
     const destroyed: GameEvent = {
       type: 'CARD_DESTROYED',
       cardInstanceId: card.instanceId,
+      cardDefId: card.cardDefId,
       cause,
       playerId: card.owner,
     };
@@ -227,7 +228,12 @@ function destroyOrReplace(
       !card.isToken && isExiledOnDestruction(card)
         ? [
             destroyed,
-            { type: 'CARD_EXILED', cardInstanceId: card.instanceId, playerId: card.owner },
+            {
+              type: 'CARD_EXILED',
+              cardInstanceId: card.instanceId,
+              cardDefId: card.cardDefId,
+              playerId: card.owner,
+            },
           ]
         : [destroyed];
     // The holder's equipment follows it to the discard pile (Rulebook 13). Emit its
@@ -236,6 +242,7 @@ function destroyOrReplace(
       events.push({
         type: 'CARD_DESTROYED',
         cardInstanceId: card.equipment.instanceId,
+        cardDefId: card.equipment.cardDefId,
         cause: 'effect',
         playerId: card.owner,
       });
@@ -529,6 +536,7 @@ function executeDeployToken(
     events.push({
       type: 'CARD_DEPLOYED',
       cardInstanceId: token.instanceId,
+      cardDefId: token.cardDefId,
       zone,
       playerId: context.controllerId,
     });
@@ -572,7 +580,12 @@ function executeBounce(
   for (const targetId of resolved.targetIds) {
     const card = findCardInState(currentState, targetId);
     if (card === null) continue;
-    events.push({ type: 'CARD_BOUNCED', cardInstanceId: targetId, playerId: card.owner });
+    events.push({
+      type: 'CARD_BOUNCED',
+      cardInstanceId: targetId,
+      cardDefId: card.cardDefId,
+      playerId: card.owner,
+    });
     // removeCardFromState sends the holder (and, separately, its detached equipment)
     // to the discard pile. For a bounce the holder belongs in HAND, not discard, so
     // pull it back out; the detached equipment stays in discard (Rulebook 13).
@@ -593,6 +606,7 @@ function executeBounce(
         events.push({
           type: 'CARD_DESTROYED',
           cardInstanceId: card.equipment.instanceId,
+          cardDefId: card.equipment.cardDefId,
           cause: 'effect',
           playerId: card.owner,
         });
@@ -617,15 +631,21 @@ function executeSacrifice(
   for (const targetId of resolved.targetIds) {
     const card = findCardInState(currentState, targetId);
     if (card === null) continue;
-    events.push({ type: 'CARD_SACRIFICED', cardInstanceId: targetId });
+    events.push({ type: 'CARD_SACRIFICED', cardInstanceId: targetId, cardDefId: card.cardDefId });
     events.push({
       type: 'CARD_DESTROYED',
       cardInstanceId: targetId,
+      cardDefId: card.cardDefId,
       cause: 'sacrifice',
       playerId: card.owner,
     });
     if (!card.isToken && isExiledOnDestruction(card)) {
-      events.push({ type: 'CARD_EXILED', cardInstanceId: targetId, playerId: card.owner });
+      events.push({
+        type: 'CARD_EXILED',
+        cardInstanceId: targetId,
+        cardDefId: card.cardDefId,
+        playerId: card.owner,
+      });
     }
     currentState = removeCardFromState(currentState, targetId);
   }
@@ -927,7 +947,12 @@ function discardSpecificCards(state: GameState, cardIds: readonly string[]): Eff
         discardPile: [...player.discardPile, card],
       };
       currentState = { ...currentState, players: newPlayers };
-      events.push({ type: 'CARD_DISCARDED', cardInstanceId: cardId, playerId: pi as 0 | 1 });
+      events.push({
+        type: 'CARD_DISCARDED',
+        cardInstanceId: cardId,
+        cardDefId: card.cardDefId,
+        playerId: pi as 0 | 1,
+      });
       // Recycle X: drawing X on discard-from-hand (Rulebook 16). Inert for every
       // current card (none carries the recycle trait), so this is a no-op default.
       const recycle = recycleDraw(currentState, card, pi as 0 | 1);

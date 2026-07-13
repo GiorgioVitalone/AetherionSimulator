@@ -2,7 +2,7 @@
 //
 // Re-implements (does NOT edit) the legality rules visible in
 // sim-runner.mjs buildDeck (:166): a legal deck has a 40-60 card main deck,
-// at most 3 copies of any non-Legendary card (<=1 for Legendary), exactly 15
+// at most 3 copies of any non-Legendary card (<=1 for Legendary), exactly 12
 // resource cards all of the faction's resource type, and a hero whose alignment
 // is consistent with every main-deck card's faction.
 //
@@ -14,7 +14,9 @@ export const MAIN_MIN = 40;
 export const MAIN_MAX = 60;
 export const COPY_LIMIT = 3;
 export const LEGENDARY_COPY_LIMIT = 1;
-export const RESOURCE_DECK_SIZE = 15;
+// sim-data/ruleset-v1.json rules.resourceDeckSize (frozen at 12, not the 15-card
+// physical starter deck size).
+export const RESOURCE_DECK_SIZE = 12;
 
 export type ResourceType = 'mana' | 'energy';
 

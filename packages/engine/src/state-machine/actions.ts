@@ -371,6 +371,7 @@ function castReactiveSpell(
     id: `spell_${card.instanceId}`,
     type: 'spell',
     sourceInstanceId: card.instanceId,
+    sourceCardDefId: card.cardDefId,
     controllerId: responderId,
     effects: abilityEffects(card.abilities, false),
     targets: reactiveTargets(state, action.selectedTargetIds, responderId),
@@ -603,6 +604,7 @@ function executeDeploy(
   const deployEvent: GameEvent = {
     type: 'CARD_DEPLOYED',
     cardInstanceId: card.instanceId,
+    cardDefId: card.cardDefId,
     zone: action.zone,
     playerId: state.activePlayerIndex,
   };
@@ -649,6 +651,7 @@ function executeCastSpell(
     id: `spell_${card.instanceId}`,
     type: 'spell',
     sourceInstanceId: card.instanceId,
+    sourceCardDefId: card.cardDefId,
     controllerId: state.activePlayerIndex,
     effects: abilityEffects(card.abilities, false),
     targets: action.selectedTargetIds ?? [],
@@ -721,6 +724,7 @@ function executeAttachEquipment(
           {
             type: 'CARD_DESTROYED',
             cardInstanceId: replaced.instanceId,
+            cardDefId: replaced.cardDefId,
             cause: 'effect',
             playerId: replaced.owner,
           },
@@ -764,6 +768,7 @@ function executeRemoveEquipment(
       {
         type: 'CARD_DESTROYED',
         cardInstanceId: equip.instanceId,
+        cardDefId: equip.cardDefId,
         cause: 'effect',
         playerId: equip.owner,
       },
@@ -945,6 +950,7 @@ function executeDiscardForEnergy(
       {
         type: 'CARD_DISCARDED',
         cardInstanceId: card.instanceId,
+        cardDefId: card.cardDefId,
         playerId: state.activePlayerIndex,
       },
     ],

@@ -632,16 +632,23 @@ function resolveCharacterAttack(
     events.push({
       type: 'CARD_DESTROYED',
       cardInstanceId: targetId,
+      cardDefId: defender.cardDefId,
       cause: 'combat',
       playerId: defenderPlayerId,
     });
     if (!defender.isToken && isExiledOnDestruction(defender)) {
-      events.push({ type: 'CARD_EXILED', cardInstanceId: targetId, playerId: defenderPlayerId });
+      events.push({
+        type: 'CARD_EXILED',
+        cardInstanceId: targetId,
+        cardDefId: defender.cardDefId,
+        playerId: defenderPlayerId,
+      });
     }
     if (defender.equipment !== null) {
       events.push({
         type: 'CARD_DESTROYED',
         cardInstanceId: defender.equipment.instanceId,
+        cardDefId: defender.equipment.cardDefId,
         cause: 'combat',
         playerId: defenderPlayerId,
       });
@@ -657,6 +664,7 @@ function resolveCharacterAttack(
     events.push({
       type: 'CARD_DESTROYED',
       cardInstanceId: attackerInstanceId,
+      cardDefId: attacker.cardDefId,
       cause: 'combat',
       playerId: attackerPlayerId,
     });
@@ -664,6 +672,7 @@ function resolveCharacterAttack(
       events.push({
         type: 'CARD_EXILED',
         cardInstanceId: attackerInstanceId,
+        cardDefId: attacker.cardDefId,
         playerId: attackerPlayerId,
       });
     }
@@ -671,6 +680,7 @@ function resolveCharacterAttack(
       events.push({
         type: 'CARD_DESTROYED',
         cardInstanceId: attacker.equipment.instanceId,
+        cardDefId: attacker.equipment.cardDefId,
         cause: 'combat',
         playerId: attackerPlayerId,
       });

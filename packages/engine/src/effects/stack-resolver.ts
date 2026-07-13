@@ -8,12 +8,7 @@
  * Minimal-faithful slice: only spell casts open windows; non-spell base actions
  * resolve through their existing code paths.
  */
-import type {
-  GameState,
-  GameEvent,
-  PendingPriority,
-  StackItem,
-} from '../types/game-state.js';
+import type { GameState, GameEvent, PendingPriority, StackItem } from '../types/game-state.js';
 import { runAbilityEffects } from './effect-runner.js';
 import { computeReactiveActions } from '../actions/reactive-actions.js';
 
@@ -28,7 +23,10 @@ export interface StackResult {
  * when nobody can respond keeps non-reactive games byte-identical to the old
  * resolve-on-cast behavior.
  */
-export function openWindowOrResolve(state: GameState, baseStackItemId: string): {
+export function openWindowOrResolve(
+  state: GameState,
+  baseStackItemId: string,
+): {
   readonly state: GameState;
   readonly events: readonly GameEvent[];
 } {
@@ -82,6 +80,9 @@ export function resolveStack(state: GameState): StackResult {
       events.push({
         type: 'SPELL_CAST',
         cardInstanceId: top.sourceInstanceId,
+        // Omit when absent (rather than faking cardDefId 0) so consumers see
+        // "unknown" instead of a real-looking def id — see SpellCastEvent.
+        ...(top.sourceCardDefId !== undefined ? { cardDefId: top.sourceCardDefId } : {}),
         playerId: top.controllerId,
       });
     }

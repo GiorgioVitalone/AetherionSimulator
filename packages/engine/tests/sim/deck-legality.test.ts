@@ -2,7 +2,7 @@
  * Unit tests for the standalone deck-legality validator (src/sim/deck-legality.ts).
  *
  * Mirrors the legality rules of sim-runner.mjs buildDeck without importing it:
- * 40-60 main, <=3 copies (<=1 Legendary), exactly 15 faction-typed resources,
+ * 40-60 main, <=3 copies (<=1 Legendary), exactly 12 faction-typed resources,
  * hero alignment-consistent.
  */
 import { describe, it, expect } from 'vitest';
@@ -70,66 +70,96 @@ const bigMain = Array.from({ length: 40 }, (_, i) => 100 + i);
 
 describe('validateDeck', () => {
   it('accepts a legal 40-card deck', () => {
-    const r = validateDeck({ heroDefId: 1, mainDeckDefIds: bigMain, resourceDeckDefIds: resources, faction: 'Onyx' }, bigIndex);
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: bigMain, resourceDeckDefIds: resources, faction: 'Onyx' },
+      bigIndex,
+    );
     expect(r.legal).toBe(true);
     expect(r.errors).toEqual([]);
   });
 
   it('rejects a main deck below 40', () => {
-    const r = validateDeck({ heroDefId: 1, mainDeckDefIds: bigMain.slice(0, 39), resourceDeckDefIds: resources }, bigIndex);
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: bigMain.slice(0, 39), resourceDeckDefIds: resources },
+      bigIndex,
+    );
     expect(r.legal).toBe(false);
     expect(r.errors.some((e) => e.includes('size 39'))).toBe(true);
   });
 
   it('rejects a main deck above 60', () => {
     const main = Array.from({ length: 61 }, (_, i) => 100 + (i % 40));
-    const r = validateDeck({ heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources }, bigIndex);
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources },
+      bigIndex,
+    );
     expect(r.legal).toBe(false);
     expect(r.errors.some((e) => e.includes('outside'))).toBe(true);
   });
 
   it('rejects more than 3 copies of a non-Legendary card', () => {
     const main = [...mainOf(40)]; // cycles 10,11,12 → 14/13/13 copies
-    const r = validateDeck({ heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources }, index);
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources },
+      index,
+    );
     expect(r.legal).toBe(false);
     expect(r.errors.some((e) => e.includes('exceeds limit 3'))).toBe(true);
   });
 
   it('rejects more than 1 copy of a Legendary card', () => {
     const main = [...bigMain.slice(0, 38), 13, 13];
-    const r = validateDeck({ heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources }, bigIndex);
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources },
+      bigIndex,
+    );
     expect(r.legal).toBe(false);
     expect(r.errors.some((e) => e.includes('exceeds limit 1'))).toBe(true);
   });
 
   it('rejects off-faction main-deck cards (hero alignment consistency)', () => {
     const main = [...bigMain.slice(0, 39), 20]; // 20 is Radiant
-    const r = validateDeck({ heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources }, bigIndex);
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources },
+      bigIndex,
+    );
     expect(r.legal).toBe(false);
     expect(r.errors.some((e) => e.includes('faction Radiant'))).toBe(true);
   });
 
-  it('rejects a resource deck that is not exactly 15', () => {
-    const r = validateDeck({ heroDefId: 1, mainDeckDefIds: bigMain, resourceDeckDefIds: resources.slice(0, 14) }, bigIndex);
+  it('rejects a resource deck that is not exactly 12', () => {
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: bigMain, resourceDeckDefIds: resources.slice(0, 11) },
+      bigIndex,
+    );
     expect(r.legal).toBe(false);
-    expect(r.errors.some((e) => e.includes('resource deck size 14'))).toBe(true);
+    expect(r.errors.some((e) => e.includes('resource deck size 11'))).toBe(true);
   });
 
   it('rejects resources of the wrong type for the faction', () => {
-    const wrong = Array.from({ length: 15 }, () => 98); // energy for a mana hero
-    const r = validateDeck({ heroDefId: 1, mainDeckDefIds: bigMain, resourceDeckDefIds: wrong }, bigIndex);
+    const wrong = Array.from({ length: RESOURCE_DECK_SIZE }, () => 98); // energy for a mana hero
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: bigMain, resourceDeckDefIds: wrong },
+      bigIndex,
+    );
     expect(r.legal).toBe(false);
     expect(r.errors.some((e) => e.includes('type energy'))).toBe(true);
   });
 
   it('rejects an unknown hero', () => {
-    const r = validateDeck({ heroDefId: 999, mainDeckDefIds: bigMain, resourceDeckDefIds: resources }, bigIndex);
+    const r = validateDeck(
+      { heroDefId: 999, mainDeckDefIds: bigMain, resourceDeckDefIds: resources },
+      bigIndex,
+    );
     expect(r.legal).toBe(false);
     expect(r.errors[0]).toContain('unknown hero');
   });
 
   it('flags a selection.faction that disagrees with the hero', () => {
-    const r = validateDeck({ heroDefId: 1, mainDeckDefIds: bigMain, resourceDeckDefIds: resources, faction: 'Radiant' }, bigIndex);
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: bigMain, resourceDeckDefIds: resources, faction: 'Radiant' },
+      bigIndex,
+    );
     expect(r.legal).toBe(false);
     expect(r.errors.some((e) => e.includes('selection faction Radiant'))).toBe(true);
   });

@@ -76,6 +76,20 @@ d('ruleset-v1 lock', () => {
     expect(manifest.rules).toEqual(EXPECTED_RULES);
   });
 
+  it('RESOURCE_DECK_SIZE constants match the ratified resourceDeckSize rule', async () => {
+    const manifest = readManifest();
+    const distLegalityPath = join(here, '..', '..', 'dist', 'sim', 'deck-legality.js');
+    const samplerPath = join(here, '..', '..', 'deck-sampler.mjs');
+    const { RESOURCE_DECK_SIZE: legalitySize } = (await import(distLegalityPath)) as {
+      RESOURCE_DECK_SIZE: number;
+    };
+    const { RESOURCE_DECK_SIZE: samplerSize } = (await import(samplerPath)) as {
+      RESOURCE_DECK_SIZE: number;
+    };
+    expect(legalitySize).toBe(manifest.rules.resourceDeckSize);
+    expect(samplerSize).toBe(manifest.rules.resourceDeckSize);
+  });
+
   it('gameplayPin replays to the exact stored runHash', async () => {
     const manifest = readManifest();
     const { runSim } = (await import(runnerPath)) as {
