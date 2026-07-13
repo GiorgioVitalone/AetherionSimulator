@@ -2045,3 +2045,47 @@ destructive change it was built for, under the rules it governs.
 With that, the external audit's path-to-100% is closed: manifest consumed as the source of
 truth, gate hardened and validated, batteries complete, pre-registration committed. The
 balance program's evidentiary record is whole.
+
+## §14. Layer 2 — deck-space balance (2026-07-13 → )
+
+The designer's three-layer model (adopted as the program's official taxonomy): **Layer 1**,
+cards priced in abstraction against a formula with leeway (built — the pricer); **Layer 2**,
+cards balanced in the context of the pool decks are built from (this chapter); **Layer 3**,
+cards balanced in live interaction (built, but only ever measured on the four fixed starter
+decks). Layer 2 is measured with a frozen, versioned deck set (`sim-data/deck-sets/
+constructed-v1.json`: 5 archetypes × 4 factions from deck-sampler.mjs, fixed seed 20260713,
+ratified pool) driven through a new deck-vs-deck panel (`balance-deck-panel.mjs`), under the
+locked ruleset and the standard measurement config (alternating first player + seats).
+Plan of record: the externally-reviewed 8-step ladder (Terra, 2026-07-12), committed in this
+chapter as executed.
+
+### §14a. Pre-registered decision rules (written BEFORE any Layer-2 run)
+
+**Step-4 screen (20 set decks × 4 starter decks, 64 gpp, r8):** a SCREEN, not a verdict — its
+only output is selection: per faction, carry the strongest and the median sampled deck (by
+win% vs the pooled starter field) into the step-5 field. Health anomalies (pacing WATCH bands
+from balance-targets.json) are noted for step-5 attention, never graded here.
+
+**Step-5 field (8 selected decks, round-robin incl. same-faction, 128 gpp, r8+r12):**
+- A set deck is a **deck-balance problem** iff its pooled r8+r12 win% vs the field exceeds 57
+  AND it beats its own faction's median deck with CI separation (Wilson 95%) — the
+  "auto-deck" signature.
+- An archetype is a **template-or-package problem** iff it sits below 43 pooled across BOTH
+  its factions' entries in the field (not a card-quality verdict until step-6 triage).
+- A **hidden game-balance problem** iff any pairing shows pacing beyond the WATCH bands
+  (natural-kill <85%, tiebreak >15%, p50 outside [23,43], leader@10 >64, comeback <36) with
+  n ≥ 128 — recorded and escalated per the framework's change-type tree (cards first).
+- Close/alarming cells may be extended to 512 games; nothing else is re-run.
+
+**Step-6 triage (card-usage report):** never-sampled ⇒ template gap (fix template or note "no
+home yet"); included-but-rarely-used in ≥2 reasonable homes ⇒ dead-card candidate;
+included+used across winning styles ⇒ auto-include suspect. Only suspects surviving triage
+get step-7 trials.
+
+**Step-7 matched pairs (with/without the suspect vs 3 representative opponents, 128 gpp r8;
+strongest findings confirmed r12):** removal hurts in TWO homes with CI separation ⇒ real
+auto-include; removal changes nothing AND the card is rarely used ⇒ redesign candidate;
+matters only alongside a package ⇒ adjust the package, not the card. Any resulting edit goes
+through the card gate; the pricing formula is never tuned to these results.
+
+Results follow below as they land; every run ledgered.

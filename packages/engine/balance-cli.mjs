@@ -32,7 +32,10 @@ function usage() {
   ledger [--n 10]       Print the last n ledger entries
   card <pool.json> --faction <Faction> [--quick] [--rd <n>] [--baseline <id>]
          Passthrough to balance-card-gate.mjs (the pre-adoption pool gate).
-         Exit codes: 0 graded PASS · 2 static FAIL · 3 sim FAIL · 10 --quick advisory (never a PASS).`);
+         Exit codes: 0 graded PASS · 2 static FAIL · 3 sim FAIL · 10 --quick advisory (never a PASS).
+  deck-panel --set <deck-set.json> (--vs-starters | --field <deckKey,...> | --pairs <file>)
+         [--gpp <n>] [--rung <8|12>] [--label <s>] [--out <path>]
+         Passthrough to balance-deck-panel.mjs (per-DECK panel + card-usage instrument).`);
 }
 
 function parseFlags(args) {
@@ -146,6 +149,9 @@ switch (cmd) {
     break;
   case 'card':
     spawnPass('balance-card-gate.mjs', rest);
+    break;
+  case 'deck-panel':
+    spawnPass('balance-deck-panel.mjs', rest);
     break;
   default:
     usage();
