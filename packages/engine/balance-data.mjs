@@ -71,8 +71,6 @@ export const RMSE_MULT = 0.6;
 export const RARITY_BONUS = { Common: 0, Ethereal: 0.75, Mythic: 1.5, Legendary: 2.5 };
 export const RARITY_ORDER = ['Common', 'Ethereal', 'Mythic', 'Legendary'];
 
-const r1 = (x) => Math.round(x * 10) / 10;
-
 /**
  * §B1: load the FROZEN, declared budget line (sim-data/balance-budget.v1.json).
  * Characters and spells/equipment are different POPULATIONS (a character's power
