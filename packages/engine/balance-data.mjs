@@ -97,23 +97,29 @@ export function budgetModel(cards) {
 }
 
 /**
- * Characters and spells/equipment are different POPULATIONS: a character's power
- * scales steeply with cost (stats), a spell/equipment's scales gently (situational
- * effects) -- fitting one shared line for both is a bad statistical model for
- * either. At cost 3 Common on the starter pool this mixed model expects ~4.5,
- * while characters alone expect ~7.4 and spells/equipment alone expect ~2.2 -- a
- * ~3.4x gap. The shared line over-flags characters as over-budget (dragged down
- * by weaker spells) and invents false "under-budget" spell buffs (dragged up by
- * stronger bodies), while structurally hiding genuinely over-costed spells (their
- * power never clears the body-inflated line). Fits TWO models and dispatches by
- * cardType. cards: [{cost, power, rarity, cardType}].
+ * §B1: load the FROZEN, declared budget line (sim-data/balance-budget.v1.json).
+ * Characters and spells/equipment are different POPULATIONS (a character's power
+ * scales steeply with cost via stats, a spell/equipment's scales gently via
+ * situational effects), so the file carries two separate lines, but neither is
+ * fitted here -- the judgment of "how much power a cost buys" is an abstract
+ * DESIGN CONSTANT, never re-derived from the pool being judged (a mispriced pool
+ * would move its own goalposts). Rarity is a declared offset subtracted ONCE
+ * before the residual (no double-count through a fitted intercept). See
+ * balance-calibrate-budget.mjs — the one-time, frozen-thereafter seeding script.
  */
-export function budgetModelByType(cards) {
-  const isBody = (c) => c.cardType === 'C';
-  const characters = budgetModel(cards.filter(isBody));
-  const spellsEquip = budgetModel(cards.filter((c) => !isBody(c)));
-  const modelFor = (cardType) => (cardType === 'C' ? characters : spellsEquip);
-  const expectedFor = (cost, rarity, cardType) => modelFor(cardType).expectedFor(cost, rarity);
-  const tolFor = (cardType) => modelFor(cardType).tol;
-  return { characters, spellsEquip, expectedFor, tolFor };
+export function loadBudgetModel() {
+  const data = JSON.parse(readFileSync(new URL('./sim-data/balance-budget.v1.json', import.meta.url)));
+  const modelFor = (cardType) => (cardType === 'C' ? data.characters : data.spellsEquip);
+  const expectedFor = (cost, rarity, cardType) =>
+    modelFor(cardType).intercept + modelFor(cardType).slope * cost + (data.rarityOffsets[rarity] ?? 0);
+  const tolFor = (cardType) => modelFor(cardType).tolerance;
+  const withTol = (m) => ({ ...m, tol: m.tolerance });
+  return {
+    version: data.version,
+    characters: withTol(data.characters),
+    spellsEquip: withTol(data.spellsEquip),
+    rarityOffsets: data.rarityOffsets,
+    expectedFor,
+    tolFor,
+  };
 }
