@@ -13,7 +13,7 @@ import {
   flattenEffects,
   PAIR_CAP,
 } from './dist/balance/index.js';
-import { loadBalanceData, budgetModel } from './balance-data.mjs';
+import { loadBalanceData, loadBudgetModel } from './balance-data.mjs';
 import { fileURLToPath } from 'node:url';
 import { writeFileSync } from 'node:fs';
 
@@ -25,9 +25,9 @@ const effectTypes = (sc) =>
 /** Audit every C/S/E card in the pool against the rest of the pool. */
 export function auditPool(index) {
   const cards = [...index.values()];
-  const model = budgetModel(
-    cards.map((sc) => ({ cost: totalCost(sc), power: computeCardPower(sc).power, rarity: sc.rarity })),
-  );
+  // §B1: judge against the FROZEN declared budget line (same windows as the
+  // suggestions/gates pipeline) — never a fit on the pool being audited.
+  const model = loadBudgetModel();
   // Pool universe for novelty: how many cards bear each trait / effect-type.
   const traitFreq = new Map();
   const effFreq = new Map();
@@ -44,9 +44,10 @@ function auditCard(sc, pool, model, ctx) {
   const reasons = [];
 
   const power = computeCardPower(sc).power;
-  const exp = model.expectedFor(totalCost(sc), sc.rarity);
-  if (power > exp + model.tol) reasons.push(`budget: over by ${(power - exp - model.tol).toFixed(1)}`);
-  else if (power < exp - model.tol) reasons.push(`budget: under by ${(exp - model.tol - power).toFixed(1)}`);
+  const exp = model.expectedFor(totalCost(sc), sc.rarity, sc.cardType);
+  const tol = model.tolFor(sc.cardType);
+  if (power > exp + tol) reasons.push(`budget: over by ${(power - exp - tol).toFixed(1)}`);
+  else if (power < exp - tol) reasons.push(`budget: under by ${(exp - tol - power).toFixed(1)}`);
 
   const me = ctx.sig.get(sc.id);
   let maxPair = 0;

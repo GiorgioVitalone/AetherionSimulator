@@ -74,29 +74,6 @@ export const RARITY_ORDER = ['Common', 'Ethereal', 'Mythic', 'Legendary'];
 const r1 = (x) => Math.round(x * 10) / 10;
 
 /**
- * Least-squares power = a + b·cost line over the pool, shifted up by rarity, with
- * a ±TOL window sized to the residual RMSE. cards: [{cost, power, rarity}].
- * Returns { slope, intercept, tol, rmse, expectedFor }.
- */
-export function budgetModel(cards) {
-  const n = cards.length;
-  const meanCost = cards.reduce((s, c) => s + c.cost, 0) / n;
-  const meanPow = cards.reduce((s, c) => s + c.power, 0) / n;
-  let sxy = 0;
-  let sxx = 0;
-  for (const c of cards) {
-    sxy += (c.cost - meanCost) * (c.power - meanPow);
-    sxx += (c.cost - meanCost) ** 2;
-  }
-  const slope = r1(sxy / sxx);
-  const intercept = r1(meanPow - (sxy / sxx) * meanCost);
-  const expectedFor = (cost, rarity) => intercept + slope * cost + (RARITY_BONUS[rarity] ?? 0);
-  const rmse = Math.sqrt(cards.reduce((s, c) => s + (c.power - expectedFor(c.cost, c.rarity)) ** 2, 0) / n);
-  const tol = r1(Math.max(MIN_TOL, RMSE_MULT * rmse));
-  return { slope, intercept, tol, rmse: Math.round(rmse * 100) / 100, expectedFor };
-}
-
-/**
  * §B1: load the FROZEN, declared budget line (sim-data/balance-budget.v1.json).
  * Characters and spells/equipment are different POPULATIONS (a character's power
  * scales steeply with cost via stats, a spell/equipment's scales gently via
