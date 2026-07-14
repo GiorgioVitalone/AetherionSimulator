@@ -6,7 +6,7 @@
  * intra-card synergy multiplier is applied separately (see card-power.ts).
  */
 import type { Trait } from '../types/common.js';
-import { CARD_TO_HAND } from './weights.js';
+import { CARD_TO_HAND, W_ARM } from './weights.js';
 import type { CardStats } from './types.js';
 
 export interface TraitParams {
@@ -26,7 +26,12 @@ export function traitValue(trait: Trait, stats: CardStats | null, params: TraitP
   const power = s.atk + s.hp;
   switch (trait) {
     case 'defender':
-      return 0.6 * (s.hp + s.arm); // wall premium scales with blocking mass
+      // §S2: blocking mass in the SAME per-point units as statBase (W_HP=1 per
+      // HP, W_ARM per ARM) — was a flat hp+arm (1:1), implicitly pricing ARM's
+      // contribution to blocking mass at a rate independent of what W_ARM says
+      // everywhere else (and, before §S2, at a rate that assumed ARM absorbs
+      // every gang-hit rather than only the first each turn).
+      return 0.6 * (s.hp + W_ARM * s.arm); // wall premium scales with blocking mass
     case 'flying':
       return 0.5 * s.atk; // evasive reach scales with ATK
     case 'first_strike':

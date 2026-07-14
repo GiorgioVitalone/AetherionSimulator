@@ -7,8 +7,8 @@ describe('computeCardPower — stats + traits + abilities + intra-synergy', () =
     expect(computeCardPower(body(1, 'Vanilla', 4, 4)).power).toBeCloseTo(8);
   });
 
-  it('weights ARM above HP (1.3x)', () => {
-    expect(computeCardPower(body(2, 'Armored', 2, 2, 2)).statBase).toBeCloseTo(6.6);
+  it('weights ARM at parity with HP (§S2: v1 first-instance-per-turn rule, was 1.3x)', () => {
+    expect(computeCardPower(body(2, 'Armored', 2, 2, 2)).statBase).toBeCloseTo(6.0);
   });
 
   it('scales Defender value with HP + ARM', () => {

@@ -10,12 +10,27 @@ import type { Condition } from '../types/conditions.js';
 import type { Activated, Trigger } from '../types/triggers.js';
 
 // ── Stat weights ─────────────────────────────────────────────────────────────
-// spell-eval bodyValue at NEUTRAL = atk + hp, so each is the 1.0 anchor. ARM
-// mitigates >=1 combat damage per instance and persists (the reason Bulwark and
-// the EC-ARM knobs exist) — above hp, below a full repeated block.
+// spell-eval bodyValue at NEUTRAL = atk + hp, so each is the 1.0 anchor. ARM is
+// priced in that SAME flat, un-recurrence-scaled unit — statBase never applies a
+// turns multiplier to any stat (see valuation-profile.ts).
+// §S2 (v1 rule, sim-data/ruleset-v1.json `armFirstInstanceOnly`/
+// `shieldFirstInstanceOnly`, locked): ARM absorbs only the FIRST combat-damage
+// instance a body takes each turn, not every instance — the repealed premise
+// this constant used to carry ("mitigates >=1 damage per instance and
+// persists") described the engine-DEFAULT per-instance rule, not the ratified
+// one. Under the single-instance cap, one ARM point can mitigate at most ONE
+// point of damage per opportunity — identical in kind to what one HP point
+// absorbs once. The "recharges every turn" property is real (see
+// VALUATION_PROFILE_V1.expectedActiveTurns) but is consumed by the SEPARATE
+// ability-wrapped shield-replacement path (effect-value.ts 'replacement' ->
+// card-power.ts's abilityContribution -> recurrence()), which DOES get
+// turn-recurrence-scaled; it does not also enter this flat per-point weight,
+// for the same reason HP/ATK's weights don't either (double-counting the
+// turns multiplier would make ARM's unit inconsistent with HP/ATK's). Net:
+// parity with HP, not a premium.
 export const W_ATK = 1.0;
 export const W_HP = 1.0;
-export const W_ARM = 1.3;
+export const W_ARM = 1.0;
 
 // ── Expected context-free targets (the static analog of a live board) ────────
 export const AVG_ENEMY_BODY = 5.5; // expected enemy body value a "destroy enemy" removes
@@ -100,7 +115,9 @@ export const HERO_FLOOR = 6; // every hero is an engine worth a baseline
 export const REDUNDANCY_DECAY = 0.1; // k-th copy worth power * 0.9^(k-1)
 
 // ── Trigger recurrence ───────────────────────────────────────────────────────
-const AURA_REC = 2.6; // continuous board effect, active every turn in play
+// Exported for reuse by valuation-profile.ts (§S2's expectedActiveTurns
+// anchor) — do NOT introduce a second "expected active turns" constant.
+export const AURA_REC = 2.6; // continuous board effect, active every turn in play
 const CONDITION_DISCOUNT = 0.7; // an extra ability-level Condition gate (not always firing)
 
 // Fixed recurrence per non-activated trigger. Typed as a total Record so adding a

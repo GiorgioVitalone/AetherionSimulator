@@ -252,6 +252,20 @@ export function effectStaticValue(effect: Effect): EffectValue {
         value: isEnemyFacing(effect.target) ? effect.count * CARD_VALUE * 0.8 : 0,
         isRemoval: false,
       };
+    case 'replacement':
+      // §S2: an EC-003 shield (on_would_take_damage reduction — Shieldbearer
+      // Paladin id48, Radiant Shield id66) mitigates ONE combat instance per
+      // turn under the locked v1 rule (shieldFirstInstanceOnly) — see
+      // valuation-profile.ts. Valued as its reduction amount, i.e. one
+      // mitigated hit; the wrapping ability's OWN recurrence (almost always
+      // 'aura' -> card-power.ts's abilityContribution -> AURA_REC, "active
+      // every turn in play") supplies the "over ~N expected active turns"
+      // multiplier, so no second turns-counter is invented here.
+      // on_would_be_destroyed is a different (rarer) replacement mechanic,
+      // unrelated to the ARM/shield rule, and keeps the generic FLAT bucket.
+      return effect.replaces.type === 'on_would_take_damage'
+        ? { value: effect.replaces.reduction ?? FLAT_ONE, isRemoval: false }
+        : FLAT;
     case 'cost_reduction':
     case 'grant_trait':
     case 'grant_ability':
@@ -260,7 +274,6 @@ export function effectStaticValue(effect: Effect): EffectValue {
     case 'cleanse':
     case 'shuffle_into_deck':
     case 'attach_as_equipment':
-    case 'replacement':
     case 'scheduled':
       return FLAT;
     default:
