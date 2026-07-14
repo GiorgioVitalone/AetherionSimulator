@@ -32,6 +32,7 @@ import {
   SELECTION_MULT_DECK,
   SELECTION_MULT_DISCARD,
   TEMPO_WEIGHT,
+  W_DRAW,
   TOKEN_BODY_FACTOR,
   W_ARM,
   W_ATK,
@@ -150,9 +151,11 @@ export function effectStaticValue(effect: Effect): EffectValue {
     case 'modify_stats':
       return buffValue(effect.modifier, effect.dynamicModifier, effect.target);
     case 'draw_cards':
+      // W_DRAW, not CARD_VALUE: draw is empirically worth ~3 resources under the
+      // Discard for Energy economy (see weights.ts derivation, 2026-07-14).
       return effect.player === 'enemy'
         ? ZERO
-        : { value: amountVal(effect.count) * CARD_VALUE, isRemoval: false };
+        : { value: amountVal(effect.count) * W_DRAW, isRemoval: false };
     case 'heal':
       // §13 repair: `any`-side heals are cast on YOUR side (the enemy-facing
       // convention is for damage/removal); heal-ALL was missing the AoE width.

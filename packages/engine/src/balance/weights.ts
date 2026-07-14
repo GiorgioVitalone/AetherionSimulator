@@ -29,7 +29,19 @@ export const EXPECTED_COUNT = 2; // assumed dynamic count (count / event_value)
 export const FACE_WEIGHT = 1.5; // gameplan NEUTRAL faceWeight
 export const REMOVAL_WEIGHT = 1.0; // gameplan NEUTRAL removalWeight
 export const TEMPO_WEIGHT = 0.6; // gameplan NEUTRAL tempoWeight (modify_stats)
-export const CARD_VALUE = 1.2; // spell-eval draw/return/copy anchor
+export const CARD_VALUE = 1.2; // spell-eval return/copy/tutor/mill anchor (NOT draw — see W_DRAW)
+// Empirically recalibrated draw anchor (2026-07-14). A same-seed r8 full-vision trial
+// (+2 cost on all 29 draw_cards cards, certification pool 34cf3a28, discard rule intact)
+// moved Sapphire 70.7%→51.0% and the spread 42.7pp→16.0pp — i.e. the pool's draw effects
+// were collectively underpriced by ≈2 resources each. Implied value of one drawn card
+// ≈ old 1.2 power + 2 resources × 1.1 spells/equip slope ≈ 3.3 power (≈3 resources).
+// Coherence check: Discard for Energy guarantees every card in hand a FLOOR of 1
+// resource; the old 1.2 (≈1.1 resources) priced draw at that floor and ignored the
+// play-the-card option value entirely. Single-dose calibration under the r8-d3
+// full-vision pilot — revisit when the far-sighted (depth-0) or neural instrument
+// re-measures. Scope: static pricer + value-pilot deploy scoring; the heuristic
+// spell-eval keeps its own local anchor; rollout verdict tier unaffected.
+export const W_DRAW = 3.3; // draw_cards per-card anchor (empirical, ledger 2026-07-14)
 export const CONDITIONAL_P = 0.6; // spell-eval CONDITIONAL_P (ifTrue weight)
 export const SAC_COST = 0.2; // spell-eval SAC_COST (allied sacrifice as cost)
 export const HEAL_URGENCY = 0.7; // spell-eval heal urgency, averaged (1.0 low / 0.4 else)
