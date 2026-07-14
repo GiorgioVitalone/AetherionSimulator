@@ -208,3 +208,27 @@ card data — every claim in this document covers four of six factions.
    rollout ladder ever stops converging (§3). Direct GPU-porting of the sim
    itself is ruled out: branch-divergent game logic gains nothing on GPU and
    would fork the engine into two implementations, breaking runHash identity.
+
+## 9. Scoring & balancing system v2 (2026-07-15)
+
+Card-level scoring and the balancing-suggestion machinery were rebuilt after the
+2026-07-14 27-edit patch disaster (Arcane Echoes / Master Archivist cut into a
+free-loop catastrophe by an unguarded prescription). The declared budget line
+(`packages/engine/sim-data/balance-budget.v1.json`) replaces the old pool
+self-fit: frozen, versioned, design constants derived once from a curated
+vanilla-card list, never refit to the live pool. `balance-suggestions.mjs` runs
+in two modes: `author` (informational — every outlier gets a full arithmetic
+suggestion, nothing withheld, no gates beyond flags — supports authoring new
+cards without sims) and `campaign` (editing the live pool — full gating).
+Campaign candidates classify as AUTO_SAFE / SIM_REQUIRED / HUMAN_REWRITE /
+BLOCKED (`packages/engine/balance-gates.mjs`); BLOCKED always wins on loop
+risk, and campaign mode auto-applies at most one AUTO_SAFE edit per run — the
+rest surface as ranked candidates, never a second silent edit. Loop risk is a
+hard veto, not a scoring input: any proposed edit that pushes a card's
+acquisition-graph risk to 'likely' (S4) is BLOCKED outright, regardless of its
+budget residual. Doses are earned empirically — a proposed cost/stat delta is
+±1 (or the smallest viable trim) and then measured, never a jump straight to a
+"fixed" value. See `scratchpad/scoring-balancing-spec.md` for the full S1–S4/
+B1–B5 contract and `tests/balance/failed-patch-replay.test.ts` for the
+regression fixture that replays the failed patch's own marginals through the
+gates.
