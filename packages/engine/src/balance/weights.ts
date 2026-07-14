@@ -42,6 +42,17 @@ export const CARD_VALUE = 1.2; // spell-eval return/copy/tutor/mill anchor (NOT 
 // re-measures. Scope: static pricer + value-pilot deploy scoring; the heuristic
 // spell-eval keeps its own local anchor; rollout verdict tier unaffected.
 export const W_DRAW = 3.3; // draw_cards per-card anchor (empirical, ledger 2026-07-14)
+// §S1: the shared primitive for "one card enters your hand" — floor (Discard
+// for Energy guarantees >=1 resource) + play-option value. Anchored to W_DRAW
+// (the empirical draw anchor above); draw_cards, search_deck, copy_card,
+// return_from_discard, recycle, and to-hand scry all route through this ONE
+// constant so a hand-picked card can never be priced below a blind draw.
+export const CARD_TO_HAND = W_DRAW;
+// §S1: bounded multiplier for a CHOSEN card (tutor/copy/return of a specific,
+// known card beats a blind draw of an unknown one). Conservative premium —
+// monotonicity (chosen >= blind) is the requirement this repairs; the exact
+// magnitude is provisional pending measurement.
+export const SELECTION_PREMIUM = 1.25;
 export const CONDITIONAL_P = 0.6; // spell-eval CONDITIONAL_P (ifTrue weight)
 export const SAC_COST = 0.2; // spell-eval SAC_COST (allied sacrifice as cost)
 export const HEAL_URGENCY = 0.7; // spell-eval heal urgency, averaged (1.0 low / 0.4 else)
@@ -61,6 +72,9 @@ export const EMPTY_SLOTS_EXPECTED = 2.5; // in-each-empty Frontline deploys: 3-s
 // each turn. A token parked in Reserve is therefore a small engine, not just
 // stats: RESOURCE_VALUE_TEMP × the on_turn_start recurrence (2.4).
 export const RESERVE_TAP_VALUE = 1.8;
+// §S1: superseded by CARD_TO_HAND × SELECTION_PREMIUM (copy_card/search_deck now
+// route through the shared acquisition primitive above). Kept, unused, to avoid
+// ripples elsewhere; do not wire these back in.
 export const SELECTION_MULT_DISCARD = 1.5; // choose-from-known-pile beats a blind draw (copy_card)
 export const SELECTION_MULT_DECK = 2.0; // tutor the best card of the whole deck (search_deck → hand)
 

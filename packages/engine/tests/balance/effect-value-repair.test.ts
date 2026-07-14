@@ -11,14 +11,14 @@ import {
   AOE_WIDTH,
   AVG_BODY_HP,
   AVG_WEAK_BODY,
+  CARD_TO_HAND,
   CARD_VALUE,
   EMPTY_SLOTS_EXPECTED,
   HEAL_URGENCY,
   RESERVE_TAP_VALUE,
   RESOURCE_VALUE,
   RESOURCE_VALUE_TEMP,
-  SELECTION_MULT_DECK,
-  SELECTION_MULT_DISCARD,
+  SELECTION_PREMIUM,
   TOKEN_BODY_FACTOR,
 } from '../../src/balance/weights.js';
 import type { Effect } from '../../src/types/effects.js';
@@ -168,23 +168,26 @@ describe('token pricing (Guardian Spirit / Heavenly Chorus / Reserve battery)', 
 });
 
 describe('card-flow pricing (Echoes / Archivist / Necrotic Revival / counters)', () => {
-  it('should give copy-from-discard a selection premium over a blind draw', () => {
+  it('should give copy-from-discard a selection premium over a blind draw (§S1)', () => {
     const e: Effect = { type: 'copy_card', source: 'discard', destination: 'hand', filter: {} };
-    expect(effectStaticValue(e).value).toBeCloseTo(CARD_VALUE * SELECTION_MULT_DISCARD, 10);
+    expect(effectStaticValue(e).value).toBeCloseTo(CARD_TO_HAND * SELECTION_PREMIUM, 10);
   });
 
-  it('should price a deck tutor as the best card of the deck', () => {
+  it('should price a deck tutor as a chosen card to hand (§S1)', () => {
     const e: Effect = { type: 'search_deck', destination: 'hand', filter: {} } as Effect;
-    expect(effectStaticValue(e).value).toBeCloseTo(CARD_VALUE * SELECTION_MULT_DECK, 10);
+    expect(effectStaticValue(e).value).toBeCloseTo(CARD_TO_HAND * SELECTION_PREMIUM, 10);
   });
 
-  it('should price reanimation-to-battlefield as a body plus the card', () => {
+  it('should price reanimation-to-battlefield as a body plus the chosen card (§S1)', () => {
     const e: Effect = {
       type: 'return_from_discard',
       destination: 'battlefield',
       target: { side: 'allied', type: 'target_card_in_discard' },
     } as Effect;
-    expect(effectStaticValue(e).value).toBeCloseTo(AVG_WEAK_BODY + CARD_VALUE, 10);
+    expect(effectStaticValue(e).value).toBeCloseTo(
+      AVG_WEAK_BODY + CARD_TO_HAND * SELECTION_PREMIUM,
+      10,
+    );
   });
 
   it('should price a counterspell as a 1-for-1 with initiative, not 0.5', () => {

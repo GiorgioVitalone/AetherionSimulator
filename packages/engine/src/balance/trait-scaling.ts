@@ -6,6 +6,7 @@
  * intra-card synergy multiplier is applied separately (see card-power.ts).
  */
 import type { Trait } from '../types/common.js';
+import { CARD_TO_HAND } from './weights.js';
 import type { CardStats } from './types.js';
 
 export interface TraitParams {
@@ -37,7 +38,10 @@ export function traitValue(trait: Trait, stats: CardStats | null, params: TraitP
     case 'swift':
       return 0.4; // one free non-exhausting move/turn
     case 'recycle':
-      return 0.6 * (params.recycleValue ?? 1); // draw N on discard (½ draw weight)
+      // §S1: derived from the shared acquisition primitive — ½ CARD_TO_HAND per
+      // recycled card, matching this comment's own long-standing claim (was a
+      // hardcoded 0.6, which was NOT half of the draw anchor).
+      return 0.5 * CARD_TO_HAND * (params.recycleValue ?? 1);
     case 'stealth':
       return 0.25 * power; // dodges removal a window, ∝ body
     case 'elite':

@@ -16,6 +16,7 @@ import {
   AVG_ENEMY_BODY,
   AVG_WEAK_BODY,
   BOUNCE_MULT,
+  CARD_TO_HAND,
   CARD_VALUE,
   CONDITIONAL_P,
   EMPTY_SLOTS_EXPECTED,
@@ -29,10 +30,8 @@ import {
   RESOURCE_VALUE,
   RESOURCE_VALUE_TEMP,
   SAC_COST,
-  SELECTION_MULT_DECK,
-  SELECTION_MULT_DISCARD,
+  SELECTION_PREMIUM,
   TEMPO_WEIGHT,
-  W_DRAW,
   TOKEN_BODY_FACTOR,
   W_ARM,
   W_ATK,
@@ -151,11 +150,12 @@ export function effectStaticValue(effect: Effect): EffectValue {
     case 'modify_stats':
       return buffValue(effect.modifier, effect.dynamicModifier, effect.target);
     case 'draw_cards':
-      // W_DRAW, not CARD_VALUE: draw is empirically worth ~3 resources under the
-      // Discard for Energy economy (see weights.ts derivation, 2026-07-14).
+      // §S1: routed through CARD_TO_HAND, the shared acquisition primitive (an
+      // unselected card — no SELECTION_PREMIUM). CARD_TO_HAND === W_DRAW, so
+      // this is numerically unchanged from the empirical 2026-07-14 anchor.
       return effect.player === 'enemy'
         ? ZERO
-        : { value: amountVal(effect.count) * W_DRAW, isRemoval: false };
+        : { value: amountVal(effect.count) * CARD_TO_HAND, isRemoval: false };
     case 'heal':
       // §13 repair: `any`-side heals are cast on YOUR side (the enemy-facing
       // convention is for damage/removal); heal-ALL was missing the AoE width.
@@ -208,25 +208,45 @@ export function effectStaticValue(effect: Effect): EffectValue {
       }
       return best;
     }
-    case 'return_from_discard':
-      // §13 repair: reanimating to the battlefield is a body IN PLAY plus the
-      // card economy (was 1.5× a draw) — Onyx's engine, priced at ~1.8 before.
+    case 'return_from_discard': {
+      // §S1: reanimating a CHOSEN card from discard is a selection, not a blind
+      // draw — the acquisition term is CARD_TO_HAND × SELECTION_PREMIUM whether
+      // it lands in hand or on the battlefield (which additionally gets the body).
+      const acquisition = CARD_TO_HAND * SELECTION_PREMIUM;
       return {
-        value: effect.destination === 'battlefield' ? AVG_WEAK_BODY + CARD_VALUE : CARD_VALUE,
+        value: effect.destination === 'battlefield' ? AVG_WEAK_BODY + acquisition : acquisition,
         isRemoval: false,
       };
+    }
     case 'search_deck':
-      // §13 repair: a tutor takes the BEST card of the whole deck, not 1.2 draws.
+      // §S1: a tutor takes a CHOSEN card of the whole deck to hand — the shared
+      // acquisition primitive with the selection premium (was CARD_VALUE ×
+      // SELECTION_MULT_DECK). Battlefield destination unchanged (flat deploy value).
       return {
-        value: effect.destination === 'battlefield' ? 4 : CARD_VALUE * SELECTION_MULT_DECK,
+        value: effect.destination === 'battlefield' ? 4 : CARD_TO_HAND * SELECTION_PREMIUM,
         isRemoval: false,
       };
     case 'copy_card':
-      // §13 repair: choose-from-a-known-pile beats a blind draw. (The degenerate
-      // self-copy case is handled by the loop guards, not by pricing it higher.)
-      return { value: CARD_VALUE * SELECTION_MULT_DISCARD, isRemoval: false };
-    case 'scry':
-      return { value: Math.min(effect.lookCount, 3) * 0.3, isRemoval: false };
+      // §S1: a copy of a CHOSEN card from a known pile ≈ a tutor (was CARD_VALUE
+      // × SELECTION_MULT_DISCARD). The degenerate self-copy case is handled by
+      // the loop guards, not by pricing it higher.
+      return { value: CARD_TO_HAND * SELECTION_PREMIUM, isRemoval: false };
+    case 'scry': {
+      // §S1: action-aware. Rearrange-only keeps the pure viewing value; any
+      // action that lands cards in hand additionally prices those as CHOSEN
+      // acquisitions (you saw the pile and picked) on top of the viewing value.
+      const viewValue = Math.min(effect.lookCount, 3) * 0.3;
+      const toHandCount =
+        effect.action.type === 'pick_and_remainder'
+          ? effect.action.pickCount
+          : effect.action.type === 'distribute'
+            ? effect.action.destinations.filter((d) => d === 'hand').length
+            : 0;
+      return {
+        value: viewValue + toHandCount * CARD_TO_HAND * SELECTION_PREMIUM,
+        isRemoval: false,
+      };
+    }
     case 'discard':
       return {
         value: isEnemyFacing(effect.target) ? effect.count * CARD_VALUE * 0.8 : 0,
