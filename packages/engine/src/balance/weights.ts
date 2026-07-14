@@ -68,6 +68,9 @@ export const CARD_TO_HAND = W_DRAW;
 // monotonicity (chosen >= blind) is the requirement this repairs; the exact
 // magnitude is provisional pending measurement.
 export const SELECTION_PREMIUM = 1.25;
+// §S3: CONDITIONAL_P is now documented as the MIDPOINT policy — the scalar
+// `power` still uses this weighted blend, while the interval (powerLow/High)
+// spans the full [ifFalse-only, ifTrue-only] range around it.
 export const CONDITIONAL_P = 0.6; // spell-eval CONDITIONAL_P (ifTrue weight)
 export const SAC_COST = 0.2; // spell-eval SAC_COST (allied sacrifice as cost)
 export const HEAL_URGENCY = 0.7; // spell-eval heal urgency, averaged (1.0 low / 0.4 else)
@@ -92,6 +95,20 @@ export const RESERVE_TAP_VALUE = 1.8;
 // ripples elsewhere; do not wire these back in.
 export const SELECTION_MULT_DISCARD = 1.5; // choose-from-known-pile beats a blind draw (copy_card)
 export const SELECTION_MULT_DECK = 2.0; // tutor the best card of the whole deck (search_deck → hand)
+
+// ── §S3: power interval sources (conservative; additive to the scalar path) ──
+// A dynamic amount (x_cost / count / event_value) is assumed at its EXPECTED
+// point for the scalar, but plausibly spans 0..cap: capped counts use their
+// own max, uncapped amounts get EXPECTED ± 100% (i.e. 0..DYNAMIC_AMOUNT_SPREAD
+// × EXPECTED). Widens deal_damage/heal/draw_cards/modify_stats intervals only
+// — see effect-value.ts's amountValDetailed/dynamicBonusDetailed.
+export const DYNAMIC_AMOUNT_SPREAD = 2;
+// A CHOSEN card (tutor/copy/return/scry-to-hand) is worth AT LEAST a blind
+// draw (low = CARD_TO_HAND × 1.0) and, wide by design, AT MOST the selection
+// premium squared (a card selection compounds — you also chose WHEN to find
+// it). The scalar keeps the single SELECTION_PREMIUM midpoint.
+export const SELECTION_PREMIUM_LOW = 1.0;
+export const SELECTION_PREMIUM_HIGH = SELECTION_PREMIUM * SELECTION_PREMIUM;
 
 // ── Caps ─────────────────────────────────────────────────────────────────────
 export const EFFECT_SUM_CAP = 12; // per-ability effect-sum cap before recurrence

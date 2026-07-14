@@ -59,6 +59,27 @@ export interface EffectValue {
   readonly isRemoval: boolean;
 }
 
+// ── §S3: power uncertainty intervals + context flags ─────────────────────────
+/** Which scores to distrust — additive to the scalar `power`, never changes it. */
+export type PowerFlag =
+  | 'conditional' // value depends on an untracked condition (ifTrue/ifFalse spread)
+  | 'dynamic_amount' // an x_cost/count/event_value amount was assumed, not fixed
+  | 'selection' // a CHOSEN card (tutor/copy/return/scry-to-hand), premium is a guess
+  | 'recursion' // card-advantage effect that can recur (copy_card, return_from_discard)
+  | 'free_cast' // a cast can be paid for free/reduced (castFreeIfCost, cost-reduction aura)
+  | 'rules_sensitive'; // value hangs on the locked v1 ruleset profile (ARM/shields)
+
+/** Detailed sibling of EffectValue: adds a plausible [low, high] band and
+ * provenance flags around the SAME point value. `value`/`isRemoval` here are
+ * always identical to the plain EffectValue for the same effect — EffectValue
+ * is derived FROM this, never independently recomputed (no duplicated
+ * valuation logic; see effect-value.ts). */
+export interface EffectValueDetailed extends EffectValue {
+  readonly low: number;
+  readonly high: number;
+  readonly flags: readonly PowerFlag[];
+}
+
 // ── Signal taxonomy ──────────────────────────────────────────────────────────
 // A Signal is something a card OFFERS; a Demand is something it WANTS. Synergy
 // fires when one card's Signal.kind matches another's Demand.kind through the
@@ -113,7 +134,10 @@ export type InteractionMatrix = Readonly<Record<ProvideKind, Readonly<Record<Wan
 export interface CardPowerBreakdown {
   readonly cardId: number;
   readonly name: string;
-  readonly power: number; // final scalar = base * synergyMultiplier
+  readonly power: number; // final scalar = base * synergyMultiplier — UNCHANGED by §S3
+  readonly powerLow: number; // §S3: conservative low bound (vanilla bodies: === power)
+  readonly powerHigh: number; // §S3: conservative high bound (vanilla bodies: === power)
+  readonly flags: readonly PowerFlag[]; // §S3: which of the above scores to distrust
   readonly statBase: number; // atk*Wa + hp*Wh + arm*Warm (0 for non-characters)
   readonly traitValue: number; // sum of trait stat-scaling contributions
   readonly abilityValue: number; // sum of (effect static values * recurrence)

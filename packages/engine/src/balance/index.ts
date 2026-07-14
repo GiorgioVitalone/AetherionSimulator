@@ -5,6 +5,7 @@
 export { abilityContribution, computeCardPower } from './card-power.js';
 export { computeDeckValue, ACCEL_RAMP_TEMPO, type DeckInput } from './deck-value.js';
 export { effectStaticValue, sumEffects } from './effect-value.js';
+export { effectStaticValueDetailed, sumEffectsDetailed } from './effect-interval.js';
 export {
   abilityThrottle,
   detectAbilityLoop,
@@ -28,9 +29,11 @@ export type {
   Demand,
   DeckValueBreakdown,
   EffectValue,
+  EffectValueDetailed,
   HeroInput,
   HeroTransform,
   InteractionMatrix,
+  PowerFlag,
   ProvideKind,
   Signal,
   StaticCard,

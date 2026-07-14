@@ -5,9 +5,10 @@
  * bounded multiplier on top (the "Defender + self-heal worth more than the sum"
  * case). NEVER reads card cost — this is raw power.
  */
+import type { Effect } from '../types/effects.js';
 import type { AbilityDSL, StatGrantDSL } from '../types/ability.js';
-import type { CardPowerBreakdown, StaticCard } from './types.js';
-import { sumEffects } from './effect-value.js';
+import type { CardPowerBreakdown, PowerFlag, StaticCard } from './types.js';
+import { sumEffectsDetailed } from './effect-interval.js';
 import { emitDemands, emitSignals } from './signals.js';
 import { intraSynergy } from './synergy.js';
 import { regenerationValue, traitValue } from './trait-scaling.js';
@@ -38,26 +39,76 @@ function statGrantValue(ab: StatGrantDSL): number {
   return (m.atk ?? 0) * W_ATK + (m.hp ?? 0) * W_HP + (m.arm ?? 0) * W_ARM;
 }
 
+/** §S3: does this ability's effect tree contain a cost_reduction node? Shallow
+ * scan through composite wrapping only — flag-detection, not valuation, so it
+ * doesn't need the full recursive shape effectStaticValueDetailed already
+ * traverses for value. */
+function hasCostReduction(effects: readonly Effect[]): boolean {
+  return effects.some(
+    (e) => e.type === 'cost_reduction' || (e.type === 'composite' && hasCostReduction(e.effects)),
+  );
+}
+
+const clamp = (x: number): number => Math.min(Math.max(0, x), EFFECT_SUM_CAP);
+
+interface AbilityContribution {
+  readonly value: number;
+  readonly low: number;
+  readonly high: number;
+  readonly flags: readonly PowerFlag[];
+}
+
+/** Detailed sibling of abilityContribution: clamped effect-sum × trigger
+ * recurrence, with a [low, high] band and context flags. The scalar
+ * abilityContribution below derives its `.value` — one core computation. */
+function abilityContributionDetailed(ab: AbilityDSL): AbilityContribution {
+  const rec = recurrence(ab);
+  if (ab.type === 'stat_grant') {
+    const v = clamp(statGrantValue(ab)) * rec;
+    return { value: v, low: v, high: v, flags: [] };
+  }
+  const sum = sumEffectsDetailed(ab.effects);
+  const flags =
+    ab.type === 'aura' && hasCostReduction(ab.effects)
+      ? [...sum.flags, 'free_cast' as const]
+      : sum.flags;
+  return {
+    value: clamp(sum.value) * rec,
+    low: clamp(sum.low) * rec,
+    high: clamp(sum.high) * rec,
+    flags,
+  };
+}
+
 /** Static value of one ability = clamped effect-sum × trigger recurrence. Shared
  * with deck-value's hero-engine valuation. */
 export function abilityContribution(ab: AbilityDSL): number {
-  const sum = ab.type === 'stat_grant' ? statGrantValue(ab) : sumEffects(ab.effects).value;
-  return Math.min(Math.max(0, sum), EFFECT_SUM_CAP) * recurrence(ab);
+  return abilityContributionDetailed(ab).value;
 }
 
 export function computeCardPower(card: StaticCard): CardPowerBreakdown {
   const sb = statBase(card);
   const tv = traitValueTotal(card);
-  const av = card.abilities.reduce((s, ab) => s + abilityContribution(ab), 0);
+  const contributions = card.abilities.map(abilityContributionDetailed);
+  const av = contributions.reduce((s, c) => s + c.value, 0);
+  const avLow = contributions.reduce((s, c) => s + c.low, 0);
+  const avHigh = contributions.reduce((s, c) => s + c.high, 0);
   const base = sb + tv + av;
+  const baseLow = sb + tv + avLow;
+  const baseHigh = sb + tv + avHigh;
   const provides = emitSignals(card);
   const demands = emitDemands(card);
   const intra = intraSynergy(provides, demands);
   const synergyMultiplier = 1 + Math.min(INTRA_CAP, base > 0 ? intra / base : 0);
+  const flags = new Set<PowerFlag>(contributions.flatMap((c) => c.flags));
+  if ((card.stats?.arm ?? 0) > 0) flags.add('rules_sensitive');
   return {
     cardId: card.id,
     name: card.name,
     power: round2(base * synergyMultiplier),
+    powerLow: round2(baseLow * synergyMultiplier),
+    powerHigh: round2(baseHigh * synergyMultiplier),
+    flags: [...flags],
     statBase: round2(sb),
     traitValue: round2(tv),
     abilityValue: round2(av),
