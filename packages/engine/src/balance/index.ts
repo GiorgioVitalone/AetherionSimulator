@@ -16,6 +16,7 @@ export {
   type LoopLevel,
   type LoopRisk,
 } from './loop-detector.js';
+export { assessLoopRisk, type LoopRisk as LoopRiskLevel } from './loop-graph.js';
 export { emitDemands, emitSignals, heroDemands } from './signals.js';
 export { deckInterSynergy, intraSynergy, pairSynergy, type CardSignals } from './synergy.js';
 export { INTERACTION_MATRIX, interactionWeight } from './interaction-matrix.js';

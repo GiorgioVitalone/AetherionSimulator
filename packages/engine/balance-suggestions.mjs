@@ -7,9 +7,10 @@
 // edits); running this file directly writes docs/balance-suggestions.md.
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { computeCardPower } from './dist/balance/index.js';
+import { computeCardPower, assessLoopRisk } from './dist/balance/index.js';
 import { loadBalanceData, indexFromRaw, loadBudgetModel } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
+import { primaryResourceKey, classifyCandidate, rankOf, selectCampaignEdits } from './balance-gates.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const round = (x, n = 1) => {
@@ -28,16 +29,31 @@ const MIN_ATK = 1;
 const MIN_BULK = 2; // hp + arm
 const STAT_TRIM_MAX = 2; // max total stat points to trim before deferring to the cost lever
 const withStats = (sc, da, dh, dr) => ({ ...sc, stats: { atk: sc.stats.atk + da, hp: sc.stats.hp + dh, arm: sc.stats.arm + dr } });
+// §B3: the delta lands on the PRIMARY (largest) cost component — the exact
+// rule applyCardCostOverride uses at sim time (sim-runner.mjs) — so the
+// `resource:` axis named in the report can never drift from the real edit.
 const withCostDelta = (sc, delta) => {
   const c = { ...sc.cost };
-  const key = c.energy >= c.mana ? 'energy' : 'mana';
+  const key = primaryResourceKey(c);
   c[key] = Math.max(0, c[key] + delta);
   return { ...sc, cost: c };
 };
 
-/** Suggestions for the starter pool. Pass `rawOverride` (a full SimCard array) to
- * fit a PATCHED pool instead of the baseline — used to iterate the fit to convergence. */
-export function computeSuggestions(rawOverride) {
+/** Suggestions for the starter pool.
+ * `opts.mode`: 'author' (informational — every outlier gets a full arithmetic
+ * suggestion, nothing withheld; no sims for new cards) or 'campaign' (default
+ * — full §B3 gating, at most one AUTO_SAFE `autoEdit`, the rest ranked as
+ * `candidates`). `opts.marginals`: { [faction]: winPct } — REQUIRED for any
+ * AUTO_SAFE classification (fail closed: no data, no auto edits).
+ * `opts.playRates`: { [cardId]: perGameRate } for §B4 ranking (defaults to 1).
+ * Back-compat: a bare array (`computeSuggestions(rawCards)`) is still treated
+ * as the legacy `rawOverride` — a full SimCard array to fit a PATCHED pool
+ * instead of the baseline (used by balance-apply-edits.mjs / balance-lab to
+ * iterate the fit to convergence); existing callers are unaffected. */
+export function computeSuggestions(rawOverrideOrOpts) {
+  const rawOverride = Array.isArray(rawOverrideOrOpts) ? rawOverrideOrOpts : undefined;
+  const opts = Array.isArray(rawOverrideOrOpts) || !rawOverrideOrOpts ? {} : rawOverrideOrOpts;
+  const mode = opts.mode === 'author' ? 'author' : 'campaign';
   const { index, raw } = rawOverride
     ? { index: indexFromRaw(rawOverride).index, raw: rawOverride }
     : loadBalanceData();
@@ -55,7 +71,7 @@ export function computeSuggestions(rawOverride) {
       const sc = index.get(id);
       if (!sc) continue;
       const bd = computeCardPower(sc);
-      cards.push({ sc, id, faction: f, copies: counts.get(id), cost: totalCost(sc), rarity: sc.rarity, cardType: sc.cardType, power: round(bd.power, 2), statBase: bd.statBase, abilityValue: bd.abilityValue });
+      cards.push({ sc, id, faction: f, copies: counts.get(id), cost: totalCost(sc), rarity: sc.rarity, cardType: sc.cardType, power: round(bd.power, 2), statBase: bd.statBase, abilityValue: bd.abilityValue, powerLow: bd.powerLow, powerHigh: bd.powerHigh, flags: bd.flags });
     }
   }
   // Characters and spells/equipment are different populations (steep stat-driven
@@ -136,6 +152,7 @@ export function computeSuggestions(rawOverride) {
     const exp = expectedFor(c.cost, c.rarity, c.cardType);
     const tol = tolFor(c.cardType);
     const slope = model[c.cardType === 'C' ? 'characters' : 'spellsEquip'].slope;
+    c.resource = primaryResourceKey(c.sc.cost); // §B3: name the axis the cost lever lands on
     if (c.status === 'over') {
       c.costK = Math.max(1, Math.ceil((c.power - (exp + tol)) / slope));
       c.costAfter = c.cost + c.costK;
@@ -159,11 +176,40 @@ export function computeSuggestions(rawOverride) {
       c.after = { static: withCostDelta(c.sc, c.costAfter - c.cost), totalCost: c.costAfter, lever: c.costAfter < c.cost ? `cost −${c.cost - c.costAfter}` : '(min cost)' };
     }
   }
-  return { model, cards, over, under, effectText };
+
+  // §S4/B2/B3 — loop risk (CURRENT and PROPOSED) + gate classification. One
+  // deduped pool (by card id — the same card can appear in multiple starter
+  // decks) so the acquisition graph sees every edge exactly once.
+  const poolById = new Map();
+  for (const c of cards) poolById.set(c.id, c.sc);
+  const pool = [...poolById.values()];
+  const riskAtCurrent = assessLoopRisk(pool);
+  const outliers = [...over, ...under];
+  for (const c of outliers) {
+    c.loopRisk = riskAtCurrent.get(c.id) ?? 'none';
+    const proposedPool = pool.map((sc) => (sc.id === c.id ? c.after.static : sc));
+    c.proposedLoopRisk = assessLoopRisk(proposedPool).get(c.id) ?? 'none';
+    const gate = classifyCandidate(c, opts);
+    c.classification = gate.classification;
+    c.gateReason = gate.reason;
+    c.rank = round(rankOf(c, opts), 2);
+  }
+
+  // §B3/B4 — campaign mode: at most ONE AUTO_SAFE autoEdit (the top-ranked
+  // one); everything else — including AUTO_SAFE cards that lost the ranking —
+  // is a ranked candidate, each carrying its classification and gateReason
+  // ("what unlocks it"). author mode withholds nothing and never auto-applies.
+  let autoEdit = null;
+  let candidates = null;
+  if (mode === 'campaign') {
+    ({ autoEdit, candidates } = selectCampaignEdits(outliers));
+  }
+
+  return { model, cards, over, under, effectText, mode, autoEdit, candidates };
 }
 
 // ── Markdown ─────────────────────────────────────────────────────────────────
-function buildMarkdown({ model, over, under, cards, effectText }) {
+function buildMarkdown({ model, over, under, cards, effectText, mode, autoEdit, candidates }) {
   const tolFor = (c) => model.tolFor(c.cardType);
   const expFor = (c, cost) => model.expectedFor(cost, c.rarity, c.cardType);
   const costLeverText = (c) => {
@@ -196,13 +242,20 @@ function buildMarkdown({ model, over, under, cards, effectText }) {
     const sign = c.status === 'over' ? `+${c.edge} over` : `−${c.edge} under`;
     const role = c.sc.cardType === 'C' ? statline(c.sc.stats) : c.sc.cardType === 'E' ? 'equipment' : 'spell';
     const tr = c.sc.cardType === 'C' && c.sc.traits.length ? ` [${c.sc.traits.map(traitName).join(', ')}]` : '';
-    const head = `- **${c.sc.name}** — ${c.rarity}, cost ${c.cost}, ${role}${tr}  ·  power **${round(c.power, 1)}** vs **[${c.lo}, ${c.hi}]** (**${sign}**)`;
-    return `${head}\n${suggestionLines(c)}`;
+    const gateBadge = ` — **[${c.classification}]**${c === autoEdit ? ' ← chosen autoEdit' : ''}`;
+    const head = `- **${c.sc.name}** — ${c.rarity}, cost ${c.cost}, ${role}${tr}  ·  power **${round(c.power, 1)}** vs **[${c.lo}, ${c.hi}]** (**${sign}**)${gateBadge}`;
+    return `${head}\n${suggestionLines(c)}\n  - **Gate:** ${c.gateReason}`;
   };
   const byFaction = (list) => FACTIONS.map((f) => {
     const sub = list.filter((c) => c.faction === f);
     return sub.length ? `\n#### ${f}\n${sub.map(entry).join('\n')}` : '';
   }).join('\n');
+  const gateSummaryLine = () => {
+    const outliers = [...over, ...under];
+    const counts = { AUTO_SAFE: 0, SIM_REQUIRED: 0, HUMAN_REWRITE: 0, BLOCKED: 0 };
+    for (const c of outliers) counts[c.classification] = (counts[c.classification] || 0) + 1;
+    return `**Campaign gate summary:** AUTO_SAFE ${counts.AUTO_SAFE} · SIM_REQUIRED ${counts.SIM_REQUIRED} · HUMAN_REWRITE ${counts.HUMAN_REWRITE} · BLOCKED ${counts.BLOCKED} · autoEdit: ${autoEdit ? `${autoEdit.sc.name} (rank ${autoEdit.rank})` : 'none'} · ${candidates ? candidates.length : 0} candidates remain.`;
+  };
 
   return `# Starter-Pool Balance Suggestions
 
@@ -229,6 +282,8 @@ frozen constants, not a fit on this pool):
 - **Spells/Equipment:** expected = ${model.spellsEquip.intercept} + ${model.spellsEquip.slope}·cost + rarity; window ±${model.spellsEquip.tol}.
 
 **Outliers:** ${over.length} over budget · ${under.length} under budget · ${cards.length - over.length - under.length} within.
+
+**Mode:** \`${mode}\`${mode === 'author' ? ' — informational only: every outlier below gets a full suggestion regardless of its classification; nothing is auto-applied.' : ` — ${gateSummaryLine()}`}
 
 **Levers** — pick what fits the card's role:
 - **Stats / keyword** — surgical power change for characters (re-scored to land in-window).
