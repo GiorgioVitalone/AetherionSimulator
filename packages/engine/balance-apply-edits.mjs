@@ -8,8 +8,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { computeSuggestions } from './balance-suggestions.mjs';
-import { toStatic } from './balance-data.mjs';
-import { detectCardLoops } from './dist/balance/index.js';
+import { toStatic, indexFromRaw, loadBudgetModel } from './balance-data.mjs';
+import { getDeck } from './deck-loader.mjs';
+import { computeCardPower, assessLoopRisk, detectCardLoops } from './dist/balance/index.js';
+import { primaryResourceKey, classifyCandidate, rankOf } from './balance-gates.mjs';
 
 // ── §13a loop guards ──────────────────────────────────────────────────────────
 // The §12c disaster chain (budget cut Echoes 5→1 × Wizard's Robe's unfloored −1
@@ -86,6 +88,104 @@ function applyList(raw, list, changes, vetoed) {
   }
 }
 
+// ── §R1/F3 — classify an EXPLICIT proposal list at its PROPOSED values ───────
+const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
+const round = (x, n = 1) => {
+  const p = 10 ** n;
+  return Math.round(x * p) / p;
+};
+const totalCost = (sc) => sc.cost.mana + sc.cost.energy + sc.cost.flexible;
+
+function factionOfId(id) {
+  for (const f of FACTIONS) if (getDeck(f).mainDeckDefIds.includes(id)) return f;
+  return 'Unaligned';
+}
+
+/** Apply one proposal's costDelta/statDelta to a StaticCard, mirroring
+ * sim-runner.mjs's applyCardCostOverride `bump` (primaryResourceKey picks the
+ * axis). Returns a NEW StaticCard — never mutates `sc`. */
+function applyProposalToStatic(sc, proposal) {
+  if (proposal.costDelta != null) {
+    const cost = { ...sc.cost };
+    const key = primaryResourceKey(cost);
+    cost[key] = Math.max(0, cost[key] + proposal.costDelta);
+    return { ...sc, cost };
+  }
+  if (proposal.statDelta && sc.stats) {
+    const s = sc.stats;
+    return {
+      ...sc,
+      stats: {
+        atk: s.atk + (proposal.statDelta.atk ?? 0),
+        hp: s.hp + (proposal.statDelta.hp ?? 0),
+        arm: s.arm + (proposal.statDelta.arm ?? 0),
+      },
+    };
+  }
+  return sc;
+}
+
+/**
+ * §R1/F3 — classify an EXPLICIT list of proposals (e.g. a committed historical
+ * fixture) against `rawInput`, each AT ITS PROPOSED card state — not today's
+ * re-derived suggestions. Every proposal's delta is applied SIMULTANEOUSLY
+ * (the historical patch's own shape) to build one proposed pool; power/
+ * interval/flags are recomputed from the PROPOSED card via computeCardPower
+ * (a stat trim changes power, not just the stat line), and loop risk is
+ * reassessed over the whole proposed pool. Each row is then classified
+ * through the SAME production gate classifier campaign mode uses. Returns
+ * one row per proposal (with `.classification`/`.reason` attached) — this is
+ * what lets a replay test assert ALL of them, not a hand-picked few.
+ *
+ * `proposals`: readonly array of { id, costDelta? } | { id, statDelta } |
+ * (both may be combined by passing two entries for the same id — this
+ * fixture never does). `opts`: { marginals, playRates } — forwarded to
+ * classifyCandidate/rankOf unchanged.
+ */
+export function classifyProposals(rawInput, proposals, opts = {}) {
+  const { index: currentIndex } = indexFromRaw(rawInput);
+  const model = loadBudgetModel();
+
+  const proposedRaw = rawInput.map((c) => {
+    const p = proposals.find((x) => x.id === c.id);
+    const sc = currentIndex.get(c.id);
+    if (!p || !sc) return c;
+    const after = applyProposalToStatic(sc, p);
+    return { ...c, cost: after.cost, ...(after.stats ? { stats: after.stats } : {}) };
+  });
+  const { index: proposedIndex } = indexFromRaw(proposedRaw);
+  const proposedRisk = assessLoopRisk([...proposedIndex.values()]);
+
+  return proposals.map((p) => {
+    const sc = proposedIndex.get(p.id);
+    if (!sc) return { id: p.id, classification: 'SIM_REQUIRED', reason: `unknown card id ${p.id}` };
+    const bd = computeCardPower(sc);
+    const exp = model.expectedFor(totalCost(sc), sc.rarity, sc.cardType);
+    const tol = model.tolFor(sc.cardType);
+    const lo = exp - tol;
+    const hi = exp + tol;
+    const status = p.status ?? (p.costDelta != null ? (p.costDelta > 0 ? 'over' : 'under') : 'over');
+    const costK = p.costDelta != null ? Math.abs(p.costDelta) : 0;
+    const row = {
+      id: p.id,
+      faction: factionOfId(p.id),
+      copies: p.copies ?? 1,
+      status,
+      abilityShare: bd.power > 0 ? bd.abilityValue / bd.power : 0,
+      costK,
+      flags: bd.flags,
+      proposedLoopRisk: proposedRisk.get(p.id) ?? 'none',
+      powerLow: bd.powerLow,
+      powerHigh: bd.powerHigh,
+      lo,
+      hi,
+      edge: status === 'over' ? round(bd.power - hi, 1) : round(lo - bd.power, 1),
+    };
+    const gate = classifyCandidate(row, opts);
+    return { ...row, classification: gate.classification, reason: gate.reason };
+  });
+}
+
 /** Apply balance edits to a COPY of `rawInput`. Never mutates input.
  *
  * `mode` (default `'production'`) — the F1 certification fix (2026-07-15):
@@ -99,6 +199,11 @@ function applyList(raw, list, changes, vetoed) {
  *     AUTO_SAFE — omit them and this mode is a guaranteed no-op (fail
  *     closed). SIM_REQUIRED / HUMAN_REWRITE / BLOCKED candidates are NEVER
  *     mechanically applied, here or anywhere else in this file.
+ *     §R1: pass an explicit `proposals` list (readonly {id, costDelta?,
+ *     statDelta?}[] — e.g. a committed historical fixture) to gate THOSE
+ *     proposals instead of today's re-derived suggestions — each one
+ *     classified via classifyProposals at its PROPOSED value, still ≤1
+ *     AUTO_SAFE edit applied, same §13a guards.
  *   - `'exploratory'`: the pre-fix bulk behavior — applies `arm`
  *     (`all|nerfs|buffs|none`, i.e. sug.over / sug.under / both / neither)
  *     with no gating beyond the §13a loop guards. Exists ONLY to transform a
@@ -109,13 +214,33 @@ function applyList(raw, list, changes, vetoed) {
  *     (writes to a generated-pools/ scratch dir), and this file's own CLI.
  *
  * Returns { raw, changes, lpCount, vetoed }. */
-export function applyEdits(rawInput, { mode = 'production', arm = 'all', flattenLp = 0, marginals, playRates } = {}) {
+export function applyEdits(rawInput, { mode = 'production', arm = 'all', flattenLp = 0, marginals, playRates, proposals } = {}) {
   const raw = JSON.parse(JSON.stringify(rawInput));
   const changes = [];
   const vetoed = [];
   if (mode === 'production') {
-    const sug = computeSuggestions({ mode: 'campaign', pool: rawInput, marginals, playRates }); // fit the INPUT pool (so passes iterate)
-    applyList(raw, sug.autoEdit ? [sug.autoEdit] : [], changes, vetoed);
+    if (proposals) {
+      // §R1: gate the GIVEN proposals (each at its proposed value), not
+      // today's re-derived suggestions. Still ≤1 AUTO_SAFE edit, §B4-ranked.
+      const rows = classifyProposals(rawInput, proposals, { marginals, playRates });
+      const autoSafe = rows.filter((r) => r.classification === 'AUTO_SAFE');
+      const winner = [...autoSafe].sort((a, b) => rankOf(b, { playRates }) - rankOf(a, { playRates }))[0];
+      if (winner) {
+        const { index: currentIndex } = indexFromRaw(rawInput);
+        const p = proposals.find((x) => x.id === winner.id);
+        const after = applyProposalToStatic(currentIndex.get(winner.id), p);
+        const list = [
+          {
+            id: winner.id,
+            after: { static: { cost: after.cost, stats: after.stats }, lever: 'historical proposal (§R1 replay)' },
+          },
+        ];
+        applyList(raw, list, changes, vetoed);
+      }
+    } else {
+      const sug = computeSuggestions({ mode: 'campaign', pool: rawInput, marginals, playRates }); // fit the INPUT pool (so passes iterate)
+      applyList(raw, sug.autoEdit ? [sug.autoEdit] : [], changes, vetoed);
+    }
   } else if (mode === 'exploratory') {
     const sug = computeSuggestions(rawInput); // legacy rawOverride path — fit the INPUT pool
     const list =

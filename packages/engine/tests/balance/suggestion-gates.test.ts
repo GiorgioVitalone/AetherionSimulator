@@ -111,6 +111,34 @@ describe('§B3 gate 3 — interval straddle', () => {
     const { classification } = classifyCandidate(c, { marginals: { Onyx: 50 } });
     expect(classification).toBe('SIM_REQUIRED');
   });
+
+  it('§R2 — an interval that ENCLOSES the whole window is SIM_REQUIRED (auditor repro: [-10,10] vs [4,6])', () => {
+    // The old XOR check tested "is powerLow inside" vs "is powerHigh inside" —
+    // both endpoints of [-10,10] test as OUTSIDE the [4,6] window, so XOR was
+    // false and this fail-open. A wide interval that swallows the entire
+    // window is exactly the case a single point estimate can't be trusted for.
+    const c = baseCandidate({ lo: 4, hi: 6, powerLow: -10, powerHigh: 10 });
+    const { classification } = classifyCandidate(c, { marginals: { Onyx: 50 } });
+    expect(classification).toBe('SIM_REQUIRED');
+  });
+
+  it('an interval entirely above the window on an "over" card is clean (not a straddle)', () => {
+    const c = baseCandidate({ status: 'over', lo: 4, hi: 6, powerLow: 7, powerHigh: 9 });
+    const { classification } = classifyCandidate(c, { marginals: { Onyx: 50 } });
+    expect(classification).toBe('AUTO_SAFE');
+  });
+
+  it('an interval entirely below the window on an "under" card is clean (not a straddle)', () => {
+    const c = baseCandidate({ status: 'under', lo: 4, hi: 6, powerLow: 1, powerHigh: 3 });
+    const { classification } = classifyCandidate(c, { marginals: { Onyx: 50 } });
+    expect(classification).toBe('AUTO_SAFE');
+  });
+
+  it('an interval entirely within the window is clean', () => {
+    const c = baseCandidate({ lo: 4, hi: 6, powerLow: 4.5, powerHigh: 5.5 });
+    const { classification } = classifyCandidate(c, { marginals: { Onyx: 50 } });
+    expect(classification).toBe('AUTO_SAFE');
+  });
 });
 
 describe('§B4 — at most one autoEdit, exposure-ranked candidates', () => {

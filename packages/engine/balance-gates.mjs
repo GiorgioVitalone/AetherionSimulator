@@ -25,13 +25,21 @@ export function primaryResourceKey(cost) {
 
 const RISKY_FLAGS = new Set(['selection', 'recursion', 'free_cast']);
 
-/** Does the [powerLow, powerHigh] interval straddle the budget window
- * [lo, hi] — one bound inside, the other outside? A wide-uncertainty card
- * whose true power could plausibly sit on either side of the line isn't
- * safe to auto-edit off a single point estimate. */
+/** Is the [powerLow, powerHigh] interval interval-clean w.r.t. the budget
+ * window [lo, hi]? Fail-closed: clean ONLY if the interval lies entirely
+ * WITHIN the window, or entirely OUTSIDE it on the residual's own side
+ * (above hi for an 'over' card, below lo for an 'under' card). Any interval
+ * that crosses either window boundary — including a wide interval that
+ * ENCLOSES the whole window (e.g. [-10,10] vs a [4,6] window) — straddles
+ * and must not auto-apply off a single point estimate. (An XOR of
+ * "is powerLow inside" vs "is powerHigh inside" missed exactly that
+ * enclosing case, since both endpoints test as "outside".) */
 function straddlesWindow(c) {
-  const inside = (v) => v >= c.lo && v <= c.hi;
-  return inside(c.powerLow) !== inside(c.powerHigh);
+  const entirelyWithin = c.powerLow >= c.lo && c.powerHigh <= c.hi;
+  if (entirelyWithin) return false;
+  if (c.status === 'over' && c.powerLow > c.hi) return false;
+  if (c.status === 'under' && c.powerHigh < c.lo) return false;
+  return true;
 }
 
 /**

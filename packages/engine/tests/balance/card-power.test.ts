@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeCardPower } from '../../src/balance/card-power.js';
-import { body, fixed, selfTarget, triggered } from './factory.js';
+import type { Effect } from '../../src/types/effects.js';
+import { aura, body, fixed, selfTarget, triggered } from './factory.js';
 
 describe('computeCardPower — stats + traits + abilities + intra-synergy', () => {
   it('scores a vanilla body as atk + hp', () => {
@@ -50,5 +51,28 @@ describe('computeCardPower — stats + traits + abilities + intra-synergy', () =
   it('is deterministic and does not mutate its input', () => {
     const frozen = Object.freeze(body(10, 'Frozen', 3, 3, 0, { traits: ['defender'] }));
     expect(computeCardPower(frozen)).toEqual(computeCardPower(frozen));
+  });
+
+  it('§R2 — flags free_cast for a cost_reduction nested under choose_one inside an aura (auditor repro)', () => {
+    const nestedReducer: Effect = {
+      type: 'choose_one',
+      options: [
+        {
+          label: 'reduce',
+          effects: [
+            {
+              type: 'cost_reduction',
+              reduction: 1,
+              appliesTo: { cardType: 'C' },
+              duration: { type: 'while_in_play' },
+            },
+          ],
+        },
+        { label: 'noop', effects: [] },
+      ],
+    };
+    const c = body(11, 'Nested Reducer', 2, 2, 0, { abilities: [aura([nestedReducer])] });
+    const power = computeCardPower(c);
+    expect(power.flags).toContain('free_cast');
   });
 });

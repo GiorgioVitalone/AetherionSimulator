@@ -9,7 +9,7 @@ import { assessLoopRisk } from '../../src/balance/loop-graph.js';
 import type { Effect } from '../../src/types/effects.js';
 import type { StaticCard } from '../../src/balance/types.js';
 import { normalizeTraits } from '../../src/setup/trait-normalizer.js';
-import { card, triggered, body } from './factory.js';
+import { aura, card, triggered, body } from './factory.js';
 
 const onCast = { type: 'on_cast' } as const;
 const onDeploy = { type: 'on_deploy' } as const;
@@ -105,6 +105,49 @@ describe('loop-risk — Master Archivist castFreeIfCost chain (item 2)', () => {
     // stays 'none' (its own on_deploy is one-shot, not itself a cycle).
     const risk = assessLoopRisk([archivistShaped(6), echoesShaped(5)]);
     expect(risk.get(141)).toBe('none');
+  });
+});
+
+// ── §R2: cost-reducer recursion through wrapper effects ──────────────────────
+
+describe('loop-risk — cost-reducer detection recurses through choose_one (R2)', () => {
+  it('an aura cost_reduction nested under choose_one still lowers the effective cost of a self-loop', () => {
+    // A reducer aura that only exposes its cost_reduction inside a choose_one
+    // wrapper must still be picked up by collectCostReducers (via
+    // flattenEffects) — same recursion gap as card-power.ts's hasCostReduction.
+    const reducerAura = card({
+      id: 300,
+      name: 'Wrapped Reducer',
+      cardType: 'C',
+      stats: { atk: 1, hp: 1, arm: 0 },
+      cost: { mana: 3, energy: 0, flexible: 0 },
+      abilities: [
+        aura([
+          {
+            type: 'choose_one',
+            options: [
+              {
+                label: 'reduce',
+                effects: [
+                  {
+                    type: 'cost_reduction',
+                    reduction: 4,
+                    appliesTo: { cardType: 'S' },
+                    duration: { type: 'while_in_play' },
+                  },
+                ],
+              },
+              { label: 'noop', effects: [] },
+            ],
+          },
+        ]),
+      ],
+    });
+    // Echoes-shaped self-copy spell at cost 5: without the reducer it's 'none'
+    // (net=5); the wrapped reducer knocks 4 off (effective cost 1) -> 'likely'
+    // via the cost<=1 self-loop override — proving the reducer was actually seen.
+    const risk = assessLoopRisk([echoesShaped(5), reducerAura]);
+    expect(risk.get(94)).toBe('likely');
   });
 });
 

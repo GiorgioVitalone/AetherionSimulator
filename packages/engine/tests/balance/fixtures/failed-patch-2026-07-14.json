@@ -34,5 +34,5 @@
     "49": { "hp": -1 }
   },
   "marginals": { "Onyx": 54.7, "Radiant": 28.0, "Sapphire": 70.7, "Verdant": 46.7 },
-  "provenance": "the actual 2026-07-14 wholesale prescription (27 cost edits + 3 stat edits = 30 proposals) that, applied unguarded, worsened faction spread 42.7 -> 56.3."
+  "provenance": "these 30 (27 cost deltas + 3 stat deltas) are the tool's FULL 2026-07-14 prescription. The MEASURED 2026-07-14 trial ran only 27 of them: ids 28, 94, and 141 were excluded BY HAND before the run, after their playouts exploded in an earlier probe. Applied (as the 27), the faction spread worsened 42.7 -> 56.3."
 }
