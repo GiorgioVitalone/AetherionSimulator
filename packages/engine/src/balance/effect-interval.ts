@@ -12,6 +12,7 @@ import type { Effect } from '../types/effects.js';
 import type { TargetExpr } from '../types/targets.js';
 import type { EffectValue, EffectValueDetailed, PowerFlag } from './types.js';
 import { isAlliedCharacter, isAoE, isEnemyFacing, isEnemyHero, targetSide } from './target-util.js';
+import { riskyFlagsOf } from './risky-effects.js';
 import { traitValue } from './trait-scaling.js';
 import {
   AOE_WIDTH,
@@ -318,12 +319,18 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       };
     }
     case 'choose_one': {
+      // §P1 (R3 fix): the point/interval value keeps picking the best option
+      // (unchanged semantics), but flags must union ALL options — a risky
+      // shape (selection/recursion/dynamic_amount/...) sitting in a
+      // non-selected branch is still a real, reachable shape of this card.
       let best = ZERO_D;
+      const allFlags = new Set<PowerFlag>();
       for (const opt of effect.options) {
         const s = sumEffectsDetailed(opt.effects);
+        for (const f of s.flags) allFlags.add(f);
         if (s.value > best.value) best = s;
       }
-      return best;
+      return { ...best, flags: [...allFlags] };
     }
     case 'return_from_discard': {
       // §S1: reanimating a CHOSEN card from discard is a selection, not a blind
@@ -402,18 +409,28 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       // on_would_be_destroyed is a different (rarer) replacement mechanic,
       // unrelated to the ARM/shield rule, and keeps the generic FLAT bucket.
       // §S3: flagged rules_sensitive — this value hangs on the locked v1 profile.
+      // §P1 (R3 fix): on_would_be_destroyed keeps the generic FLAT bucket for
+      // its VALUE, but must still surface any risky flag (e.g. a nested
+      // cost_reduction/acquisition inside `instead`) instead of dropping it.
       return effect.replaces.type === 'on_would_take_damage'
         ? det(effect.replaces.reduction ?? FLAT_ONE, false, ['rules_sensitive'])
-        : FLAT_D;
+        : { ...FLAT_D, flags: riskyFlagsOf(effect.instead) };
+    case 'scheduled':
+      // §P1 (R3 fix): flat VALUE by design (§S2/§S3), but nested flags
+      // (e.g. a cost_reduction wrapped in a scheduled effect) must propagate.
+      return { ...FLAT_D, flags: riskyFlagsOf(effect.effects) };
+    case 'grant_ability':
+      // §P1 (R3 fix): same — the granted ability's OWN effects (a nested
+      // cost_reduction/acquisition) must surface, not just this wrapper's flat
+      // catch-all value.
+      return { ...FLAT_D, flags: riskyFlagsOf(effect.ability.effects) };
     case 'cost_reduction':
     case 'grant_trait':
-    case 'grant_ability':
     case 'move':
     case 'apply_status':
     case 'cleanse':
     case 'shuffle_into_deck':
     case 'attach_as_equipment':
-    case 'scheduled':
       return FLAT_D;
     default:
       return assertNever(effect);

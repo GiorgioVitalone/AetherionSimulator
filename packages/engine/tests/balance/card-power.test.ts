@@ -75,4 +75,34 @@ describe('computeCardPower — stats + traits + abilities + intra-synergy', () =
     const power = computeCardPower(c);
     expect(power.flags).toContain('free_cast');
   });
+
+  it('§P1 — flags free_cast for a cost_reduction nested under choose_one inside a TRIGGERED ability (round-3 auditor probe)', () => {
+    // The round-2 fix flattened choose_one/scheduled/replacement/grant_ability
+    // wrappers, but card-power's free_cast flag was still gated to `aura`
+    // abilities only — a triggered ability with the identical nested shape
+    // scored flags: [] / AUTO_SAFE. The runtime genuinely supports triggered
+    // one-shot cost reductions (effects/cost-reduction-handler.ts).
+    const nestedReducer: Effect = {
+      type: 'choose_one',
+      options: [
+        {
+          label: 'reduce',
+          effects: [
+            {
+              type: 'cost_reduction',
+              reduction: 1,
+              appliesTo: { cardType: 'C' },
+              duration: { type: 'while_in_play' },
+            },
+          ],
+        },
+        { label: 'noop', effects: [] },
+      ],
+    };
+    const c = body(12, 'Triggered Nested Reducer', 2, 2, 0, {
+      abilities: [triggered({ type: 'on_cast' }, [nestedReducer])],
+    });
+    const power = computeCardPower(c);
+    expect(power.flags).toContain('free_cast');
+  });
 });

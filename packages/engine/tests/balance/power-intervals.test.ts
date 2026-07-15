@@ -104,4 +104,70 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     expect(p.powerLow).toBeCloseTo(p.power);
     expect(p.powerHigh).toBeCloseTo(p.power);
   });
+
+  // ── §P1 (R3 fix): wrapper flag propagation ─────────────────────────────────
+  // Round-3 auditor probe: scheduled/replacement/grant_ability wrappers
+  // returned a FLAT result with NO flags, dropping any risky shape nested
+  // inside them; choose_one only kept the BEST option's flags, dropping any
+  // in the non-selected branch.
+
+  it('choose_one propagates flags from a NON-selected (lower-value) option', () => {
+    const ability = triggered({ type: 'on_deploy' }, [
+      {
+        type: 'choose_one',
+        options: [
+          {
+            label: 'big-but-plain',
+            effects: [{ type: 'deal_damage', amount: fixed(3), target: enemyCharacter }],
+          },
+          {
+            label: 'small-but-tutor',
+            effects: [{ type: 'search_deck', filter: {}, destination: 'hand' }],
+          },
+        ],
+      },
+    ]);
+    const p = computeCardPower(card({ id: 20, name: 'HiddenTutor', abilities: [ability] }));
+    expect(p.flags).toContain('selection');
+  });
+
+  it('scheduled effect propagates flags from its nested effects', () => {
+    const ability = triggered({ type: 'on_deploy' }, [
+      {
+        type: 'scheduled',
+        timing: { type: 'next_turn_start' },
+        effects: [{ type: 'copy_card', source: 'discard', destination: 'hand' }],
+      },
+    ]);
+    const p = computeCardPower(card({ id: 21, name: 'ScheduledCopier', abilities: [ability] }));
+    expect(p.flags).toContain('recursion');
+  });
+
+  it('replacement (on_would_be_destroyed) propagates flags from its `instead` effects', () => {
+    const ability = triggered({ type: 'on_deploy' }, [
+      {
+        type: 'replacement',
+        replaces: { type: 'on_would_be_destroyed' },
+        instead: [{ type: 'search_deck', filter: {}, destination: 'hand' }],
+      },
+    ]);
+    const p = computeCardPower(card({ id: 22, name: 'ReplacementTutor', abilities: [ability] }));
+    expect(p.flags).toContain('selection');
+  });
+
+  it('grant_ability propagates flags from the granted ability nested effects', () => {
+    const ability = triggered({ type: 'on_deploy' }, [
+      {
+        type: 'grant_ability',
+        target: enemyCharacter,
+        duration: { type: 'permanent' },
+        ability: {
+          trigger: { type: 'on_deploy' },
+          effects: [{ type: 'copy_card', source: 'discard', destination: 'hand' }],
+        },
+      },
+    ]);
+    const p = computeCardPower(card({ id: 23, name: 'GrantedCopier', abilities: [ability] }));
+    expect(p.flags).toContain('recursion');
+  });
 });

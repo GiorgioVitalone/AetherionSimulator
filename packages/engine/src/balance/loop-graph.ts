@@ -35,6 +35,7 @@ import type { Trigger } from '../types/triggers.js';
 import type { CardTypeCode } from '../types/common.js';
 import type { StaticCard } from './types.js';
 import { flattenEffects } from './signal-extract.js';
+import { scanRiskyEffects } from './risky-effects.js';
 import { abilityThrottle, isRepeatableTrigger } from './loop-detector.js';
 
 export type LoopRisk = 'none' | 'possible' | 'likely';
@@ -109,12 +110,14 @@ interface CostReducer {
 function collectCostReducers(cards: readonly StaticCard[]): readonly CostReducer[] {
   const out: CostReducer[] = [];
   for (const c of cards) {
-    for (const ab of c.abilities) {
-      if (ab.type !== 'aura') continue;
-      for (const e of flattenEffects(ab.effects)) {
-        if (e.type !== 'cost_reduction') continue;
-        out.push({ cardType: e.appliesTo.cardType, tag: e.appliesTo.tag, reduction: e.reduction });
-      }
+    // §P1 (R3 fix): scanRiskyEffects walks EVERY ability kind (aura AND
+    // triggered/activated) — the runtime genuinely supports triggered
+    // one-shot cost reductions (effects/cost-reduction-handler.ts), and a
+    // triggered self-discounting copier (cost-3 on_cast card that reduces
+    // spells by 3 and copies itself) must not read as risk-free just because
+    // the reducer wasn't wrapped in an `aura`.
+    for (const e of scanRiskyEffects(c.abilities).costReducers) {
+      out.push({ cardType: e.appliesTo.cardType, tag: e.appliesTo.tag, reduction: e.reduction });
     }
   }
   return out;

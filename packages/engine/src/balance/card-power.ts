@@ -5,12 +5,11 @@
  * bounded multiplier on top (the "Defender + self-heal worth more than the sum"
  * case). NEVER reads card cost — this is raw power.
  */
-import type { Effect } from '../types/effects.js';
 import type { AbilityDSL, StatGrantDSL } from '../types/ability.js';
 import type { CardPowerBreakdown, PowerFlag, StaticCard } from './types.js';
 import { sumEffectsDetailed } from './effect-interval.js';
 import { emitDemands, emitSignals } from './signals.js';
-import { flattenEffects } from './signal-extract.js';
+import { scanRiskyEffects } from './risky-effects.js';
 import { intraSynergy } from './synergy.js';
 import { regenerationValue, traitValue } from './trait-scaling.js';
 import { EFFECT_SUM_CAP, INTRA_CAP, recurrence, W_ARM, W_ATK, W_HP } from './weights.js';
@@ -40,17 +39,6 @@ function statGrantValue(ab: StatGrantDSL): number {
   return (m.atk ?? 0) * W_ATK + (m.hp ?? 0) * W_HP + (m.arm ?? 0) * W_ARM;
 }
 
-/** §S3 (R2 fix): does this ability's effect tree contain a cost_reduction
- * node, ANYWHERE it could be nested? Was a shallow composite-only scan, which
- * missed a cost_reduction wrapped in choose_one/conditional/scheduled/
- * replacement — the auditor's reproduction (a choose_one-nested reducer
- * scoring flags: [] / AUTO_SAFE). Reuses signal-extract's flattenEffects,
- * the SAME full-recursion wrapper-walk signals.ts already relies on, so this
- * can't independently drift out of sync with the container list again. */
-function hasCostReduction(effects: readonly Effect[]): boolean {
-  return flattenEffects(effects).some((e) => e.type === 'cost_reduction');
-}
-
 const clamp = (x: number): number => Math.min(Math.max(0, x), EFFECT_SUM_CAP);
 
 interface AbilityContribution {
@@ -70,10 +58,13 @@ function abilityContributionDetailed(ab: AbilityDSL): AbilityContribution {
     return { value: v, low: v, high: v, flags: [] };
   }
   const sum = sumEffectsDetailed(ab.effects);
-  const flags =
-    ab.type === 'aura' && hasCostReduction(ab.effects)
-      ? [...sum.flags, 'free_cast' as const]
-      : sum.flags;
+  // §P1 (R3 fix): free_cast/selection/recursion must be ability-kind-
+  // independent — scanRiskyEffects walks EVERY ability kind, not just aura,
+  // and (via flattenEffects) every wrapper, including non-best choose_one
+  // branches sum.flags itself never sees (sumEffectsDetailed's choose_one
+  // only keeps the highest-value option).
+  const risky = scanRiskyEffects([ab]);
+  const flags = [...new Set<PowerFlag>([...sum.flags, ...risky.flags])];
   return {
     value: clamp(sum.value) * rec,
     low: clamp(sum.low) * rec,

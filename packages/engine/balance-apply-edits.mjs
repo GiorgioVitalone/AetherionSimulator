@@ -125,6 +125,18 @@ function applyProposalToStatic(sc, proposal) {
   return sc;
 }
 
+/** §P3 — every proposal entry that targets the same card id (a cost delta
+ * and a stat delta may arrive as two separate entries for one id). */
+function proposalsFor(proposals, id) {
+  return proposals.filter((p) => p.id === id);
+}
+
+/** §P3 — apply EVERY proposal targeting one card, in order, composing their
+ * deltas onto the SAME StaticCard (cost delta THEN stat delta both land). */
+function applyAllProposals(sc, list) {
+  return list.reduce((acc, p) => applyProposalToStatic(acc, p), sc);
+}
+
 /**
  * §R1/F3 — classify an EXPLICIT list of proposals (e.g. a committed historical
  * fixture) against `rawInput`, each AT ITS PROPOSED card state — not today's
@@ -134,12 +146,14 @@ function applyProposalToStatic(sc, proposal) {
  * (a stat trim changes power, not just the stat line), and loop risk is
  * reassessed over the whole proposed pool. Each row is then classified
  * through the SAME production gate classifier campaign mode uses. Returns
- * one row per proposal (with `.classification`/`.reason` attached) — this is
- * what lets a replay test assert ALL of them, not a hand-picked few.
+ * one row per DISTINCT card id (with `.classification`/`.reason` attached) —
+ * this is what lets a replay test assert ALL of them, not a hand-picked few.
  *
  * `proposals`: readonly array of { id, costDelta? } | { id, statDelta } |
- * (both may be combined by passing two entries for the same id — this
- * fixture never does). `opts`: { marginals, playRates } — forwarded to
+ * both, as separate entries with the same id — §P3: ALL entries for one id
+ * are grouped and applied together (a cost trim + a stat trim on the same
+ * card compose), and that card is classified ONCE at the fully-combined
+ * state, not once per entry. `opts`: { marginals, playRates } — forwarded to
  * classifyCandidate/rankOf unchanged.
  */
 export function classifyProposals(rawInput, proposals, opts = {}) {
@@ -147,30 +161,59 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
   const model = loadBudgetModel();
 
   const proposedRaw = rawInput.map((c) => {
-    const p = proposals.find((x) => x.id === c.id);
+    const list = proposalsFor(proposals, c.id);
     const sc = currentIndex.get(c.id);
-    if (!p || !sc) return c;
-    const after = applyProposalToStatic(sc, p);
+    if (list.length === 0 || !sc) return c;
+    const after = applyAllProposals(sc, list);
     return { ...c, cost: after.cost, ...(after.stats ? { stats: after.stats } : {}) };
   });
   const { index: proposedIndex } = indexFromRaw(proposedRaw);
   const proposedRisk = assessLoopRisk([...proposedIndex.values()]);
 
-  return proposals.map((p) => {
+  const seenIds = new Set();
+  const rows = [];
+  for (const p of proposals) {
+    if (seenIds.has(p.id)) continue; // §P3: classify the combined proposal ONCE
+    seenIds.add(p.id);
+    const combined = proposalsFor(proposals, p.id);
     const sc = proposedIndex.get(p.id);
-    if (!sc) return { id: p.id, classification: 'SIM_REQUIRED', reason: `unknown card id ${p.id}` };
+    const scCurrent = currentIndex.get(p.id);
+    if (!sc || !scCurrent) {
+      rows.push({ id: p.id, classification: 'SIM_REQUIRED', reason: `unknown card id ${p.id}` });
+      continue;
+    }
     const bd = computeCardPower(sc);
+    const bdCurrent = computeCardPower(scCurrent);
     const exp = model.expectedFor(totalCost(sc), sc.rarity, sc.cardType);
+    const expCurrent = model.expectedFor(totalCost(scCurrent), scCurrent.rarity, scCurrent.cardType);
     const tol = model.tolFor(sc.cardType);
     const lo = exp - tol;
     const hi = exp + tol;
-    const status = p.status ?? (p.costDelta != null ? (p.costDelta > 0 ? 'over' : 'under') : 'over');
-    const costK = p.costDelta != null ? Math.abs(p.costDelta) : 0;
-    const row = {
+    const costDelta = combined.reduce((s, x) => s + (x.costDelta ?? 0), 0);
+    const costK = Math.abs(costDelta);
+
+    // §P2 — direction is the SIGN of the residual change (proposed − current,
+    // both against the FROZEN budget line), never a hardcoded 'over'. A
+    // residual DECREASE (power falls relative to what its new cost expects,
+    // or cost rises against unchanged power) is a nerf ('over'); an INCREASE
+    // is a buff ('under'). Ambiguous/negligible movement fails CLOSED
+    // (SIM_REQUIRED) rather than guessing a direction — a stat-only BUFF must
+    // never silently classify as a nerf (or vice versa). An explicit
+    // `p.status` on any combined entry (e.g. a historical fixture's own
+    // label) still overrides, unchanged from before.
+    const explicitStatus = combined.find((x) => x.status)?.status;
+    const residualCurrent = bdCurrent.power - expCurrent;
+    const residualProposed = bd.power - exp;
+    const residualDelta = residualProposed - residualCurrent;
+    const RESIDUAL_EPS = 0.05;
+    const status =
+      explicitStatus ??
+      (residualDelta <= -RESIDUAL_EPS ? 'over' : residualDelta >= RESIDUAL_EPS ? 'under' : undefined);
+
+    const base = {
       id: p.id,
       faction: factionOfId(p.id),
-      copies: p.copies ?? 1,
-      status,
+      copies: combined[0]?.copies ?? 1,
       abilityShare: bd.power > 0 ? bd.abilityValue / bd.power : 0,
       costK,
       flags: bd.flags,
@@ -179,11 +222,26 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
       powerHigh: bd.powerHigh,
       lo,
       hi,
+    };
+    if (status === undefined) {
+      rows.push({
+        ...base,
+        status: 'ambiguous',
+        edge: 0,
+        classification: 'SIM_REQUIRED',
+        reason: 'SIM_REQUIRED: residual change is ambiguous/negligible — direction cannot be derived from the budget line, run a sim to confirm',
+      });
+      continue;
+    }
+    const row = {
+      ...base,
+      status,
       edge: status === 'over' ? round(bd.power - hi, 1) : round(lo - bd.power, 1),
     };
     const gate = classifyCandidate(row, opts);
-    return { ...row, classification: gate.classification, reason: gate.reason };
-  });
+    rows.push({ ...row, classification: gate.classification, reason: gate.reason });
+  }
+  return rows;
 }
 
 /** Apply balance edits to a COPY of `rawInput`. Never mutates input.
@@ -227,8 +285,10 @@ export function applyEdits(rawInput, { mode = 'production', arm = 'all', flatten
       const winner = [...autoSafe].sort((a, b) => rankOf(b, { playRates }) - rankOf(a, { playRates }))[0];
       if (winner) {
         const { index: currentIndex } = indexFromRaw(rawInput);
-        const p = proposals.find((x) => x.id === winner.id);
-        const after = applyProposalToStatic(currentIndex.get(winner.id), p);
+        // §P3: apply ALL proposal entries for the winning id (e.g. a cost
+        // delta + a stat delta on the same card), not just the first match.
+        const combined = proposalsFor(proposals, winner.id);
+        const after = applyAllProposals(currentIndex.get(winner.id), combined);
         const list = [
           {
             id: winner.id,

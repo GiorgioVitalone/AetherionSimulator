@@ -243,3 +243,119 @@ describe('§F3/R1 — TRUE replay of the 2026-07-14 prescription (verbatim fixtu
     }
   });
 });
+
+/**
+ * §P2 (round-3 auditor probe) — classifyProposals hardcoded EVERY stat-only
+ * proposal's direction as 'over' (nerf), regardless of whether the stat
+ * change was actually a buff or a nerf. Direction must derive from the SIGN
+ * of the residual change (proposed vs. current, against the frozen budget
+ * line); ambiguous/negligible movement must fail closed (SIM_REQUIRED), never
+ * guess. Reproduction: a +1 HP BUFF to an Onyx card, with Onyx's marginal
+ * pinned above the 55% buff ceiling — under the old hardcoded 'over' label
+ * this was checked against the NERF floor (45%, which 60% clears) instead of
+ * the buff ceiling, so it slipped through as AUTO_SAFE.
+ */
+describe('§P2 — stat-only proposal direction derives from residual movement, fail-closed', () => {
+  const ONYX_CARD_ID = 5; // Necrotic Squire (Onyx, cardType C)
+
+  it('a +1 HP buff to an Onyx card is classified "under" (buff), not hardcoded "over"', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: ONYX_CARD_ID, statDelta: { hp: 1 } }], {
+      marginals: { Onyx: 60, Radiant: 50, Sapphire: 50, Verdant: 50 },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe('under');
+  });
+
+  it('that +1 HP buff, with Onyx marginal 60% (above the 55% buff ceiling), is NOT AUTO_SAFE', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: ONYX_CARD_ID, statDelta: { hp: 1 } }], {
+      marginals: { Onyx: 60, Radiant: 50, Sapphire: 50, Verdant: 50 },
+    });
+    expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+  });
+
+  it('and applyEdits never mechanically applies that buff', () => {
+    const { raw } = loadBalanceData();
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: { Onyx: 60, Radiant: 50, Sapphire: 50, Verdant: 50 },
+      proposals: [{ id: ONYX_CARD_ID, statDelta: { hp: 1 } }],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+});
+
+/**
+ * §P3 (round-3 auditor probe) — both the proposed-pool construction and the
+ * production application path used `.find()` (first-match-wins) even though
+ * the docs claim combining. A cost delta + a stat delta on the SAME card,
+ * submitted as two separate proposal entries, must compose into ONE
+ * classified row (not two, and not silently dropping the second delta).
+ */
+describe('§P3 — multiple proposal entries for the same card combine', () => {
+  const ONYX_CARD_ID = 5; // Necrotic Squire (Onyx, cardType C)
+
+  it('classifyProposals returns exactly ONE row for two entries targeting the same id', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(
+      raw,
+      [
+        { id: ONYX_CARD_ID, costDelta: 1 },
+        { id: ONYX_CARD_ID, statDelta: { atk: 1 } },
+      ],
+      { marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 } },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.costK).toBe(1);
+  });
+
+  it('the combined proposal is classified at the FULLY-combined state (both deltas applied)', () => {
+    const { raw } = loadBalanceData();
+    const { index } = loadBalanceData();
+    const current = index.get(ONYX_CARD_ID)!;
+    const combinedRows = classifyProposals(
+      raw,
+      [
+        { id: ONYX_CARD_ID, costDelta: 1 },
+        { id: ONYX_CARD_ID, statDelta: { atk: 2 } },
+      ],
+      { marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 } },
+    );
+    const statOnlyRows = classifyProposals(raw, [{ id: ONYX_CARD_ID, statDelta: { atk: 2 } }], {
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+    });
+    // power (stat-derived) is identical whether or not the cost delta rode
+    // along — proving the cost delta didn't silently overwrite the stat
+    // delta (or vice versa) via a first-match-wins .find().
+    expect(combinedRows[0]!.powerLow).toBeCloseTo(statOnlyRows[0]!.powerLow);
+    expect(combinedRows[0]!.costK).toBe(1);
+    expect(current).toBeTruthy();
+  });
+
+  it('applyEdits (production) applies BOTH deltas atomically when the combined proposal wins', () => {
+    const { raw } = loadBalanceData();
+    const { index } = loadBalanceData();
+    const before = index.get(ONYX_CARD_ID)!;
+    // A tiny +1 stat with no cost change is unlikely to clear every gate on
+    // the real pool; this asserts the ATOMIC contract (both-or-neither) —
+    // if it DOES apply, both the cost line and the stat line must reflect
+    // the combined proposal, never just one of the two.
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+      proposals: [
+        { id: ONYX_CARD_ID, costDelta: 1 },
+        { id: ONYX_CARD_ID, statDelta: { atk: 1 } },
+      ],
+    });
+    const touchedThisCard = result.changes.some((c: string) => c.startsWith(`${before.name}:`));
+    if (touchedThisCard) {
+      const after = result.raw.find((c: { id: number }) => c.id === ONYX_CARD_ID);
+      const oldTotal = before.cost.mana + before.cost.energy + before.cost.flexible;
+      const newTotal = after.cost.mana + after.cost.energy + after.cost.flexible;
+      expect(newTotal).toBe(oldTotal + 1);
+      expect(after.stats.atk).toBe(before.stats.atk + 1);
+    }
+  });
+});

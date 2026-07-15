@@ -151,6 +151,45 @@ describe('loop-risk — cost-reducer detection recurses through choose_one (R2)'
   });
 });
 
+// ── §P1 (R3 fix): cost-reducer detection is ability-KIND-independent ────────
+
+describe('loop-risk — cost-reducer detection recurses through TRIGGERED abilities (P1, round-3 auditor probe)', () => {
+  it('a cost-3 on_cast card that reduces spells by 3 AND copies itself is NOT risk "none"', () => {
+    // collectCostReducers only scanned `aura` abilities — a triggered
+    // one-shot cost reducer (genuinely supported by the runtime, see
+    // effects/cost-reduction-handler.ts) was invisible. This card's own
+    // on_cast fires a cost_reduction (appliesTo cardType 'S', reduction 3)
+    // that applies to ITSELF (a cost-3 spell) alongside a self-copy —
+    // effective cost 0 -> the cost<=1 self-loop 'likely' override must fire.
+    const selfDiscountingCopier: StaticCard = card({
+      id: 400,
+      name: 'Self-Discounting Copier',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 3, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          {
+            type: 'cost_reduction',
+            reduction: 3,
+            appliesTo: { cardType: 'S' },
+            duration: { type: 'while_in_play' },
+          },
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([selfDiscountingCopier]);
+    expect(risk.get(400)).not.toBe('none');
+    expect(risk.get(400)).toBe('likely');
+  });
+});
+
 // ── Item 3: no false-positive explosion ──────────────────────────────────────
 
 describe('loop-risk — no false positives on plain cards', () => {
