@@ -359,3 +359,31 @@ describe('§P3 — multiple proposal entries for the same card combine', () => {
     }
   });
 });
+
+// Review 2026-07-15: a SINGLE proposal entry carrying BOTH costDelta and statDelta
+// must apply both (an early return used to drop the stat part silently).
+describe('dual-delta single entry (§P3 review follow-up)', () => {
+  it('applies both deltas from one entry — the stat delta is visible in the recomputed power', () => {
+    const { raw, index } = loadBalanceData();
+    const target = [...index.values()].find(
+      (c) => c.cardType === 'C' && c.stats && c.cost.mana + c.cost.energy + c.cost.flexible >= 2,
+    )!;
+    const rows = classifyProposals(raw, [{ id: target.id, costDelta: -1, statDelta: { hp: 1 } }], {
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+    });
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    // cost delta visible: costK reflects the |−1| cost component of the combined entry
+    expect(row.costK).toBe(1);
+    // stat delta visible: the row's recomputed power interval sits at the +1 HP card's
+    // power, not the unmodified card's (dropping statDelta would leave it unchanged)
+    const buffed = computeCardPower({
+      ...target,
+      stats: { ...target.stats!, hp: target.stats!.hp + 1 },
+    }).power;
+    const unmodified = computeCardPower(target).power;
+    expect(buffed).not.toBe(unmodified); // probe validity: +1 HP must move power
+    expect(row.powerLow).toBeLessThanOrEqual(buffed);
+    expect(row.powerHigh).toBeGreaterThanOrEqual(buffed);
+  });
+});

@@ -105,16 +105,21 @@ function factionOfId(id) {
  * sim-runner.mjs's applyCardCostOverride `bump` (primaryResourceKey picks the
  * axis). Returns a NEW StaticCard — never mutates `sc`. */
 function applyProposalToStatic(sc, proposal) {
+  // A single entry may carry BOTH deltas — apply both. (An early return here
+  // used to drop statDelta when costDelta was present; it dropped consistently
+  // in classify AND apply, so it failed safe, but it contradicted the entry
+  // contract. Fixed after independent review, 2026-07-15.)
+  let out = sc;
   if (proposal.costDelta != null) {
-    const cost = { ...sc.cost };
+    const cost = { ...out.cost };
     const key = primaryResourceKey(cost);
     cost[key] = Math.max(0, cost[key] + proposal.costDelta);
-    return { ...sc, cost };
+    out = { ...out, cost };
   }
-  if (proposal.statDelta && sc.stats) {
-    const s = sc.stats;
-    return {
-      ...sc,
+  if (proposal.statDelta && out.stats) {
+    const s = out.stats;
+    out = {
+      ...out,
       stats: {
         atk: s.atk + (proposal.statDelta.atk ?? 0),
         hp: s.hp + (proposal.statDelta.hp ?? 0),
@@ -122,7 +127,7 @@ function applyProposalToStatic(sc, proposal) {
       },
     };
   }
-  return sc;
+  return out;
 }
 
 /** §P3 — every proposal entry that targets the same card id (a cost delta
