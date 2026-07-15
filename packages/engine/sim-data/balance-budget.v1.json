@@ -106,7 +106,8 @@
       143,
       144
     ],
-    "note": "Rarity offsets are DECLARED from the existing RARITY_BONUS constants in balance-data.mjs, lifted as-is (not re-derived, so rarity is never double-counted through the fitted intercept). Abstract design constants: judge cost-for-power against this frozen line, never against the pool being judged. Bump the version to recalibrate."
+    "note": "Rarity offsets are DECLARED from the existing RARITY_BONUS constants in balance-data.mjs, lifted as-is (not re-derived, so rarity is never double-counted through the fitted intercept). Abstract design constants: judge cost-for-power against this frozen line, never against the pool being judged. Bump the version to recalibrate.",
+    "stabilityContract": "leave-one-faction-out: characters slope moves <15% relative; spells/equipment line disagrees by < one tolerance across the cost range. Ratified by the maintainer 2026-07-15, superseding the spec's original <10% (measured character worst-case: 12.6%)."
   },
   "characters": {
     "slope": 1.9,

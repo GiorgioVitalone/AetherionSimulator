@@ -76,7 +76,11 @@ describe('§B1 — declared budget line', () => {
     expect(residualCommon - residualMythic).toBeCloseTo(offsetDelta, 6);
   });
 
-  // Spec target is a flat <10% relative move. Measured against THIS curated pool
+  // RATIFIED by the maintainer 2026-07-15 (explicit in-session decision: "13-15%
+  // is fine"): the stability contract below — 15% relative for characters plus the
+  // absolute-materiality bound for spells/equipment — supersedes the spec's
+  // original flat <10%. Recorded in the phase ledger the same day.
+  // Spec target was a flat <10% relative move. Measured against THIS curated pool
   // (~39 characters / ~62 spells+equipment, further quartered by faction — small-N
   // Theil-Sen folds), the honest empirical bound is wider:
   //  - Characters (slope ~1.9): worst observed single-faction-out move is ~12.6%
