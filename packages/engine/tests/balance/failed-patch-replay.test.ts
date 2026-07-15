@@ -12,7 +12,8 @@ import { assessLoopRisk } from '../../src/balance/loop-graph.js';
 import { computeCardPower } from '../../src/balance/card-power.js';
 import type { Effect } from '../../src/types/effects.js';
 import { classifyCandidate } from '../../balance-gates.mjs';
-import { computeSuggestions } from '../../balance-suggestions.mjs';
+import { computeSuggestions, copiesInStarterDeck } from '../../balance-suggestions.mjs';
+import { rankOf } from '../../balance-gates.mjs';
 import { applyEdits, classifyProposals } from '../../balance-apply-edits.mjs';
 import { loadBalanceData } from '../../balance-data.mjs';
 import { getDeck } from '../../deck-loader.mjs';
@@ -385,5 +386,112 @@ describe('dual-delta single entry (§P3 review follow-up)', () => {
     expect(buffed).not.toBe(unmodified); // probe validity: +1 HP must move power
     expect(row.powerLow).toBeLessThanOrEqual(buffed);
     expect(row.powerHigh).toBeGreaterThanOrEqual(buffed);
+  });
+});
+
+/**
+ * §Q2 (round-4 auditor probe) — a caller-supplied `p.status` on a proposal
+ * entry used to OVERRIDE the residual-derived direction outright, letting a
+ * caller assert its own direction and bypass the correct gate (a +1 HP BUFF
+ * to Onyx at 60%, labeled `status:'over'`, cleared the NERF floor instead of
+ * the BUFF ceiling and applied). Fix: caller status is NEVER used to gate;
+ * if it disagrees with the derived direction, fail closed to SIM_REQUIRED.
+ */
+describe('§Q2 — caller-supplied status can never override the derived direction', () => {
+  const ONYX_CARD_ID = 5; // Necrotic Squire (Onyx, cardType C)
+
+  it("the round-3 +1 HP / Onyx-60% probe WITH status:'over' attached is NOT AUTO_SAFE", () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(
+      raw,
+      [{ id: ONYX_CARD_ID, statDelta: { hp: 1 }, status: 'over' }],
+      { marginals: { Onyx: 60, Radiant: 50, Sapphire: 50, Verdant: 50 } },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+    expect(rows[0]!.classification).toBe('SIM_REQUIRED');
+  });
+
+  it('and applyEdits applies ZERO changes for that mislabeled proposal', () => {
+    const { raw } = loadBalanceData();
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: { Onyx: 60, Radiant: 50, Sapphire: 50, Verdant: 50 },
+      proposals: [{ id: ONYX_CARD_ID, statDelta: { hp: 1 }, status: 'over' }],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+});
+
+/**
+ * §Q3 (round-4 auditor probe) — costK summed RAW deltas across combined
+ * proposal entries, so sequential clamping (Math.max(0, ...) per step) could
+ * make a -5 then +5 delta report costK 0 while the card's actual cost moved
+ * 3->5. Fix: costK is |composed proposed total cost - composed current total
+ * cost|, the REAL change. Shieldbearer Paladin (id 48, cost 3) is the probe.
+ */
+describe('§Q3 — costK reflects the composed before/after cost, not summed raw deltas', () => {
+  const SHIELDBEARER_PALADIN_ID = 48;
+
+  it('a -5 then +5 delta pair on a cost-3 card reports costK 2 (3 -> 0 -> 5), not 0', () => {
+    const { raw, index } = loadBalanceData();
+    const before = index.get(SHIELDBEARER_PALADIN_ID)!;
+    expect(before.cost.mana + before.cost.energy + before.cost.flexible).toBe(3);
+    const rows = classifyProposals(
+      raw,
+      [
+        { id: SHIELDBEARER_PALADIN_ID, costDelta: -5 },
+        { id: SHIELDBEARER_PALADIN_ID, costDelta: 5 },
+      ],
+      { marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 } },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.costK).toBe(2);
+    expect(rows[0]!.classification).toBe('SIM_REQUIRED');
+  });
+
+  it('and applyEdits never mechanically applies that -5/+5 pair', () => {
+    const { raw } = loadBalanceData();
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+      proposals: [
+        { id: SHIELDBEARER_PALADIN_ID, costDelta: -5 },
+        { id: SHIELDBEARER_PALADIN_ID, costDelta: 5 },
+      ],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+});
+
+/**
+ * §Q4 (round-4 auditor probe) — explicit-proposal rows defaulted `copies` to
+ * 1 regardless of real starter-deck membership, inverting §B4's exposure
+ * ranking (a 3-copy card with a smaller edge must still outrank a 1-copy
+ * card with a bigger edge: 1.8x3=5.4 > 1.9x1=1.9). Fix: derive copies from
+ * starter-deck membership via the SAME counting the suggestions pipeline
+ * uses (copiesInStarterDeck); un-decked cards keep 1.
+ */
+describe('§Q4 — classifyProposals derives real deck copies, not a hardcoded default', () => {
+  const THREE_COPY_ONYX_ID = 5; // Necrotic Squire — 3 copies in the Onyx starter deck
+
+  it('classifyProposals reports the real copy count (3), not the old hardcoded default (1)', () => {
+    const { raw } = loadBalanceData();
+    expect(copiesInStarterDeck(THREE_COPY_ONYX_ID)).toBe(3);
+    const rows = classifyProposals(raw, [{ id: THREE_COPY_ONYX_ID, statDelta: { hp: 1 } }], {
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.copies).toBe(3);
+  });
+
+  it("the auditor's ranking-inversion arithmetic: a 3-copy card at edge 1.8 outranks a 1-copy card at edge 1.9", () => {
+    const threeCopyRow = { edge: 1.8, copies: 3 };
+    const oneCopyRow = { edge: 1.9, copies: 1 };
+    // With the fixed real copies, the 3-copy card's exposure ranks higher...
+    expect(rankOf(threeCopyRow, {})).toBeGreaterThan(rankOf(oneCopyRow, {}));
+    // ...even though a hardcoded copies:1 default would have inverted it.
+    const threeCopyRowIfDefaulted = { edge: 1.8, copies: 1 };
+    expect(rankOf(threeCopyRowIfDefaulted, {})).toBeLessThan(rankOf(oneCopyRow, {}));
   });
 });

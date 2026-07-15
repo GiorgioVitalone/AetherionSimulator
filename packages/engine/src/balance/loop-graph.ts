@@ -68,6 +68,11 @@ function targetFilterOf(target: TargetExpr): TargetFilter | undefined {
 
 interface EdgeEffectSpec {
   readonly filter: TargetFilter | undefined;
+  /** True when traversing this edge costs the acquired card NOTHING,
+   * regardless of its printed/effective cost: search_deck→battlefield and
+   * deploy_from_deck deploy directly with no cast, and search_deck's
+   * castForFree:true casts unconditionally on pickup. */
+  readonly unconditionalFree?: boolean;
   readonly castFreeIfCost?: number;
 }
 
@@ -77,9 +82,13 @@ function edgeEffectSpec(e: Effect): EdgeEffectSpec | undefined {
     case 'copy_card':
       return { filter: e.filter };
     case 'search_deck':
-      return { filter: e.filter, castFreeIfCost: e.castFreeIfCost };
+      return {
+        filter: e.filter,
+        unconditionalFree: e.destination === 'battlefield' || e.castForFree === true,
+        castFreeIfCost: e.castFreeIfCost,
+      };
     case 'deploy_from_deck':
-      return { filter: e.filter };
+      return { filter: e.filter, unconditionalFree: true };
     case 'return_from_discard':
       return { filter: targetFilterOf(e.target) };
     default:
@@ -144,6 +153,7 @@ interface AbilitySource {
   readonly from: number;
   readonly targets: readonly number[];
   readonly resourceGain: number;
+  readonly unconditionalFree?: boolean;
   readonly castFreeIfCost?: number;
 }
 
@@ -177,6 +187,7 @@ function buildSources(cards: readonly StaticCard[]): readonly AbilitySource[] {
           from: from.id,
           targets,
           resourceGain: gain,
+          unconditionalFree: spec.unconditionalFree,
           castFreeIfCost: spec.castFreeIfCost,
         });
       }
@@ -238,9 +249,13 @@ function classifyGroup(
   reducers: readonly CostReducer[],
   sources: readonly AbilitySource[],
 ): LoopRisk {
-  let costSum = 0;
-  for (const id of members) costSum += effectiveCost(cardById.get(id) as StaticCard, reducers);
-
+  // A member acquired via an unconditional free-cast/deploy edge (or a
+  // castFreeIfCost edge whose threshold actually covers its cost) traverses
+  // the cycle at ZERO net cost, regardless of its printed/effective cost —
+  // that's the whole point of castForFree / search_deck→battlefield /
+  // deploy_from_deck. Track those separately from the fuzzy "near threshold"
+  // signal (which only bumps risk to 'possible', not free).
+  const freeMembers = new Set<number>();
   let gainSum = 0;
   let freeCastNear = false;
   for (const src of sources) {
@@ -248,21 +263,37 @@ function classifyGroup(
     const targetsInGroup = src.targets.filter((t) => members.has(t));
     if (targetsInGroup.length === 0) continue;
     gainSum += src.resourceGain;
-    if (src.castFreeIfCost !== undefined) {
-      for (const t of targetsInGroup) {
+    for (const t of targetsInGroup) {
+      if (src.unconditionalFree === true) {
+        freeMembers.add(t);
+        continue;
+      }
+      if (src.castFreeIfCost !== undefined) {
         const c = effectiveCost(cardById.get(t) as StaticCard, reducers);
-        if (Math.abs(c - src.castFreeIfCost) <= 1) freeCastNear = true;
+        if (c <= src.castFreeIfCost) freeMembers.add(t);
+        else if (Math.abs(c - src.castFreeIfCost) <= 1) freeCastNear = true;
       }
     }
+  }
+
+  let costSum = 0;
+  for (const id of members) {
+    if (freeMembers.has(id)) continue;
+    costSum += effectiveCost(cardById.get(id) as StaticCard, reducers);
   }
 
   const net = costSum - gainSum;
   // A direct, unthrottled self-copy at cost ≤1 is 'likely' regardless of the
   // net-cost arithmetic below — the classic Arcane-Echoes-at-1 failure mode:
   // at that price the chain is bounded only by discard/deck supply, not mana.
+  // A self-loop that acquires itself via an unconditional free-cast/deploy
+  // edge is 'likely' too, at ANY printed cost — the cost is never actually
+  // paid on the repeating edge.
+  const soleMember = [...members][0] as number;
   const selfLoopCheap =
     members.size === 1 &&
-    effectiveCost(cardById.get([...members][0] as number) as StaticCard, reducers) <= 1;
+    (freeMembers.has(soleMember) ||
+      effectiveCost(cardById.get(soleMember) as StaticCard, reducers) <= 1);
 
   if (net <= 0 || selfLoopCheap) return 'likely';
   if (net <= 2 || freeCastNear) return 'possible';
@@ -311,20 +342,21 @@ export function assessLoopRisk(cards: readonly StaticCard[]): ReadonlyMap<number
   // Backward feeder propagation: a card that can search/fetch-and-free-cast
   // INTO a risky cycle inherits that risk (the Master Archivist mechanism —
   // its own on_deploy is one-shot, but it drops the player straight into the
-  // Echoes loop for free). Only castFreeIfCost-bearing sources propagate,
+  // Echoes loop for free). Unconditional-free (castForFree / →battlefield /
+  // deploy_from_deck) and castFreeIfCost-covered sources both propagate,
   // since a plain non-free fetch doesn't make the FEEDER itself repeatable.
   let changed = true;
   while (changed) {
     changed = false;
     for (const src of sources) {
-      if (src.castFreeIfCost === undefined) continue;
+      if (src.unconditionalFree !== true && src.castFreeIfCost === undefined) continue;
       let candidate: LoopRisk = 'none';
       for (const t of src.targets) {
         const targetCard = cardById.get(t) as StaticCard;
         const targetCost = effectiveCost(targetCard, reducers);
-        if (targetCost <= src.castFreeIfCost) {
+        if (src.unconditionalFree === true || targetCost <= (src.castFreeIfCost as number)) {
           candidate = maxRisk(candidate, result.get(t) as LoopRisk);
-        } else if (Math.abs(targetCost - src.castFreeIfCost) <= 1) {
+        } else if (Math.abs(targetCost - (src.castFreeIfCost as number)) <= 1) {
           candidate = maxRisk(candidate, 'possible');
         }
       }

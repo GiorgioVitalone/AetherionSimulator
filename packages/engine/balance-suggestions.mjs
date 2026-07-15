@@ -61,6 +61,21 @@ const withCostDelta = (sc, delta) => {
  * as the legacy `rawOverride` — a full SimCard array to fit a PATCHED pool
  * instead of the baseline (used by balance-apply-edits.mjs / balance-lab to
  * iterate the fit to convergence); existing callers are unaffected. */
+/** §Q4 (round-4 auditor) — real copy count of `id` in its starter-deck
+ * faction's main deck (0 if the card isn't decked at all). Exported so
+ * balance-apply-edits.mjs's classifyProposals can derive the SAME copies
+ * value it uses for §B4 exposure ranking, instead of a hardcoded default. */
+export function copiesInStarterDeck(id) {
+  for (const f of FACTIONS) {
+    const deck = getDeck(f);
+    if (!deck.mainDeckDefIds.includes(id)) continue;
+    let n = 0;
+    for (const x of deck.mainDeckDefIds) if (x === id) n += 1;
+    return n;
+  }
+  return 0;
+}
+
 export function computeSuggestions(rawOverrideOrOpts) {
   const rawOverride = Array.isArray(rawOverrideOrOpts) ? rawOverrideOrOpts : undefined;
   const opts = Array.isArray(rawOverrideOrOpts) || !rawOverrideOrOpts ? {} : rawOverrideOrOpts;
@@ -86,12 +101,10 @@ export function computeSuggestions(rawOverrideOrOpts) {
   } else {
     for (const f of FACTIONS) {
       const deck = getDeck(f);
-      const counts = new Map();
-      for (const id of deck.mainDeckDefIds) counts.set(id, (counts.get(id) || 0) + 1);
       for (const id of new Set(deck.mainDeckDefIds)) {
         const sc = index.get(id);
         if (!sc) continue;
-        cards.push(rowFor(sc, f, counts.get(id)));
+        cards.push(rowFor(sc, f, copiesInStarterDeck(id)));
       }
     }
   }

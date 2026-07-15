@@ -190,6 +190,68 @@ describe('loop-risk — cost-reducer detection recurses through TRIGGERED abilit
   });
 });
 
+// ── §Q1 (round-4 auditor): free-cast / zero-cost acquisition edges ──────────
+
+describe('loop-risk — unconditional free-cast and zero-cost acquisition edges (Q1)', () => {
+  it('a cost-5 self-chain via castForFree:true is likely (unconditional free-cast never pays the printed cost)', () => {
+    const freeCastCopier: StaticCard = card({
+      id: 500,
+      name: 'Free-Cast Self-Chain',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 5, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          {
+            type: 'search_deck',
+            filter: { tag: 'Arcane', cardType: 'S' },
+            destination: 'hand',
+            castForFree: true,
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([freeCastCopier]);
+    expect(risk.get(500)).toBe('likely');
+  });
+
+  it('a cost-5 self-chain via search_deck destination:battlefield (zero-cost deploy, no cast) is likely', () => {
+    const deployCopier: StaticCard = card({
+      id: 501,
+      name: 'Zero-Cost Deploy Self-Chain',
+      cardType: 'C',
+      stats: { atk: 1, hp: 1, arm: 0 },
+      tags: ['Arcane'],
+      cost: { mana: 5, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onDeploy, [
+          {
+            type: 'search_deck',
+            filter: { tag: 'Arcane', cardType: 'C' },
+            destination: 'battlefield',
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([deployCopier]);
+    expect(risk.get(501)).toBe('likely');
+  });
+
+  it('a cost-5 self-chain via deploy_from_deck (zero-cost) is likely', () => {
+    const deployFromDeckCopier: StaticCard = card({
+      id: 502,
+      name: 'Deploy-From-Deck Self-Chain',
+      cardType: 'C',
+      stats: { atk: 1, hp: 1, arm: 0 },
+      tags: ['Arcane'],
+      cost: { mana: 5, energy: 0, flexible: 0 },
+      abilities: [triggered(onDeploy, [{ type: 'deploy_from_deck', filter: { tag: 'Arcane' } }])],
+    });
+    const risk = assessLoopRisk([deployFromDeckCopier]);
+    expect(risk.get(502)).toBe('likely');
+  });
+});
+
 // ── Item 3: no false-positive explosion ──────────────────────────────────────
 
 describe('loop-risk — no false positives on plain cards', () => {

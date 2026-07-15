@@ -7,7 +7,7 @@
 // MODE=all|nerfs|buffs|none (CLI env, exploratory arm), FLATTEN_LP=1 ⇒ 30.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { computeSuggestions } from './balance-suggestions.mjs';
+import { computeSuggestions, copiesInStarterDeck } from './balance-suggestions.mjs';
 import { toStatic, indexFromRaw, loadBudgetModel } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
 import { computeCardPower, assessLoopRisk, detectCardLoops } from './dist/balance/index.js';
@@ -194,31 +194,42 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
     const tol = model.tolFor(sc.cardType);
     const lo = exp - tol;
     const hi = exp + tol;
-    const costDelta = combined.reduce((s, x) => s + (x.costDelta ?? 0), 0);
-    const costK = Math.abs(costDelta);
+    // §Q3 (round-4 auditor) — costK must reflect the REAL composed cost
+    // change, not a sum of raw deltas: sequential clamping (e.g. -5 then +5
+    // on a cost-3 card, Math.max(0, ...) at each step) can make a raw-delta
+    // sum report 0 while the actual cost moved 3→5. `sc`/`scCurrent` are
+    // already the fully-composed proposed/current StaticCards, so their own
+    // total cost IS the real before/after — diff that directly.
+    const costK = Math.abs(totalCost(sc) - totalCost(scCurrent));
 
-    // §P2 — direction is the SIGN of the residual change (proposed − current,
-    // both against the FROZEN budget line), never a hardcoded 'over'. A
-    // residual DECREASE (power falls relative to what its new cost expects,
-    // or cost rises against unchanged power) is a nerf ('over'); an INCREASE
-    // is a buff ('under'). Ambiguous/negligible movement fails CLOSED
-    // (SIM_REQUIRED) rather than guessing a direction — a stat-only BUFF must
-    // never silently classify as a nerf (or vice versa). An explicit
-    // `p.status` on any combined entry (e.g. a historical fixture's own
-    // label) still overrides, unchanged from before.
-    const explicitStatus = combined.find((x) => x.status)?.status;
+    // §P2/§Q2 — direction is ALWAYS the SIGN of the residual change (proposed
+    // − current, both against the FROZEN budget line), never caller-supplied
+    // metadata. A residual DECREASE (power falls relative to what its new
+    // cost expects, or cost rises against unchanged power) is a nerf
+    // ('over'); an INCREASE is a buff ('under'). Ambiguous/negligible
+    // movement fails CLOSED (SIM_REQUIRED). A caller-supplied `p.status` is
+    // NEVER used to gate direction — round-4's auditor proved a caller can
+    // assert an arbitrary status to force AUTO_SAFE application; if a
+    // combined entry carries one and it DISAGREES with the derived
+    // direction, fail closed to SIM_REQUIRED naming the disagreement instead
+    // of trusting either side.
+    const callerStatus = combined.find((x) => x.status)?.status;
     const residualCurrent = bdCurrent.power - expCurrent;
     const residualProposed = bd.power - exp;
     const residualDelta = residualProposed - residualCurrent;
     const RESIDUAL_EPS = 0.05;
-    const status =
-      explicitStatus ??
-      (residualDelta <= -RESIDUAL_EPS ? 'over' : residualDelta >= RESIDUAL_EPS ? 'under' : undefined);
+    const derivedStatus =
+      residualDelta <= -RESIDUAL_EPS ? 'over' : residualDelta >= RESIDUAL_EPS ? 'under' : undefined;
 
     const base = {
       id: p.id,
       faction: factionOfId(p.id),
-      copies: combined[0]?.copies ?? 1,
+      // §Q4 (round-4 auditor) — real copies from starter-deck membership
+      // (the SAME counting the suggestions pipeline uses, via
+      // copiesInStarterDeck), not a hardcoded default that silently inverts
+      // §B4's exposure ranking. Un-decked cards keep 1. An explicit
+      // `copies` on the proposal entry itself still wins (caller intent).
+      copies: combined[0]?.copies ?? (copiesInStarterDeck(p.id) || 1),
       abilityShare: bd.power > 0 ? bd.abilityValue / bd.power : 0,
       costK,
       flags: bd.flags,
@@ -228,7 +239,17 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
       lo,
       hi,
     };
-    if (status === undefined) {
+    if (callerStatus !== undefined && callerStatus !== derivedStatus) {
+      rows.push({
+        ...base,
+        status: 'ambiguous',
+        edge: 0,
+        classification: 'SIM_REQUIRED',
+        reason: `SIM_REQUIRED: caller-supplied status '${callerStatus}' disagrees with the residual-derived direction '${derivedStatus ?? 'ambiguous'}' — direction is never taken from caller metadata`,
+      });
+      continue;
+    }
+    if (derivedStatus === undefined) {
       rows.push({
         ...base,
         status: 'ambiguous',
@@ -240,8 +261,8 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
     }
     const row = {
       ...base,
-      status,
-      edge: status === 'over' ? round(bd.power - hi, 1) : round(lo - bd.power, 1),
+      status: derivedStatus,
+      edge: derivedStatus === 'over' ? round(bd.power - hi, 1) : round(lo - bd.power, 1),
     };
     const gate = classifyCandidate(row, opts);
     rows.push({ ...row, classification: gate.classification, reason: gate.reason });
