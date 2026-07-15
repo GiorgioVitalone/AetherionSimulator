@@ -96,7 +96,19 @@ export function computeSuggestions(rawOverrideOrOpts) {
   };
   if (mode === 'author') {
     const scope = new Map(index); // id -> StaticCard, every card in the pool (no deck filter)
-    if (opts.card) scope.set(opts.card.id, opts.card);
+    if (opts.card) {
+      // Fail closed on an id collision: opts.card is for scoring a BRAND-NEW,
+      // un-decked card (§14 "check a new card" workflow). A colliding id
+      // would silently overwrite an existing pool card's row with the
+      // caller's version — if the intent is to score a MODIFIED existing
+      // card, that's what proposals/campaign mode are for, not opts.card.
+      if (index.has(opts.card.id)) {
+        throw new Error(
+          `computeSuggestions: opts.card.id '${opts.card.id}' collides with an existing pool card — a new card must have a new id; to score a modified existing card use proposals/campaign mode instead`,
+        );
+      }
+      scope.set(opts.card.id, opts.card);
+    }
     for (const sc of scope.values()) cards.push(rowFor(sc, sc.alignment?.[0] || 'Unaligned', 1));
   } else {
     for (const f of FACTIONS) {

@@ -76,13 +76,28 @@ export function classifyCandidate(c, opts) {
   if (!opts.marginals) {
     reasons.push('no faction marginals supplied — conservative default (no data, no auto edit)');
   } else {
-    const pct = opts.marginals[c.faction];
-    if (pct == null) {
-      reasons.push(`no marginal supplied for ${c.faction} — conservative default`);
-    } else if (c.status === 'over' && pct < 45) {
-      reasons.push(`nerf to ${c.faction} (${pct}%) below the 45% floor`);
-    } else if (c.status === 'under' && pct > 55) {
-      reasons.push(`buff to ${c.faction} (${pct}%) above the 55% ceiling`);
+    // A non-finite value (NaN/±Infinity/non-number) anywhere in the marginals
+    // object means the object came from a bad computation upstream — it can't
+    // be trusted for ANY faction, not just the one that's broken. Fail closed
+    // on the WHOLE object rather than per-faction: a caller that can produce
+    // one bad number can produce others silently, and per-faction fail-closed
+    // would still auto-apply edits sourced from the same suspect batch.
+    const badKey = Object.keys(opts.marginals).find(
+      (k) => opts.marginals[k] != null && !Number.isFinite(opts.marginals[k]),
+    );
+    if (badKey) {
+      reasons.push(
+        `marginals object has a non-finite value for ${badKey} (${opts.marginals[badKey]}) — whole marginals object is unreliable, no auto edit`,
+      );
+    } else {
+      const pct = opts.marginals[c.faction];
+      if (pct == null) {
+        reasons.push(`no marginal supplied for ${c.faction} — conservative default`);
+      } else if (c.status === 'over' && pct < 45) {
+        reasons.push(`nerf to ${c.faction} (${pct}%) below the 45% floor`);
+      } else if (c.status === 'under' && pct > 55) {
+        reasons.push(`buff to ${c.faction} (${pct}%) above the 55% ceiling`);
+      }
     }
   }
 

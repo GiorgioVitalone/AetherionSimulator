@@ -227,9 +227,12 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
       // §Q4 (round-4 auditor) — real copies from starter-deck membership
       // (the SAME counting the suggestions pipeline uses, via
       // copiesInStarterDeck), not a hardcoded default that silently inverts
-      // §B4's exposure ranking. Un-decked cards keep 1. An explicit
-      // `copies` on the proposal entry itself still wins (caller intent).
-      copies: combined[0]?.copies ?? (copiesInStarterDeck(p.id) || 1),
+      // §B4's exposure ranking. Un-decked cards keep 1. Copies IS derivable
+      // from deck membership, so a caller-supplied `copies` on the proposal
+      // entry is a judgment, never evidence — it is ignored entirely, even
+      // if present (round-4 principle: callers supply evidence, not
+      // judgments).
+      copies: copiesInStarterDeck(p.id) || 1,
       abilityShare: bd.power > 0 ? bd.abilityValue / bd.power : 0,
       costK,
       flags: bd.flags,
@@ -335,8 +338,13 @@ export function applyEdits(rawInput, { mode = 'production', arm = 'all', flatten
   } else {
     throw new Error(`applyEdits: unknown mode '${mode}' — must be 'production' or 'exploratory'`);
   }
+  // flattenLp is an exploratory-only lab knob (flattens every hero's HP for
+  // sim comparability) — production mode ignores it silently rather than
+  // throwing: a caller that passes it in production almost certainly meant
+  // "exploratory", and this function's whole contract is fail-closed-to-noop
+  // for anything not explicitly gated, not fail-loud.
   let lpCount = 0;
-  if (flattenLp) {
+  if (flattenLp && mode === 'exploratory') {
     for (const card of raw) {
       if (card.cardType === 'H' && card.stats) {
         card.stats = { ...card.stats, hp: flattenLp };
