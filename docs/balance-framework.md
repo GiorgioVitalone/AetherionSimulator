@@ -217,18 +217,37 @@ free-loop catastrophe by an unguarded prescription). The declared budget line
 (`packages/engine/sim-data/balance-budget.v1.json`) replaces the old pool
 self-fit: frozen, versioned, design constants derived once from a curated
 vanilla-card list, never refit to the live pool. `balance-suggestions.mjs` runs
-in two modes: `author` (informational — every outlier gets a full arithmetic
-suggestion, nothing withheld, no gates beyond flags — supports authoring new
-cards without sims) and `campaign` (editing the live pool — full gating).
+in two modes: `author` (informational — every outlier in scope gets a full
+arithmetic suggestion, nothing withheld, no gate classifications/faction
+gates/sim directives, just an informational loop-risk note; scope is
+`opts.pool` or the FULL committed pool, plus `opts.card` — a brand-new card in
+no deck can be scored and given a cost suggestion without a sim, the actual
+maintainer workflow) and `campaign` (editing the live pool — full gating, 4
+starter decks only, needs faction marginals + copies/play-rate for ranking).
 Campaign candidates classify as AUTO_SAFE / SIM_REQUIRED / HUMAN_REWRITE /
 BLOCKED (`packages/engine/balance-gates.mjs`); BLOCKED always wins on loop
-risk, and campaign mode auto-applies at most one AUTO_SAFE edit per run — the
+risk, and campaign mode selects at most one AUTO_SAFE `autoEdit` per run — the
 rest surface as ranked candidates, never a second silent edit. Loop risk is a
 hard veto, not a scoring input: any proposed edit that pushes a card's
 acquisition-graph risk to 'likely' (S4) is BLOCKED outright, regardless of its
 budget residual. Doses are earned empirically — a proposed cost/stat delta is
 ±1 (or the smallest viable trim) and then measured, never a jump straight to a
-"fixed" value. See `scratchpad/scoring-balancing-spec.md` for the full S1–S4/
-B1–B5 contract and `tests/balance/failed-patch-replay.test.ts` for the
-regression fixture that replays the failed patch's own marginals through the
-gates.
+"fixed" value.
+
+`balance-apply-edits.mjs`'s `applyEdits()` is the one place suggestions become
+card-data mutations, and its default (`mode: 'production'`, no flag needed) is
+gated to match: it runs campaign mode and applies ONLY the single `autoEdit`
+(0 or 1 change) — omit `marginals` and it is a guaranteed no-op. SIM_REQUIRED /
+HUMAN_REWRITE / BLOCKED candidates are never mechanically applied. The old
+bulk behavior (apply every over/under-budget suggestion regardless of
+classification — the exact shape of the 2026-07-14 disaster) survives only as
+`mode: 'exploratory'`, an explicit opt-in reserved for pool-transform-for-
+inspection callers (`balance-dashboard.mjs`'s before/after view,
+`balance-lab/balance-refit.mjs`'s iteration loop, `make-pools.mjs`'s derived
+pools) whose output is never written back as card data. See
+`scratchpad/scoring-balancing-spec.md` for the full S1–S4/B1–B5 contract,
+`tests/balance/failed-patch-replay.test.ts` for the regression fixture that
+replays the failed patch's own marginals through the gates (including a
+verbatim replay of the actual 30-proposal 2026-07-14 prescription, §F3), and
+`tests/balance/apply-edits-gated.test.ts` for the applyEdits gate itself
+(§F1).

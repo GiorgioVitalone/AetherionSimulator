@@ -47,7 +47,9 @@ let cur = base;
 let r = counts(starterCards(cur), fixed);
 console.log(`  pass 0 (baseline): over ${r.c.over} · within ${r.c.within} · under ${r.c.under}`);
 for (let p = 1; p <= PASSES; p++) {
-  cur = applyEdits(cur, { mode: 'all', flattenLp: FLATTEN_LP }).raw;
+  // mode: 'exploratory' — iterates the fit for lab inspection; writes to
+  // /tmp by default, never card data. See applyEdits' doc comment.
+  cur = applyEdits(cur, { mode: 'exploratory', arm: 'all', flattenLp: FLATTEN_LP }).raw;
   r = counts(starterCards(cur), fixed);
   console.log(`  pass ${p}: over ${r.c.over} · within ${r.c.within} · under ${r.c.under}  (flagged ${r.c.over + r.c.under})`);
 }

@@ -46,6 +46,17 @@ const withCostDelta = (sc, delta) => {
  * `candidates`). `opts.marginals`: { [faction]: winPct } — REQUIRED for any
  * AUTO_SAFE classification (fail closed: no data, no auto edits).
  * `opts.playRates`: { [cardId]: perGameRate } for §B4 ranking (defaults to 1).
+ * `opts.pool`: a raw SimCard array to score INSTEAD of the committed baseline
+ * (campaign: fits a patched pool so passes iterate; author: the maintainer's
+ * own candidate set). `opts.card`: a single StaticCard-shaped object — scored
+ * IN ADDITION to the pool even if it belongs to no deck (author mode only;
+ * §14 "check a new card" workflow — deck membership is never required to
+ * score a card).
+ * Author mode's scope is EVERY card in the pool (opts.pool ?? the full
+ * committed card list — not just the 4 starter decks) plus opts.card, so a
+ * brand-new, un-decked card can be scored and given a cost suggestion without
+ * a sim. Campaign mode's scope remains the 4 starter decks (copies/play-rate
+ * ranking needs real deck membership).
  * Back-compat: a bare array (`computeSuggestions(rawCards)`) is still treated
  * as the legacy `rawOverride` — a full SimCard array to fit a PATCHED pool
  * instead of the baseline (used by balance-apply-edits.mjs / balance-lab to
@@ -54,8 +65,9 @@ export function computeSuggestions(rawOverrideOrOpts) {
   const rawOverride = Array.isArray(rawOverrideOrOpts) ? rawOverrideOrOpts : undefined;
   const opts = Array.isArray(rawOverrideOrOpts) || !rawOverrideOrOpts ? {} : rawOverrideOrOpts;
   const mode = opts.mode === 'author' ? 'author' : 'campaign';
-  const { index, raw } = rawOverride
-    ? { index: indexFromRaw(rawOverride).index, raw: rawOverride }
+  const poolOverride = rawOverride || opts.pool;
+  const { index, raw } = poolOverride
+    ? { index: indexFromRaw(poolOverride).index, raw: poolOverride }
     : loadBalanceData();
   const effectText = new Map();
   for (const c of raw) {
@@ -63,15 +75,24 @@ export function computeSuggestions(rawOverrideOrOpts) {
     if (t) effectText.set(c.id, t);
   }
   const cards = [];
-  for (const f of FACTIONS) {
-    const deck = getDeck(f);
-    const counts = new Map();
-    for (const id of deck.mainDeckDefIds) counts.set(id, (counts.get(id) || 0) + 1);
-    for (const id of new Set(deck.mainDeckDefIds)) {
-      const sc = index.get(id);
-      if (!sc) continue;
-      const bd = computeCardPower(sc);
-      cards.push({ sc, id, faction: f, copies: counts.get(id), cost: totalCost(sc), rarity: sc.rarity, cardType: sc.cardType, power: round(bd.power, 2), statBase: bd.statBase, abilityValue: bd.abilityValue, powerLow: bd.powerLow, powerHigh: bd.powerHigh, flags: bd.flags });
+  const rowFor = (sc, faction, copies) => {
+    const bd = computeCardPower(sc);
+    return { sc, id: sc.id, faction, copies, cost: totalCost(sc), rarity: sc.rarity, cardType: sc.cardType, power: round(bd.power, 2), statBase: bd.statBase, abilityValue: bd.abilityValue, powerLow: bd.powerLow, powerHigh: bd.powerHigh, flags: bd.flags };
+  };
+  if (mode === 'author') {
+    const scope = new Map(index); // id -> StaticCard, every card in the pool (no deck filter)
+    if (opts.card) scope.set(opts.card.id, opts.card);
+    for (const sc of scope.values()) cards.push(rowFor(sc, sc.alignment?.[0] || 'Unaligned', 1));
+  } else {
+    for (const f of FACTIONS) {
+      const deck = getDeck(f);
+      const counts = new Map();
+      for (const id of deck.mainDeckDefIds) counts.set(id, (counts.get(id) || 0) + 1);
+      for (const id of new Set(deck.mainDeckDefIds)) {
+        const sc = index.get(id);
+        if (!sc) continue;
+        cards.push(rowFor(sc, f, counts.get(id)));
+      }
     }
   }
   // Characters and spells/equipment are different populations (steep stat-driven
@@ -189,10 +210,17 @@ export function computeSuggestions(rawOverrideOrOpts) {
     c.loopRisk = riskAtCurrent.get(c.id) ?? 'none';
     const proposedPool = pool.map((sc) => (sc.id === c.id ? c.after.static : sc));
     c.proposedLoopRisk = assessLoopRisk(proposedPool).get(c.id) ?? 'none';
-    const gate = classifyCandidate(c, opts);
-    c.classification = gate.classification;
-    c.gateReason = gate.reason;
-    c.rank = round(rankOf(c, opts), 2);
+    // author mode is informational only — no gate classification, no faction
+    // gates, no simulation directive; a plain risk NOTE (not an imperative) is
+    // the only thing it adds beyond the raw loop-risk level above.
+    if (mode === 'campaign') {
+      const gate = classifyCandidate(c, opts);
+      c.classification = gate.classification;
+      c.gateReason = gate.reason;
+      c.rank = round(rankOf(c, opts), 2);
+    } else {
+      c.loopRiskNote = c.proposedLoopRisk === 'none' ? 'no loop risk at this cost' : `loop risk at this cost: ${c.proposedLoopRisk}`;
+    }
   }
 
   // §B3/B4 — campaign mode: at most ONE AUTO_SAFE autoEdit (the top-ranked

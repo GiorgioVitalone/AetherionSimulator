@@ -152,7 +152,9 @@ const budgetMeta = { version: budget.version, characters: budget.characters, spe
 // surgical re-tune edits), compared to baseline against the SAME budget window. ──
 const R4_DELTAS = { Radiant: { hp: -1 }, Verdant: { atk: -1 }, Onyx: { hp: 1 }, Sapphire: { hp: 1 } };
 const R4_COUNT = { Radiant: 5, Verdant: 4, Onyx: 4, Sapphire: 2 };
-const afterRaw = applyFactionDeltas(applyEdits(raw, { mode: 'all', flattenLp: 30 }).raw, R4_DELTAS, R4_COUNT).raw;
+// mode: 'exploratory' — an in-memory before/after view only, never written
+// back as card data; see applyEdits' doc comment.
+const afterRaw = applyFactionDeltas(applyEdits(raw, { mode: 'exploratory', arm: 'all', flattenLp: 30 }).raw, R4_DELTAS, R4_COUNT).raw;
 const after = indexFromRaw(afterRaw);
 const statusVs = (power, cost, rarity, cardType) => {
   const e = budget.expectedFor(cost, rarity, cardType);

@@ -12,7 +12,7 @@ import { assessLoopRisk } from '../../src/balance/loop-graph.js';
 import type { Effect } from '../../src/types/effects.js';
 import { classifyCandidate, rankOf, selectCampaignEdits } from '../../balance-gates.mjs';
 import { computeSuggestions } from '../../balance-suggestions.mjs';
-import { card, triggered } from './factory.js';
+import { body, card, triggered } from './factory.js';
 
 const onCast = { type: 'on_cast' } as const;
 
@@ -134,18 +134,22 @@ describe('§B4 — at most one autoEdit, exposure-ranked candidates', () => {
   });
 });
 
-describe('§B2 — author mode withholds nothing', () => {
-  it('every outlier gets a full arithmetic suggestion regardless of its classification', () => {
+describe('§B2/F2 — author mode withholds nothing, and never leaks campaign gates', () => {
+  it('every outlier gets a full arithmetic suggestion, an informational risk note, no gate classification', () => {
     const data = computeSuggestions({ mode: 'author' });
     const outliers = [...data.over, ...data.under];
     expect(outliers.length).toBeGreaterThan(0);
     for (const c of outliers) {
       expect(c.after).toBeTruthy();
       expect(c.after.static).toBeTruthy();
-      expect(['AUTO_SAFE', 'SIM_REQUIRED', 'HUMAN_REWRITE', 'BLOCKED']).toContain(c.classification);
-      expect(c.gateReason).toBeTruthy();
+      // F2 — no gate classifications, no faction gates, no sim directive
+      // language leak into author rows.
+      expect(c.classification).toBeUndefined();
+      expect(c.gateReason).toBeUndefined();
       expect(['none', 'possible', 'likely']).toContain(c.loopRisk);
       expect(['none', 'possible', 'likely']).toContain(c.proposedLoopRisk);
+      expect(typeof c.loopRiskNote).toBe('string');
+      expect(c.loopRiskNote).not.toMatch(/sim arm|SIM_REQUIRED|HUMAN_REWRITE|BLOCKED/i);
       expect(Array.isArray(c.flags)).toBe(true);
       expect(typeof c.powerLow).toBe('number');
       expect(typeof c.powerHigh).toBe('number');
@@ -154,6 +158,37 @@ describe('§B2 — author mode withholds nothing', () => {
     // author mode never selects/auto-applies anything
     expect(data.autoEdit).toBeNull();
     expect(data.candidates).toBeNull();
+  });
+
+  it('author mode scores the FULL committed pool, not just the 4 starter decks', () => {
+    const campaign = computeSuggestions({
+      mode: 'campaign',
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+    });
+    const author = computeSuggestions({ mode: 'author' });
+    expect(author.cards.length).toBeGreaterThan(campaign.cards.length);
+  });
+});
+
+describe("§F2 — author mode serves the maintainer's new-card authoring workflow", () => {
+  it('a brand-new card (id in no deck, no pool) is scored via opts.card, given a cost suggestion, no campaign fields', () => {
+    const newCard = body(999999, 'Prototype Behemoth', 5, 5, 0, { rarity: 'Common' });
+    const data = computeSuggestions({ mode: 'author', card: newCard });
+    const row = [...data.over, ...data.under].find((c) => c.id === 999999);
+    expect(row).toBeTruthy();
+    expect(row!.status).toBe('over'); // 5/5 vanilla at cost 0 is far over the character budget line
+    expect(row!.after).toBeTruthy();
+    expect(row!.after.static).toBeTruthy(); // a full cost/stat suggestion, not withheld
+    expect(row!.classification).toBeUndefined();
+    expect(row!.gateReason).toBeUndefined();
+    expect(typeof row!.loopRiskNote).toBe('string');
+  });
+
+  it('opts.pool lets the maintainer score a candidate set without touching the committed baseline', () => {
+    const custom = body(888888, 'Custom Only', 6, 6, 0, { rarity: 'Common' });
+    const data = computeSuggestions({ mode: 'author', pool: [custom] });
+    expect(data.cards).toHaveLength(1);
+    expect(data.cards[0]!.id).toBe(888888);
   });
 });
 

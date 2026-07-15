@@ -42,8 +42,10 @@ const frozenCurrent = loadFrozen('aetherion-CURRENT-frozen.json', '6928b4ab3b7ef
 const frozenSapphire = loadFrozen('aetherion-CURRENT-plus-sapphire-redesign-frozen.json', '396fd91fac214ef3');
 
 // Live derivations (current formula — §13-repaired weights, §13a loop guards).
-const derivedPatch = applyEdits(rawUnpatched, { mode: 'all', flattenLp: 30 });
-const derivedNerfs = applyEdits(rawUnpatched, { mode: 'nerfs', flattenLp: 30 });
+// mode: 'exploratory' — these pools are lab-simulation INPUT (written to
+// outDir, never card data), never a prescription; see applyEdits' doc comment.
+const derivedPatch = applyEdits(rawUnpatched, { mode: 'exploratory', arm: 'all', flattenLp: 30 });
+const derivedNerfs = applyEdits(rawUnpatched, { mode: 'exploratory', arm: 'nerfs', flattenLp: 30 });
 
 // name -> { pool, note }. "CURRENT" is the one name to point at as "the baseline".
 const pools = {

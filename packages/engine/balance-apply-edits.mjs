@@ -1,7 +1,10 @@
-// balance-apply-edits.mjs — apply the budget-model suggestions (+ optional hero-LP
-// flatten) to a raw aetherion-cards array, so the sim/dashboard can use the
-// rebalanced set. Exports a pure applyEdits(); the CLI writes a JSON for
-// AETHERION_CARDS. MODE=all|nerfs|buffs|none, FLATTEN_LP=1 ⇒ 30.
+// balance-apply-edits.mjs — apply balance edits to a raw aetherion-cards array.
+// Default mode ('production') is gated: only the single campaign autoEdit (0
+// or 1 change) is ever applied, fail-closed without marginals. mode:
+// 'exploratory' keeps the old bulk apply (arm=all|nerfs|buffs|none) for
+// pool-transform-for-inspection callers only — see applyEdits' doc comment.
+// The CLI is always exploratory; it writes a scratch JSON, never card data.
+// MODE=all|nerfs|buffs|none (CLI env, exploratory arm), FLATTEN_LP=1 ⇒ 30.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { computeSuggestions } from './balance-suggestions.mjs';
@@ -59,17 +62,11 @@ function guardVeto(raw, card, newTotalCost) {
   return null;
 }
 
-/** Apply the suggestions (+ optional hero-LP flatten) to a COPY of `rawInput`.
- * mode: all|nerfs|buffs|none. Returns { raw, changes, lpCount, vetoed }. Never
- * mutates input. Cost-LOWERING edits pass the §13a loop guards or are vetoed. */
-export function applyEdits(rawInput, { mode = 'all', flattenLp = 0 } = {}) {
-  const raw = JSON.parse(JSON.stringify(rawInput));
-  const sug = computeSuggestions(rawInput); // fit the INPUT pool (so passes iterate)
-  const list =
-    mode === 'nerfs' ? sug.over : mode === 'buffs' ? sug.under : mode === 'none' ? [] : [...sug.over, ...sug.under];
+/** Apply a candidate list to `raw` (mutates raw's cards in place — raw itself
+ * must already be a private copy). Cost-LOWERING edits pass the §13a loop
+ * guards or are vetoed. Shared by both applyEdits modes below. */
+function applyList(raw, list, changes, vetoed) {
   const byId = new Map(raw.map((c) => [c.id, c]));
-  const changes = [];
-  const vetoed = [];
   for (const c of list) {
     const card = byId.get(c.id);
     if (!card) continue;
@@ -87,6 +84,46 @@ export function applyEdits(rawInput, { mode = 'all', flattenLp = 0 } = {}) {
     card.cost = { mana: a.cost.mana, energy: a.cost.energy, flexible: a.cost.flexible };
     changes.push(`${card.name}: ${c.after.lever}`);
   }
+}
+
+/** Apply balance edits to a COPY of `rawInput`. Never mutates input.
+ *
+ * `mode` (default `'production'`) — the F1 certification fix (2026-07-15):
+ * the 2026-07-14 disaster was this function applying EVERY SIM_REQUIRED
+ * suggestion wholesale, zero vetoes. Two modes now, and the gated one is the
+ * silent default (no flag needed, and an unrecognized mode throws rather than
+ * risking a silent bulk apply):
+ *   - `'production'` (default): runs campaign-mode `computeSuggestions` (full
+ *     §B3 gating) against `rawInput` and applies ONLY its single `autoEdit`
+ *     (0 or 1 change). Requires `marginals` for anything to ever be
+ *     AUTO_SAFE — omit them and this mode is a guaranteed no-op (fail
+ *     closed). SIM_REQUIRED / HUMAN_REWRITE / BLOCKED candidates are NEVER
+ *     mechanically applied, here or anywhere else in this file.
+ *   - `'exploratory'`: the pre-fix bulk behavior — applies `arm`
+ *     (`all|nerfs|buffs|none`, i.e. sug.over / sug.under / both / neither)
+ *     with no gating beyond the §13a loop guards. Exists ONLY to transform a
+ *     pool for visualization or lab-simulation INPUT — it is never a
+ *     prescription and its output must never be written back as card data.
+ *     Current callers: balance-dashboard.mjs (in-memory before/after view),
+ *     balance-lab/balance-refit.mjs (writes /tmp by default), make-pools.mjs
+ *     (writes to a generated-pools/ scratch dir), and this file's own CLI.
+ *
+ * Returns { raw, changes, lpCount, vetoed }. */
+export function applyEdits(rawInput, { mode = 'production', arm = 'all', flattenLp = 0, marginals, playRates } = {}) {
+  const raw = JSON.parse(JSON.stringify(rawInput));
+  const changes = [];
+  const vetoed = [];
+  if (mode === 'production') {
+    const sug = computeSuggestions({ mode: 'campaign', pool: rawInput, marginals, playRates }); // fit the INPUT pool (so passes iterate)
+    applyList(raw, sug.autoEdit ? [sug.autoEdit] : [], changes, vetoed);
+  } else if (mode === 'exploratory') {
+    const sug = computeSuggestions(rawInput); // legacy rawOverride path — fit the INPUT pool
+    const list =
+      arm === 'nerfs' ? sug.over : arm === 'buffs' ? sug.under : arm === 'none' ? [] : [...sug.over, ...sug.under];
+    applyList(raw, list, changes, vetoed);
+  } else {
+    throw new Error(`applyEdits: unknown mode '${mode}' — must be 'production' or 'exploratory'`);
+  }
   let lpCount = 0;
   if (flattenLp) {
     for (const card of raw) {
@@ -100,14 +137,16 @@ export function applyEdits(rawInput, { mode = 'all', flattenLp = 0 } = {}) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const MODE = process.env.MODE || 'all';
+  // CLI purpose is always exploratory — it writes a scratch JSON for manual
+  // inspection / sim input, never card data.
+  const ARM = process.env.MODE || 'all';
   const OUT = process.env.OUT || '/tmp/aetherion-cards-after.json';
   const FLATTEN_LP = process.env.FLATTEN_LP ? (Number(process.env.FLATTEN_LP) > 1 ? Number(process.env.FLATTEN_LP) : 30) : 0;
   const base = JSON.parse(readFileSync(new URL('./sim-data/aetherion-cards.json', import.meta.url)));
-  const { raw, changes, lpCount, vetoed } = applyEdits(base, { mode: MODE, flattenLp: FLATTEN_LP });
+  const { raw, changes, lpCount, vetoed } = applyEdits(base, { mode: 'exploratory', arm: ARM, flattenLp: FLATTEN_LP });
   writeFileSync(OUT, JSON.stringify(raw));
   console.log(
-    `Wrote ${OUT} — ${MODE} (${changes.length} edits)${FLATTEN_LP ? ` + LP→${FLATTEN_LP} (${lpCount} heroes)` : ''}:`,
+    `Wrote ${OUT} — ${ARM} (${changes.length} edits)${FLATTEN_LP ? ` + LP→${FLATTEN_LP} (${lpCount} heroes)` : ''}:`,
   );
   for (const ch of changes) console.log(`  · ${ch}`);
   for (const v of vetoed) console.log(`  ✗ ${v}`);
