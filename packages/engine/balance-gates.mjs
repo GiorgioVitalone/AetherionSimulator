@@ -184,10 +184,21 @@ export function playRatesMalformed(playRates) {
  * number; the whole-object malformed check (playRatesMalformed) is what
  * gates whether an AUTO_SAFE winner is allowed to auto-apply at all.
  */
+/** §H2-4 — an unknown-id row (classifyProposals' "unknown card id" branch)
+ * carries no `edge`/`copies` at all; `Math.abs(undefined) * undefined` is
+ * NaN, and a NaN rank corrupts selectCampaignEdits' descending sort (NaN
+ * compares false against everything, so its position — and everything
+ * downstream of it — is undefined behavior, not a clean "loses every rank
+ * comparison"). Missing/non-finite edge or copies default to 0 (lowest
+ * possible exposure, never a crash or a NaN); the final rank itself is also
+ * clamped to 0 if it still somehow comes out non-finite. */
 export function rankOf(c, opts) {
   const raw = opts.playRates?.[c.id];
   const playRate = isValidPlayRate(raw) ? raw : 1;
-  return Math.abs(c.edge) * c.copies * playRate;
+  const edge = Number.isFinite(c.edge) ? c.edge : 0;
+  const copies = Number.isFinite(c.copies) ? c.copies : 0;
+  const rank = Math.abs(edge) * copies * playRate;
+  return Number.isFinite(rank) ? rank : 0;
 }
 
 /**

@@ -230,9 +230,15 @@ risk, and campaign mode selects at most one AUTO_SAFE `autoEdit` per run — the
 rest surface as ranked candidates, never a second silent edit. Loop risk is a
 hard veto, not a scoring input: any proposed edit that pushes a card's
 acquisition-graph risk to 'likely' (S4) is BLOCKED outright, regardless of its
-budget residual. Doses are earned empirically — a proposed cost/stat delta is
-±1 (or the smallest viable trim) and then measured, never a jump straight to a
-"fixed" value.
+budget residual. Doses are earned empirically and constrained to integer
+steps: a proposed cost/stat delta must be a whole number (±1, or the
+smallest viable whole-number trim) and then measured, never a jump straight
+to a "fixed" value. A fractional delta — or a composed result that comes out
+fractional — is rejected fail-closed to SIM_REQUIRED, enforced at two
+independent points in `balance-apply-edits.mjs`: `proposalViabilityVeto`
+(classification time, on both the raw delta and the composed proposal) and
+`unwritableReason` (the write boundary, the last line regardless of how an
+edit got there).
 
 `balance-apply-edits.mjs`'s `applyEdits()` is the one place suggestions become
 card-data mutations, and its default (`mode: 'production'`, no flag needed) is
