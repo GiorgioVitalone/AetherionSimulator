@@ -81,10 +81,22 @@ function unwritableReason(a) {
   if (costVals.some((v) => !Number.isFinite(v) || v < 0)) {
     return `non-finite or negative composed cost (${JSON.stringify(a.cost)})`;
   }
+  // §H2 (2026-07-17 auditor): the dose contract is integer steps — a
+  // fractional cost (e.g. a 0.9 costDelta composed onto a whole-number base)
+  // is finite, non-negative, and |Δcost| <= 1, so it cleared every OTHER
+  // gate and got written. This is the last line, independent of whatever
+  // classified the edit: refuse to write a non-integer cost no matter how
+  // it got here.
+  if (costVals.some((v) => !Number.isInteger(v))) {
+    return `non-integer composed cost (${JSON.stringify(a.cost)}) — dose contract is integer steps`;
+  }
   if (a.stats) {
     const statVals = [a.stats.atk, a.stats.hp, a.stats.arm];
     if (statVals.some((v) => !Number.isFinite(v) || v < 0)) {
       return `non-finite or negative composed stats (${JSON.stringify(a.stats)})`;
+    }
+    if (statVals.some((v) => !Number.isInteger(v))) {
+      return `non-integer composed stats (${JSON.stringify(a.stats)}) — dose contract is integer steps`;
     }
     // §Z1 (round-11 auditor): the write layer only rejected NEGATIVE values,
     // so a trim to exactly 0 HP passed through as AUTO_SAFE and got written.
@@ -140,14 +152,47 @@ function applyList(raw, list, changes, vetoed) {
  * Also fail-closed on any non-finite delta input (cost or stat), which the
  * generated path can never produce (it only ever adds well-formed integers)
  * but an explicit proposal — sourced from outside this module — can.
+ * §H2 (2026-07-17 auditor) — the dose contract is integer steps: a
+ * fractional costDelta/statDelta component (e.g. 0.9, 0.5) is finite and can
+ * compose to a |Δcost| <= 1 result, so it slipped past every other gate
+ * (including costK > 1) and got written. Checked at TWO points: the raw
+ * delta components on `combined` (the entries that produced this proposal —
+ * catches a fractional input even if composition happens to round-trip to
+ * an integer) and the composed cost/stats themselves (defense in depth,
+ * catches any non-integer result regardless of how it was produced).
  * Returns `{ classification, reason }` if the composed proposal is invalid,
  * else null. */
-function proposalViabilityVeto(scCurrent, scProposed) {
+function proposalViabilityVeto(scCurrent, scProposed, combined = []) {
+  for (const p of combined) {
+    if (p.costDelta != null && Number.isFinite(p.costDelta) && !Number.isInteger(p.costDelta)) {
+      return {
+        classification: 'SIM_REQUIRED',
+        reason: `SIM_REQUIRED: non-integer costDelta (${p.costDelta}) — dose contract is integer steps`,
+      };
+    }
+    if (p.statDelta) {
+      for (const [key, v] of Object.entries(p.statDelta)) {
+        if (v != null && Number.isFinite(v) && !Number.isInteger(v)) {
+          return {
+            classification: 'SIM_REQUIRED',
+            reason: `SIM_REQUIRED: non-integer statDelta.${key} (${v}) — dose contract is integer steps`,
+          };
+        }
+      }
+    }
+  }
+
   const costVals = [scProposed.cost.mana, scProposed.cost.energy, scProposed.cost.flexible];
   if (costVals.some((v) => !Number.isFinite(v))) {
     return {
       classification: 'SIM_REQUIRED',
       reason: `SIM_REQUIRED: composed proposal has a non-finite cost (${JSON.stringify(scProposed.cost)}) — malformed delta input`,
+    };
+  }
+  if (costVals.some((v) => !Number.isInteger(v))) {
+    return {
+      classification: 'SIM_REQUIRED',
+      reason: `SIM_REQUIRED: composed proposal has a non-integer cost (${JSON.stringify(scProposed.cost)}) — dose contract is integer steps`,
     };
   }
   // Combat-viability floors (ARM/ATK/bulk/HP) only make sense for Characters
@@ -159,6 +204,12 @@ function proposalViabilityVeto(scCurrent, scProposed) {
     return {
       classification: 'SIM_REQUIRED',
       reason: `SIM_REQUIRED: composed proposal has non-finite stats (${JSON.stringify(scProposed.stats)}) — malformed delta input`,
+    };
+  }
+  if (statVals.some((v) => !Number.isInteger(v))) {
+    return {
+      classification: 'SIM_REQUIRED',
+      reason: `SIM_REQUIRED: composed proposal has non-integer stats (${JSON.stringify(scProposed.stats)}) — dose contract is integer steps`,
     };
   }
   const cur = scCurrent.stats;
@@ -264,6 +315,12 @@ function applyAllProposals(sc, list) {
  * classifyCandidate/rankOf unchanged.
  */
 export function classifyProposals(rawInput, proposals, opts = {}) {
+  // §H2-3 — a single object (not wrapped in an array) used to TypeError deep
+  // inside (proposalsFor's .filter, the `for (const p of proposals)` loop).
+  // Fail closed instead: zero rows, never throw, regardless of what called
+  // this directly (applyEdits also guards its own entry, but this function
+  // must be safe on its own).
+  if (!Array.isArray(proposals)) return [];
   const { index: currentIndex } = indexFromRaw(rawInput);
   const model = loadBudgetModel();
 
@@ -301,7 +358,7 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
     // §Y2 (round-10 auditor): validate the COMPOSED result before it's scored
     // at all — a below-viability or non-finite stat/cost line must never
     // reach AUTO_SAFE (the Bio-Seedling ATK 0 -> -1 repro).
-    const viabilityVeto = proposalViabilityVeto(scCurrent, sc);
+    const viabilityVeto = proposalViabilityVeto(scCurrent, sc, combined);
     if (viabilityVeto) {
       rows.push({ id: p.id, ...viabilityVeto });
       continue;
@@ -426,6 +483,16 @@ export function applyEdits(rawInput, { mode = 'production', arm = 'all', flatten
   const vetoed = [];
   if (mode === 'production') {
     if (proposals) {
+      // §H2-3 — a caller-supplied `proposals` that isn't an array (e.g. a
+      // single object instead of a one-element array) used to TypeError
+      // inside classifyProposals. Fail closed here too: record why, apply
+      // zero changes, never throw.
+      if (!Array.isArray(proposals)) {
+        vetoed.push(
+          `proposals must be an array of {id, costDelta?, statDelta?} — received ${typeof proposals}; fail closed, zero changes applied`,
+        );
+        return { raw, changes, lpCount: 0, vetoed };
+      }
       // §R1: gate the GIVEN proposals (each at its proposed value), not
       // today's re-derived suggestions. Still ≤1 AUTO_SAFE edit, §B4-ranked.
       // §T3 (round-5): route the winner through selectCampaignEdits so a
