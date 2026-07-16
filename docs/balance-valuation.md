@@ -57,11 +57,11 @@ it is derived from the shared acquisition primitive `CARD_TO_HAND` (half a hand-
 | destroy/sacrifice enemy | `5.5` (removal) | draw N | `CARD_TO_HAND·N` (`W_DRAW·N` ≈ `3.3·N`) |
 | bounce enemy | `5.5·0.7` (removal) | heal N | `0.7·N` |
 | deal N enemy body | kill `5.5` if N≥3 else chip `min(N,3)` | gain_resource N | `N·(0.75 temp / 1.5 perm)` |
-| deal N enemy hero | `1.5·N` | deploy_token | `(stats)·n·0.5` |
+| deal N enemy hero | `1.5·N` | deploy_token | `(stats)·n·0.8` (`TOKEN_BODY_FACTOR`) |
 | AoE variants | `× 2.5` width | return/copy → hand | `CARD_TO_HAND·SELECTION_PREMIUM` ≈ `4.125` |
 | modify_stats allied | `Σgain · bodies · 0.6` | return → battlefield | `AVG_WEAK_BODY + CARD_TO_HAND·SELECTION_PREMIUM` ≈ `6.625` |
 | counter_spell | `CARD_VALUE + 0.5` = `1.7` | search_deck → hand | `CARD_TO_HAND·SELECTION_PREMIUM` ≈ `4.125` |
-| deploy_from_deck / search_deck → battlefield | `4` (flat) | shield reduction R (`on_would_take_damage`) | `R · SHIELD_INSTANCES_PER_TURN` (`R·2`) |
+| deploy_from_deck / search_deck → battlefield | `4` (flat) | shield reduction R (`on_would_take_damage`) | `R·2` unthrottled, `R·1` when `oncePerTurn` |
 | 8 hard-to-value effects | `1.0` | | |
 
 `recurrence` (how often an ability lands over a game) multiplies the effect-sum: aura/`while` 2.6,

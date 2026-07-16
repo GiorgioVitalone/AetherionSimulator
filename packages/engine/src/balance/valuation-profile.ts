@@ -6,7 +6,7 @@
  * ROUND-5 CORRECTION (2026-07-16): this file previously claimed
  * `shieldFirstInstanceOnly` was locked `true` in ruleset-v1.json, alongside
  * `armFirstInstanceOnly`. That claim was FALSE — see the cross-layer test
- * below (valuation-profile.manifest-cross-check.test.ts), which reads
+ * below (valuation-profile-manifest.test.ts), which reads
  * sim-data/ruleset-v1.json directly: the manifest's `rules` object carries
  * ONLY `armFirstInstanceOnly: true`. There is no `shieldFirstInstanceOnly`
  * entry at all (the ratified nine flags are enumerated in

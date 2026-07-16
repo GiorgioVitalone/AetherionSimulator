@@ -190,7 +190,14 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     const ability = {
       type: 'aura' as const,
       condition: { type: 'is_alive' as const },
-      effects: [{ type: 'modify_stats' as const, modifier: { atk: 1 }, target: alliedCharacter }],
+      effects: [
+        {
+          type: 'modify_stats' as const,
+          modifier: { atk: 1 },
+          target: alliedCharacter,
+          duration: { type: 'until_end_of_turn' as const },
+        },
+      ],
     };
     const p = computeCardPower(card({ id: 31, name: 'GatedAura', abilities: [ability] }));
     expect(p.flags).toContain('conditional');
@@ -291,7 +298,7 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     expect(p.powerHigh).toBeGreaterThan(p.power);
   });
 
-  it('§W1: a grant_ability with NO condition on the granted ability stays flat (regression, not over-widened)', () => {
+  it('§W1/§H1-5 (round-13 correction): a grant_ability with NO condition stays flat on LOW but its HIGH widens to the granted effect\'s own magnitude (was falsely flat — the granted "deal 2" is worth more than FLAT_ONE)', () => {
     const ability = triggered({ type: 'on_deploy' }, [
       {
         type: 'grant_ability',
@@ -306,7 +313,8 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     const p = computeCardPower(card({ id: 37, name: 'UngatedGrant', abilities: [ability] }));
     expect(p.flags).not.toContain('conditional');
     expect(p.powerLow).toBeCloseTo(p.power);
-    expect(p.powerHigh).toBeCloseTo(p.power);
+    expect(p.powerHigh).toBeGreaterThan(p.power);
+    expect(p.powerHigh).toBeCloseTo(2); // nested magnitude (2 chip dmg) × on_deploy recurrence (1.0)
   });
 
   // ── §W2 (round-8 fix): widenFlatByNested must not divide by a negative or
@@ -353,14 +361,15 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     expect(d.high).toBeGreaterThan(d.value);
   });
 
-  it('§W2: ZERO nested value (all-flat nested content) collapses back to the flat point', () => {
+  it('§W2/§H1-4 (round-13 correction): ZERO INTERNAL nested spread still widens HIGH to the nested magnitude (was falsely flat — "next turn, deal 2" is worth more than FLAT_ONE even with no spread of its own)', () => {
     const d = effectStaticValueDetailed({
       type: 'scheduled',
       timing: { type: 'next_turn_start' },
       effects: [{ type: 'deal_damage', amount: fixed(2), target: enemyCharacter }],
     });
     expect(d.low).toBeCloseTo(d.value);
-    expect(d.high).toBeCloseTo(d.value);
+    expect(d.high).toBeGreaterThan(d.value);
+    expect(d.high).toBeCloseTo(2); // nested chip-damage magnitude
   });
 
   it('§W2: MIXED-sign nested range (low negative, high positive) widens on both sides', () => {
@@ -401,7 +410,7 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     expect(p.powerHigh).toBeGreaterThan(p.power);
   });
 
-  it('§X1: a scheduled effect with NO condition stays flat (regression, not over-widened)', () => {
+  it('§X1/§H1-4 (round-13 correction): a scheduled effect with NO condition stays flat on LOW but its HIGH widens to the nested magnitude (was falsely flat)', () => {
     const ability = triggered({ type: 'on_deploy' }, [
       {
         type: 'scheduled',
@@ -412,7 +421,8 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     const p = computeCardPower(card({ id: 41, name: 'UngatedSchedule', abilities: [ability] }));
     expect(p.flags).not.toContain('conditional');
     expect(p.powerLow).toBeCloseTo(p.power);
-    expect(p.powerHigh).toBeCloseTo(p.power);
+    expect(p.powerHigh).toBeGreaterThan(p.power);
+    expect(p.powerHigh).toBeCloseTo(1.5); // nested gain_resource magnitude (1 × RESOURCE_VALUE)
   });
 
   // ── §X1: WhileCondition — a conditional aura can ALSO be expressed as a
@@ -443,7 +453,11 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
   it('§X3: count max:-1 (malformed) widens conservatively and keeps dynamic_amount (not collapsed to a point)', () => {
     const d = effectStaticValueDetailed({
       type: 'deal_damage',
-      amount: { type: 'count', counting: { type: 'cards_in_zone', zone: 'hand', side: 'allied' }, max: -1 },
+      amount: {
+        type: 'count',
+        counting: { type: 'cards_in_zone', zone: 'hand', side: 'allied' },
+        max: -1,
+      },
       target: enemyCharacter,
     });
     expect(d.flags).toContain('dynamic_amount');
@@ -466,7 +480,11 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
   it('§X3: count with a valid (non-negative) max is unaffected (regression)', () => {
     const d = effectStaticValueDetailed({
       type: 'deal_damage',
-      amount: { type: 'count', counting: { type: 'cards_in_zone', zone: 'hand', side: 'allied' }, max: 3 },
+      amount: {
+        type: 'count',
+        counting: { type: 'cards_in_zone', zone: 'hand', side: 'allied' },
+        max: 3,
+      },
       target: enemyCharacter,
     });
     expect(d.flags).toContain('dynamic_amount');
@@ -479,9 +497,16 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
 // a conditionally-granted flat ability spans [0, UNDISCOUNTED flat] around the
 // CONDITION_DISCOUNT midpoint — the high is the full value, NOT value/0.7^2
 // (an erroneous extra `/ CONDITION_DISCOUNT` once inflated it 1.43x).
+// §H1-5 (round-13 correction): that "undiscounted flat" ceiling (FLAT_ONE)
+// was ITSELF falsely precise — the granted effect here (`destroy enemy`) is
+// worth AVG_ENEMY_BODY*REMOVAL_WEIGHT=5.5, not 1.0, and the granted ability's
+// own on_deploy recurrence is 1.0x (fires once per grant). The high pin below
+// is updated to 5.5 (previously 1.0) to reflect widenFlatByNested/grant_ability
+// now reaching at least the nested payload's own magnitude — see effect-
+// interval.ts's H1-4/H1-5/H1-6 comments.
 import { effectStaticValueDetailed as __w1Probe } from '../../src/balance/effect-interval.js';
-describe('§W1 exact band (round-8 review)', () => {
-  it('spans [0, undiscounted flat] around the discounted midpoint', () => {
+describe('§W1 exact band (round-8 review, round-13 corrected)', () => {
+  it('spans [0, magnitude-widened undiscounted high] around the discounted midpoint', () => {
     const v = __w1Probe({
       type: 'grant_ability',
       target: { type: 'target_character', side: 'allied' },
@@ -492,8 +517,8 @@ describe('§W1 exact band (round-8 review)', () => {
         condition: { type: 'is_alive' },
       },
     } as never);
-    expect(v.value).toBeCloseTo(1.0 * 0.7, 5); // FLAT_ONE × CONDITION_DISCOUNT
+    expect(v.value).toBeCloseTo(1.0 * 0.7, 5); // FLAT_ONE × CONDITION_DISCOUNT (unchanged)
     expect(v.low).toBe(0);
-    expect(v.high).toBeCloseTo(1.0, 5); // undiscounted flat — never /0.7 again
+    expect(v.high).toBeCloseTo(5.5, 5); // nested `destroy enemy` magnitude × on_deploy recurrence (1.0)
   });
 });
