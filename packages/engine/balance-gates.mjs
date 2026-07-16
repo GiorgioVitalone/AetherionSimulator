@@ -106,7 +106,8 @@ export function classifyCandidate(c, opts) {
   }
   return {
     classification: 'AUTO_SAFE',
-    reason: 'AUTO_SAFE — narrow interval, flag-free, small edit, faction direction acceptable',
+    reason:
+      'AUTO_SAFE — no blocking risk flags; narrow interval inside window; direction/dose/faction gates passed',
   };
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeCardPower } from '../../src/balance/card-power.js';
+import { effectStaticValueDetailed } from '../../src/balance/effect-interval.js';
 import { CARD_TO_HAND } from '../../src/balance/weights.js';
 import { alliedCharacter, body, card, enemyCharacter, fixed, triggered } from './factory.js';
 
@@ -262,5 +263,120 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     expect(p.flags).toContain('dynamic_amount');
     expect(p.powerLow).toBeLessThan(p.power);
     expect(p.powerHigh).toBeGreaterThan(p.power);
+  });
+
+  // ── §W1 (round-8 fix): grant_ability must honor the GRANTED ability's OWN
+  // condition — a distinct field from a `conditional` effect nested inside
+  // the granted effects (already covered above by §V2(c)). The runtime
+  // (interpreter.ts's grantAbilityToCard) wires ref.condition straight into
+  // the registered trigger's condition, so a conditionally-granted ability
+  // that static valuation scores flat/flagless is falsely precise.
+
+  it('§W1: grant_ability with a condition on the GRANTED ability itself is flagged conditional and widened (not flat/flagless)', () => {
+    const ability = triggered({ type: 'on_deploy' }, [
+      {
+        type: 'grant_ability',
+        target: enemyCharacter,
+        duration: { type: 'permanent' },
+        ability: {
+          trigger: { type: 'on_deploy' },
+          effects: [{ type: 'destroy', target: enemyCharacter }],
+          condition: { type: 'is_alive' },
+        },
+      },
+    ]);
+    const p = computeCardPower(card({ id: 36, name: 'GatedGrant', abilities: [ability] }));
+    expect(p.flags).toContain('conditional');
+    expect(p.powerLow).toBeLessThan(p.power);
+    expect(p.powerHigh).toBeGreaterThan(p.power);
+  });
+
+  it('§W1: a grant_ability with NO condition on the granted ability stays flat (regression, not over-widened)', () => {
+    const ability = triggered({ type: 'on_deploy' }, [
+      {
+        type: 'grant_ability',
+        target: enemyCharacter,
+        duration: { type: 'permanent' },
+        ability: {
+          trigger: { type: 'on_deploy' },
+          effects: [{ type: 'deal_damage', amount: fixed(2), target: enemyCharacter }],
+        },
+      },
+    ]);
+    const p = computeCardPower(card({ id: 37, name: 'UngatedGrant', abilities: [ability] }));
+    expect(p.flags).not.toContain('conditional');
+    expect(p.powerLow).toBeCloseTo(p.power);
+    expect(p.powerHigh).toBeCloseTo(p.power);
+  });
+
+  // ── §W2 (round-8 fix): widenFlatByNested must not divide by a negative or
+  // zero nested.value — property-style checks across sign cases, exercised
+  // through effectStaticValueDetailed's 'scheduled' wrapper (uses
+  // widenFlatByNested internally; scheduled's own value stays flat by design,
+  // so any low/high spread observed here comes purely from the widening).
+
+  it('§W2: POSITIVE nested value widens low <= flat <= high', () => {
+    const d = effectStaticValueDetailed({
+      type: 'scheduled',
+      timing: { type: 'next_turn_start' },
+      effects: [
+        {
+          type: 'conditional',
+          condition: { type: 'is_alive' },
+          ifTrue: [{ type: 'deal_damage', amount: fixed(3), target: enemyCharacter }],
+        },
+      ],
+    });
+    expect(d.low).toBeLessThanOrEqual(d.value);
+    expect(d.high).toBeGreaterThanOrEqual(d.value);
+    expect(d.high).toBeGreaterThan(d.low);
+  });
+
+  it('§W2: NEGATIVE nested value (round-8 probe shape) does NOT collapse the spread', () => {
+    // Mirrors the disproof probe {value:-0.3, low:-0.5, high:0}: a conditional
+    // whose ifTrue is an allied sacrifice (negative point value) and no
+    // ifFalse produces nested = {value: CONDITIONAL_P * neg, low: neg, high: 0}
+    // — entirely non-positive, exactly the case the old ratio-based formula
+    // (dividing by nested.value) collapsed to a flat point.
+    const d = effectStaticValueDetailed({
+      type: 'scheduled',
+      timing: { type: 'next_turn_start' },
+      effects: [
+        {
+          type: 'conditional',
+          condition: { type: 'is_alive' },
+          ifTrue: [{ type: 'sacrifice', target: alliedCharacter }],
+        },
+      ],
+    });
+    expect(d.low).toBeLessThan(d.value);
+    expect(d.high).toBeGreaterThan(d.value);
+  });
+
+  it('§W2: ZERO nested value (all-flat nested content) collapses back to the flat point', () => {
+    const d = effectStaticValueDetailed({
+      type: 'scheduled',
+      timing: { type: 'next_turn_start' },
+      effects: [{ type: 'deal_damage', amount: fixed(2), target: enemyCharacter }],
+    });
+    expect(d.low).toBeCloseTo(d.value);
+    expect(d.high).toBeCloseTo(d.value);
+  });
+
+  it('§W2: MIXED-sign nested range (low negative, high positive) widens on both sides', () => {
+    const d = effectStaticValueDetailed({
+      type: 'scheduled',
+      timing: { type: 'next_turn_start' },
+      effects: [
+        {
+          type: 'conditional',
+          condition: { type: 'is_alive' },
+          ifTrue: [{ type: 'sacrifice', target: alliedCharacter }],
+          ifFalse: [{ type: 'deal_damage', amount: fixed(3), target: enemyCharacter }],
+        },
+      ],
+    });
+    expect(d.low).toBeLessThan(d.value);
+    expect(d.high).toBeGreaterThan(d.value);
   });
 });

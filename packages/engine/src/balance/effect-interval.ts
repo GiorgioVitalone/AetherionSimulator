@@ -23,6 +23,7 @@ import {
   CARD_TO_HAND,
   CARD_VALUE,
   CONDITIONAL_P,
+  CONDITION_DISCOUNT,
   DYNAMIC_AMOUNT_SPREAD,
   EMPTY_SLOTS_EXPECTED,
   EXPECTED_COUNT,
@@ -66,17 +67,27 @@ const FLAT_D: EffectValueDetailed = {
 /** §V2(c) (round-7): a flat-valued wrapper (scheduled/grant_ability/
  * replacement's `instead`) whose nested effects carry their OWN uncertainty
  * is itself uncertain — the wrapper's flat anchor is widened by the nested
- * effects' relative spread (nested.low/high around nested.value), not left
- * flat. Guards nested.value === 0 (degenerate/all-flat nested content) by
- * collapsing back to the flat point — no spread to carry. */
+ * effects' own ABSOLUTE spread (nested.low/high around nested.value), not
+ * left flat.
+ * §W2 (round-8 fix): the prior formulation divided by nested.value, which
+ * collapses (or inverts) the spread whenever nested.value is negative or
+ * zero — e.g. a negative-conditional probe {value:-0.3, low:-0.5, high:0}
+ * produced ratios that flattened low===flat===high. Carrying the ABSOLUTE
+ * distances instead (never a division by nested.value) is sign-agnostic:
+ * low = flat − (how far nested.value sits above nested.low), high = flat +
+ * (how far nested.high sits above nested.value). This provably preserves
+ * low <= flat <= high (both max(0, …) terms are non-negative since low <=
+ * value <= high is the nested interval's own invariant) and the resulting
+ * spread (high − low) equals nested.high − nested.low EXACTLY — strictly
+ * wider than the flat point whenever the nested range has any width, for
+ * every positive/negative/zero/mixed-sign nested value. */
 function widenFlatByNested(
   flat: number,
   nested: EffectValueDetailed,
 ): { readonly low: number; readonly high: number } {
-  if (nested.value === 0) return { low: flat, high: flat };
-  const loRatio = Math.min(1, nested.low / nested.value);
-  const hiRatio = Math.max(1, nested.high / nested.value);
-  return { low: flat * loRatio, high: flat * hiRatio };
+  const low = flat - Math.max(0, nested.value - nested.low);
+  const high = flat + Math.max(0, nested.high - nested.value);
+  return { low, high };
 }
 
 /** §V2(c): union of the exhaustive risky-flag scan (cost_reduction/
@@ -505,6 +516,26 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       // catch-all value. §V2(c): full union flags + interval widening.
       const { flags, nested } = nestedWrapperFlags(effect.ability.effects);
       const { low, high } = widenFlatByNested(FLAT_ONE, nested);
+      // §W1 (round-8 fix): a GrantedAbilityRef can carry its OWN `condition`
+      // (the runtime enforces it — grantAbilityToCard/interpreter.ts wires
+      // ref.condition straight into the registered trigger's condition), which
+      // static valuation previously ignored entirely — a conditionally-granted
+      // ability scored flat/flagless just like an unconditional one. Mirrors
+      // the ability-level Condition treatment card-power.ts's
+      // abilityContributionDetailed gives triggered/aura `condition` (§V2(a),
+      // round-7): the midpoint is discounted by CONDITION_DISCOUNT (may not
+      // always fire), low collapses to 0 (may never fire), and high removes
+      // the discount off the nested-widened high (may always fire) — the same
+      // [never fires, always fires] band around the discounted midpoint.
+      if (effect.ability.condition !== undefined) {
+        return {
+          value: FLAT_ONE * CONDITION_DISCOUNT,
+          low: 0,
+          high: high / CONDITION_DISCOUNT,
+          isRemoval: false,
+          flags: [...new Set<PowerFlag>([...flags, 'conditional'])],
+        };
+      }
       return { value: FLAT_ONE, low, high, isRemoval: false, flags };
     }
     case 'cost_reduction':
