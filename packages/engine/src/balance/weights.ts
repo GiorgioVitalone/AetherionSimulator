@@ -213,6 +213,21 @@ function conditionFactor(condition: Condition | undefined): number {
   return condition === undefined ? 1 : CONDITION_DISCOUNT;
 }
 
+/** §X1 (round-9 fix): a TriggeredAbilityDSL can express a conditional aura via
+ * `trigger: { type: 'while', condition }` INSTEAD of (or alongside) the
+ * ability-level `condition` field — see triggers.ts's WhileCondition comment
+ * ("for unconditional auras, use AuraAbilityDSL directly"). Both are the SAME
+ * kind of condition-bearing node from card-power.ts/recurrence()'s point of
+ * view; exported so card-power.ts's flagging/widening uses the identical
+ * definition of "does this ability carry a condition anywhere" (never a
+ * second inventory of condition-bearing sites). */
+export function abilityOwnCondition(ability: AbilityDSL): Condition | undefined {
+  if (ability.type === 'triggered' && ability.trigger.type === 'while') {
+    return ability.condition ?? ability.trigger.condition;
+  }
+  return ability.type === 'stat_grant' ? undefined : ability.condition;
+}
+
 /** How many times, in expectation, an ability's effects land over a game — the
  * multiplier on its summed effect value. An aura/turn-start engine compounds; a
  * once-per-game Ultimate is below a one-shot deploy (it costs a turn's action). */
@@ -220,5 +235,5 @@ export function recurrence(ability: AbilityDSL): number {
   if (ability.type === 'aura') return AURA_REC * conditionFactor(ability.condition);
   if (ability.type === 'stat_grant') return 1.0; // permanent attached grant, valued once
   const throttled = wrapperThrottle(triggerRecurrence(ability.trigger), ability);
-  return throttled * conditionFactor(ability.condition);
+  return throttled * conditionFactor(abilityOwnCondition(ability));
 }

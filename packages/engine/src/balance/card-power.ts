@@ -13,6 +13,7 @@ import { scanRiskyEffects } from './risky-effects.js';
 import { intraSynergy } from './synergy.js';
 import { regenerationValue, traitValue } from './trait-scaling.js';
 import {
+  abilityOwnCondition,
   CONDITION_DISCOUNT,
   EFFECT_SUM_CAP,
   INTRA_CAP,
@@ -106,7 +107,11 @@ function abilityContributionDetailed(ab: AbilityDSL): AbilityContribution {
   // could reach AUTO_SAFE gating. `rec` already carries the ×CONDITION_DISCOUNT
   // for the midpoint (unchanged); the interval spans [never fires, always
   // fires] around it — the same treatment effect-level `conditional` gets.
-  const condition = ab.condition;
+  // §X1 (round-9): abilityOwnCondition also catches a conditional aura
+  // expressed as `trigger: { type: 'while', condition }` (WhileCondition) —
+  // the SAME condition-bearing shape from this flag/widening's point of view,
+  // never a second inventory (see weights.ts's abilityOwnCondition).
+  const condition = abilityOwnCondition(ab);
   if (condition !== undefined) {
     flagSet.add('conditional');
     const recFull = rec / CONDITION_DISCOUNT;

@@ -379,6 +379,100 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     expect(d.low).toBeLessThan(d.value);
     expect(d.high).toBeGreaterThan(d.value);
   });
+
+  // ── §X1 (round-9 fix): ScheduledEffect.condition — the runtime enforces it
+  // (scheduled-handler.ts's ScheduledEntry + upkeep gate) but static valuation
+  // ignored it entirely: a conditionally-scheduled effect (live-shaped Mana
+  // Tide) scored flat/flagless just like an unconditional one. Same policy as
+  // §W1's grant_ability condition.
+
+  it('§X1: scheduled with a condition on the effect itself is flagged conditional and widened (Mana Tide shape, not flat/flagless)', () => {
+    const ability = triggered({ type: 'on_deploy' }, [
+      {
+        type: 'scheduled',
+        timing: { type: 'next_turn_start' },
+        effects: [{ type: 'gain_resource', amount: 1 }],
+        condition: { type: 'is_alive' },
+      },
+    ]);
+    const p = computeCardPower(card({ id: 40, name: 'ManaTide', abilities: [ability] }));
+    expect(p.flags).toContain('conditional');
+    expect(p.powerLow).toBeLessThan(p.power);
+    expect(p.powerHigh).toBeGreaterThan(p.power);
+  });
+
+  it('§X1: a scheduled effect with NO condition stays flat (regression, not over-widened)', () => {
+    const ability = triggered({ type: 'on_deploy' }, [
+      {
+        type: 'scheduled',
+        timing: { type: 'next_turn_start' },
+        effects: [{ type: 'gain_resource', amount: 1 }],
+      },
+    ]);
+    const p = computeCardPower(card({ id: 41, name: 'UngatedSchedule', abilities: [ability] }));
+    expect(p.flags).not.toContain('conditional');
+    expect(p.powerLow).toBeCloseTo(p.power);
+    expect(p.powerHigh).toBeCloseTo(p.power);
+  });
+
+  // ── §X1: WhileCondition — a conditional aura can ALSO be expressed as a
+  // TriggeredAbilityDSL whose `trigger` is `{ type: 'while', condition }`
+  // instead of AuraAbilityDSL's own `condition` field (triggers.ts's comment:
+  // "for unconditional auras, use AuraAbilityDSL directly"). recurrence()'s
+  // conditionFactor previously only inspected the ability-level `condition`,
+  // missing this trigger-embedded one entirely.
+
+  it('§X1: a `while` trigger with its OWN condition is flagged conditional and widened (not flat/flagless)', () => {
+    const ability = triggered({ type: 'while', condition: { type: 'is_alive' } }, [
+      { type: 'deal_damage', amount: fixed(2), target: enemyCharacter },
+    ]);
+    const p = computeCardPower(card({ id: 42, name: 'WhileGated', abilities: [ability] }));
+    expect(p.flags).toContain('conditional');
+    expect(p.powerLow).toBeLessThan(p.power);
+    expect(p.powerHigh).toBeGreaterThan(p.power);
+  });
+
+  // ── §X3 (round-9 fix): `count max:-1` (DSL-legal — `max` is typed as a bare
+  // optional number, unvalidated by the runtime) previously drove
+  // amountValDetailed's `count` branch to {value:-1, low:0, high:-1} — an
+  // INVERTED range (high < low) that widenFlatByNested's Math.max(0, …)
+  // clamps collapsed to a falsely-precise value === low === high. A
+  // malformed max must widen conservatively (dynamic, standard spread) and
+  // keep dynamic_amount, never collapse to false precision.
+
+  it('§X3: count max:-1 (malformed) widens conservatively and keeps dynamic_amount (not collapsed to a point)', () => {
+    const d = effectStaticValueDetailed({
+      type: 'deal_damage',
+      amount: { type: 'count', counting: { type: 'cards_in_zone', zone: 'hand', side: 'allied' }, max: -1 },
+      target: enemyCharacter,
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBeLessThanOrEqual(d.value);
+    expect(d.high).toBeGreaterThanOrEqual(d.value);
+    expect(d.high).toBeGreaterThan(d.low);
+  });
+
+  it('§X3: count with NO max is unaffected (regression, same behavior as before)', () => {
+    const d = effectStaticValueDetailed({
+      type: 'deal_damage',
+      amount: { type: 'count', counting: { type: 'cards_in_zone', zone: 'hand', side: 'allied' } },
+      target: enemyCharacter,
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBeLessThanOrEqual(d.value);
+    expect(d.high).toBeGreaterThanOrEqual(d.value);
+  });
+
+  it('§X3: count with a valid (non-negative) max is unaffected (regression)', () => {
+    const d = effectStaticValueDetailed({
+      type: 'deal_damage',
+      amount: { type: 'count', counting: { type: 'cards_in_zone', zone: 'hand', side: 'allied' }, max: 3 },
+      target: enemyCharacter,
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBeLessThanOrEqual(d.value);
+    expect(d.high).toBeGreaterThanOrEqual(d.value);
+  });
 });
 
 // Round-8 review exact-value pin (effect level, no recurrence entanglement):

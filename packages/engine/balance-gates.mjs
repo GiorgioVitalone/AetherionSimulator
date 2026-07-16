@@ -25,6 +25,35 @@ export function primaryResourceKey(cost) {
 
 const RISKY_FLAGS = new Set(['selection', 'recursion', 'free_cast']);
 
+/** §X2 (round-9 fix): a proposal whose chosen lever changes NEITHER cost NOR
+ * stats is not an actionable edit — the clearest live shape is an
+ * already-at-minimum-cost under-budget card, where the 'under' branch's cost
+ * lever floors at `costAfter === cost` and stringifies as the literal
+ * `(min cost)` no-op (balance-suggestions.mjs). Deep-equal on cost+stats
+ * only (never traits/abilities — this is strictly narrower than "is this
+ * card unchanged"), so a genuine trait/keyword-only edit still counts as
+ * actionable. */
+function isNoOpEdit(c) {
+  // Defensive: fixture-driven gate unit tests (suggestion-gates.test.ts's
+  // baseCandidate) exercise classifyCandidate without a real `sc`/`after` —
+  // absent either, there's nothing to compare, so this is NOT a no-op (falls
+  // through to the normal gates) rather than throwing.
+  if (!c.sc || !c.after || !c.after.static) return false;
+  const before = c.sc;
+  const after = c.after.static;
+  const costEq =
+    before.cost.mana === after.cost.mana &&
+    before.cost.energy === after.cost.energy &&
+    before.cost.flexible === after.cost.flexible;
+  const statsEq =
+    before.stats == null || after.stats == null
+      ? before.stats === after.stats
+      : before.stats.atk === after.stats.atk &&
+        before.stats.hp === after.stats.hp &&
+        before.stats.arm === after.stats.arm;
+  return costEq && statsEq;
+}
+
 /** Is the [powerLow, powerHigh] interval interval-clean w.r.t. the budget
  * window [lo, hi]? Fail-closed: clean ONLY if the interval lies entirely
  * WITHIN the window, or entirely OUTSIDE it on the residual's own side
@@ -45,7 +74,8 @@ function straddlesWindow(c) {
 /**
  * §B3 — campaign classification. Evaluated in order; FIRST match wins.
  * 1. BLOCKED        — proposedLoopRisk === 'likely'.
- * 2. HUMAN_REWRITE   — over-budget, ability-driven (abilityShare >= 0.5).
+ * 2. HUMAN_REWRITE   — over-budget, ability-driven (abilityShare >= 0.5), OR
+ *    (§X2) the chosen lever is a semantic no-op (no cost AND no stat change).
  * 3. SIM_REQUIRED    — any of: risky flags, proposedLoopRisk 'possible',
  *    |Δcost| > 1, interval straddles the window, marginals absent, or a
  *    faction-direction violation (nerf below 45% / buff above 55%).
@@ -64,6 +94,13 @@ export function classifyCandidate(c, opts) {
     return {
       classification: 'HUMAN_REWRITE',
       reason: 'HUMAN_REWRITE — ability drives ≥ half the power on this over-budget card; needs a manual ability rewrite, not a numeric lever',
+    };
+  }
+  if (isNoOpEdit(c)) {
+    const alt = c.statEdit ? `stat edit (${c.statEdit.desc})` : c.kwEdit ? `keyword edit (${c.kwEdit.desc})` : 'a human-designed buff';
+    return {
+      classification: 'HUMAN_REWRITE',
+      reason: `HUMAN_REWRITE — at minimum cost already; the cost lever is a no-op, needs ${alt}, not a mechanical edit`,
     };
   }
 
@@ -107,7 +144,11 @@ export function classifyCandidate(c, opts) {
   return {
     classification: 'AUTO_SAFE',
     reason:
-      'AUTO_SAFE — no blocking risk flags; narrow interval inside window; direction/dose/faction gates passed',
+      // §X4 (round-9 fix): "inside window" mis-described straddlesWindow's
+      // actual check — it also passes an interval that lies entirely OUTSIDE
+      // the window on the residual's own side (e.g. an 'over' card whose
+      // powerLow is already above hi). Name the real check instead.
+      'AUTO_SAFE — no blocking risk flags; interval does not straddle the budget window; direction/dose/faction gates passed',
   };
 }
 

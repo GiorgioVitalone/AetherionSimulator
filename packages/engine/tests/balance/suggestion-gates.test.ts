@@ -146,6 +146,85 @@ describe('§B3 gate 3 — interval straddle', () => {
   });
 });
 
+describe('§X2 (round-9) — semantic no-op edits never classify AUTO_SAFE or win the autoEdit slot', () => {
+  const noOpSc = {
+    id: 50,
+    cost: { mana: 0, energy: 0, flexible: 0 },
+    stats: { atk: 1, hp: 1, arm: 0 },
+  };
+
+  it('an at-minimum-cost under-budget card (lever "(min cost)") is HUMAN_REWRITE, not AUTO_SAFE', () => {
+    const c = baseCandidate({
+      status: 'under',
+      sc: noOpSc,
+      after: { static: noOpSc, totalCost: 0, lever: '(min cost)' },
+    });
+    const { classification, reason } = classifyCandidate(c, { marginals: { Onyx: 50 } });
+    expect(classification).toBe('HUMAN_REWRITE');
+    expect(reason).toMatch(/minimum cost/i);
+  });
+
+  it('the no-op never wins the sole autoEdit slot, even when its exposure rank is highest — a genuine edit elsewhere does', () => {
+    const noOp = baseCandidate({
+      id: 50,
+      status: 'under',
+      edge: 100,
+      copies: 10,
+      sc: noOpSc,
+      after: { static: noOpSc, totalCost: 0, lever: '(min cost)' },
+    });
+    const genuineSc = {
+      id: 51,
+      cost: { mana: 2, energy: 0, flexible: 0 },
+      stats: { atk: 1, hp: 2, arm: 0 },
+    };
+    const genuineAfterSc = {
+      id: 51,
+      cost: { mana: 2, energy: 0, flexible: 0 },
+      stats: { atk: 1, hp: 3, arm: 0 },
+    };
+    const genuine = baseCandidate({
+      id: 51,
+      status: 'under',
+      edge: 1,
+      copies: 1,
+      sc: genuineSc,
+      after: { static: genuineAfterSc, totalCost: 2, lever: '+1 HP' },
+    });
+    const opts = { marginals: { Onyx: 50 } };
+    const rows = [noOp, genuine];
+    for (const c of rows) {
+      const gate = classifyCandidate(c, opts);
+      (c as Record<string, unknown>).classification = gate.classification;
+      (c as Record<string, unknown>).rank = rankOf(c, opts);
+    }
+    expect((noOp as Record<string, unknown>).classification).toBe('HUMAN_REWRITE');
+    expect((genuine as Record<string, unknown>).classification).toBe('AUTO_SAFE');
+    const { autoEdit } = selectCampaignEdits(rows);
+    expect(autoEdit?.id).toBe(51); // the genuinely-changed card, never the no-op
+  });
+
+  it('a real stat/cost change is NOT treated as a no-op (regression, not over-triggered)', () => {
+    const before = {
+      id: 52,
+      cost: { mana: 1, energy: 0, flexible: 0 },
+      stats: { atk: 1, hp: 1, arm: 0 },
+    };
+    const after = {
+      id: 52,
+      cost: { mana: 0, energy: 0, flexible: 0 },
+      stats: { atk: 1, hp: 1, arm: 0 },
+    };
+    const c = baseCandidate({
+      status: 'under',
+      sc: before,
+      after: { static: after, totalCost: 0, lever: 'cost −1' },
+    });
+    const { classification } = classifyCandidate(c, { marginals: { Onyx: 50 } });
+    expect(classification).toBe('AUTO_SAFE');
+  });
+});
+
 describe('§B4 — at most one autoEdit, exposure-ranked candidates', () => {
   it('three otherwise-AUTO_SAFE outliers yield exactly one autoEdit; the rest are ranked candidates', () => {
     const opts = { marginals: { Onyx: 50 }, playRates: { 1: 1, 2: 1, 3: 1 } };

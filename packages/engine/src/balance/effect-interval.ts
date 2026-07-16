@@ -129,6 +129,19 @@ export interface AmountRange {
   readonly flags: readonly PowerFlag[];
 }
 
+/** §X3 (round-9 fix): the interval machinery's own safety net — reorders/
+ * clamps any [low, high] around `value` so low <= value <= high always
+ * holds, regardless of what a branch above computed. This is a LAST-RESORT
+ * catch-all (defense in depth for any future branch), not the primary fix
+ * for a malformed DSL input — see the 'count' case below, which detects a
+ * malformed `max` and widens conservatively BEFORE reaching here, rather
+ * than letting a bad value collapse the spread into false precision. */
+function normalizeRange(r: AmountRange): AmountRange {
+  const low = Math.min(r.low, r.value, r.high);
+  const high = Math.max(r.low, r.value, r.high);
+  return { ...r, low, high };
+}
+
 function amountValDetailed(expr: AmountExpr): AmountRange {
   switch (expr.type) {
     case 'fixed':
@@ -145,9 +158,21 @@ function amountValDetailed(expr: AmountExpr): AmountRange {
       return { value: v, low: v, high: v, flags: NO_FLAGS };
     }
     case 'count': {
-      const cap = expr.max ?? EXPECTED_COUNT * DYNAMIC_AMOUNT_SPREAD;
-      const v = Math.min(EXPECTED_COUNT, expr.max ?? EXPECTED_COUNT);
-      return { value: v, low: 0, high: cap, flags: ['dynamic_amount'] };
+      // §X3 (round-9 fix): the DSL types `max` as a bare optional number — the
+      // engine does not validate it, and count max:-1 (or any max < 0) reached
+      // here made `v = Math.min(EXPECTED_COUNT, max)` and `cap = max` both
+      // negative, so low(0)/value/high(negative) were INVERTED (high < low).
+      // Downstream, widenFlatByNested's `Math.max(0, …)` clamps collapsed that
+      // inversion to value === low === high — false precision on a malformed
+      // input, not a genuine narrow range. A malformed declared max is treated
+      // as if absent: widen to the SAME conservative spread an undeclared max
+      // gets (never invent a second dynamic-amount model), keeping the
+      // dynamic_amount flag either way.
+      const malformedMax = expr.max !== undefined && expr.max < 0;
+      const declaredMax = malformedMax ? undefined : expr.max;
+      const cap = declaredMax ?? EXPECTED_COUNT * DYNAMIC_AMOUNT_SPREAD;
+      const v = Math.min(EXPECTED_COUNT, declaredMax ?? EXPECTED_COUNT);
+      return normalizeRange({ value: v, low: 0, high: cap, flags: ['dynamic_amount'] });
     }
     case 'event_value':
       return {
@@ -174,12 +199,12 @@ export function dynamicBonusDetailed(dyn: DynamicStatSource | undefined): Amount
     case 'per_count': {
       const v = dyn.valuePerCount * EXPECTED_COUNT;
       const spread = dyn.valuePerCount * EXPECTED_COUNT * DYNAMIC_AMOUNT_SPREAD;
-      return {
+      return normalizeRange({
         value: v,
         low: Math.min(0, spread),
         high: Math.max(0, spread),
         flags: ['dynamic_amount'],
-      };
+      });
     }
     case 'equals_stat':
       return { value: AVG_BODY_HP, low: AVG_BODY_HP, high: AVG_BODY_HP, flags: NO_FLAGS };
@@ -508,6 +533,25 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       // still uncertain, even though the wrapper's own value is flat).
       const { flags, nested } = nestedWrapperFlags(effect.effects);
       const { low, high } = widenFlatByNested(FLAT_ONE, nested);
+      // §X1 (round-9 fix): ScheduledEffect can carry its OWN `condition` (the
+      // runtime enforces it — scheduled-handler.ts's executeScheduled stores
+      // it on the ScheduledEntry and processScheduledEffects gates firing on
+      // it), which static valuation previously ignored entirely — a
+      // conditionally-scheduled effect (Mana Tide) scored flat/flagless just
+      // like an unconditional one. Same policy as GrantedAbilityRef.condition
+      // (§W1, round-8): midpoint discounted by CONDITION_DISCOUNT (may not
+      // always fire), low collapses to 0 (may never fire), high is the
+      // UNDISCOUNTED nested-widened high (always firing can at most reach the
+      // full value).
+      if (effect.condition !== undefined) {
+        return {
+          value: FLAT_ONE * CONDITION_DISCOUNT,
+          low: 0,
+          high,
+          isRemoval: false,
+          flags: [...new Set<PowerFlag>([...flags, 'conditional'])],
+        };
+      }
       return { value: FLAT_ONE, low, high, isRemoval: false, flags };
     }
     case 'grant_ability': {
