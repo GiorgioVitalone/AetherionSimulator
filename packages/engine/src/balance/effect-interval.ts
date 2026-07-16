@@ -8,12 +8,13 @@
  * never drift from the interval's midpoint.
  */
 import type { AmountExpr, DynamicStatSource, StatModifier } from '../types/common.js';
+import type { Duration } from '../types/durations.js';
 import type { Effect } from '../types/effects.js';
 import type { TargetExpr } from '../types/targets.js';
 import type { EffectValue, EffectValueDetailed, PowerFlag } from './types.js';
-import { isAlliedCharacter, isAoE, isEnemyFacing, isEnemyHero, targetSide } from './target-util.js';
+import { isAlliedCharacter, isEnemyFacing, isEnemyHero, targetSide } from './target-util.js';
 import { riskyFlagsOf } from './risky-effects.js';
-import { traitValue } from './trait-scaling.js';
+import { regenerationValue, traitValue } from './trait-scaling.js';
 import {
   AOE_WIDTH,
   AVG_BODY_HP,
@@ -40,8 +41,11 @@ import {
   SELECTION_PREMIUM_HIGH,
   SELECTION_PREMIUM_LOW,
   SHIELD_INSTANCES_PER_TURN,
+  STATUS_HIGH_ESTIMATE,
+  SYMMETRIC_COST_DISCOUNT,
   TEMPO_WEIGHT,
   TOKEN_BODY_FACTOR,
+  triggerRecurrence,
   W_ARM,
   W_ATK,
   W_HP,
@@ -86,7 +90,16 @@ function widenFlatByNested(
   nested: EffectValueDetailed,
 ): { readonly low: number; readonly high: number } {
   const low = flat - Math.max(0, nested.value - nested.low);
-  const high = flat + Math.max(0, nested.high - nested.value);
+  // §H1-4/H1-6 (round-13 fix): the original high only widened by the nested
+  // effects' OWN internal spread (nested.high − nested.value) — a wrapper
+  // hiding a big but PERFECTLY CERTAIN nested payload (e.g. "next turn, deal
+  // 6 to the enemy hero": nested.value === nested.high, no internal spread at
+  // all) got NO widening whatsoever, leaving the flat anchor (FLAT_ONE) as a
+  // falsely precise ceiling on an effect actually worth many times that. The
+  // wrapper cannot be worth LESS than the payload it wraps, so the high bound
+  // must also reach at least the nested payload's own magnitude (nested.high)
+  // directly, on top of (never instead of) its internal-spread widening.
+  const high = Math.max(flat + Math.max(0, nested.high - nested.value), nested.high);
   return { low, high };
 }
 
@@ -109,8 +122,32 @@ function assertNever(x: never): never {
   throw new Error(`Unhandled effect node: ${JSON.stringify(x)}`);
 }
 
+/** §H1-1 (round-13 fix): `up_to` targets a variable-size CHOSEN set, not a
+ * fixed single target — the old flat `isAoE(t) ? AOE_WIDTH : 1` priced
+ * `up_to`-2 identically to a single target (isAoE was `false` for `up_to`;
+ * see target-util.ts). `all_characters`/`_in_zone` keep the flat AOE_WIDTH
+ * expectation (uncounted, board-wide); `up_to` scales with its OWN declared
+ * count instead, capped at the same AOE_WIDTH ceiling other multi-target
+ * effects use (a declared policy, not a second AoE model) — an `up_to`-N
+ * effect is never priced above what a true board-wide AoE would be. A
+ * dynamic (non-fixed) count falls back to EXPECTED_COUNT, the same
+ * conservative single-estimate anchor other assumed dynamic amounts use. */
 function aoeFactor(t: TargetExpr): number {
-  return isAoE(t) ? AOE_WIDTH : 1;
+  if (t.type === 'all_characters' || t.type === 'all_characters_in_zone') return AOE_WIDTH;
+  if (t.type === 'up_to') {
+    const count = typeof t.count === 'number' ? t.count : EXPECTED_COUNT;
+    return Math.min(Math.max(count, 1), AOE_WIDTH);
+  }
+  return 1;
+}
+
+/** §H1-1 (round-13 fix): an `up_to` target's realized count is uncertain even
+ * when a fixed max is declared (fewer legal targets may be available at cast
+ * time) — flagged the same way other assumed magnitudes are (`dynamic_amount`)
+ * rather than inventing a second uncertainty taxonomy for "target-count
+ * assumed." */
+function targetFlags(t: TargetExpr): readonly PowerFlag[] {
+  return t.type === 'up_to' ? ['dynamic_amount'] : NO_FLAGS;
 }
 
 function det(
@@ -246,7 +283,7 @@ function damageValueDetailed(amount: AmountExpr, target: TargetExpr): EffectValu
     low: Math.min(...values),
     high: Math.max(...values),
     isRemoval: pt.isRemoval,
-    flags: a.flags,
+    flags: [...new Set<PowerFlag>([...a.flags, ...targetFlags(target)])],
   };
 }
 
@@ -268,19 +305,41 @@ function buffValueDetailed(
   modifier: StatModifier,
   dyn: DynamicStatSource | undefined,
   target: TargetExpr,
+  duration: Duration,
 ): EffectValueDetailed {
   const mg = modifierGain(modifier);
   const d = dynamicBonusDetailed(dyn);
-  const pt = valueForTotal(mg + d.value, target);
+  const total = mg + d.value;
+  const pt = valueForTotal(total, target);
   const lo = valueForTotal(mg + d.low, target);
   const hi = valueForTotal(mg + d.high, target);
   const values = [pt.value, lo.value, hi.value];
+  let high = Math.max(...values);
+  const flags = new Set<PowerFlag>([...d.flags, ...targetFlags(target)]);
+  // §H1-9 (round-13 fix): `duration` was ignored entirely — a PERMANENT ally
+  // buff (equipment-style, no expiry) priced identically to an
+  // until-end-of-turn pump, both capped by the SAME TEMPO_WEIGHT-discounted
+  // value. The scalar midpoint keeps that discount (a calibration ripple,
+  // out of this fix's scope — see the file header's flat-family policy); the
+  // HIGH bound for a PERMANENT, POSITIVE, non-enemy total widens toward the
+  // undiscounted per-point unit statBase itself uses (W_ATK/W_HP=1.0, no
+  // TEMPO_WEIGHT haircut beyond the target's own aoeFactor width) — the
+  // honest ceiling for a stat gain that never expires. A PERMANENT debuff
+  // keeps its existing AVG_BODY_HP-capped value (safe direction, already
+  // conservative relative to a true permanent cripple — disclosed here
+  // rather than additionally re-modeled, mirroring H1-12's disclosure-only
+  // treatment of counter_spell's unlessPay).
+  if (duration.type === 'permanent' && total > 0 && targetSide(target) !== 'enemy') {
+    const undiscounted = (mg + Math.max(d.value, d.high)) * aoeFactor(target);
+    high = Math.max(high, undiscounted);
+    flags.add('dynamic_amount');
+  }
   return {
     value: pt.value,
     low: Math.min(...values),
-    high: Math.max(...values),
+    high,
     isRemoval: pt.isRemoval,
-    flags: d.flags,
+    flags: [...flags],
   };
 }
 
@@ -308,18 +367,39 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
     case 'destroy':
     case 'sacrifice':
       return isEnemyFacing(effect.target)
-        ? det(AVG_ENEMY_BODY * REMOVAL_WEIGHT * aoeFactor(effect.target), true)
+        ? det(
+            AVG_ENEMY_BODY * REMOVAL_WEIGHT * aoeFactor(effect.target),
+            true,
+            targetFlags(effect.target),
+          )
         : isAlliedCharacter(effect.target)
           ? det(-AVG_WEAK_BODY * SAC_COST, false)
           : ZERO_D;
     case 'bounce':
+      // §H1-10 (round-13 fix): a non-enemy-facing bounce (an ALLIED target)
+      // was scored a flat 0 — the runtime lets you bounce your OWN character,
+      // re-triggering its on_deploy / re-selling equipment (a real, if
+      // situational, reuse tool), not a no-op. The point stays 0 (bouncing
+      // your own body is a tempo LOSS most of the time — no honest single
+      // anchor to replace the midpoint with), but the interval widens up to
+      // CARD_TO_HAND (the shared acquisition primitive — at best, this is
+      // "return one card to hand" reuse value), flagged as an assumed magnitude.
       return isEnemyFacing(effect.target)
-        ? det(AVG_ENEMY_BODY * BOUNCE_MULT * REMOVAL_WEIGHT * aoeFactor(effect.target), true)
-        : ZERO_D;
+        ? det(
+            AVG_ENEMY_BODY * BOUNCE_MULT * REMOVAL_WEIGHT * aoeFactor(effect.target),
+            true,
+            targetFlags(effect.target),
+          )
+        : { value: 0, low: 0, high: CARD_TO_HAND, isRemoval: false, flags: ['dynamic_amount'] };
     case 'deal_damage':
       return damageValueDetailed(effect.amount, effect.target);
     case 'modify_stats':
-      return buffValueDetailed(effect.modifier, effect.dynamicModifier, effect.target);
+      return buffValueDetailed(
+        effect.modifier,
+        effect.dynamicModifier,
+        effect.target,
+        effect.duration,
+      );
     case 'draw_cards': {
       // §S1: routed through CARD_TO_HAND, the shared acquisition primitive (an
       // unselected card — no SELECTION_PREMIUM). CARD_TO_HAND === W_DRAW, so
@@ -370,6 +450,11 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
     case 'counter_spell':
       // §13 repair: a counter trades 1-for-1 with the opponent's CHOSEN best
       // spell (≥ a card) plus initiative — 0.5 was the legacy bot's blind spot.
+      // §H1-12 (round-13, disclosure only): `unlessPay` (a SOFT counter — the
+      // opponent can pay to negate it) is not priced down here. Safe
+      // direction (over-values soft counters rather than under-valuing hard
+      // ones), left un-widened by design — the same disclosure-only
+      // treatment as this file's other confirmed-safe-direction gaps.
       return det(CARD_VALUE + 0.5, false);
     case 'deploy_from_deck':
       return det(4, false);
@@ -425,8 +510,14 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       // §S1: a tutor takes a CHOSEN card of the whole deck to hand — the shared
       // acquisition primitive with the selection premium (was CARD_VALUE ×
       // SELECTION_MULT_DECK). Battlefield destination unchanged (flat deploy value).
+      // §H1-13 (round-13 fix): this local flag set omitted `castForFree`
+      // (only checked `castFreeIfCost`), unlike risky-effects.ts's
+      // classifyEffect scan of the SAME effect shape at the card level —
+      // one-line consistency fix, no new policy.
       const flags: PowerFlag[] = ['selection'];
-      if (effect.castFreeIfCost !== undefined) flags.push('free_cast');
+      if (effect.castFreeIfCost !== undefined || effect.castForFree === true) {
+        flags.push('free_cast');
+      }
       if (effect.destination === 'battlefield') return det(4, false, flags);
       return {
         value: CARD_TO_HAND * SELECTION_PREMIUM,
@@ -467,6 +558,17 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       };
     }
     case 'discard':
+      // §H1-7 (round-13 fix): `each_player` scored 0 (isEnemyFacing checks
+      // `'side' in t`, and EachPlayer has no `side` field) even though the
+      // runtime forces BOTH players — including the opponent — to discard
+      // (effect-interval.ts's caller). Valued as the shared enemy-facing
+      // discard anchor, discounted for the symmetric cost (weights.ts's
+      // SYMMETRIC_COST_DISCOUNT) since you pay the same price.
+      if (effect.target.type === 'each_player') {
+        return det(effect.count * CARD_VALUE * 0.8 * SYMMETRIC_COST_DISCOUNT, false, [
+          'dynamic_amount',
+        ]);
+      }
       return det(isEnemyFacing(effect.target) ? effect.count * CARD_VALUE * 0.8 : 0, false);
     case 'replacement':
       // §S2 round-5 correction: an EC-003 shield (on_would_take_damage
@@ -559,7 +661,16 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       // cost_reduction/acquisition) must surface, not just this wrapper's flat
       // catch-all value. §V2(c): full union flags + interval widening.
       const { flags, nested } = nestedWrapperFlags(effect.ability.effects);
-      const { low, high } = widenFlatByNested(FLAT_ONE, nested);
+      const { low, high: rawHigh } = widenFlatByNested(FLAT_ONE, nested);
+      // §H1-5 (round-13 fix): the granted ability, once attached, fires at
+      // its OWN trigger's expected recurrence (weights.ts's triggerRecurrence
+      // — the SAME per-Trigger lookup card-power.ts's recurrence() uses for a
+      // card's native abilities, never a second recurrence model), not just
+      // once — the prior widenFlatByNested-only high capped a REPEATABLE
+      // granted ability (e.g. "gains: on_deal_damage, deal 2 damage") at a
+      // single firing's worth.
+      const grantedRec = triggerRecurrence(effect.ability.trigger);
+      const high = Math.max(FLAT_ONE, rawHigh * grantedRec);
       // §W1 (round-8 fix): a GrantedAbilityRef can carry its OWN `condition`
       // (the runtime enforces it — grantAbilityToCard/interpreter.ts wires
       // ref.condition straight into the registered trigger's condition), which
@@ -583,10 +694,70 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       }
       return { value: FLAT_ONE, low, high, isRemoval: false, flags };
     }
-    case 'cost_reduction':
-    case 'grant_trait':
+    case 'grant_trait': {
+      // §H1-2 (round-13 fix): FLAT_ONE ignored WHICH trait, how many bodies
+      // (AoE/up_to), and how long (duration) — a "grant Flying to all allies
+      // permanently" and a "grant Swift to one ally this turn" priced
+      // identically. Scalar midpoint stays the flat anchor (policy: flat
+      // midpoints unchanged — see file header); the HIGH bound widens toward
+      // an honest magnitude proxy: traitValue's OWN per-trait formula
+      // (trait-scaling.ts, already used for token traits above), evaluated
+      // against a generic average body (AVG_BODY_HP for both atk/hp — no
+      // fresh stat anchor invented) and the target's own aoeFactor width.
+      const avgStats = { atk: AVG_BODY_HP, hp: AVG_BODY_HP, arm: 0 };
+      const estimate = Math.abs(traitValue(effect.trait, avgStats, {})) * aoeFactor(effect.target);
+      return {
+        value: FLAT_ONE,
+        low: FLAT_ONE,
+        high: Math.max(FLAT_ONE, estimate),
+        isRemoval: false,
+        flags: [...new Set<PowerFlag>(['dynamic_amount', ...targetFlags(effect.target)])],
+      };
+    }
+    case 'apply_status': {
+      // §H1-3 (round-13 fix): FLAT_ONE ignored the status/value/duration/AoE
+      // — same false-precision family as grant_trait above. Scalar midpoint
+      // unchanged; the HIGH bound widens via a declared per-status table
+      // (weights.ts's STATUS_HIGH_ESTIMATE) — `regeneration` instead routes
+      // through the existing regenerationValue formula (never a second regen
+      // model), scaled by the target's own aoeFactor width.
+      const base =
+        effect.status === 'regeneration'
+          ? regenerationValue(effect.value ?? 1, AVG_BODY_HP)
+          : STATUS_HIGH_ESTIMATE[effect.status];
+      const estimate = base * aoeFactor(effect.target);
+      return {
+        value: FLAT_ONE,
+        low: FLAT_ONE,
+        high: Math.max(FLAT_ONE, estimate),
+        isRemoval: false,
+        flags: [...new Set<PowerFlag>(['dynamic_amount', ...targetFlags(effect.target)])],
+      };
+    }
+    case 'cost_reduction': {
+      // §H1-8 (round-13 fix): FLAT_ONE ignored the reduction amount and how
+      // broadly/long it applies — the RISK channel (a free/near-free cast) is
+      // already covered by the `free_cast` flag (risky-effects.ts scans this
+      // exact shape); this widens the remaining TEMPO magnitude gap. Reused
+      // primitives only: RESOURCE_VALUE (a banked resource's tempo worth) and
+      // EXPECTED_COUNT (the same "assumed dynamic count" anchor dynamic
+      // amounts use) as the expected-uses multiplier for a broad, persisting
+      // reducer (no tag filter, permanent/while-in-play duration); a
+      // one-shot or tag-narrowed reducer is assumed to apply once.
+      const isPersistent =
+        effect.duration.type === 'permanent' || effect.duration.type === 'while_in_play';
+      const isBroad = effect.appliesTo.tag === undefined;
+      const expectedUses = isPersistent && isBroad ? EXPECTED_COUNT : 1;
+      const estimate = effect.reduction * RESOURCE_VALUE * expectedUses;
+      return {
+        value: FLAT_ONE,
+        low: FLAT_ONE,
+        high: Math.max(FLAT_ONE, estimate),
+        isRemoval: false,
+        flags: ['dynamic_amount'],
+      };
+    }
     case 'move':
-    case 'apply_status':
     case 'cleanse':
     case 'shuffle_into_deck':
     case 'attach_as_equipment':

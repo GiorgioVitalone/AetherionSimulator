@@ -7,6 +7,7 @@
  */
 import type { AbilityDSL, TriggeredAbilityDSL } from '../types/ability.js';
 import type { Condition } from '../types/conditions.js';
+import type { StatusType } from '../types/effects.js';
 import type { Activated, Trigger } from '../types/triggers.js';
 
 // ── Stat weights ─────────────────────────────────────────────────────────────
@@ -111,6 +112,35 @@ export const DYNAMIC_AMOUNT_SPREAD = 2;
 export const SELECTION_PREMIUM_LOW = 1.0;
 export const SELECTION_PREMIUM_HIGH = SELECTION_PREMIUM * SELECTION_PREMIUM;
 
+// ── §H1 (round-13 hunt-batch fixes) ─────────────────────────────────────────
+// A `discard` effect targeting `each_player` (runtime forces BOTH players to
+// discard, not just the opponent — effect-interval.ts) is priced as the
+// shared enemy-facing discard anchor (`count * CARD_VALUE * 0.8`) discounted
+// for the symmetric cost — you also lose a card, so it is not pure removal.
+// A conservative half-credit: the caster still chooses WHEN this fires (often
+// after dumping their own worst card), so it is not zero, but it is not the
+// full one-sided value either. Not fitted to a measured game; a declared,
+// disclosed judgment anchor like SAC_COST/HEAL_URGENCY above.
+export const SYMMETRIC_COST_DISCOUNT = 0.5;
+// `apply_status` was a flat FLAT_ONE regardless of WHICH status, its value/
+// duration, or target width (effect-interval.ts) — a per-status magnitude
+// proxy for widening the HIGH bound only (the flat scalar midpoint is
+// unchanged — false-precision policy, see effect-interval.ts's file header).
+// `regeneration` routes through the existing regenerationValue formula
+// (trait-scaling.ts) instead of a table entry (never a second regen model).
+// slowed/stunned disable a body for a turn — anchored at AVG_BODY_HP, the
+// same "one average body's worth" anchor deal_damage's chip case uses.
+// persistent/hexproof/anti_redirect are narrow, situational protections with
+// no existing stat-scaled anchor to borrow — kept at the conservative
+// FLAT_ONE anchor (disclosed, not further modeled).
+export const STATUS_HIGH_ESTIMATE: Record<Exclude<StatusType, 'regeneration'>, number> = {
+  slowed: AVG_BODY_HP,
+  stunned: AVG_BODY_HP,
+  persistent: FLAT_ONE,
+  hexproof: FLAT_ONE,
+  anti_redirect: FLAT_ONE,
+};
+
 // ── Caps ─────────────────────────────────────────────────────────────────────
 export const EFFECT_SUM_CAP = 12; // per-ability effect-sum cap before recurrence
 export const INTRA_CAP = 0.5; // intra-card synergy lifts a card at most +50%
@@ -198,7 +228,13 @@ function activatedRecurrence(t: Activated): number {
   return 2.0; // repeatable each turn if paid
 }
 
-function triggerRecurrence(t: Trigger): number {
+/** §H1-5 (round-13 fix): exported so effect-interval.ts's `grant_ability` case
+ * can widen its HIGH bound by the GRANTED ability's own trigger recurrence —
+ * a granted ability isn't a GrantedAbilityRef's AbilityDSL (no `type`/wrapper
+ * throttles), so the full recurrence() wrapper doesn't apply; this bare
+ * per-Trigger lookup is the correct (and only) shared primitive to reuse,
+ * never a second recurrence model. */
+export function triggerRecurrence(t: Trigger): number {
   return t.type === 'activated' ? activatedRecurrence(t) : FIXED_RECURRENCE[t.type];
 }
 
