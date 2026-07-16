@@ -493,6 +493,12 @@ export function assessLoopRisk(
       for (const id of component) result.set(id, maxRisk(result.get(id) as LoopRisk, 'possible'));
       continue;
     }
+    // SCOPE NOTE (round-7 review): the zero-cycles floor above covers only the
+    // nothing-found case. In a MIXED component (some cycles <= MAX_CYCLE_LEN
+    // found, others longer), members lying ONLY on the longer cycles keep
+    // 'none' — a deliberate precision choice (a >4-hop re-acquisition chain is
+    // normal deck flow, not an engine), narrower than a blanket whole-component
+    // floor. Disclosed limit.
     for (const cycle of cycles) {
       const members = new Set(cycle);
       const risk = classifyGroup(members, cardById, reducers, sources);

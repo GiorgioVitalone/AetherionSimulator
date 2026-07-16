@@ -5,6 +5,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+// eslint-disable-next-line import/no-relative-packages -- test pins the production copies path
+import { copiesInStarterDeck } from '../../balance-suggestions.mjs';
 import { assessLoopRisk } from '../../src/balance/loop-graph.js';
 import type { Effect } from '../../src/types/effects.js';
 import type { StaticCard } from '../../src/balance/types.js';
@@ -539,7 +541,10 @@ describe('loop-risk — no false positives on plain cards', () => {
         };
       });
 
-    const risk = assessLoopRisk(pool);
+    // Round-7 review: pin the PRODUCTION path — real starter-deck copy counts
+    // (the smoke tools' actual configuration), not the bare no-copies default.
+    const liveCopies = new Map(pool.map((c) => [c.id, copiesInStarterDeck(c.id) || 1]));
+    const risk = assessLoopRisk(pool, liveCopies);
     const likely = pool.filter((c) => risk.get(c.id) === 'likely');
     const possible = pool.filter((c) => risk.get(c.id) === 'possible');
     // eslint-disable-next-line no-console
