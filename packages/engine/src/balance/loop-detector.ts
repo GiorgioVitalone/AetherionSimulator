@@ -39,14 +39,28 @@ const maxLevel = (a: LoopLevel, b: LoopLevel): LoopLevel => (RANK[a] >= RANK[b] 
 
 // ── Trigger repeatability + throttle (mirrors weights.ts) ─────────────────────
 
-/** Board-event triggers that can fire many times within a single turn. */
+/** Board-event triggers that can fire many times within a single turn.
+ * §H3-1 (batch-C): the SELF death-variants (on_destroy/on_dies/
+ * on_leaves_battlefield) were missing here even though their ally-scoped
+ * counterparts were present — a card whose own death trigger resurrects/
+ * recurs ITSELF (self-death-trigger recursion) scored 'none' at any cost,
+ * since isRepeatableTrigger gated on this set. §H3-3: on_take_damage/
+ * on_deal_damage/on_attack are self COMBAT triggers that can also recur
+ * multiple times within one turn (multi-attack, blocked/blocking chains) —
+ * a free self-acquisition gated behind one of these was equally invisible. */
 const REPEATABLE_EVENTS: ReadonlySet<Trigger['type']> = new Set([
+  'on_destroy',
+  'on_dies',
+  'on_leaves_battlefield',
   'on_ally_destroyed',
   'on_ally_dies',
   'on_ally_leaves_battlefield',
   'on_sacrifice',
   'on_spell_cast',
   'on_gain_resource',
+  'on_take_damage',
+  'on_deal_damage',
+  'on_attack',
 ]);
 
 /** Is this trigger TYPE loop-shaped (can fire repeatedly in principle)? Throttle
@@ -76,7 +90,11 @@ const THROTTLE_CAP: Record<Throttle, LoopLevel> = {
   game: 'none',
 };
 
-function activationCostTotal(t: Trigger): number {
+/** Mana/energy/flexible cost to FIRE an activated trigger (0 for any other
+ * trigger type) — exported so loop-graph.ts's traversal-cost accounting can
+ * charge it once per cycle iteration (§H3-4), alongside the acquired card's
+ * own cast cost. */
+export function activationCostTotal(t: Trigger): number {
   return t.type === 'activated' ? t.cost.mana + t.cost.energy + t.cost.flexible : 0;
 }
 

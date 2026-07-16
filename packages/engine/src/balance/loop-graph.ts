@@ -36,7 +36,7 @@ import type { CardTypeCode } from '../types/common.js';
 import type { StaticCard } from './types.js';
 import { flattenEffects } from './signal-extract.js';
 import { scanRiskyEffects } from './risky-effects.js';
-import { abilityThrottle, isRepeatableTrigger } from './loop-detector.js';
+import { abilityThrottle, activationCostTotal, isRepeatableTrigger } from './loop-detector.js';
 
 export type LoopRisk = 'none' | 'possible' | 'likely';
 
@@ -236,6 +236,13 @@ interface AbilitySource {
   readonly resourceGain: number;
   readonly unconditionalFree?: boolean;
   readonly castFreeIfCost?: number;
+  /** §H3-4 (batch-C): mana/energy/flexible cost to FIRE `from`'s activated
+   * trigger (0 for any other trigger type) — paid EVERY traversal, on top of
+   * whatever the acquired card itself costs to (re)cast. Previously ignored,
+   * which understated the true per-loop cost of an activated-ability engine
+   * (e.g. a hero's cooldown-gated recycle ability that costs real mana to
+   * fire each time, independent of what it fetches). */
+  readonly activationCost: number;
 }
 
 /** Is this trigger loop-shaped for the ACQUISITION graph (broader than v1's
@@ -259,6 +266,7 @@ function buildSources(cards: readonly StaticCard[]): readonly AbilitySource[] {
 
       const flat = flattenEffects(ab.effects);
       const gain = loopResourceGain(flat);
+      const activationCost = activationCostTotal(ab.trigger);
       for (const e of flat) {
         const spec = edgeEffectSpec(e);
         if (spec === undefined) continue;
@@ -270,6 +278,7 @@ function buildSources(cards: readonly StaticCard[]): readonly AbilitySource[] {
           resourceGain: gain,
           unconditionalFree: spec.unconditionalFree,
           castFreeIfCost: spec.castFreeIfCost,
+          activationCost,
         });
       }
     }
@@ -338,12 +347,17 @@ function classifyGroup(
   // signal (which only bumps risk to 'possible', not free).
   const freeMembers = new Set<number>();
   let gainSum = 0;
+  // §H3-4 (batch-C): the activated trigger's own firing cost, charged once
+  // per contributing source per traversal — additive with the per-card cast
+  // costs summed below, never a substitute for them.
+  let activationCostSum = 0;
   let freeCastNear = false;
   for (const src of sources) {
     if (!members.has(src.from)) continue;
     const targetsInGroup = src.targets.filter((t) => members.has(t));
     if (targetsInGroup.length === 0) continue;
     gainSum += src.resourceGain;
+    activationCostSum += src.activationCost;
     for (const t of targetsInGroup) {
       if (src.unconditionalFree === true) {
         freeMembers.add(t);
@@ -357,7 +371,7 @@ function classifyGroup(
     }
   }
 
-  let costSum = 0;
+  let costSum = activationCostSum;
   for (const id of members) {
     if (freeMembers.has(id)) continue;
     costSum += effectiveCost(cardById.get(id) as StaticCard, reducers);

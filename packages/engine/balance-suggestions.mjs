@@ -8,7 +8,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { computeCardPower, assessLoopRisk, LEGAL_MAX_COPIES } from './dist/balance/index.js';
-import { loadBalanceData, indexFromRaw, loadBudgetModel } from './balance-data.mjs';
+import { loadBalanceData, indexFromRaw, loadBudgetModel, toStatic } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
 import { primaryResourceKey, classifyCandidate, rankOf, selectCampaignEdits } from './balance-gates.mjs';
 
@@ -242,12 +242,26 @@ export function computeSuggestions(rawOverrideOrOpts) {
   // graph. `index` already covers that full pool unconditionally (built
   // straight from `raw` above); campaign candidate SELECTION stays
   // starter-deck-scoped via `cards`/`outliers` below.
-  const pool = [...index.values()];
+  // §H3-2 (batch-C): heroes (H) and their transforms (T) were entirely
+  // absent from `index` (indexFromRaw only populates C/S/E) — a hero's own
+  // free-acquisition ability (e.g. a transform's unconditional
+  // return_from_discard->battlefield) or a deck-wide cost-reduction aura
+  // (e.g. a hero's equipment discount) never entered the acquisition graph
+  // at all, so neither could ever count as an edge/reducer SOURCE. They're
+  // always in play for their faction (a hero/transform is never cast, never
+  // re-acquired), so they only need to act as SOURCES here — nothing else
+  // targets them, and that's fine (heroes need not be classifiable targets).
+  const heroesAndTransforms = raw.filter((c) => c.cardType === 'H' || c.cardType === 'T').map(toStatic);
+  const pool = [...index.values(), ...heroesAndTransforms];
   // §V4(a): reducer multiplicity — actual starter-deck copy count where the
   // card IS decked (evidence), LEGAL_MAX_COPIES where it isn't (no evidence
-  // -> conservative), never a blanket max that would over-flag broadly.
+  // -> conservative), never a blanket max that would over-flag broadly. A
+  // hero/transform can only ever have exactly ONE in-play instance (never
+  // decked, never copied) — defaulting it to LEGAL_MAX_COPIES like an
+  // un-decked non-hero card would overstate its reducer's stacking 3x.
   const copiesOf = new Map(
     pool.map((sc) => {
+      if (sc.cardType === 'H' || sc.cardType === 'T') return [sc.id, 1];
       const n = copiesInStarterDeck(sc.id);
       return [sc.id, n > 0 ? n : LEGAL_MAX_COPIES];
     }),
