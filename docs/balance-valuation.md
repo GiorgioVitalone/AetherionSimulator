@@ -77,16 +77,24 @@ premium for a CHOSEN card over a blind draw) are the shared unit `draw_cards`, `
 `copy_card`, `return_from_discard`, `recycle`, and to-hand `scry` all route through, so a hand-picked
 card can never price below a blind draw.
 
-**Shield valuation (`replacement`/`on_would_take_damage`, round-5 correction, 2026-07-16):** the
-ratified `sim-data/ruleset-v1.json` locks `armFirstInstanceOnly` but does **not** lock
-`shieldFirstInstanceOnly` — that flag is absent from the manifest entirely, so a v1 shield runs the
-engine's unconfigured **per-instance** default (it reduces EVERY combat instance a body takes in a
-turn, not just the first). `SHIELD_INSTANCES_PER_TURN = 2` (`weights.ts`) is the Rulebook's own worked
-ARM example — two attacks landing on one body in the same turn — reused as the expected per-turn
-instance count, not invented. A shield's per-turn value is therefore `reduction × 2`; wrapped in its
-usual aura (Shieldbearer Paladin id48, Radiant Shield id66), the total is `reduction × 2 × AURA_REC`
-(`valuation-profile.ts`'s `VALUATION_PROFILE_V1`, cross-checked against the manifest by
-`tests/balance/valuation-profile-manifest.test.ts`).
+**Shield valuation (`replacement`/`on_would_take_damage`, round-5 correction, 2026-07-16; oncePerTurn
+fix round-7, 2026-07-16):** the ratified `sim-data/ruleset-v1.json` locks `armFirstInstanceOnly` but
+does **not** lock `shieldFirstInstanceOnly` — that flag is absent from the manifest entirely, so a v1
+shield runs the engine's unconfigured **per-instance** default (it reduces EVERY combat instance a
+body takes in a turn, not just the first) — UNLESS the effect itself carries `oncePerTurn: true`
+(`replacement-handler.ts` honors this at runtime independently of the ruleset). `SHIELD_INSTANCES_PER_TURN
+= 2` (`weights.ts`) is the Rulebook's own worked ARM example — two attacks landing on one body in the
+same turn — reused as the expected per-turn instance count, not invented. A shield's per-turn value is
+`reduction × 2` when unthrottled, or `reduction × 1` when `oncePerTurn: true`. **Shieldbearer Paladin
+id48** carries no `oncePerTurn` (unthrottled, `× 2`); **Radiant Shield id66** carries `oncePerTurn: true`
+(throttled, `× 1`) — the two cards are NOT priced identically (an earlier draft of this doc claimed
+both as `× 2`, which was false for id66). Wrapped in its usual aura, the total is
+`reduction × instances × AURA_REC` (`valuation-profile.ts`'s `VALUATION_PROFILE_V1`, cross-checked
+against the manifest by `tests/balance/valuation-profile-manifest.test.ts`). A `reduction`-less shield
+(full prevention, no cap — the DSL and runtime both allow an absent `reduction`, see
+`replacement-handler.ts`'s "no reduction value ⇒ prevent all") is NOT priced as `reduction = 1`; it is
+a distinct, `rules_sensitive`-flagged, widened-interval FLAT value (its true worth depends on the
+incoming damage, unknowable statically).
 
 **Intra-card synergy** = `intraSynergy(provides, demands)` over the card's own signals, restricted to
 **different sources within the card** (so a single ability can't self-satisfy).

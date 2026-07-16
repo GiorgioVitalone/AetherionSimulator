@@ -356,6 +356,115 @@ describe('loop-risk — unconditional free-cast and zero-cost acquisition edges 
   });
 });
 
+// ── §V3 (round-7): per-cycle classification, not SCC aggregates ─────────────
+
+describe('loop-risk — per-cycle classification, not SCC-aggregate dilution (V3)', () => {
+  it('a cost-1 self-copier stays likely even when an expensive mutually-reachable card joins the SCC', () => {
+    // Old model: the whole SCC (both cards) was classified by ONE aggregate
+    // cost sum (1 + 8 = 9, net > 2 -> 'none' for BOTH) — the cheap self-loop's
+    // own signal got diluted away by the expensive card sharing its SCC.
+    // New model: the cheap card's OWN self-loop is still a distinct length-1
+    // cycle, classified by its own cost alone, regardless of what else is
+    // mutually reachable with it.
+    const cheapSelfCopier = card({
+      id: 600,
+      name: 'Cheap Self-Copier',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 1, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const expensiveMutual = card({
+      id: 601,
+      name: 'Expensive Mutual',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 8, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([cheapSelfCopier, expensiveMutual]);
+    expect(risk.get(600)).toBe('likely');
+    expect(risk.get(601)).toBe('none');
+  });
+});
+
+// ── §V4 (round-7): reducer multiplicity + mutable-range filters ────────────
+
+describe('loop-risk — reducer multiplicity (V4a)', () => {
+  it('two decked copies of one -2 reducer stack to effective cost 1 -> likely (was single-count "none")', () => {
+    // Same shape as the §U1 two-reducer-cards probe, but here it is ONE
+    // reducer CARD with 2 copies in the deck — the runtime counts one
+    // contribution per in-play instance, so 2 copies of a -2 reducer stack
+    // to -4 the same as two distinct -2 reducer cards would.
+    const target = echoesShaped(5);
+    const onyxTarget: StaticCard = { ...target, alignment: ['Onyx'] };
+    const reducer = reducerCard(320, 'Onyx Reducer', 2, ['Onyx']);
+    const copiesOf = new Map([[320, 2]]);
+
+    const withoutCopies = assessLoopRisk([onyxTarget, reducer]);
+    expect(withoutCopies.get(94)).toBe('none'); // single reducer: -2, effective cost 3, net 3 -> none
+
+    const withCopies = assessLoopRisk([onyxTarget, reducer], copiesOf);
+    expect(withCopies.get(94)).toBe('likely'); // 2 copies: -4, effective cost 1 -> likely
+  });
+});
+
+describe('loop-risk — mutable-range filter predicates (V4b)', () => {
+  it('a maxHp:0 filter keeps the acquisition edge to a printed-HP-5 risky target (currentHp is mutable, not the printed stat)', () => {
+    // riskyDeployTarget is 'likely' on its own (Q1-shaped self-loop via
+    // deploy_from_deck, unconditional-free) despite printing HP 5 — a maxHp:0
+    // filter CAN still match it at runtime (currentHp is mutable and can be
+    // brought to 0 by combat/effects), so the static filter must not exclude
+    // it on PRINTED hp. fetcher's return_from_discard->battlefield edge into
+    // it must survive and propagate the 'likely' risk backward.
+    const riskyDeployTarget: StaticCard = body(701, 'Risky Deploy Target', 3, 5, 0, {
+      cardType: 'C',
+      tags: ['Arcane'],
+      abilities: [triggered(onDeploy, [{ type: 'deploy_from_deck', filter: { tag: 'Arcane' } }])],
+    });
+    const fetcher: StaticCard = card({
+      id: 700,
+      name: 'Finisher Fetch',
+      cardType: 'S',
+      cost: { mana: 3, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          {
+            type: 'return_from_discard',
+            target: {
+              type: 'target_card_in_discard',
+              side: 'allied',
+              filter: { cardType: 'C', maxHp: 0 },
+            },
+            destination: 'battlefield',
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([fetcher, riskyDeployTarget]);
+    expect(risk.get(701)).toBe('likely'); // the target's own self-loop, unaffected
+    expect(risk.get(700)).toBe('likely'); // §V4b: the maxHp:0 edge survived and propagated
+  });
+});
+
 // ── Item 3: no false-positive explosion ──────────────────────────────────────
 
 describe('loop-risk — no false positives on plain cards', () => {

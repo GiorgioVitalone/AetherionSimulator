@@ -57,8 +57,19 @@ function matchesFilter(candidate: StaticCard, filter: TargetFilter | undefined):
   const cost = totalCost(candidate);
   if (filter.maxCost !== undefined && cost > filter.maxCost) return false;
   if (filter.minCost !== undefined && cost < filter.minCost) return false;
-  if (filter.maxHp !== undefined && (candidate.stats?.hp ?? 0) > filter.maxHp) return false;
-  if (filter.maxAtk !== undefined && (candidate.stats?.atk ?? 0) > filter.maxAtk) return false;
+  // §V4(b) (round-7): maxHp/maxAtk are MUTABLE-RANGE predicates — the runtime
+  // matches a candidate's live currentHp/currentAtk (damage taken, +/-stat
+  // effects), not the printed stat this StaticCard carries. A body with
+  // printed HP 5 can still be at 0 (or any value below its printed HP) when
+  // the filter is actually consulted — a maxHp:0 filter is reachable against
+  // ANY positive-HP body, not just ones printed at 0. Excluding on printed
+  // stats here can drop a genuinely reachable acquisition edge (the auditor's
+  // maxHp:0 probe). Recall-biased per the module's own stated policy
+  // (excludeSelf/costRelativeTo above): a filter that CAN match at some
+  // reachable runtime state keeps the edge; only provably-impossible matches
+  // (trait/tag/cardType/printed-cost, which are NOT mutated by in-play
+  // effects the way HP/ATK are) drop it. maxHp/maxAtk are therefore never
+  // treated as exclusionary here.
   return true;
 }
 
@@ -126,7 +137,29 @@ interface CostReducer {
   readonly sourceAlignment: readonly string[];
 }
 
-function collectCostReducers(cards: readonly StaticCard[]): readonly CostReducer[] {
+/** §V4(a) (round-7): the runtime counts one reducer contribution PER IN-PLAY
+ * INSTANCE (a deck can run up to 3 copies of any non-Hero card — game-domain
+ * rule), but a static pool only ever carries ONE StaticCard per id — the old
+ * model collected each reducer once regardless of how many copies of its
+ * source card a real deck runs. `copiesOf` resolves a card id to its legal
+ * deck-copy count; callers with real deck data (balance-suggestions.mjs /
+ * balance-apply-edits.mjs) pass actual starter-deck membership counts (real
+ * evidence for decked cards, LEGAL_MAX_COPIES for a genuinely un-decked id —
+ * no evidence → conservative, per the brief). Omitting `copiesOf` entirely
+ * (existing unit tests / any caller without deck data) preserves the
+ * pre-fix 1-copy-per-definition behavior — no blanket ×3 default, which
+ * would over-flag broadly without deck evidence to back it. */
+export const LEGAL_MAX_COPIES = 3;
+
+function copyCountOf(id: number, copiesOf: ReadonlyMap<number, number> | undefined): number {
+  if (copiesOf === undefined) return 1;
+  return copiesOf.get(id) ?? LEGAL_MAX_COPIES;
+}
+
+function collectCostReducers(
+  cards: readonly StaticCard[],
+  copiesOf: ReadonlyMap<number, number> | undefined,
+): readonly CostReducer[] {
   const out: CostReducer[] = [];
   for (const c of cards) {
     // §P1 (R3 fix): scanRiskyEffects walks EVERY ability kind (aura AND
@@ -135,11 +168,15 @@ function collectCostReducers(cards: readonly StaticCard[]): readonly CostReducer
     // triggered self-discounting copier (cost-3 on_cast card that reduces
     // spells by 3 and copies itself) must not read as risk-free just because
     // the reducer wasn't wrapped in an `aura`.
+    const copies = copyCountOf(c.id, copiesOf);
     for (const e of scanRiskyEffects(c.abilities).costReducers) {
       out.push({
         cardType: e.appliesTo.cardType,
         tag: e.appliesTo.tag,
-        reduction: e.reduction,
+        // §V4(a): each of the reducer's `copies` in-play instances stacks
+        // simultaneously — mirrors the runtime totalReduction SUM, extended
+        // from "one reducer definition" to "one reducer definition per copy".
+        reduction: e.reduction * copies,
         sourceAlignment: c.alignment,
       });
     }
@@ -334,6 +371,71 @@ function classifyGroup(
   return 'none';
 }
 
+// ── §V3 (round-7): per-cycle classification, not SCC aggregates ──────────────
+// The old model classified a WHOLE strongly-connected component by one
+// aggregate cost/gain sum — a cheap self-loop card sitting inside a big SCC
+// diluted to 'none' the moment an expensive, merely-mutually-reachable card
+// joined the same component (their costs summed together). The fix enumerates
+// actual SIMPLE CYCLES within each SCC and classifies each cycle by ITS OWN
+// member costs; a card's risk is the MAX over every cycle it participates in
+// (self-loops included — a self-loop is a length-1 cycle found the same way).
+//
+// Bound: pools are ~130 cards with sparse acquisition edges, and a real
+// repeatable-engine cycle is definitionally SHORT (a card re-acquiring itself
+// through 5+ intermediate cards isn't "the loop," it's normal deck flow) — so
+// cycles are capped at MAX_CYCLE_LEN=4 hops. A bounded DFS from every SCC
+// member (not full Johnson's algorithm — simpler, and cheap at this pool
+// size/edge sparsity) enumerates them. If an SCC exceeds
+// SCC_ENUMERATION_BUDGET members, or no cycle <=4 hops is found inside an SCC
+// known (by Tarjan) to contain at least one cycle, the WHOLE component falls
+// back to a conservative 'possible' floor rather than 'none' — recall over
+// precision, per the brief.
+const MAX_CYCLE_LEN = 4;
+const SCC_ENUMERATION_BUDGET = 20;
+
+function canonicalCycleKey(cycle: readonly number[]): string {
+  let minIdx = 0;
+  for (let i = 1; i < cycle.length; i += 1) {
+    if ((cycle[i] as number) < (cycle[minIdx] as number)) minIdx = i;
+  }
+  return [...cycle.slice(minIdx), ...cycle.slice(0, minIdx)].join(',');
+}
+
+function enumerateSimpleCycles(
+  members: readonly number[],
+  adjacency: ReadonlyMap<number, ReadonlySet<number>>,
+  maxLen: number,
+): number[][] {
+  const memberSet = new Set(members);
+  const cycles: number[][] = [];
+  const seen = new Set<string>();
+  for (const start of members) {
+    const stack: number[] = [start];
+    const visited = new Set<number>([start]);
+    const dfs = (current: number): void => {
+      for (const next of adjacency.get(current) ?? []) {
+        if (!memberSet.has(next)) continue;
+        if (next === start) {
+          const key = canonicalCycleKey(stack);
+          if (!seen.has(key)) {
+            seen.add(key);
+            cycles.push([...stack]);
+          }
+          continue;
+        }
+        if (visited.has(next) || stack.length >= maxLen) continue;
+        visited.add(next);
+        stack.push(next);
+        dfs(next);
+        stack.pop();
+        visited.delete(next);
+      }
+    };
+    dfs(start);
+  }
+  return cycles;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -341,12 +443,19 @@ function classifyGroup(
  * low/zero-net-cost re-acquisition cycle running through it. Consumed by
  * Layer 2 as BLOCKED (likely) / SIM_REQUIRED-adjacent (possible).
  *
+ * `copiesOf` (§V4a, round-7): optional card-id -> legal deck-copy count, used
+ * to multiply reducer sources by how many in-play instances a real deck can
+ * field. See collectCostReducers' doc comment for the evidence policy.
+ *
  * Pure and additive: does not touch v1's exports (detectCardLoops etc.), which
  * keep scoring per-ability engine risk independently.
  */
-export function assessLoopRisk(cards: readonly StaticCard[]): ReadonlyMap<number, LoopRisk> {
+export function assessLoopRisk(
+  cards: readonly StaticCard[],
+  copiesOf?: ReadonlyMap<number, number>,
+): ReadonlyMap<number, LoopRisk> {
   const cardById = new Map(cards.map((c) => [c.id, c] as const));
-  const reducers = collectCostReducers(cards);
+  const reducers = collectCostReducers(cards, copiesOf);
   const sources = buildSources(cards);
 
   const adjacency = new Map<number, Set<number>>();
@@ -368,9 +477,27 @@ export function assessLoopRisk(cards: readonly StaticCard[]): ReadonlyMap<number
       component.length === 1 &&
       (adjacency.get(component[0] as number)?.has(component[0] as number) ?? false);
     if (component.length === 1 && !isSelfLoop) continue; // trivial, acyclic node
-    const members = new Set(component);
-    const risk = classifyGroup(members, cardById, reducers, sources);
-    for (const id of component) result.set(id, maxRisk(result.get(id) as LoopRisk, risk));
+
+    if (component.length > SCC_ENUMERATION_BUDGET) {
+      // Bound hit: too large to exhaustively enumerate at this pool size —
+      // conservative floor for every member (recall over precision).
+      for (const id of component) result.set(id, maxRisk(result.get(id) as LoopRisk, 'possible'));
+      continue;
+    }
+
+    const cycles = enumerateSimpleCycles(component, adjacency, MAX_CYCLE_LEN);
+    if (cycles.length === 0) {
+      // Tarjan guarantees this component IS a cycle (or a self-loop) — the
+      // bounded DFS just didn't find one within MAX_CYCLE_LEN hops. A longer
+      // cycle may still exist; conservative floor rather than 'none'.
+      for (const id of component) result.set(id, maxRisk(result.get(id) as LoopRisk, 'possible'));
+      continue;
+    }
+    for (const cycle of cycles) {
+      const members = new Set(cycle);
+      const risk = classifyGroup(members, cardById, reducers, sources);
+      for (const id of cycle) result.set(id, maxRisk(result.get(id) as LoopRisk, risk));
+    }
   }
 
   // Backward feeder propagation: a card that can search/fetch-and-free-cast

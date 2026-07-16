@@ -10,7 +10,12 @@ import { fileURLToPath } from 'node:url';
 import { computeSuggestions, copiesInStarterDeck } from './balance-suggestions.mjs';
 import { toStatic, indexFromRaw, loadBudgetModel } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
-import { computeCardPower, assessLoopRisk, detectCardLoops } from './dist/balance/index.js';
+import {
+  computeCardPower,
+  assessLoopRisk,
+  detectCardLoops,
+  LEGAL_MAX_COPIES,
+} from './dist/balance/index.js';
 import { primaryResourceKey, classifyCandidate, rankOf, selectCampaignEdits } from './balance-gates.mjs';
 
 // ── §13a loop guards ──────────────────────────────────────────────────────────
@@ -173,7 +178,16 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
     return { ...c, cost: after.cost, ...(after.stats ? { stats: after.stats } : {}) };
   });
   const { index: proposedIndex } = indexFromRaw(proposedRaw);
-  const proposedRisk = assessLoopRisk([...proposedIndex.values()]);
+  // §V4(a): actual starter-deck copy count where decked (evidence),
+  // LEGAL_MAX_COPIES where not (no evidence -> conservative).
+  const proposedPool = [...proposedIndex.values()];
+  const copiesOf = new Map(
+    proposedPool.map((sc) => {
+      const n = copiesInStarterDeck(sc.id);
+      return [sc.id, n > 0 ? n : LEGAL_MAX_COPIES];
+    }),
+  );
+  const proposedRisk = assessLoopRisk(proposedPool, copiesOf);
 
   const seenIds = new Set();
   const rows = [];

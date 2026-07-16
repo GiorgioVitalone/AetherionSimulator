@@ -153,3 +153,56 @@ describe('negative shield reduction clamps to zero', () => {
     expect(v.value).toBe(0);
   });
 });
+
+// §V1 (round-7): shields must respect oncePerTurn — the runtime honors it
+// (effects/replacement-handler.ts:69, `if (repl.oncePerTurn && repl.usedThisTurn)
+// continue`), but the static pricer used to multiply by
+// SHIELD_INSTANCES_PER_TURN unconditionally. Fixtures mirror the LIVE shapes:
+// Shieldbearer Paladin id48 (no oncePerTurn) and Radiant Shield id66
+// (oncePerTurn:true), both reduction:1.
+describe('§V1 shields respect oncePerTurn (round-7)', () => {
+  it('id48-shaped (no oncePerTurn): SHIELD_INSTANCES_PER_TURN x reduction (x2)', () => {
+    const v = __negProbe({
+      type: 'replacement',
+      replaces: { type: 'on_would_take_damage', reduction: 1 },
+      instead: [],
+    } as never);
+    expect(v.value).toBeCloseTo(1 * SHIELD_INSTANCES_PER_TURN);
+    expect(v.flags).toContain('rules_sensitive');
+  });
+
+  it('id66-shaped (oncePerTurn:true): mitigates ONE instance per turn (x1), not x2', () => {
+    const v = __negProbe({
+      type: 'replacement',
+      replaces: { type: 'on_would_take_damage', reduction: 1 },
+      instead: [],
+      oncePerTurn: true,
+    } as never);
+    expect(v.value).toBeCloseTo(1);
+    expect(v.value).toBeLessThan(1 * SHIELD_INSTANCES_PER_TURN);
+    expect(v.flags).toContain('rules_sensitive');
+  });
+
+  it('a reduction-less (full-prevention) shield is NOT priced as reduction=1 — it is a distinct, widened, rules_sensitive contextual value', () => {
+    const throttled = __negProbe({
+      type: 'replacement',
+      replaces: { type: 'on_would_take_damage' },
+      instead: [],
+      oncePerTurn: true,
+    } as never);
+    const unthrottled = __negProbe({
+      type: 'replacement',
+      replaces: { type: 'on_would_take_damage' },
+      instead: [],
+    } as never);
+    // Both share the same flat point anchor (a full-prevention shield's real
+    // worth depends on the incoming damage, which is unknowable statically) —
+    // the DISTINCT signal is the widened interval + oncePerTurn's effect on
+    // the interval's ceiling, not the (identical) flat point.
+    expect(throttled.value).toBeCloseTo(unthrottled.value);
+    expect(throttled.low).toBeCloseTo(throttled.value);
+    expect(throttled.high).toBeGreaterThan(throttled.value);
+    expect(unthrottled.high).toBeGreaterThan(throttled.high);
+    expect(throttled.flags).toContain('rules_sensitive');
+  });
+});

@@ -155,7 +155,10 @@ export const SHIELD_INSTANCES_PER_TURN = 2;
 // Exported for reuse by valuation-profile.ts (§S2's expectedActiveTurns
 // anchor) — do NOT introduce a second "expected active turns" constant.
 export const AURA_REC = 2.6; // continuous board effect, active every turn in play
-const CONDITION_DISCOUNT = 0.7; // an extra ability-level Condition gate (not always firing)
+// §S3/V2 (round-7): exported so card-power.ts can widen the interval around
+// the SAME discounted scalar midpoint (never a second condition-discount
+// constant) instead of only applying it to the point value.
+export const CONDITION_DISCOUNT = 0.7; // an extra ability-level Condition gate (not always firing)
 
 // Fixed recurrence per non-activated trigger. Typed as a total Record so adding a
 // trigger variant is a compile error here (exhaustiveness).

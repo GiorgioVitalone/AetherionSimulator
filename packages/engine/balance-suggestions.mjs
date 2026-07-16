@@ -7,7 +7,7 @@
 // edits); running this file directly writes docs/balance-suggestions.md.
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { computeCardPower, assessLoopRisk } from './dist/balance/index.js';
+import { computeCardPower, assessLoopRisk, LEGAL_MAX_COPIES } from './dist/balance/index.js';
 import { loadBalanceData, indexFromRaw, loadBudgetModel } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
 import { primaryResourceKey, classifyCandidate, rankOf, selectCampaignEdits } from './balance-gates.mjs';
@@ -229,12 +229,21 @@ export function computeSuggestions(rawOverrideOrOpts) {
   const poolById = new Map();
   for (const c of cards) poolById.set(c.id, c.sc);
   const pool = [...poolById.values()];
-  const riskAtCurrent = assessLoopRisk(pool);
+  // §V4(a): reducer multiplicity — actual starter-deck copy count where the
+  // card IS decked (evidence), LEGAL_MAX_COPIES where it isn't (no evidence
+  // -> conservative), never a blanket max that would over-flag broadly.
+  const copiesOf = new Map(
+    pool.map((sc) => {
+      const n = copiesInStarterDeck(sc.id);
+      return [sc.id, n > 0 ? n : LEGAL_MAX_COPIES];
+    }),
+  );
+  const riskAtCurrent = assessLoopRisk(pool, copiesOf);
   const outliers = [...over, ...under];
   for (const c of outliers) {
     c.loopRisk = riskAtCurrent.get(c.id) ?? 'none';
     const proposedPool = pool.map((sc) => (sc.id === c.id ? c.after.static : sc));
-    c.proposedLoopRisk = assessLoopRisk(proposedPool).get(c.id) ?? 'none';
+    c.proposedLoopRisk = assessLoopRisk(proposedPool, copiesOf).get(c.id) ?? 'none';
     // author mode is informational only — no gate classification, no faction
     // gates, no simulation directive; a plain risk NOTE (not an imperative) is
     // the only thing it adds beyond the raw loop-risk level above.

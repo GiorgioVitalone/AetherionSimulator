@@ -7,12 +7,20 @@
  */
 import type { AbilityDSL, StatGrantDSL } from '../types/ability.js';
 import type { CardPowerBreakdown, PowerFlag, StaticCard } from './types.js';
-import { sumEffectsDetailed } from './effect-interval.js';
+import { dynamicBonusDetailed, sumEffectsDetailed } from './effect-interval.js';
 import { emitDemands, emitSignals } from './signals.js';
 import { scanRiskyEffects } from './risky-effects.js';
 import { intraSynergy } from './synergy.js';
 import { regenerationValue, traitValue } from './trait-scaling.js';
-import { EFFECT_SUM_CAP, INTRA_CAP, recurrence, W_ARM, W_ATK, W_HP } from './weights.js';
+import {
+  CONDITION_DISCOUNT,
+  EFFECT_SUM_CAP,
+  INTRA_CAP,
+  recurrence,
+  W_ARM,
+  W_ATK,
+  W_HP,
+} from './weights.js';
 
 function round2(x: number): number {
   return Math.round(x * 100) / 100;
@@ -39,6 +47,27 @@ function statGrantValue(ab: StatGrantDSL): number {
   return (m.atk ?? 0) * W_ATK + (m.hp ?? 0) * W_HP + (m.arm ?? 0) * W_ARM;
 }
 
+/** §V2(b) (round-7): stat_grant.dynamicModifier was silently ignored (only
+ * the fixed `modifier` was priced) — routed through the SAME
+ * dynamicBonusDetailed modify_stats effects use, flagging 'dynamic_amount'
+ * and widening the interval, never a second dynamic-amount model. */
+interface StatGrantRange {
+  readonly value: number;
+  readonly low: number;
+  readonly high: number;
+  readonly flags: readonly PowerFlag[];
+}
+function statGrantValueDetailed(ab: StatGrantDSL): StatGrantRange {
+  const base = statGrantValue(ab);
+  const dyn = dynamicBonusDetailed(ab.dynamicModifier);
+  return {
+    value: base + dyn.value,
+    low: base + dyn.low,
+    high: base + dyn.high,
+    flags: dyn.flags,
+  };
+}
+
 const clamp = (x: number): number => Math.min(Math.max(0, x), EFFECT_SUM_CAP);
 
 interface AbilityContribution {
@@ -54,8 +83,13 @@ interface AbilityContribution {
 function abilityContributionDetailed(ab: AbilityDSL): AbilityContribution {
   const rec = recurrence(ab);
   if (ab.type === 'stat_grant') {
-    const v = clamp(statGrantValue(ab)) * rec;
-    return { value: v, low: v, high: v, flags: [] };
+    const sg = statGrantValueDetailed(ab);
+    return {
+      value: clamp(sg.value) * rec,
+      low: clamp(sg.low) * rec,
+      high: clamp(sg.high) * rec,
+      flags: sg.flags,
+    };
   }
   const sum = sumEffectsDetailed(ab.effects);
   // §P1 (R3 fix): free_cast/selection/recursion must be ability-kind-
@@ -64,12 +98,30 @@ function abilityContributionDetailed(ab: AbilityDSL): AbilityContribution {
   // branches sum.flags itself never sees (sumEffectsDetailed's choose_one
   // only keeps the highest-value option).
   const risky = scanRiskyEffects([ab]);
-  const flags = [...new Set<PowerFlag>([...sum.flags, ...risky.flags])];
+  const flagSet = new Set<PowerFlag>([...sum.flags, ...risky.flags]);
+  // §V2(a) (round-7): an ability-level Condition (triggered/aura `condition`)
+  // already discounts the SCALAR via recurrence()'s conditionFactor
+  // (CONDITION_DISCOUNT), but previously added neither the 'conditional' flag
+  // nor any interval widening — a falsely-precise powerLow === powerHigh
+  // could reach AUTO_SAFE gating. `rec` already carries the ×CONDITION_DISCOUNT
+  // for the midpoint (unchanged); the interval spans [never fires, always
+  // fires] around it — the same treatment effect-level `conditional` gets.
+  const condition = ab.condition;
+  if (condition !== undefined) {
+    flagSet.add('conditional');
+    const recFull = rec / CONDITION_DISCOUNT;
+    return {
+      value: clamp(sum.value) * rec,
+      low: 0,
+      high: clamp(sum.high) * recFull,
+      flags: [...flagSet],
+    };
+  }
   return {
     value: clamp(sum.value) * rec,
     low: clamp(sum.low) * rec,
     high: clamp(sum.high) * rec,
-    flags,
+    flags: [...flagSet],
   };
 }
 

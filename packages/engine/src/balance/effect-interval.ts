@@ -63,6 +63,37 @@ const FLAT_D: EffectValueDetailed = {
   flags: NO_FLAGS,
 };
 
+/** §V2(c) (round-7): a flat-valued wrapper (scheduled/grant_ability/
+ * replacement's `instead`) whose nested effects carry their OWN uncertainty
+ * is itself uncertain — the wrapper's flat anchor is widened by the nested
+ * effects' relative spread (nested.low/high around nested.value), not left
+ * flat. Guards nested.value === 0 (degenerate/all-flat nested content) by
+ * collapsing back to the flat point — no spread to carry. */
+function widenFlatByNested(
+  flat: number,
+  nested: EffectValueDetailed,
+): { readonly low: number; readonly high: number } {
+  if (nested.value === 0) return { low: flat, high: flat };
+  const loRatio = Math.min(1, nested.low / nested.value);
+  const hiRatio = Math.max(1, nested.high / nested.value);
+  return { low: flat * loRatio, high: flat * hiRatio };
+}
+
+/** §V2(c): union of the exhaustive risky-flag scan (cost_reduction/
+ * search_deck/deploy_from_deck acquisition flags — never carried by
+ * sumEffectsDetailed's own point valuation) and sumEffectsDetailed's own
+ * flags (conditional/dynamic_amount — never carried by riskyFlagsOf, which
+ * only classifies acquisition-shaped effect types). Neither scan alone is
+ * exhaustive over PowerFlag; the union is. */
+function nestedWrapperFlags(effects: readonly Effect[]): {
+  readonly flags: readonly PowerFlag[];
+  readonly nested: EffectValueDetailed;
+} {
+  const nested = sumEffectsDetailed(effects);
+  const flags = new Set<PowerFlag>([...nested.flags, ...riskyFlagsOf(effects)]);
+  return { flags: [...flags], nested };
+}
+
 function assertNever(x: never): never {
   throw new Error(`Unhandled effect node: ${JSON.stringify(x)}`);
 }
@@ -80,7 +111,7 @@ function det(
 }
 
 // ── Dynamic amounts (§S3: x_cost / count / event_value span 0..cap) ──────────
-interface AmountRange {
+export interface AmountRange {
   readonly value: number;
   readonly low: number;
   readonly high: number;
@@ -123,7 +154,10 @@ function modifierGain(m: StatModifier): number {
   return (m.atk ?? 0) + (m.hp ?? 0) + (m.arm ?? 0);
 }
 
-function dynamicBonusDetailed(dyn: DynamicStatSource | undefined): AmountRange {
+/** §V2(b) (round-7): exported so card-power.ts's stat_grant path can value
+ * StatGrantDSL.dynamicModifier through the SAME dynamic-bonus computation
+ * modify_stats effects use — never a second dynamic-amount model. */
+export function dynamicBonusDetailed(dyn: DynamicStatSource | undefined): AmountRange {
   if (dyn === undefined) return { value: 0, low: 0, high: 0, flags: NO_FLAGS };
   switch (dyn.type) {
     case 'per_count': {
@@ -415,28 +449,64 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       // on_would_be_destroyed is a different (rarer) replacement mechanic,
       // unrelated to the ARM/shield rule, and keeps the generic FLAT bucket.
       // §S3: flagged rules_sensitive — this value hangs on the locked v1 profile.
-      // §P1 (R3 fix): on_would_be_destroyed keeps the generic FLAT bucket for
-      // its VALUE, but must still surface any risky flag (e.g. a nested
-      // cost_reduction/acquisition inside `instead`) instead of dropping it.
+      // §V1 (round-7): oncePerTurn:true (Radiant Shield id66) mitigates only
+      // ONE combat instance per turn — the runtime honors this in
+      // replacement-handler.ts (`if (repl.oncePerTurn && repl.usedThisTurn)
+      // continue`), so the static ×SHIELD_INSTANCES_PER_TURN multiplier only
+      // applies when the shield is UNTHROTTLED (absent/false — Shieldbearer
+      // Paladin id48); a throttled shield is ×1.
+      // §V1: `reduction` absent is NOT "reduction=1" — replacement-handler.ts's
+      // applyDamageReplacements treats an undefined reduction as full
+      // prevention ("no reduction value ⇒ prevent all"), a fundamentally
+      // different, incoming-damage-dependent mechanic. Priced at the generic
+      // FLAT anchor (not derived from instances), widened
+      // [FLAT_ONE, AVG_BODY_HP × instances] to span "barely relevant" through
+      // "prevents a full average hit every instance."
       // reduction clamped ≥ 0: the DSL types it as a bare number, and a negative
       // value would otherwise SUBTRACT defense ×2 — nonsense data must not
       // underprice a card (round-5 review hunt, 2026-07-16).
-      return effect.replaces.type === 'on_would_take_damage'
-        ? det(
-            Math.max(0, effect.replaces.reduction ?? FLAT_ONE) * SHIELD_INSTANCES_PER_TURN,
-            false,
-            ['rules_sensitive'],
-          )
-        : { ...FLAT_D, flags: riskyFlagsOf(effect.instead) };
-    case 'scheduled':
+      if (effect.replaces.type === 'on_would_take_damage') {
+        const instances = effect.oncePerTurn === true ? 1 : SHIELD_INSTANCES_PER_TURN;
+        const reduction = effect.replaces.reduction;
+        if (reduction === undefined) {
+          return {
+            value: FLAT_ONE,
+            low: FLAT_ONE,
+            high: AVG_BODY_HP * instances,
+            isRemoval: false,
+            flags: ['rules_sensitive'],
+          };
+        }
+        return det(Math.max(0, reduction) * instances, false, ['rules_sensitive']);
+      }
+      // §P1 (R3 fix): on_would_be_destroyed keeps the generic FLAT bucket for
+      // its VALUE, but must still surface any risky flag (e.g. a nested
+      // cost_reduction/acquisition inside `instead`) instead of dropping it.
+      // §V2(c) (round-7): flags AND interval now come from the full union scan
+      // (conditional/dynamic_amount included, not just acquisition flags).
+      {
+        const { flags, nested } = nestedWrapperFlags(effect.instead);
+        const { low, high } = widenFlatByNested(FLAT_ONE, nested);
+        return { value: FLAT_ONE, low, high, isRemoval: false, flags };
+      }
+    case 'scheduled': {
       // §P1 (R3 fix): flat VALUE by design (§S2/§S3), but nested flags
       // (e.g. a cost_reduction wrapped in a scheduled effect) must propagate.
-      return { ...FLAT_D, flags: riskyFlagsOf(effect.effects) };
-    case 'grant_ability':
+      // §V2(c) (round-7): full union flags + interval widened by the nested
+      // effects' own uncertainty (a scheduled conditional/dynamic_amount is
+      // still uncertain, even though the wrapper's own value is flat).
+      const { flags, nested } = nestedWrapperFlags(effect.effects);
+      const { low, high } = widenFlatByNested(FLAT_ONE, nested);
+      return { value: FLAT_ONE, low, high, isRemoval: false, flags };
+    }
+    case 'grant_ability': {
       // §P1 (R3 fix): same — the granted ability's OWN effects (a nested
       // cost_reduction/acquisition) must surface, not just this wrapper's flat
-      // catch-all value.
-      return { ...FLAT_D, flags: riskyFlagsOf(effect.ability.effects) };
+      // catch-all value. §V2(c): full union flags + interval widening.
+      const { flags, nested } = nestedWrapperFlags(effect.ability.effects);
+      const { low, high } = widenFlatByNested(FLAT_ONE, nested);
+      return { value: FLAT_ONE, low, high, isRemoval: false, flags };
+    }
     case 'cost_reduction':
     case 'grant_trait':
     case 'move':
