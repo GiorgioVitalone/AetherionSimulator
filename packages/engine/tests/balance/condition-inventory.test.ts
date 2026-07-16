@@ -5,10 +5,17 @@
  * Three certification rounds in a row (7, 8, 9) each found ANOTHER field of
  * type `Condition` that static valuation silently ignored — ability-level
  * `condition` (round 7), `GrantedAbilityRef.condition` (round 8),
- * `ScheduledEffect.condition` (round 9). This file is the fix for the CLASS,
- * not just the latest instance: it enumerates EVERY known field of type
- * `Condition` across the DSL (types/effects.ts, ability.ts, triggers.ts,
- * conditions.ts) with one fixture each, asserting the SAME policy applies —
+ * `ScheduledEffect.condition` (round 9). This file PINS AND DOCUMENTS the
+ * class — it does not mechanically detect new sites (a future 7th field fails
+ * no test until a fixture is added; the instruction below is the guard's
+ * enforcement mechanism, plus the shared abilityOwnCondition() helper that
+ * centralizes ability/while lookup). Scope: the 4 DSL type files
+ * (types/effects.ts, ability.ts, triggers.ts, conditions.ts) — the VALUATION
+ * input surface. game-state.ts additionally holds runtime mirrors of sites
+ * #1/#5 and `transformTrigger` (a printed Condition under another name) which
+ * is OUTSIDE the valuation surface today (not in StaticCard/HeroInput); if
+ * hero transforms ever enter computeCardPower's inputs, it becomes site #7.
+ * One fixture per site, asserting the SAME policy —
  * the 'conditional' flag is present and the interval is strictly widened
  * (never a falsely-precise powerLow === powerHigh on a card whose effect may
  * not fire).
