@@ -26,8 +26,13 @@ become a `HeroInput` (lp, abilities, optional transform with `lpDelta = transfor
 `power = base × synergyMultiplier`, where `base = statBase + traitValue + abilityValue` (additive,
 each element once) and the intra-card synergy is a bounded multiplier on top.
 
-**statBase** (characters only; 0 for S/E/H/T/R): `atk×1.0 + hp×1.0 + arm×1.3`. atk/hp anchor to
-spell-eval `bodyValue = atk+hp`; ARM at 1.3 (mitigates ≥1 combat damage per instance and persists).
+**statBase** (characters only; 0 for S/E/H/T/R): `atk×1.0 + hp×1.0 + arm×1.0` (`W_ATK`/`W_HP`/`W_ARM`).
+atk/hp anchor to spell-eval `bodyValue = atk+hp`. ARM sits at **parity with HP** (`W_ARM = 1.0`, not
+the old 1.3): under the ratified ruleset-v1 lock (`armFirstInstanceOnly`, `sim-data/ruleset-v1.json`),
+ARM mitigates only the FIRST combat-damage instance a body takes per turn — one point absorbs at most
+one point of damage per opportunity, the same as one HP point absorbing once. The repealed 1.3
+premium described the engine's unconfigured per-instance-every-turn default, which v1 does not run for
+ARM (see `weights.ts`).
 
 **traitValue** (`trait-scaling.ts`) — keyword value scales with the stat it leverages:
 
@@ -36,28 +41,52 @@ spell-eval `bodyValue = atk+hp`; ARM at 1.3 (mitigates ≥1 combat damage per in
 | defender | `0.6·(hp+arm)` | stealth | `0.25·(atk+hp)` |
 | flying | `0.5·atk` | elite | `0.5` |
 | first_strike | `0.35·atk` | swift | `0.4` |
-| haste | `0.30·atk` | recycle N | `0.6·N` |
+| haste | `0.30·atk` | recycle N | `0.5·CARD_TO_HAND·N` (≈`1.65·N`) |
 | rush N | `0.12·N·atk` | volatile | `−0.35·hp` |
 | sniper | `0.3·atk` | regeneration N | `min(0.8·N, 0.8·hp)` |
+
+`recycle N` (recurring the card from discard to hand N times) is no longer its own flat 0.6 anchor —
+it is derived from the shared acquisition primitive `CARD_TO_HAND` (half a hand-return per recycle,
+`trait-scaling.ts`), so it can never drift from what draw/return/search/copy are priced at.
 
 **abilityValue** = `Σ_abilities clamp(Σ effectStaticValue, 0, 12) × recurrence`. Effects are valued by
 `effect-value.ts`, the static analog of spell-eval (same coefficients, expected targets):
 
 | effect | static value | effect | static value |
 |---|---|---|---|
-| destroy/sacrifice enemy | `5.5` (removal) | draw N | `1.2·N` |
+| destroy/sacrifice enemy | `5.5` (removal) | draw N | `CARD_TO_HAND·N` (`W_DRAW·N` ≈ `3.3·N`) |
 | bounce enemy | `5.5·0.7` (removal) | heal N | `0.7·N` |
-| deal N enemy body | kill `5.5` if N≥3 else chip `min(N,3)` | gain_resource N | `N·(0.5 temp / 1.0 perm)` |
+| deal N enemy body | kill `5.5` if N≥3 else chip `min(N,3)` | gain_resource N | `N·(0.75 temp / 1.5 perm)` |
 | deal N enemy hero | `1.5·N` | deploy_token | `(stats)·n·0.5` |
-| AoE variants | `× 2.5` width | return / search / copy | `1.2–1.8 / 1.44–4 / 1.2` |
-| modify_stats allied | `Σgain · bodies · 0.6` | composite / conditional / choose_one | sum / `0.6·ifTrue+0.4·ifFalse` / max |
-| counter_spell / deploy_from_deck | `0.5 / 4` | 10 hard-to-value effects | `1.0` |
+| AoE variants | `× 2.5` width | return/copy → hand | `CARD_TO_HAND·SELECTION_PREMIUM` ≈ `4.125` |
+| modify_stats allied | `Σgain · bodies · 0.6` | return → battlefield | `AVG_WEAK_BODY + CARD_TO_HAND·SELECTION_PREMIUM` ≈ `6.625` |
+| counter_spell | `CARD_VALUE + 0.5` = `1.7` | search_deck → hand | `CARD_TO_HAND·SELECTION_PREMIUM` ≈ `4.125` |
+| deploy_from_deck / search_deck → battlefield | `4` (flat) | shield reduction R (`on_would_take_damage`) | `R · SHIELD_INSTANCES_PER_TURN` (`R·2`) |
+| 8 hard-to-value effects | `1.0` | | |
 
 `recurrence` (how often an ability lands over a game) multiplies the effect-sum: aura/`while` 2.6,
 `on_turn_start` 2.4, one-shot (`on_deploy`/`on_cast`) 1.0, last-breath/flash 0.9, `activated` 2.0
 (÷ by cooldown, oncePerTurn 1.6, oncePerGame 0.7), board-event triggers (`on_ally_destroyed`,
 `on_spell_cast`, …) 1.2–1.6, an extra ability-level Condition ×0.7. Board-event triggers carry only a
 conservative baseline here — their deck-density upside lives in the synergy term (avoids double-count).
+
+**Acquisition primitives** (`CARD_TO_HAND = W_DRAW = 3.3`, empirically recalibrated 2026-07-14 — a
+same-seed full-vision trial with +2 cost on every `draw_cards` card moved Sapphire 70.7%→51.0%,
+implying one drawn card ≈ 3 resources of value; `SELECTION_PREMIUM = 1.25`, a conservative bounded
+premium for a CHOSEN card over a blind draw) are the shared unit `draw_cards`, `search_deck`,
+`copy_card`, `return_from_discard`, `recycle`, and to-hand `scry` all route through, so a hand-picked
+card can never price below a blind draw.
+
+**Shield valuation (`replacement`/`on_would_take_damage`, round-5 correction, 2026-07-16):** the
+ratified `sim-data/ruleset-v1.json` locks `armFirstInstanceOnly` but does **not** lock
+`shieldFirstInstanceOnly` — that flag is absent from the manifest entirely, so a v1 shield runs the
+engine's unconfigured **per-instance** default (it reduces EVERY combat instance a body takes in a
+turn, not just the first). `SHIELD_INSTANCES_PER_TURN = 2` (`weights.ts`) is the Rulebook's own worked
+ARM example — two attacks landing on one body in the same turn — reused as the expected per-turn
+instance count, not invented. A shield's per-turn value is therefore `reduction × 2`; wrapped in its
+usual aura (Shieldbearer Paladin id48, Radiant Shield id66), the total is `reduction × 2 × AURA_REC`
+(`valuation-profile.ts`'s `VALUATION_PROFILE_V1`, cross-checked against the manifest by
+`tests/balance/valuation-profile-manifest.test.ts`).
 
 **Intra-card synergy** = `intraSynergy(provides, demands)` over the card's own signals, restricted to
 **different sources within the card** (so a single ability can't self-satisfy).

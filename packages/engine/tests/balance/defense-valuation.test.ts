@@ -1,16 +1,18 @@
 /**
- * §S2 — defense valued under ruleset v1 (first-instance-per-turn ARM/shields).
- * Before this fix, W_ARM=1.3 and the shield 'replacement' case carried a
- * justification describing the engine-DEFAULT per-instance rule (unbounded
- * per turn), not the locked v1 rule (armFirstInstanceOnly/
- * shieldFirstInstanceOnly — first instance only, recharges next turn). Pure
- * unit tests of the pricer's output — no simulations.
+ * §S2 — defense valued under ruleset v1: ARM is first-instance-per-turn
+ * (armFirstInstanceOnly, locked); shields are PER-INSTANCE (the engine's
+ * unconfigured default — shieldFirstInstanceOnly is NOT in the v1 manifest;
+ * round-5 correction, see valuation-profile.ts). Before the original S2 fix,
+ * W_ARM=1.3 and the shield 'replacement' case carried a justification
+ * describing the engine-DEFAULT per-instance rule as if it were repealed for
+ * BOTH ARM and shields; that was only ever true for ARM. Pure unit tests of
+ * the pricer's output — no simulations.
  */
 import { describe, expect, it } from 'vitest';
 import { computeCardPower, abilityContribution } from '../../src/balance/card-power.js';
 import { effectStaticValue } from '../../src/balance/effect-value.js';
 import { traitValue } from '../../src/balance/trait-scaling.js';
-import { recurrence, W_ARM, W_HP } from '../../src/balance/weights.js';
+import { recurrence, SHIELD_INSTANCES_PER_TURN, W_ARM, W_HP } from '../../src/balance/weights.js';
 import { VALUATION_PROFILE_V1 } from '../../src/balance/valuation-profile.js';
 import type { Effect } from '../../src/types/effects.js';
 import { aura, body } from './factory.js';
@@ -41,24 +43,34 @@ describe('§S2 defense valuation (v1: first-instance-per-turn)', () => {
     expect(highArm).toBeCloseTo(5 * lowArm, 10);
   });
 
-  it('a shield replacement (EC-003, reduction=1) values as exactly one mitigated hit, recurrence-scaled by the SAME aura anchor as any other continuous effect', () => {
+  it('a shield replacement (EC-003, reduction=1) values as SHIELD_INSTANCES_PER_TURN mitigated hits (per-instance under v1), recurrence-scaled by the SAME aura anchor as any other continuous effect', () => {
     const shieldEffect: Effect = {
       type: 'replacement',
       replaces: { type: 'on_would_take_damage', reduction: 1 },
       instead: [],
     };
-    // Per-instance value: exactly the reduction amount, not a generic flat bucket.
-    expect(effectStaticValue(shieldEffect).value).toBeCloseTo(1);
+    // Per-turn value: reduction x SHIELD_INSTANCES_PER_TURN (v1 has no
+    // shieldFirstInstanceOnly lock, so every combat instance is mitigated).
+    expect(effectStaticValue(shieldEffect).value).toBeCloseTo(
+      1 * VALUATION_PROFILE_V1.shieldMitigatedDamagePerPointPerTurn,
+    );
+    expect(VALUATION_PROFILE_V1.shieldMitigatedDamagePerPointPerTurn).toBe(
+      SHIELD_INSTANCES_PER_TURN,
+    );
 
     // Wrapped as an aura ability (how both Shieldbearer Paladin and Radiant
-    // Shield encode it) — total value = reduction x expectedActiveTurns, the
-    // profile's reused anchor, no separately invented turns constant.
+    // Shield encode it) — total value = reduction x instances-per-turn x
+    // expectedActiveTurns, the profile's reused anchors, no separately
+    // invented turns constant.
     const shieldAbility = aura([shieldEffect]);
     expect(abilityContribution(shieldAbility)).toBeCloseTo(
-      1 * VALUATION_PROFILE_V1.expectedActiveTurns,
+      1 * SHIELD_INSTANCES_PER_TURN * VALUATION_PROFILE_V1.expectedActiveTurns,
       10,
     );
-    expect(abilityContribution(shieldAbility)).toBeCloseTo(recurrence(shieldAbility), 10);
+    expect(abilityContribution(shieldAbility)).toBeCloseTo(
+      SHIELD_INSTANCES_PER_TURN * recurrence(shieldAbility),
+      10,
+    );
   });
 
   it('a shield replacement scales linearly with its declared reduction amount', () => {
@@ -89,16 +101,15 @@ describe('§S2 defense valuation (v1: first-instance-per-turn)', () => {
     expect(armored).toBeCloseTo(0.6 * 2 * W_ARM, 10);
   });
 
-  it('S2 fixture bodies equivalent to the flagged Radiant trio (ids 47/48/49): power does NOT increase, and the Shieldbearer-style shield card is UNCHANGED because none carry a printed ARM stat', () => {
+  it('S2/round-5 fixture bodies equivalent to the flagged Radiant trio (ids 47/48/49): non-shield power does NOT increase; the Shieldbearer-style shield card is re-derived for per-instance shields', () => {
     // None of Shieldbearer Paladin (48), Protector of Faith (47), or
     // Faithkeeper of Dawn (49) print ARM > 0 in the live pool — their
     // "armor identity" comes from the Defender trait (arm=0, so W_ARM never
-    // enters) and, for id48, a shield aura with reduction=1 (unchanged by
-    // this fix, since 1 * AURA_REC was already what the old FLAT_ONE bucket
-    // produced for that specific reduction value). So the corrected
-    // valuation does not move these three fixtures' power at all — the
-    // over-budget flag they got in the 2026-07-14 run traces to something
-    // other than the ARM valuation this task fixes.
+    // enters). id48's shield aura (reduction=1) now prices as per-instance
+    // (SHIELD_INSTANCES_PER_TURN x AURA_REC, the round-5 re-derivation) rather
+    // than the old first-instance-only (1 x AURA_REC) bucket — this is the
+    // corrected value, not a regression. Protector/Faithkeeper carry no
+    // shield, so their power is untouched by this fix.
     const shieldAbility = aura([
       {
         type: 'replacement',
@@ -118,18 +129,12 @@ describe('§S2 defense valuation (v1: first-instance-per-turn)', () => {
     const faithkeeper = computeCardPower(
       body(49, 'Faithkeeper of Dawn', 2, 4, 0, { traits: ['defender'] }),
     );
-    // Same fixtures re-derived under the OLD (pre-S2) constants would have
-    // produced an identical statBase (atk + hp + arm*W_ARM, arm=0 either way
-    // so the W_ARM change never enters), traitValue (Defender: 0.6*(hp +
-    // W_ARM*arm), again arm=0), and abilityValue (the shield's reduction=1 *
-    // AURA_REC, identical to the old FLAT_ONE * AURA_REC for that specific
-    // reduction) — i.e. these numbers are exactly what S1 baseline already
-    // produced; only computeCardPower's OWN synergy multiplier (unrelated to
-    // this task) sits on top. Assert each raw component is unchanged rather
-    // than merely "not increased".
     expect(shieldbearer.statBase).toBeCloseTo(2 + 3, 10);
     expect(shieldbearer.traitValue).toBeCloseTo(0.6 * 3, 10);
-    expect(shieldbearer.abilityValue).toBeCloseTo(1 * VALUATION_PROFILE_V1.expectedActiveTurns, 10);
+    expect(shieldbearer.abilityValue).toBeCloseTo(
+      1 * SHIELD_INSTANCES_PER_TURN * VALUATION_PROFILE_V1.expectedActiveTurns,
+      10,
+    );
     expect(protector.power).toBeCloseTo(1 + 3 + 0.6 * 3, 10);
     expect(faithkeeper.power).toBeCloseTo(2 + 4 + 0.6 * 4, 10);
   });

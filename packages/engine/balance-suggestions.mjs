@@ -255,7 +255,7 @@ export function computeSuggestions(rawOverrideOrOpts) {
   let autoEdit = null;
   let candidates = null;
   if (mode === 'campaign') {
-    ({ autoEdit, candidates } = selectCampaignEdits(outliers));
+    ({ autoEdit, candidates } = selectCampaignEdits(outliers, opts));
   }
 
   return { model, cards, over, under, effectText, mode, autoEdit, candidates };

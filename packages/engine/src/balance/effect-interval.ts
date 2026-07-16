@@ -38,6 +38,7 @@ import {
   SELECTION_PREMIUM,
   SELECTION_PREMIUM_HIGH,
   SELECTION_PREMIUM_LOW,
+  SHIELD_INSTANCES_PER_TURN,
   TEMPO_WEIGHT,
   TOKEN_BODY_FACTOR,
   W_ARM,
@@ -398,13 +399,18 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
     case 'discard':
       return det(isEnemyFacing(effect.target) ? effect.count * CARD_VALUE * 0.8 : 0, false);
     case 'replacement':
-      // §S2: an EC-003 shield (on_would_take_damage reduction — Shieldbearer
-      // Paladin id48, Radiant Shield id66) mitigates ONE combat instance per
-      // turn under the locked v1 rule (shieldFirstInstanceOnly) — see
-      // valuation-profile.ts. Valued as its reduction amount, i.e. one
-      // mitigated hit; the wrapping ability's OWN recurrence (almost always
-      // 'aura' -> card-power.ts's abilityContribution -> AURA_REC, "active
-      // every turn in play") supplies the "over ~N expected active turns"
+      // §S2 round-5 correction: an EC-003 shield (on_would_take_damage
+      // reduction — Shieldbearer Paladin id48, Radiant Shield id66) is NOT
+      // covered by the v1 lock (only armFirstInstanceOnly is locked — see
+      // valuation-profile.ts); shieldFirstInstanceOnly is unset in v1, so the
+      // engine's per-instance default applies: the shield mitigates EVERY
+      // combat instance the body takes in a turn, not just one. Valued as its
+      // reduction amount x SHIELD_INSTANCES_PER_TURN (the Rulebook's own
+      // worked ARM example — two attacks landing on one body in a turn —
+      // reused as the expected per-turn instance count, not invented); the
+      // wrapping ability's OWN recurrence (almost always 'aura' ->
+      // card-power.ts's abilityContribution -> AURA_REC, "active every turn
+      // in play") supplies the separate "over ~N expected active turns"
       // multiplier, so no second turns-counter is invented here.
       // on_would_be_destroyed is a different (rarer) replacement mechanic,
       // unrelated to the ARM/shield rule, and keeps the generic FLAT bucket.
@@ -413,7 +419,9 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       // its VALUE, but must still surface any risky flag (e.g. a nested
       // cost_reduction/acquisition inside `instead`) instead of dropping it.
       return effect.replaces.type === 'on_would_take_damage'
-        ? det(effect.replaces.reduction ?? FLAT_ONE, false, ['rules_sensitive'])
+        ? det((effect.replaces.reduction ?? FLAT_ONE) * SHIELD_INSTANCES_PER_TURN, false, [
+            'rules_sensitive',
+          ])
         : { ...FLAT_D, flags: riskyFlagsOf(effect.instead) };
     case 'scheduled':
       // §P1 (R3 fix): flat VALUE by design (§S2/§S3), but nested flags

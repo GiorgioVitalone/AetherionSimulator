@@ -10,7 +10,12 @@
 import { describe, expect, it } from 'vitest';
 import { assessLoopRisk } from '../../src/balance/loop-graph.js';
 import type { Effect } from '../../src/types/effects.js';
-import { classifyCandidate, rankOf, selectCampaignEdits } from '../../balance-gates.mjs';
+import {
+  classifyCandidate,
+  rankOf,
+  selectCampaignEdits,
+  playRatesMalformed,
+} from '../../balance-gates.mjs';
 import { computeSuggestions } from '../../balance-suggestions.mjs';
 import { body, card, triggered } from './factory.js';
 
@@ -160,6 +165,56 @@ describe('§B4 — at most one autoEdit, exposure-ranked candidates', () => {
     expect(candidates).toHaveLength(2);
     expect(candidates.map((c: { id: number }) => c.id)).toEqual([3, 1]); // descending rank
   });
+});
+
+describe('§T3 (round-5) — malformed playRates: ranking falls back to defaults, auto-edit is suppressed', () => {
+  function rankedRows(playRates: Record<string, unknown>) {
+    const opts = { marginals: { Onyx: 50 }, playRates };
+    const rows = [
+      baseCandidate({ id: 1, edge: 1, copies: 1 }),
+      baseCandidate({ id: 2, edge: 2, copies: 3 }), // would win on a clean playRates object
+      baseCandidate({ id: 3, edge: 1, copies: 2 }),
+    ];
+    for (const c of rows) {
+      const gate = classifyCandidate(c, opts);
+      (c as Record<string, unknown>).classification = gate.classification;
+      (c as Record<string, unknown>).rank = rankOf(c, opts);
+    }
+    return { rows, opts };
+  }
+
+  const noPlayRatesWinner = (() => {
+    const { rows } = rankedRows({ 1: 1, 2: 1, 3: 1 });
+    return selectCampaignEdits(rows, { playRates: undefined }).autoEdit?.id;
+  })();
+
+  it.each([
+    ['string "1000"', { 1: 1, 2: '1000', 3: 1 }],
+    ['NaN', { 1: 1, 2: NaN, 3: 1 }],
+    ['Infinity', { 1: 1, 2: Infinity, 3: 1 }],
+  ])(
+    '%s anywhere in playRates: playRatesMalformed() is true, rankOf falls back to 1, and NO auto-edit applies',
+    (_label, playRates) => {
+      expect(playRatesMalformed(playRates)).toBe(true);
+
+      const { rows, opts } = rankedRows(playRates);
+      // rankOf falls back to the default (1) for the malformed entry — never
+      // NaN/Infinity/string-coerced into the ranking arithmetic.
+      const row2 = rows.find((r) => (r as { id: number }).id === 2)!;
+      expect(Number.isFinite((row2 as { rank: number }).rank)).toBe(true);
+      expect((row2 as { rank: number }).rank).toBeCloseTo(
+        rankOf(row2, { playRates: { 2: 1 } }),
+        10,
+      );
+
+      const { autoEdit } = selectCampaignEdits(rows, opts);
+      // The whole-object fail-closed rule: no production auto-edit at all,
+      // even though every row is individually AUTO_SAFE and would otherwise
+      // produce the SAME winner (id 2) as the clean-playRates case.
+      expect(autoEdit).toBeNull();
+      expect(noPlayRatesWinner).toBe(2); // sanity: the clean run DOES pick id 2
+    },
+  );
 });
 
 describe('§B2/F2 — author mode withholds nothing, and never leaks campaign gates', () => {

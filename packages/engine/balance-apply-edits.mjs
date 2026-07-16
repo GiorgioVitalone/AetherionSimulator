@@ -11,7 +11,7 @@ import { computeSuggestions, copiesInStarterDeck } from './balance-suggestions.m
 import { toStatic, indexFromRaw, loadBudgetModel } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
 import { computeCardPower, assessLoopRisk, detectCardLoops } from './dist/balance/index.js';
-import { primaryResourceKey, classifyCandidate, rankOf } from './balance-gates.mjs';
+import { primaryResourceKey, classifyCandidate, rankOf, selectCampaignEdits } from './balance-gates.mjs';
 
 // ── §13a loop guards ──────────────────────────────────────────────────────────
 // The §12c disaster chain (budget cut Echoes 5→1 × Wizard's Robe's unfloored −1
@@ -309,9 +309,12 @@ export function applyEdits(rawInput, { mode = 'production', arm = 'all', flatten
     if (proposals) {
       // §R1: gate the GIVEN proposals (each at its proposed value), not
       // today's re-derived suggestions. Still ≤1 AUTO_SAFE edit, §B4-ranked.
+      // §T3 (round-5): route the winner through selectCampaignEdits so a
+      // malformed playRates object suppresses the auto-edit here too, not
+      // just in the computeSuggestions path.
       const rows = classifyProposals(rawInput, proposals, { marginals, playRates });
-      const autoSafe = rows.filter((r) => r.classification === 'AUTO_SAFE');
-      const winner = [...autoSafe].sort((a, b) => rankOf(b, { playRates }) - rankOf(a, { playRates }))[0];
+      for (const r of rows) r.rank = rankOf(r, { playRates });
+      const { autoEdit: winner } = selectCampaignEdits(rows, { playRates });
       if (winner) {
         const { index: currentIndex } = indexFromRaw(rawInput);
         // §P3: apply ALL proposal entries for the winning id (e.g. a cost

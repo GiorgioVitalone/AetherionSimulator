@@ -250,6 +250,32 @@ describe('loop-risk — unconditional free-cast and zero-cost acquisition edges 
     const risk = assessLoopRisk([deployFromDeckCopier]);
     expect(risk.get(502)).toBe('likely');
   });
+
+  it('§T2 (round-5): a cost-5 self-chain via return_from_discard destination:battlefield (zero-cost re-entry, no cast) is likely', () => {
+    const returnCopier: StaticCard = card({
+      id: 503,
+      name: 'Return-From-Discard Self-Chain',
+      cardType: 'C',
+      stats: { atk: 1, hp: 1, arm: 0 },
+      tags: ['Arcane'],
+      cost: { mana: 5, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onDeploy, [
+          {
+            type: 'return_from_discard',
+            target: {
+              type: 'target_card_in_discard',
+              side: 'allied',
+              filter: { tag: 'Arcane', cardType: 'C' },
+            },
+            destination: 'battlefield',
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([returnCopier]);
+    expect(risk.get(503)).toBe('likely');
+  });
 });
 
 // ── Item 3: no false-positive explosion ──────────────────────────────────────

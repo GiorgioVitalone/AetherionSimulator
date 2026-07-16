@@ -13,8 +13,9 @@ import type { Activated, Trigger } from '../types/triggers.js';
 // spell-eval bodyValue at NEUTRAL = atk + hp, so each is the 1.0 anchor. ARM is
 // priced in that SAME flat, un-recurrence-scaled unit — statBase never applies a
 // turns multiplier to any stat (see valuation-profile.ts).
-// §S2 (v1 rule, sim-data/ruleset-v1.json `armFirstInstanceOnly`/
-// `shieldFirstInstanceOnly`, locked): ARM absorbs only the FIRST combat-damage
+// §S2 (v1 rule, sim-data/ruleset-v1.json `armFirstInstanceOnly`, locked — the
+// shield's `shieldFirstInstanceOnly` is NOT in the v1 manifest; see the
+// round-5 correction above): ARM absorbs only the FIRST combat-damage
 // instance a body takes each turn, not every instance — the repealed premise
 // this constant used to carry ("mitigates >=1 damage per instance and
 // persists") described the engine-DEFAULT per-instance rule, not the ratified
@@ -130,6 +131,21 @@ export const LP_VALUE = 0.6; // value per hero LP above/below the 30 baseline
 export const LP_BASELINE = 30; // neutral hero LP
 export const HERO_FLOOR = 6; // every hero is an engine worth a baseline
 export const REDUNDANCY_DECAY = 0.1; // k-th copy worth power * 0.9^(k-1)
+
+// §S2 round-5 correction: ruleset-v1.json's `rules` object carries ONLY
+// `armFirstInstanceOnly` (see sim-data/ruleset-v1.json + the EXPECTED_RULES
+// literal in tests/sim/ruleset-v1-lock.test.ts) — there is no
+// `shieldFirstInstanceOnly` entry, locked or otherwise. Under v1, the EC-003
+// −1 "would take damage" shield therefore runs the engine's UNCONFIGURED
+// default: it reduces EVERY combat instance a body takes in a turn, not just
+// the first (see combat-resolver.ts: `shieldFirstInstanceOnly =
+// state.config?.shieldFirstInstanceOnly === true`, false unless a config
+// explicitly sets it). Rulebook.md line ~377's own worked ARM example — a body
+// hit by two attacks (plus an ARM-immune spell) in one turn — is the game's
+// own canonical illustration of how many combat instances a body plausibly
+// absorbs in a turn; reused here (not invented) as the per-instance shield's
+// expected instance count. Consumed by effect-value.ts's 'replacement' case.
+export const SHIELD_INSTANCES_PER_TURN = 2; // Rulebook.md ARM worked example: 2 attacks land on one body in a turn
 
 // ── Trigger recurrence ───────────────────────────────────────────────────────
 // Exported for reuse by valuation-profile.ts (§S2's expectedActiveTurns

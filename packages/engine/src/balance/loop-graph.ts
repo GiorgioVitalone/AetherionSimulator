@@ -90,7 +90,14 @@ function edgeEffectSpec(e: Effect): EdgeEffectSpec | undefined {
     case 'deploy_from_deck':
       return { filter: e.filter, unconditionalFree: true };
     case 'return_from_discard':
-      return { filter: targetFilterOf(e.target) };
+      // §T2 (round-5): return_from_discard->battlefield is the same free
+      // acquisition edge as search_deck->battlefield — the card enters play
+      // directly, no cast, no cost. Only the 'hand' destination requires a
+      // later cast (conditional-free, gated by castFreeIfCost elsewhere).
+      return {
+        filter: targetFilterOf(e.target),
+        unconditionalFree: e.destination === 'battlefield',
+      };
     default:
       return undefined;
   }

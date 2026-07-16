@@ -110,15 +110,41 @@ export function classifyCandidate(c, opts) {
   };
 }
 
+/** §T3 (round-5): a single play-rate value is trustworthy only as a finite,
+ * non-negative number — a string ("1000"), NaN, Infinity, or a negative
+ * number all previously distorted the exposure sort (a string sorts via
+ * coercion, Infinity always "wins" the ranking, NaN comparisons are
+ * unordered). `undefined`/`null` (not supplied) is fine — it just means "no
+ * data for this card", handled by the ?? 1 default below. */
+function isValidPlayRate(v) {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0;
+}
+
+/** §T3 (round-5): true when `opts.playRates` contains ANY defined value that
+ * isn't a valid play-rate. Mirrors the marginals whole-object fail-closed
+ * rule (§B3 gate 3): a caller that can produce one bad play-rate can produce
+ * others silently, so the WHOLE object is untrusted, not just the offending
+ * card — malformed playRates must suppress the production auto-edit
+ * entirely, not just that one card's rank. */
+export function playRatesMalformed(playRates) {
+  if (playRates == null) return false;
+  return Object.values(playRates).some((v) => v != null && !isValidPlayRate(v));
+}
+
 /**
  * §B4 — exposure ranking: rank = |edge| × copies-in-deck × play-rate
  * (play-rate from opts.playRates[cardId], defaults to 1). This orders which
  * card is the next EXPERIMENT to run — it does NOT predict the effect size
  * of applying the edit; a high-rank card is simply the one whose current
  * mispricing is most exposed to play, so testing it first teaches the most.
+ * §T3: an invalid per-card value (see isValidPlayRate) falls back to the
+ * same 1 default as "no data supplied" — ranking always proceeds on a sane
+ * number; the whole-object malformed check (playRatesMalformed) is what
+ * gates whether an AUTO_SAFE winner is allowed to auto-apply at all.
  */
 export function rankOf(c, opts) {
-  const playRate = opts.playRates?.[c.id] ?? 1;
+  const raw = opts.playRates?.[c.id];
+  const playRate = isValidPlayRate(raw) ? raw : 1;
   return Math.abs(c.edge) * c.copies * playRate;
 }
 
@@ -130,10 +156,16 @@ export function rankOf(c, opts) {
  * classifyCandidate/rankOf). This is the ONE place the "≤1 auto edit per run"
  * invariant lives, so it can be exercised directly by fixtures without
  * going through the whole starter-pool pipeline.
+ * §T3 (round-5): if `opts.playRates` is malformed (see playRatesMalformed),
+ * the would-be top-ranked AUTO_SAFE row is demoted to a candidate instead of
+ * becoming the autoEdit — malformed ranking evidence must not influence
+ * which edit applies, exactly like malformed marginals suppress
+ * classification. `opts` defaults to `{}` (no playRates ⇒ never malformed).
  */
-export function selectCampaignEdits(outliers) {
+export function selectCampaignEdits(outliers, opts = {}) {
   const ranked = [...outliers].sort((a, b) => b.rank - a.rank);
-  const autoEdit = ranked.find((c) => c.classification === 'AUTO_SAFE') ?? null;
+  const top = ranked.find((c) => c.classification === 'AUTO_SAFE') ?? null;
+  const autoEdit = top !== null && !playRatesMalformed(opts.playRates) ? top : null;
   const candidates = ranked.filter((c) => c !== autoEdit);
   return { autoEdit, candidates };
 }
