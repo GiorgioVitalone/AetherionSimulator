@@ -16,6 +16,11 @@ import { classifyCandidate } from '../../balance-gates.mjs';
 
 const onCast = { type: 'on_cast' } as const;
 const onDeploy = { type: 'on_deploy' } as const;
+const onDies = { type: 'on_dies' } as const;
+const onAllyDies = { type: 'on_ally_dies' } as const;
+const onTakeDamage = { type: 'on_take_damage' } as const;
+const onDealDamage = { type: 'on_deal_damage' } as const;
+const onAttack = { type: 'on_attack' } as const;
 
 // ── Item 1: Arcane-Echoes-shaped self-copy ───────────────────────────────────
 
@@ -184,6 +189,274 @@ describe('loop-risk — Master Archivist castFreeIfCost chain (item 2)', () => {
     // stays 'none' (its own on_deploy is one-shot, not itself a cycle).
     const risk = assessLoopRisk([archivistShaped(6), echoesShaped(5)]);
     expect(risk.get(141)).toBe('none');
+  });
+});
+
+// ── §H3-1 (batch-C): self death-trigger recursion was invisible ────────────
+
+describe('loop-risk — self vs ally death-variant free-return loops (H3-1)', () => {
+  it('a self-death-triggered (on_dies) unconditional free-return self-chain is likely — was invisible pre-fix', () => {
+    // Pre-fix, on_dies wasn't in REPEATABLE_EVENTS -> isRepeatableTrigger
+    // returned false -> isLoopGraphTrigger skipped this ability entirely ->
+    // NO edge was ever built, regardless of cost. Same Q1 free-return shape
+    // as the existing onDeploy tests, gated behind on_dies instead.
+    const selfDeathCard: StaticCard = card({
+      id: 900,
+      name: 'Self-Death Free-Return',
+      cardType: 'C',
+      stats: { atk: 1, hp: 1, arm: 0 },
+      tags: ['Arcane'],
+      cost: { mana: 5, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onDies, [
+          {
+            type: 'return_from_discard',
+            target: {
+              type: 'target_card_in_discard',
+              side: 'allied',
+              filter: { tag: 'Arcane', cardType: 'C' },
+            },
+            destination: 'battlefield',
+          },
+        ]),
+      ],
+    });
+    expect(assessLoopRisk([selfDeathCard]).get(900)).toBe('likely');
+  });
+
+  it('control: the same shape gated on the already-supported ally variant (on_ally_dies) is likely too', () => {
+    // Proves parity: the self variant behaves exactly like its already-
+    // working ally-scoped counterpart, not a special case.
+    const allyDeathCard: StaticCard = card({
+      id: 901,
+      name: 'Ally-Death Free-Return',
+      cardType: 'C',
+      stats: { atk: 1, hp: 1, arm: 0 },
+      tags: ['Arcane'],
+      cost: { mana: 5, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onAllyDies, [
+          {
+            type: 'return_from_discard',
+            target: {
+              type: 'target_card_in_discard',
+              side: 'allied',
+              filter: { tag: 'Arcane', cardType: 'C' },
+            },
+            destination: 'battlefield',
+          },
+        ]),
+      ],
+    });
+    expect(assessLoopRisk([allyDeathCard]).get(901)).toBe('likely');
+  });
+});
+
+// ── §H3-3 (batch-C): self combat triggers recurring within a turn ──────────
+
+describe('loop-risk — self combat triggers with free self-acquisition (H3-3)', () => {
+  const combatTriggers: ReadonlyArray<
+    readonly [name: string, trigger: { readonly type: string }, id: number]
+  > = [
+    ['on_take_damage', onTakeDamage, 910],
+    ['on_deal_damage', onDealDamage, 911],
+    ['on_attack', onAttack, 912],
+  ];
+
+  it.each(combatTriggers)(
+    '%s gated unconditional free-return self-chain is likely — was invisible pre-fix',
+    (_name, trigger, id) => {
+      const c: StaticCard = card({
+        id,
+        name: `Combat-Trigger Free-Return (${_name})`,
+        cardType: 'C',
+        stats: { atk: 2, hp: 3, arm: 0 },
+        tags: ['Arcane'],
+        cost: { mana: 5, energy: 0, flexible: 0 },
+        abilities: [
+          triggered(trigger as unknown as Parameters<typeof triggered>[0], [
+            {
+              type: 'return_from_discard',
+              target: {
+                type: 'target_card_in_discard',
+                side: 'allied',
+                filter: { tag: 'Arcane', cardType: 'C' },
+              },
+              destination: 'battlefield',
+            },
+          ]),
+        ],
+      });
+      expect(assessLoopRisk([c]).get(id)).toBe('likely');
+    },
+  );
+});
+
+// ── §H3-2 (batch-C): heroes/transforms as acquisition-edge + reducer sources ─
+
+describe('loop-risk — heroes/transforms enter the graph as sources (H3-2)', () => {
+  it('Kaelthar-shaped: a transform (always in play, activated/cooldown) with an unconditional free-return ability flips a cheap in-deck piece none -> likely once it can reach a genuine cycle', () => {
+    // Mirrors the real Kaelthar the Lich King (T id3): an activated,
+    // cooldown-gated return_from_discard -> battlefield (free) targeting
+    // cheap characters. Without the transform in the assessed pool, a
+    // character (Y) whose OWN on_deploy searches for a transform card has
+    // no target (no cardType 'T' card exists in scope) -> no edge -> 'none'.
+    // Once the transform is wired into the pool as a SOURCE, Y's search
+    // edge into it plus the transform's free-return edge back into Y forms
+    // a genuine 2-node cycle, classified via the transform's own (zero)
+    // cost -> 'likely'. Activation cost pinned at 0 mana here (unlike the
+    // real Kaelthar's 3) to isolate the H3-2 wiring effect from H3-4's
+    // separately-tested activation-cost accounting — combining both fixes
+    // against the REAL 3-mana Kaelthar correctly yields a lower/'none'
+    // classification for this exact shape (see H3-4 tests below); that's
+    // the intended interaction, not a contradiction.
+    const kaeltharShaped: StaticCard = card({
+      id: 3,
+      name: 'Kaelthar-shaped Transform',
+      cardType: 'T',
+      cost: { mana: 0, energy: 0, flexible: 0 },
+      abilities: [
+        triggered({ type: 'activated', cost: { mana: 0, energy: 0, flexible: 0 }, cooldown: 1 }, [
+          {
+            type: 'return_from_discard',
+            target: {
+              type: 'target_card_in_discard',
+              side: 'allied',
+              filter: { maxCost: 3, cardType: 'C' },
+            },
+            destination: 'battlefield',
+          },
+        ]),
+      ],
+    });
+    const cheapPiece: StaticCard = card({
+      id: 910 + 1000,
+      name: 'Cheap In-Deck Piece',
+      cardType: 'C',
+      stats: { atk: 1, hp: 1, arm: 0 },
+      cost: { mana: 2, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onDeploy, [
+          { type: 'search_deck', filter: { cardType: 'T' }, destination: 'hand' },
+        ]),
+      ],
+    });
+
+    const withoutTransform = assessLoopRisk([cheapPiece]);
+    expect(withoutTransform.get(cheapPiece.id)).toBe('none');
+
+    const withTransform = assessLoopRisk([cheapPiece, kaeltharShaped]);
+    expect(withTransform.get(cheapPiece.id)).toBe('likely');
+  });
+
+  it('Seraphina-shaped: a hero deck-wide cost-reduction aura lowers effective costs in her faction and flips a self-loop classification', () => {
+    // Mirrors the real Shieldbearer Seraphina (H id134): an always-active
+    // aura cost_reduction over Equipment. Without the hero wired into the
+    // reducer scan, a cost-3 equipment self-loop nets 3 (>2) -> 'none'; with
+    // the hero's -2 discount counted, effective cost 1 -> the cost<=1
+    // self-loop override fires -> 'likely'.
+    const seraphinaShaped: StaticCard = card({
+      id: 134,
+      name: 'Seraphina-shaped Hero',
+      cardType: 'H',
+      cost: { mana: 1, energy: 0, flexible: 0 },
+      alignment: ['Radiant'],
+      abilities: [
+        aura([
+          {
+            type: 'cost_reduction',
+            reduction: 2,
+            appliesTo: { cardType: 'E' },
+            duration: { type: 'while_in_play' },
+          },
+        ]),
+      ],
+    });
+    const equipSelfCopier: StaticCard = card({
+      id: 920,
+      name: 'Equip Self-Copier',
+      cardType: 'E',
+      tags: ['Arcane'],
+      alignment: ['Radiant'],
+      cost: { mana: 3, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'E' },
+          },
+        ]),
+      ],
+    });
+
+    const withoutHero = assessLoopRisk([equipSelfCopier]);
+    expect(withoutHero.get(920)).toBe('none');
+
+    const withHero = assessLoopRisk([equipSelfCopier, seraphinaShaped]);
+    expect(withHero.get(920)).toBe('likely');
+  });
+});
+
+// ── §H3-4 (batch-C): activated.cost was ignored in traversal cost ──────────
+
+describe("loop-risk — an activated trigger's own firing cost counts toward traversal cost (H3-4)", () => {
+  it('a genuinely-expensive activated engine drops from likely to none once its own activation cost is counted', () => {
+    // A cost-2 self-copier funding itself with a permanent +3 gain_resource
+    // (net = cardCost(2) - gain(3) = -1 <=0 -> 'likely' on card cost alone,
+    // NOT via the cost<=1/free overrides — cost is 2, not free — so this
+    // isolates the net-cost arithmetic path H3-4 touches). Gated behind an
+    // ACTIVATED trigger that itself costs 6 mana to fire, unthrottled.
+    // Pre-fix, that 6-mana activation cost never entered costSum -> 'likely'
+    // regardless of activation cost. Post-fix, the real per-traversal cost
+    // (6) is added: net = (6+2)-3 = 5 > 2 -> 'none'.
+    const expensiveActivatedCopier: StaticCard = card({
+      id: 930,
+      name: 'Expensive Activated Copier',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 2, energy: 0, flexible: 0 },
+      abilities: [
+        triggered({ type: 'activated', cost: { mana: 6, energy: 0, flexible: 0 } }, [
+          { type: 'gain_resource', resourceType: 'mana', amount: 3 },
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([expensiveActivatedCopier]);
+    expect(risk.get(930)).toBe('none');
+  });
+
+  it('control: the SAME shape gated on a cheap activation (cost 1) still classifies likely — the fix only matters when the firing cost is real', () => {
+    // Identical shape, activation cost 1 instead of 6: net = (1+2)-3 = 0 <=0
+    // -> 'likely', unchanged by the fix (a small, real activation cost
+    // doesn't tip a genuinely self-funding loop out of 'likely').
+    const cheapActivatedCopier: StaticCard = card({
+      id: 931,
+      name: 'Cheap Activated Copier',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 2, energy: 0, flexible: 0 },
+      abilities: [
+        triggered({ type: 'activated', cost: { mana: 1, energy: 0, flexible: 0 } }, [
+          { type: 'gain_resource', resourceType: 'mana', amount: 3 },
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([cheapActivatedCopier]);
+    expect(risk.get(931)).toBe('likely');
   });
 });
 
@@ -585,8 +858,18 @@ describe('loop-risk — no false positives on plain cards', () => {
     // card), not the starter-deck subset — an off-starter reducer/copier
     // must be visible to the acquisition graph exactly like production's
     // computeSuggestions() now scores it (balance-suggestions.mjs).
+    // §H3-2 (batch-C): heroes (H) and transforms (T) are now included too,
+    // mirroring production's pool assembly (balance-suggestions.mjs) — they
+    // enter as acquisition-edge/reducer SOURCES only.
     const pool: StaticCard[] = raw
-      .filter((c) => c.cardType === 'C' || c.cardType === 'S' || c.cardType === 'E')
+      .filter(
+        (c) =>
+          c.cardType === 'C' ||
+          c.cardType === 'S' ||
+          c.cardType === 'E' ||
+          c.cardType === 'H' ||
+          c.cardType === 'T',
+      )
       .map((c) => {
         const norm = normalizeTraits(c.traits);
         return {
@@ -614,9 +897,15 @@ describe('loop-risk — no false positives on plain cards', () => {
 
     // Round-7 review: pin the PRODUCTION path — real starter-deck copy counts
     // where the card IS decked (evidence), LEGAL_MAX_COPIES for a genuinely
-    // un-decked id (§Z2/§V4(a) — matches computeSuggestions' copiesOf).
+    // un-decked id (§Z2/§V4(a) — matches computeSuggestions' copiesOf). A
+    // hero/transform is never decked/copied — pinned at 1 (§H3-2), matching
+    // balance-suggestions.mjs's copiesOf construction.
     const liveCopies = new Map(
-      pool.map((c) => [c.id, copiesInStarterDeck(c.id) || LEGAL_MAX_COPIES]),
+      pool.map((c) =>
+        c.cardType === 'H' || c.cardType === 'T'
+          ? [c.id, 1]
+          : [c.id, copiesInStarterDeck(c.id) || LEGAL_MAX_COPIES],
+      ),
     );
     const risk = assessLoopRisk(pool, liveCopies);
     const likely = pool.filter((c) => risk.get(c.id) === 'likely');
@@ -626,6 +915,22 @@ describe('loop-risk — no false positives on plain cards', () => {
       '[loop-risk] live-pool possible entries:',
       possible.map((c) => `${String(c.id)} ${c.name}`),
     );
-    expect(likely).toHaveLength(0);
+    // §H3-2 (batch-C): wiring heroes/transforms into the graph as sources
+    // surfaces a REAL, previously-invisible degenerate chain: Lyria Archmage
+    // Supreme's (T id74) "first spell each turn costs 1 less" aura stacks
+    // with Wizard's Robe's (id96) existing -1-per-copy Arcane-spell discount
+    // — together they push Arcane Echoes' (id94) effective cost from 2 to 1,
+    // crossing the cost<=1 self-loop threshold -> 'likely'. Master Archivist
+    // (id141) inherits via its existing castFreeIfCost:1 fetch of Echoes
+    // (backward-feeder propagation, pre-existing logic). Rampant Evolution
+    // (id119) inherits in turn via its own unconditional deploy_from_deck
+    // edge into ANY character, which now reaches the now-'likely' Master
+    // Archivist (cardType C). Confirmed via isolation: the C/S/E-only pool
+    // (no heroes) is UNCHANGED by every other batch-C fix (self-death/
+    // combat triggers, activated-cost accounting) — this flip is entirely
+    // attributable to a genuine hero/transform interaction the pool
+    // previously couldn't see, not a detector regression. A locked set
+    // (rather than toHaveLength(0)) so any FURTHER change is caught.
+    expect(likely.map((c) => c.id).sort((a, b) => a - b)).toEqual([94, 119, 141]);
   });
 });
