@@ -418,10 +418,15 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       // §P1 (R3 fix): on_would_be_destroyed keeps the generic FLAT bucket for
       // its VALUE, but must still surface any risky flag (e.g. a nested
       // cost_reduction/acquisition inside `instead`) instead of dropping it.
+      // reduction clamped ≥ 0: the DSL types it as a bare number, and a negative
+      // value would otherwise SUBTRACT defense ×2 — nonsense data must not
+      // underprice a card (round-5 review hunt, 2026-07-16).
       return effect.replaces.type === 'on_would_take_damage'
-        ? det((effect.replaces.reduction ?? FLAT_ONE) * SHIELD_INSTANCES_PER_TURN, false, [
-            'rules_sensitive',
-          ])
+        ? det(
+            Math.max(0, effect.replaces.reduction ?? FLAT_ONE) * SHIELD_INSTANCES_PER_TURN,
+            false,
+            ['rules_sensitive'],
+          )
         : { ...FLAT_D, flags: riskyFlagsOf(effect.instead) };
     case 'scheduled':
       // §P1 (R3 fix): flat VALUE by design (§S2/§S3), but nested flags

@@ -145,7 +145,11 @@ export const REDUNDANCY_DECAY = 0.1; // k-th copy worth power * 0.9^(k-1)
 // own canonical illustration of how many combat instances a body plausibly
 // absorbs in a turn; reused here (not invented) as the per-instance shield's
 // expected instance count. Consumed by effect-value.ts's 'replacement' case.
-export const SHIELD_INSTANCES_PER_TURN = 2; // Rulebook.md ARM worked example: 2 attacks land on one body in a turn
+// Rulebook.md ARM worked example: 2 attacks land on one body in a turn. Shields
+// also mitigate NON-combat instances (the example includes a spell), so true
+// per-instance reach is ≥3 — 2 is a DELIBERATELY CONSERVATIVE judgment anchor
+// (disclosed; same epistemic tier as AURA_REC/EXPECTED_COUNT, not measured).
+export const SHIELD_INSTANCES_PER_TURN = 2;
 
 // ── Trigger recurrence ───────────────────────────────────────────────────────
 // Exported for reuse by valuation-profile.ts (§S2's expectedActiveTurns

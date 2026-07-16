@@ -139,3 +139,17 @@ describe('§S2 defense valuation (v1: first-instance-per-turn)', () => {
     expect(faithkeeper.power).toBeCloseTo(2 + 4 + 0.6 * 4, 10);
   });
 });
+
+// Round-5 review hunt (2026-07-16): a negative shield `reduction` is nonsense
+// data and must clamp to 0, never subtract defense.
+import { effectStaticValueDetailed as __negProbe } from '../../src/balance/effect-interval.js';
+describe('negative shield reduction clamps to zero', () => {
+  it('values a reduction:-3 shield at 0, not −6', () => {
+    const v = __negProbe({
+      type: 'replacement',
+      replaces: { type: 'on_would_take_damage', reduction: -3 },
+      instead: [],
+    } as never);
+    expect(v.value).toBe(0);
+  });
+});
