@@ -10,6 +10,7 @@ import type { Effect } from '../../src/types/effects.js';
 import type { StaticCard } from '../../src/balance/types.js';
 import { normalizeTraits } from '../../src/setup/trait-normalizer.js';
 import { aura, card, triggered, body } from './factory.js';
+import { classifyCandidate } from '../../balance-gates.mjs';
 
 const onCast = { type: 'on_cast' } as const;
 const onDeploy = { type: 'on_deploy' } as const;
@@ -187,6 +188,83 @@ describe('loop-risk — cost-reducer detection recurses through TRIGGERED abilit
     const risk = assessLoopRisk([selfDiscountingCopier]);
     expect(risk.get(400)).not.toBe('none');
     expect(risk.get(400)).toBe('likely');
+  });
+});
+
+// ── §U1 (round-6 auditor): stacked cost reductions must SUM, not max ────────
+
+/** A same-cardType/tag cost-reduction aura, mirroring reducerAura above but
+ * parameterized by alignment so the U1 probe/control can vary faction. */
+function reducerCard(id: number, name: string, reduction: number, alignment: readonly string[]) {
+  return card({
+    id,
+    name,
+    cardType: 'C',
+    stats: { atk: 1, hp: 1, arm: 0 },
+    alignment,
+    abilities: [
+      aura([
+        {
+          type: 'cost_reduction',
+          reduction,
+          appliesTo: { cardType: 'S' },
+          duration: { type: 'while_in_play' },
+        },
+      ]),
+    ],
+  });
+}
+
+describe('loop-risk — stacked cost reductions SUM under costFloor (U1, round-6 auditor probe)', () => {
+  it('cost-5 self-copier + two SAME-faction -2 reducers stacks to effective cost 1 -> likely, and gates BLOCKED', () => {
+    // Runtime (cost-checker.ts totalReduction): both -2 reducers apply
+    // simultaneously -> reduction 4, costFloor caps at printed-1 = 4 ->
+    // effective cost 5-4 = 1. The single-largest model only ever saw one -2
+    // (effective cost 3, net=3 -> 'none'); summing must reach the cost<=1
+    // self-loop 'likely' override.
+    const target = echoesShaped(5);
+    const onyxTarget: StaticCard = { ...target, alignment: ['Onyx'] };
+    const reducerA = reducerCard(310, 'Onyx Reducer A', 2, ['Onyx']);
+    const reducerB = reducerCard(311, 'Onyx Reducer B', 2, ['Onyx']);
+
+    const risk = assessLoopRisk([onyxTarget, reducerA, reducerB]);
+    expect(risk.get(94)).toBe('likely');
+
+    const candidate = {
+      id: 94,
+      faction: 'Onyx',
+      copies: 1,
+      edge: 2,
+      status: 'over',
+      abilityShare: 0,
+      costK: 1,
+      flags: [] as string[],
+      proposedLoopRisk: risk.get(94),
+      powerLow: 5,
+      powerHigh: 5,
+      lo: 4,
+      hi: 6,
+    };
+    const { classification } = classifyCandidate(candidate, {});
+    expect(classification).toBe('BLOCKED');
+  });
+
+  it('control: reducers that cannot coexist with the target (disjoint, non-empty alignments) do not stack', () => {
+    // Same shape, but reducerB is a genuinely different single-faction card
+    // (sim/deck-legality.ts: a legal deck's cards all share the hero's exact
+    // faction) — it can never be in play alongside an Onyx target, so it must
+    // not contribute to the sum. Only reducerA (Onyx, matches the target)
+    // applies: reduction 2, effective cost 5-2=3, net=3 -> 'none'. This is
+    // the conservative "avoid combining impossible cross-faction configs"
+    // half of §U1 — the model must not overstate risk off a config that can
+    // never occur in a real deck.
+    const target = echoesShaped(5);
+    const onyxTarget: StaticCard = { ...target, alignment: ['Onyx'] };
+    const reducerA = reducerCard(312, 'Onyx Reducer', 2, ['Onyx']);
+    const reducerB = reducerCard(313, 'Sapphire Reducer', 2, ['Sapphire']);
+
+    const risk = assessLoopRisk([onyxTarget, reducerA, reducerB]);
+    expect(risk.get(94)).toBe('none');
   });
 });
 

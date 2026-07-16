@@ -121,6 +121,9 @@ interface CostReducer {
   readonly cardType?: Extract<CardTypeCode, 'C' | 'S' | 'E'>;
   readonly tag?: string;
   readonly reduction: number;
+  /** The alignment of the CARD that grants this reducer — needed to veto
+   * combining reducers/targets that could never share a deck (§U1). */
+  readonly sourceAlignment: readonly string[];
 }
 
 function collectCostReducers(cards: readonly StaticCard[]): readonly CostReducer[] {
@@ -133,23 +136,47 @@ function collectCostReducers(cards: readonly StaticCard[]): readonly CostReducer
     // spells by 3 and copies itself) must not read as risk-free just because
     // the reducer wasn't wrapped in an `aura`.
     for (const e of scanRiskyEffects(c.abilities).costReducers) {
-      out.push({ cardType: e.appliesTo.cardType, tag: e.appliesTo.tag, reduction: e.reduction });
+      out.push({
+        cardType: e.appliesTo.cardType,
+        tag: e.appliesTo.tag,
+        reduction: e.reduction,
+        sourceAlignment: c.alignment,
+      });
     }
   }
   return out;
 }
 
-/** Effective cast cost after the single LARGEST applicable reducer (not
- * stacked — assuming every reducer in the pool is simultaneously in play
- * would overstate risk pool-wide; recall-biased but bounded). */
+/** Can a reducer's source card and a candidate card genuinely be in the same
+ * legal deck together (sim/deck-legality.ts: every main-deck card's faction
+ * must equal the single-faction hero's)? An empty alignment means we don't
+ * know the card's faction (e.g. a bare test fixture) — recall-biased: ASSUME
+ * they CAN coexist rather than silently drop a real reducer. Two non-empty,
+ * disjoint alignments (genuinely different single-faction cards) cannot. */
+function canCoexist(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length === 0 || b.length === 0) return true;
+  return a.some((x) => b.includes(x));
+}
+
+/** Effective cast cost after SUMMING every simultaneously-stackable matching
+ * reducer, mirroring the runtime's totalReduction (actions/cost-checker.ts)
+ * — including its costFloor: stacked discounts can't take a printed cost >=1
+ * below an effective total of 1 (§12c). A reducer only stacks against a
+ * candidate if the two could genuinely share a deck (§U1: the single-LARGEST
+ * model understated stacked reducers; naive full-pool summing overstated
+ * impossible cross-faction combinations — this scopes the same way the
+ * existing cardType/tag match already scopes, extended to alignment). */
 function effectiveCost(card: StaticCard, reducers: readonly CostReducer[]): number {
   let reduction = 0;
   for (const r of reducers) {
     if (r.cardType !== undefined && card.cardType !== r.cardType) continue;
     if (r.tag !== undefined && !card.tags.includes(r.tag)) continue;
-    reduction = Math.max(reduction, r.reduction);
+    if (!canCoexist(r.sourceAlignment, card.alignment)) continue;
+    reduction += r.reduction;
   }
-  return Math.max(0, totalCost(card) - reduction);
+  const printed = totalCost(card);
+  if (printed >= 1) reduction = Math.min(reduction, printed - 1);
+  return Math.max(0, printed - reduction);
 }
 
 // ── Graph edges ───────────────────────────────────────────────────────────────
