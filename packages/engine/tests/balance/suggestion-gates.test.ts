@@ -354,6 +354,56 @@ describe("§F2 — author mode serves the maintainer's new-card authoring workfl
   });
 });
 
+describe('§Z1 (round-11 auditor) — generated stat search never proposes HP < 1', () => {
+  it('the exact reported probe: a 1/1/2 Mythic Defender no longer gets a −1 HP suggestion (would-be 1/0/2)', () => {
+    // Before the fix, dh=-1 (mag 1, HP 1->0) beat dr=-1 (mag 1.3, ARM 2->1) as
+    // the lowest-magnitude match, even though computeCardPower(1/0/2) scores
+    // 4.2 — exactly inside this window ([1.2, 4.2]) — so it was chosen,
+    // classified AUTO_SAFE, and written. The fix must skip the HP<1 option
+    // and fall through to the ARM trim instead.
+    const probe = body(900001, 'Probe Defender', 1, 1, 2, {
+      rarity: 'Mythic',
+      cost: { mana: 0, energy: 0, flexible: 0 },
+      traits: ['defender'],
+      alignment: ['Onyx'],
+    });
+    const data = computeSuggestions({ mode: 'author', pool: [probe] });
+    const row = [...data.over, ...data.under].find((c) => c.id === 900001)!;
+    expect(row.status).toBe('over');
+    expect(row.statEdit).toBeTruthy();
+    expect(row.statEdit!.to).not.toBe('1/0/2');
+    expect(row.statEdit!.desc).not.toMatch(/HP/);
+    expect(row.statEdit!.to).toBe('1/1/1'); // falls through to the −1 ARM trim
+    // Defense in depth: whatever the generator ever proposes, the composed
+    // body must never be written with HP < 1.
+    expect(row.after.static.stats!.hp).toBeGreaterThanOrEqual(1);
+  });
+
+  it('HP=1 boundary control: a trim TO exactly 1 HP remains legal (not over-restricted)', () => {
+    const probe = body(900002, 'Probe Defender 2', 1, 2, 2, {
+      rarity: 'Common',
+      cost: { mana: 2, energy: 0, flexible: 0 },
+      traits: ['defender'],
+      alignment: ['Onyx'],
+    });
+    const data = computeSuggestions({ mode: 'author', pool: [probe] });
+    const row = [...data.over, ...data.under].find((c) => c.id === 900002)!;
+    expect(row.status).toBe('over');
+    expect(row.statEdit).toBeTruthy();
+    expect(row.statEdit!.desc).toBe('-1 HP');
+    expect(row.statEdit!.to).toBe('1/1/2'); // 2 -> 1 is legal, never proposed further down
+  });
+
+  it('the generator never proposes any stat edit with HP < 1, over the FULL committed pool', () => {
+    const data = computeSuggestions({ mode: 'author' });
+    for (const c of [...data.over, ...data.under]) {
+      if (!c.statEdit) continue;
+      const [, hp] = c.statEdit.to.split('/').map(Number);
+      expect(hp).toBeGreaterThanOrEqual(1);
+    }
+  });
+});
+
 describe('§B2/B3 — existing consumers keep working', () => {
   it('computeSuggestions() with no opts still returns the model/cards/over/under shapes balance-compare.mjs relies on', () => {
     const data = computeSuggestions();

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 // eslint-disable-next-line import/no-relative-packages -- test pins the production copies path
 import { copiesInStarterDeck } from '../../balance-suggestions.mjs';
-import { assessLoopRisk } from '../../src/balance/loop-graph.js';
+import { assessLoopRisk, LEGAL_MAX_COPIES } from '../../src/balance/loop-graph.js';
 import type { Effect } from '../../src/types/effects.js';
 import type { StaticCard } from '../../src/balance/types.js';
 import { normalizeTraits } from '../../src/setup/trait-normalizer.js';
@@ -566,7 +566,7 @@ describe('loop-risk — no false positives on plain cards', () => {
     expect(risk.get(202)).toBe('none');
   });
 
-  it('produces ZERO "likely" over the four starter decks\' live pool (possible entries printed for the record)', () => {
+  it('produces ZERO "likely" over the FULL supplied pool, not just the four starter decks (§Z2, round-11 auditor — an off-starter reducer/copier must still count; possible entries printed for the record)', () => {
     const raw = JSON.parse(
       readFileSync(new URL('../../sim-data/aetherion-cards.json', import.meta.url), 'utf8'),
     ) as ReadonlyArray<{
@@ -580,18 +580,13 @@ describe('loop-risk — no false positives on plain cards', () => {
       readonly alignment?: readonly string[];
       readonly abilities?: ReadonlyArray<{ dsl?: unknown }>;
     }>;
-    const decks = JSON.parse(
-      readFileSync(new URL('../../sim-data/aetherion-decks.json', import.meta.url), 'utf8'),
-    ) as ReadonlyArray<{ readonly mainDeckDefIds: readonly number[] }>;
 
-    const liveIds = new Set<number>();
-    for (const deck of decks) for (const id of deck.mainDeckDefIds) liveIds.add(id);
-
+    // §Z2: the live census is the FULL committed card file (every playable
+    // card), not the starter-deck subset — an off-starter reducer/copier
+    // must be visible to the acquisition graph exactly like production's
+    // computeSuggestions() now scores it (balance-suggestions.mjs).
     const pool: StaticCard[] = raw
-      .filter(
-        (c) =>
-          liveIds.has(c.id) && (c.cardType === 'C' || c.cardType === 'S' || c.cardType === 'E'),
-      )
+      .filter((c) => c.cardType === 'C' || c.cardType === 'S' || c.cardType === 'E')
       .map((c) => {
         const norm = normalizeTraits(c.traits);
         return {
@@ -618,8 +613,11 @@ describe('loop-risk — no false positives on plain cards', () => {
       });
 
     // Round-7 review: pin the PRODUCTION path — real starter-deck copy counts
-    // (the smoke tools' actual configuration), not the bare no-copies default.
-    const liveCopies = new Map(pool.map((c) => [c.id, copiesInStarterDeck(c.id) || 1]));
+    // where the card IS decked (evidence), LEGAL_MAX_COPIES for a genuinely
+    // un-decked id (§Z2/§V4(a) — matches computeSuggestions' copiesOf).
+    const liveCopies = new Map(
+      pool.map((c) => [c.id, copiesInStarterDeck(c.id) || LEGAL_MAX_COPIES]),
+    );
     const risk = assessLoopRisk(pool, liveCopies);
     const likely = pool.filter((c) => risk.get(c.id) === 'likely');
     const possible = pool.filter((c) => risk.get(c.id) === 'possible');

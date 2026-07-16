@@ -31,6 +31,12 @@ const traitName = (t) => TRAIT_NAME[t] ?? t.charAt(0).toUpperCase() + t.slice(1)
 // instead of inventing a second set of numbers that could drift from these.
 export const MIN_ATK = 1;
 export const MIN_BULK = 2; // hp + arm
+// §Z1 (round-11 auditor): searchStatEdit checked ARM/ATK/bulk but never HP
+// itself — a 1/1/2 Defender got a −1 HP suggestion (1/0/2), which passed
+// every existing floor (ARM still 2, ATK unchanged, bulk still 2) and was
+// AUTO_SAFE/written. Mirrors sim-runner.mjs's applyCardStatOverride convention
+// ("a nerfed body is never born dead" — HP floored at 1).
+export const MIN_HP = 1;
 const STAT_TRIM_MAX = 2; // max total stat points to trim before deferring to the cost lever
 const withStats = (sc, da, dh, dr) => ({ ...sc, stats: { atk: sc.stats.atk + da, hp: sc.stats.hp + dh, arm: sc.stats.arm + dr } });
 // §B3: the delta lands on the PRIMARY (largest) cost component — the exact
@@ -156,6 +162,7 @@ export function computeSuggestions(rawOverrideOrOpts) {
           if (ns.arm < 0) continue;
           if (ns.atk < Math.min(MIN_ATK, sc.stats.atk)) continue;
           if (ns.hp + ns.arm < Math.min(MIN_BULK, sc.stats.hp + sc.stats.arm)) continue;
+          if (ns.hp < Math.min(MIN_HP, sc.stats.hp)) continue;
           const p = computeCardPower(withStats(sc, da, dh, dr)).power;
           if (p >= c.lo && p <= c.hi) best.push({ da, dh, dr, ns, p, mag: a + h + 1.3 * r, touched: (a ? 1 : 0) + (h ? 1 : 0) + (r ? 1 : 0) });
         }
@@ -227,12 +234,15 @@ export function computeSuggestions(rawOverrideOrOpts) {
     }
   }
 
-  // §S4/B2/B3 — loop risk (CURRENT and PROPOSED) + gate classification. One
-  // deduped pool (by card id — the same card can appear in multiple starter
-  // decks) so the acquisition graph sees every edge exactly once.
-  const poolById = new Map();
-  for (const c of cards) poolById.set(c.id, c.sc);
-  const pool = [...poolById.values()];
+  // §S4/B2/B3 — loop risk (CURRENT and PROPOSED) + gate classification. §Z2
+  // (round-11 auditor): this must run over EVERY playable card in the
+  // supplied pool (opts.pool, or the full committed card file when no
+  // override is given) — not just the starter-deck-scoped `cards` rows —
+  // so an off-starter reducer/copier still counts toward the acquisition
+  // graph. `index` already covers that full pool unconditionally (built
+  // straight from `raw` above); campaign candidate SELECTION stays
+  // starter-deck-scoped via `cards`/`outliers` below.
+  const pool = [...index.values()];
   // §V4(a): reducer multiplicity — actual starter-deck copy count where the
   // card IS decked (evidence), LEGAL_MAX_COPIES where it isn't (no evidence
   // -> conservative), never a blanket max that would over-flag broadly.

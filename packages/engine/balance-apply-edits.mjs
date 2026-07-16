@@ -7,7 +7,7 @@
 // MODE=all|nerfs|buffs|none (CLI env, exploratory arm), FLATTEN_LP=1 ⇒ 30.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { computeSuggestions, copiesInStarterDeck, MIN_ATK, MIN_BULK } from './balance-suggestions.mjs';
+import { computeSuggestions, copiesInStarterDeck, MIN_ATK, MIN_BULK, MIN_HP } from './balance-suggestions.mjs';
 import { toStatic, indexFromRaw, loadBudgetModel } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
 import {
@@ -86,6 +86,13 @@ function unwritableReason(a) {
     if (statVals.some((v) => !Number.isFinite(v) || v < 0)) {
       return `non-finite or negative composed stats (${JSON.stringify(a.stats)})`;
     }
+    // §Z1 (round-11 auditor): the write layer only rejected NEGATIVE values,
+    // so a trim to exactly 0 HP passed through as AUTO_SAFE and got written.
+    // Mirrors sim-runner.mjs's applyCardStatOverride floor (HP >= 1, never
+    // born dead) on Characters, the only cardType with a real body.
+    if (a.cardType === 'C' && a.stats.hp < MIN_HP) {
+      return `composed HP ${a.stats.hp} below floor ${MIN_HP} on a Character (never born dead)`;
+    }
   }
   return null;
 }
@@ -125,10 +132,11 @@ function applyList(raw, list, changes, vetoed) {
 /** §Y2 (round-10 auditor) — classification-time viability check on a composed
  * proposal: mirrors the SAME floors balance-suggestions.mjs's searchStatEdit
  * already enforces on the generated-suggestions path (ARM ≥ 0, ATK ≥
- * min(MIN_ATK, current), HP+ARM ≥ min(MIN_BULK, current)), plus HP ≥ 1 per
- * applyCardStatOverride's own sim-time convention (a nerfed body is never
- * born dead) — so the SAME card can't be pushed below viability just because
- * it arrived as an explicit proposal instead of a generated suggestion.
+ * min(MIN_ATK, current), HP+ARM ≥ min(MIN_BULK, current), HP ≥ min(MIN_HP,
+ * current) — §Z1, round-11 auditor, single-sourced with searchStatEdit and
+ * sim-runner.mjs's applyCardStatOverride convention that a nerfed body is
+ * never born dead) — so the SAME card can't be pushed below viability just
+ * because it arrived as an explicit proposal instead of a generated suggestion.
  * Also fail-closed on any non-finite delta input (cost or stat), which the
  * generated path can never produce (it only ever adds well-formed integers)
  * but an explicit proposal — sourced from outside this module — can.
@@ -173,10 +181,10 @@ function proposalViabilityVeto(scCurrent, scProposed) {
       reason: `HUMAN_REWRITE: composed HP+ARM ${prop.hp + prop.arm} below viability floor (min(${MIN_BULK}, current ${cur.hp + cur.arm}))`,
     };
   }
-  if (prop.hp < 1) {
+  if (cur && prop.hp < Math.min(MIN_HP, cur.hp)) {
     return {
       classification: 'HUMAN_REWRITE',
-      reason: `HUMAN_REWRITE: composed HP ${prop.hp} < 1 — a nerfed body is never born dead (applyCardStatOverride convention)`,
+      reason: `HUMAN_REWRITE: composed HP ${prop.hp} below viability floor (min(${MIN_HP}, current ${cur.hp})) — a nerfed body is never born dead (applyCardStatOverride convention)`,
     };
   }
   return null;
