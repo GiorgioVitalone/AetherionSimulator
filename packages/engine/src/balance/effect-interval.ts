@@ -522,16 +522,17 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
       // static valuation previously ignored entirely — a conditionally-granted
       // ability scored flat/flagless just like an unconditional one. Mirrors
       // the ability-level Condition treatment card-power.ts's
-      // abilityContributionDetailed gives triggered/aura `condition` (§V2(a),
-      // round-7): the midpoint is discounted by CONDITION_DISCOUNT (may not
-      // always fire), low collapses to 0 (may never fire), and high removes
-      // the discount off the nested-widened high (may always fire) — the same
-      // [never fires, always fires] band around the discounted midpoint.
+      // Granted-ability `condition` (§W1, round-8): midpoint discounted by
+      // CONDITION_DISCOUNT (may not always fire), low collapses to 0 (may never
+      // fire), high is the UNDISCOUNTED nested-widened high (always fires can at
+      // most reach the full value — round-8 review corrected an erroneous
+      // `high / CONDITION_DISCOUNT` here that over-widened 1.43x; safe direction,
+      // but not the exact [never, always] band this comment promises).
       if (effect.ability.condition !== undefined) {
         return {
           value: FLAT_ONE * CONDITION_DISCOUNT,
           low: 0,
-          high: high / CONDITION_DISCOUNT,
+          high,
           isRemoval: false,
           flags: [...new Set<PowerFlag>([...flags, 'conditional'])],
         };

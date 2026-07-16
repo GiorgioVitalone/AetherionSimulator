@@ -380,3 +380,26 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     expect(d.high).toBeGreaterThan(d.value);
   });
 });
+
+// Round-8 review exact-value pin (effect level, no recurrence entanglement):
+// a conditionally-granted flat ability spans [0, UNDISCOUNTED flat] around the
+// CONDITION_DISCOUNT midpoint — the high is the full value, NOT value/0.7^2
+// (an erroneous extra `/ CONDITION_DISCOUNT` once inflated it 1.43x).
+import { effectStaticValueDetailed as __w1Probe } from '../../src/balance/effect-interval.js';
+describe('§W1 exact band (round-8 review)', () => {
+  it('spans [0, undiscounted flat] around the discounted midpoint', () => {
+    const v = __w1Probe({
+      type: 'grant_ability',
+      target: { type: 'target_character', side: 'allied' },
+      duration: { type: 'permanent' },
+      ability: {
+        trigger: { type: 'on_deploy' },
+        effects: [{ type: 'destroy', target: { type: 'target_character', side: 'enemy' } }],
+        condition: { type: 'is_alive' },
+      },
+    } as never);
+    expect(v.value).toBeCloseTo(1.0 * 0.7, 5); // FLAT_ONE × CONDITION_DISCOUNT
+    expect(v.low).toBe(0);
+    expect(v.high).toBeCloseTo(1.0, 5); // undiscounted flat — never /0.7 again
+  });
+});
