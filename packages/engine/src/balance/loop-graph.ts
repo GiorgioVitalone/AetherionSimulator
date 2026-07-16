@@ -114,15 +114,25 @@ function edgeEffectSpec(e: Effect): EdgeEffectSpec | undefined {
   }
 }
 
-function permanentResourceGain(flat: readonly Effect[]): number {
+function loopResourceGain(flat: readonly Effect[]): number {
   // Only explicit gain_resource effects count. The universal Discard-for-
   // Energy floor (≥1 resource/turn) is a once-per-turn GAME rule, not a card
   // effect — it never appears here, and we deliberately never add it in, so a
   // repeatable cycle's "resource generation" can't be inflated by a mechanic
   // that can fire at most once per turn regardless of how many times the
   // cycle loops within that turn.
+  //
+  // §Y1 (round-10 auditor): temporary resources count identically to
+  // permanent ones. The runtime (effects/interpreter.ts) credits a temporary
+  // gain_resource to the player IMMEDIATELY, and cost-checker.ts's
+  // affordability check spends from that same pool with no distinction — a
+  // loop traversal happens entirely within one turn, so "expires at end of
+  // turn" never becomes observable before the next traversal's cost is paid.
+  // Excluding `temporary` gains understated net cost for exactly the shape
+  // that matters most (a card that funds its own recast via a temporary
+  // gain), letting a genuinely self-sustaining loop classify 'none'.
   let sum = 0;
-  for (const e of flat) if (e.type === 'gain_resource' && e.temporary !== true) sum += e.amount;
+  for (const e of flat) if (e.type === 'gain_resource') sum += e.amount;
   return sum;
 }
 
@@ -248,7 +258,7 @@ function buildSources(cards: readonly StaticCard[]): readonly AbilitySource[] {
       if (throttle === 'turn' || throttle === 'game') continue;
 
       const flat = flattenEffects(ab.effects);
-      const gain = permanentResourceGain(flat);
+      const gain = loopResourceGain(flat);
       for (const e of flat) {
         const spec = edgeEffectSpec(e);
         if (spec === undefined) continue;

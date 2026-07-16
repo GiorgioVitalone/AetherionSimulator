@@ -25,8 +25,12 @@ const traitName = (t) => TRAIT_NAME[t] ?? t.charAt(0).toUpperCase() + t.slice(1)
 // body below these, or it craters past a combat breakpoint (a 0-ATK body can't
 // trade; hp+arm below 2 dies to any ping). The §11f budget-fit ignored this and
 // printed 0/3 and 2/1 bodies. Beyond a gentle trim, prefer cost (preserve the body).
-const MIN_ATK = 1;
-const MIN_BULK = 2; // hp + arm
+// §Y2 (round-10 auditor): exported so balance-apply-edits.mjs's explicit-
+// proposals path (classifyProposals) can validate a composed stat delta
+// against the SAME floors this generated-suggestions path already enforces,
+// instead of inventing a second set of numbers that could drift from these.
+export const MIN_ATK = 1;
+export const MIN_BULK = 2; // hp + arm
 const STAT_TRIM_MAX = 2; // max total stat points to trim before deferring to the cost lever
 const withStats = (sc, da, dh, dr) => ({ ...sc, stats: { atk: sc.stats.atk + da, hp: sc.stats.hp + dh, arm: sc.stats.arm + dr } });
 // §B3: the delta lands on the PRIMARY (largest) cost component — the exact

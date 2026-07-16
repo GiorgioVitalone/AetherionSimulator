@@ -495,3 +495,66 @@ describe('§Q4 — classifyProposals derives real deck copies, not a hardcoded d
     expect(rankOf(threeCopyRowIfDefaulted, {})).toBeLessThan(rankOf(oneCopyRow, {}));
   });
 });
+
+/**
+ * §Y2 (round-10 auditor probe) — classifyProposals/applyEdits had NO
+ * validation of the COMPOSED proposal result: an explicit statDelta that
+ * pushed a card's stats below combat viability (or to a non-finite value)
+ * still classified AUTO_SAFE and was mechanically applied. Reproduction:
+ * Bio-Seedling (id104, Verdant, ATK 0/HP 2/ARM 0) with statDelta atk:-1 —
+ * the generated-suggestions path's searchStatEdit would never propose this
+ * (it enforces ATK ≥ min(MIN_ATK, current) = 0 here), but an explicit
+ * proposal bypassed that floor entirely.
+ */
+describe('§Y2 — composed proposals below viability (or non-finite) fail closed', () => {
+  const BIO_SEEDLING_ID = 104; // Verdant, ATK 0 / HP 2 / ARM 0
+
+  it('Bio-Seedling ATK 0 -> -1 (statDelta atk:-1) is NOT AUTO_SAFE — classifies HUMAN_REWRITE', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: BIO_SEEDLING_ID, statDelta: { atk: -1 } }], {
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).toBe('HUMAN_REWRITE');
+    expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+    expect(rows[0]!.reason).toMatch(/ATK/);
+  });
+
+  it('and applyEdits never mechanically applies that below-viability trim — zero changes', () => {
+    const { raw } = loadBalanceData();
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+      proposals: [{ id: BIO_SEEDLING_ID, statDelta: { atk: -1 } }],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+
+  it('a finite, VALID trim on a bulkier card (Biosteel Golem id111, ATK 4 -> 3, stays above every floor) still classifies and is not fail-closed by §Y2', () => {
+    const BIOSTEEL_GOLEM_ID = 111; // Verdant, ATK 4 / HP 5 / ARM 1
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: BIOSTEEL_GOLEM_ID, statDelta: { atk: -1 } }], {
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).not.toBe('HUMAN_REWRITE');
+    expect(rows[0]!.reason).not.toMatch(/viability/);
+  });
+
+  it('a non-finite delta (NaN statDelta.atk) fails closed to SIM_REQUIRED, never AUTO_SAFE', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: BIO_SEEDLING_ID, statDelta: { atk: NaN } }], {
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).toBe('SIM_REQUIRED');
+    expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 },
+      proposals: [{ id: BIO_SEEDLING_ID, statDelta: { atk: NaN } }],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+});

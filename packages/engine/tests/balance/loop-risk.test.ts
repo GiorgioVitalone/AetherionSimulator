@@ -63,6 +63,82 @@ describe('loop-risk — Arcane Echoes self-copy (item 1)', () => {
   });
 });
 
+// ── §Y1 (round-10 auditor): temporary resources fund loops too ─────────────
+
+describe('loop-risk — temporary gain_resource funds the loop identically to permanent (Y1, round-10 auditor probe)', () => {
+  it('a cost-3 on_cast self-copy generating 3 TEMPORARY resources/traversal is likely, and gates BLOCKED', () => {
+    // net = costSum(3) - gainSum(3) = 0 -> net<=0 -> 'likely'. Pre-fix, the
+    // temporary gain was excluded from gainSum entirely (net=3 -> 'none'),
+    // exactly the auditor's Y1 finding: the runtime credits a temporary
+    // resource immediately and cost-checking spends it exactly like a
+    // permanent one within the same turn a loop traversal happens in.
+    const tempFundedCopier: StaticCard = card({
+      id: 800,
+      name: 'Temp-Funded Copier',
+      cardType: 'S',
+      tags: ['Arcane'],
+      alignment: ['Onyx'],
+      cost: { mana: 3, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          { type: 'gain_resource', resourceType: 'mana', amount: 3, temporary: true },
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([tempFundedCopier]);
+    expect(risk.get(800)).toBe('likely');
+
+    const candidate = {
+      id: 800,
+      faction: 'Onyx',
+      copies: 1,
+      edge: 2,
+      status: 'over',
+      abilityShare: 0,
+      costK: 1,
+      flags: [] as string[],
+      proposedLoopRisk: risk.get(800),
+      powerLow: 5,
+      powerHigh: 5,
+      lo: 4,
+      hi: 6,
+    };
+    const { classification } = classifyCandidate(candidate, {});
+    expect(classification).toBe('BLOCKED');
+  });
+
+  it('control: the same shape with a PERMANENT gain of the same amount is unchanged (still likely)', () => {
+    // Proves the fix didn't change permanent-gain behavior — only extended
+    // the same treatment to temporary gains.
+    const permFundedCopier: StaticCard = card({
+      id: 801,
+      name: 'Perm-Funded Copier',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 3, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          { type: 'gain_resource', resourceType: 'mana', amount: 3 },
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([permFundedCopier]);
+    expect(risk.get(801)).toBe('likely');
+  });
+});
+
 // ── Item 2: Master Archivist castFreeIfCost chain ────────────────────────────
 
 /** Mirrors the real Master Archivist (id141): on_deploy search_deck, filter

@@ -7,7 +7,7 @@
 // MODE=all|nerfs|buffs|none (CLI env, exploratory arm), FLATTEN_LP=1 ⇒ 30.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { computeSuggestions, copiesInStarterDeck } from './balance-suggestions.mjs';
+import { computeSuggestions, copiesInStarterDeck, MIN_ATK, MIN_BULK } from './balance-suggestions.mjs';
 import { toStatic, indexFromRaw, loadBudgetModel } from './balance-data.mjs';
 import { getDeck } from './deck-loader.mjs';
 import {
@@ -69,6 +69,27 @@ function guardVeto(raw, card, newTotalCost) {
   return null;
 }
 
+/** §Y2 (round-10 auditor) — defense in depth at the APPLICATION boundary,
+ * independent of whatever classified this edit: refuse to WRITE a card whose
+ * composed cost/stats are non-finite or negative, no matter how it got here.
+ * Returns a reason string if `a` (the proposed `{ cost, stats? }`) is not
+ * writable, else null. This is deliberately narrower than the classification-
+ * time viability floors below (finite + non-negative only) — it's the last
+ * line, not a duplicate of the fuller check. */
+function unwritableReason(a) {
+  const costVals = [a.cost.mana, a.cost.energy, a.cost.flexible];
+  if (costVals.some((v) => !Number.isFinite(v) || v < 0)) {
+    return `non-finite or negative composed cost (${JSON.stringify(a.cost)})`;
+  }
+  if (a.stats) {
+    const statVals = [a.stats.atk, a.stats.hp, a.stats.arm];
+    if (statVals.some((v) => !Number.isFinite(v) || v < 0)) {
+      return `non-finite or negative composed stats (${JSON.stringify(a.stats)})`;
+    }
+  }
+  return null;
+}
+
 /** Apply a candidate list to `raw` (mutates raw's cards in place — raw itself
  * must already be a private copy). Cost-LOWERING edits pass the §13a loop
  * guards or are vetoed. Shared by both applyEdits modes below. */
@@ -78,6 +99,14 @@ function applyList(raw, list, changes, vetoed) {
     const card = byId.get(c.id);
     if (!card) continue;
     const a = c.after.static;
+    // §Y2: refuse to write an unwritable composed result BEFORE the loop
+    // guards even run (a non-finite/negative cost can't be meaningfully
+    // compared to oldTotal anyway).
+    const unwritable = unwritableReason(a);
+    if (unwritable) {
+      vetoed.push(`${card.name}: ${c.after.lever} — VETOED (${unwritable})`);
+      continue;
+    }
     const oldTotal = card.cost.mana + card.cost.energy + card.cost.flexible;
     const newTotal = a.cost.mana + a.cost.energy + a.cost.flexible;
     if (newTotal < oldTotal) {
@@ -91,6 +120,66 @@ function applyList(raw, list, changes, vetoed) {
     card.cost = { mana: a.cost.mana, energy: a.cost.energy, flexible: a.cost.flexible };
     changes.push(`${card.name}: ${c.after.lever}`);
   }
+}
+
+/** §Y2 (round-10 auditor) — classification-time viability check on a composed
+ * proposal: mirrors the SAME floors balance-suggestions.mjs's searchStatEdit
+ * already enforces on the generated-suggestions path (ARM ≥ 0, ATK ≥
+ * min(MIN_ATK, current), HP+ARM ≥ min(MIN_BULK, current)), plus HP ≥ 1 per
+ * applyCardStatOverride's own sim-time convention (a nerfed body is never
+ * born dead) — so the SAME card can't be pushed below viability just because
+ * it arrived as an explicit proposal instead of a generated suggestion.
+ * Also fail-closed on any non-finite delta input (cost or stat), which the
+ * generated path can never produce (it only ever adds well-formed integers)
+ * but an explicit proposal — sourced from outside this module — can.
+ * Returns `{ classification, reason }` if the composed proposal is invalid,
+ * else null. */
+function proposalViabilityVeto(scCurrent, scProposed) {
+  const costVals = [scProposed.cost.mana, scProposed.cost.energy, scProposed.cost.flexible];
+  if (costVals.some((v) => !Number.isFinite(v))) {
+    return {
+      classification: 'SIM_REQUIRED',
+      reason: `SIM_REQUIRED: composed proposal has a non-finite cost (${JSON.stringify(scProposed.cost)}) — malformed delta input`,
+    };
+  }
+  // Combat-viability floors (ARM/ATK/bulk/HP) only make sense for Characters
+  // — searchStatEdit itself only ever scores stats on cardType 'C' (spells/
+  // equipment carry an all-zero placeholder stats block that isn't a body).
+  if (scProposed.cardType !== 'C' || !scProposed.stats) return null;
+  const statVals = [scProposed.stats.atk, scProposed.stats.hp, scProposed.stats.arm];
+  if (statVals.some((v) => !Number.isFinite(v))) {
+    return {
+      classification: 'SIM_REQUIRED',
+      reason: `SIM_REQUIRED: composed proposal has non-finite stats (${JSON.stringify(scProposed.stats)}) — malformed delta input`,
+    };
+  }
+  const cur = scCurrent.stats;
+  const prop = scProposed.stats;
+  if (prop.arm < 0) {
+    return {
+      classification: 'HUMAN_REWRITE',
+      reason: `HUMAN_REWRITE: composed ARM ${prop.arm} < 0 — below combat viability, no sim can fix nonsense`,
+    };
+  }
+  if (cur && prop.atk < Math.min(MIN_ATK, cur.atk)) {
+    return {
+      classification: 'HUMAN_REWRITE',
+      reason: `HUMAN_REWRITE: composed ATK ${prop.atk} below viability floor (min(${MIN_ATK}, current ${cur.atk}))`,
+    };
+  }
+  if (cur && prop.hp + prop.arm < Math.min(MIN_BULK, cur.hp + cur.arm)) {
+    return {
+      classification: 'HUMAN_REWRITE',
+      reason: `HUMAN_REWRITE: composed HP+ARM ${prop.hp + prop.arm} below viability floor (min(${MIN_BULK}, current ${cur.hp + cur.arm}))`,
+    };
+  }
+  if (prop.hp < 1) {
+    return {
+      classification: 'HUMAN_REWRITE',
+      reason: `HUMAN_REWRITE: composed HP ${prop.hp} < 1 — a nerfed body is never born dead (applyCardStatOverride convention)`,
+    };
+  }
+  return null;
 }
 
 // ── §R1/F3 — classify an EXPLICIT proposal list at its PROPOSED values ───────
@@ -199,6 +288,14 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
     const scCurrent = currentIndex.get(p.id);
     if (!sc || !scCurrent) {
       rows.push({ id: p.id, classification: 'SIM_REQUIRED', reason: `unknown card id ${p.id}` });
+      continue;
+    }
+    // §Y2 (round-10 auditor): validate the COMPOSED result before it's scored
+    // at all — a below-viability or non-finite stat/cost line must never
+    // reach AUTO_SAFE (the Bio-Seedling ATK 0 -> -1 repro).
+    const viabilityVeto = proposalViabilityVeto(scCurrent, sc);
+    if (viabilityVeto) {
+      rows.push({ id: p.id, ...viabilityVeto });
       continue;
     }
     const bd = computeCardPower(sc);
