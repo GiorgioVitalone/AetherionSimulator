@@ -139,7 +139,19 @@ export function effectProvides(e: Effect): ProvideSpec[] {
       return [{ kind: 'card_flow', weight: 2 }];
     case 'gain_resource':
       // Temporary gains ramp at half weight — burst, not banked acceleration.
-      return [{ kind: 'ramp', weight: Math.max(1, e.amount) * (e.temporary === true ? 0.5 : 1) }];
+      // §R13-2 (round-15 fix): a `flexible` gain cannot pay any cost today
+      // (cost-checker.ts's getAvailableResources only tallies mana/energy) —
+      // halved to match the scoring discount effect-interval.ts's gain_resource
+      // case now applies to a flexible gain's value.
+      return [
+        {
+          kind: 'ramp',
+          weight:
+            Math.max(1, e.amount) *
+            (e.temporary === true ? 0.5 : 1) *
+            (e.resourceType === 'flexible' ? 0.5 : 1),
+        },
+      ];
     case 'modify_stats':
       return modifyProvides(e);
     case 'grant_trait':

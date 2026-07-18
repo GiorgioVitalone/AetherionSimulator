@@ -88,6 +88,13 @@ export const RESOURCE_VALUE = 1.5; // one banked resource ≈ ACCEL_RAMP_TEMPO s
 export const RESOURCE_VALUE_TEMP = 0.75; // a this-turn-only resource: half a banked one (must be used NOW)
 export const TOKEN_BODY_FACTOR = 0.8; // token stats vs printed-card stats: a real body, but no hand/equip value
 export const EMPTY_SLOTS_EXPECTED = 2.5; // in-each-empty Frontline deploys: 3-slot zone, expected ~2.5 open when it lands
+// §R13-2 (round-15 fix): `inEachEmpty` deploys into the ACTUAL empty-slot count
+// at cast time (0 when the zone is full, up to the zone's own capacity — see
+// interpreter.ts's executeDeployToken), not a fixed EMPTY_SLOTS_EXPECTED — the
+// prior det(per*n, false) was a zero-width, unflagged point. Provisional
+// constant: Frontline (3 slots) is the largest zone in the default 3/2 board
+// (zones.ts), so it is the honest ceiling for "every slot open."
+export const MAX_EMPTY_SLOTS = 3;
 // Rulebook 8, Upkeep 4: a ready Reserve character taps for +1 TEMPORARY resource
 // each turn. A token parked in Reserve is therefore a small engine, not just
 // stats: RESOURCE_VALUE_TEMP × the on_turn_start recurrence (2.4).
