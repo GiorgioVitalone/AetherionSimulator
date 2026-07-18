@@ -397,6 +397,129 @@ describe('loop-risk — heroes/transforms enter the graph as sources (H3-2)', ()
     const withHero = assessLoopRisk([equipSelfCopier, seraphinaShaped]);
     expect(withHero.get(920)).toBe('likely');
   });
+
+  it('DEFECT A regression: a firstPerTurn hero aura does NOT sustain a self-loop (excluded from effective cost)', () => {
+    // Same shape as the Seraphina-shaped test above, but the aura's discount
+    // is firstPerTurn: true — mirrors the REAL Shieldbearer Seraphina (H
+    // id134) and Lyria Archmage Supreme (T id74), both of which carry
+    // cost_reduction with appliesTo.firstPerTurn: true. Runtime ground truth
+    // (cost-checker.ts:44, reductionMatches' usedThisTurn gate): a
+    // firstPerTurn reduction discounts only the FIRST matching cast each
+    // turn — every subsequent same-turn cast pays full price. A within-turn
+    // self-copy loop repeats MANY times in one turn, so its SUSTAINED
+    // per-iteration cost is the full printed cost, not the once-discounted
+    // one. Pre-fix, collectCostReducers dropped `firstPerTurn` and modeled
+    // this as a standing -2 discount: effective cost 3-2=1 -> the cost<=1
+    // self-loop override fires -> 'likely' (a false hard-veto). Post-fix, the
+    // firstPerTurn reducer is excluded entirely: effective cost stays 3 ->
+    // net 3 (>2) -> 'none'.
+    const seraphinaShapedFirstPerTurn: StaticCard = card({
+      id: 134,
+      name: 'Seraphina-shaped Hero (firstPerTurn)',
+      cardType: 'H',
+      cost: { mana: 1, energy: 0, flexible: 0 },
+      alignment: ['Radiant'],
+      abilities: [
+        aura([
+          {
+            type: 'cost_reduction',
+            reduction: 2,
+            appliesTo: { cardType: 'E', firstPerTurn: true },
+            duration: { type: 'while_in_play' },
+          },
+        ]),
+      ],
+    });
+    const equipSelfCopierFpt: StaticCard = card({
+      id: 921,
+      name: 'Equip Self-Copier (firstPerTurn hero)',
+      cardType: 'E',
+      tags: ['Arcane'],
+      alignment: ['Radiant'],
+      cost: { mana: 3, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'E' },
+          },
+        ]),
+      ],
+    });
+
+    const withFptHero = assessLoopRisk([equipSelfCopierFpt, seraphinaShapedFirstPerTurn]);
+    expect(withFptHero.get(921)).toBe('none');
+  });
+
+  it('DEFECT A regression (companion, cardType S): a firstPerTurn spell-cost aura does NOT sustain a self-loop', () => {
+    // Same firstPerTurn exclusion, isolated on cardType 'S' (the Lyria/Echoes
+    // shape from the brief: Arcane Echoes id94 is cardType S, cost 5; a
+    // firstPerTurn -1 Arcane-S reducer must not lower its SUSTAINED cost).
+    // A standing -3 (Wizard's Robe-shaped) plus a firstPerTurn -1 (Lyria-
+    // shaped): effective cost = 5 - 3 (standing only, firstPerTurn excluded)
+    // = 2 -> net 2 <=2 -> 'possible', NOT 'likely'. Pre-fix, both would have
+    // summed (5-3-1=1 <=1) -> 'likely' (a false hard-veto).
+    const lyriaShapedFirstPerTurn: StaticCard = card({
+      id: 74,
+      name: 'Lyria-shaped Transform (firstPerTurn)',
+      cardType: 'T',
+      cost: { mana: 0, energy: 0, flexible: 0 },
+      alignment: ['Arcane'],
+      abilities: [
+        aura([
+          {
+            type: 'cost_reduction',
+            reduction: 1,
+            appliesTo: { cardType: 'S', tag: 'Arcane', firstPerTurn: true },
+            duration: { type: 'while_in_play' },
+          },
+        ]),
+      ],
+    });
+    const robeShapedStanding: StaticCard = card({
+      id: 96,
+      name: "Wizard's-Robe-shaped Standing Reducer",
+      cardType: 'E',
+      alignment: ['Arcane'],
+      cost: { mana: 2, energy: 0, flexible: 0 },
+      abilities: [
+        aura([
+          {
+            type: 'cost_reduction',
+            reduction: 3,
+            appliesTo: { cardType: 'S', tag: 'Arcane' },
+            duration: { type: 'while_in_play' },
+          },
+        ]),
+      ],
+    });
+    const echoesShapedFpt: StaticCard = card({
+      id: 94,
+      name: 'Echoes-shaped (firstPerTurn companion)',
+      cardType: 'S',
+      tags: ['Arcane'],
+      alignment: ['Arcane'],
+      cost: { mana: 5, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+
+    const risk = assessLoopRisk(
+      [echoesShapedFpt, robeShapedStanding, lyriaShapedFirstPerTurn],
+      undefined,
+    );
+    expect(risk.get(94)).toBe('possible');
+  });
 });
 
 // ── §H3-4 (batch-C): activated.cost was ignored in traversal cost ──────────
@@ -915,22 +1038,37 @@ describe('loop-risk — no false positives on plain cards', () => {
       '[loop-risk] live-pool possible entries:',
       possible.map((c) => `${String(c.id)} ${c.name}`),
     );
-    // §H3-2 (batch-C): wiring heroes/transforms into the graph as sources
-    // surfaces a REAL, previously-invisible degenerate chain: Lyria Archmage
-    // Supreme's (T id74) "first spell each turn costs 1 less" aura stacks
-    // with Wizard's Robe's (id96) existing -1-per-copy Arcane-spell discount
-    // — together they push Arcane Echoes' (id94) effective cost from 2 to 1,
-    // crossing the cost<=1 self-loop threshold -> 'likely'. Master Archivist
-    // (id141) inherits via its existing castFreeIfCost:1 fetch of Echoes
-    // (backward-feeder propagation, pre-existing logic). Rampant Evolution
-    // (id119) inherits in turn via its own unconditional deploy_from_deck
-    // edge into ANY character, which now reaches the now-'likely' Master
-    // Archivist (cardType C). Confirmed via isolation: the C/S/E-only pool
-    // (no heroes) is UNCHANGED by every other batch-C fix (self-death/
-    // combat triggers, activated-cost accounting) — this flip is entirely
-    // attributable to a genuine hero/transform interaction the pool
-    // previously couldn't see, not a detector regression. A locked set
-    // (rather than toHaveLength(0)) so any FURTHER change is caught.
-    expect(likely.map((c) => c.id).sort((a, b) => a - b)).toEqual([94, 119, 141]);
+    // §DEFECT A fix (post-fix re-pin, measured — not derived): batch-C wired
+    // heroes/transforms into the graph as SOURCES, which surfaced Lyria
+    // Archmage Supreme's (T id74) "first spell each turn costs 1 less"
+    // cost_reduction aura on Arcane spells. That reducer carries
+    // appliesTo.firstPerTurn: true. Runtime ground truth (cost-checker.ts:44,
+    // reductionMatches' usedThisTurn gate): a firstPerTurn reduction discounts
+    // ONLY the first matching cast each turn — every subsequent same-turn
+    // cast pays full price. collectCostReducers previously copied
+    // cardType/tag from a reducer's appliesTo but DROPPED firstPerTurn,
+    // modeling Lyria's once-per-turn discount as a STANDING one applied on
+    // every loop iteration — a false hard-veto (5 - 3(Robe) - 1(Lyria) = 1,
+    // crossing the cost<=1 self-loop 'likely' override).
+    //
+    // Post-fix, collectCostReducers excludes any reducer with
+    // appliesTo.firstPerTurn === true from the per-iteration reducer set.
+    // Arcane Echoes (id94, printed cost 5, tag Arcane, cardType S) now only
+    // sees Wizard's Robe's (id96) STANDING (non-firstPerTurn) -1-per-copy
+    // Arcane-S reducer (3 starter copies -> -3 total): effective cost
+    // 5 - 3 = 2. That crosses the net<=2 threshold -> 'possible', but NOT
+    // the cost<=1 'likely' override. Measured (this test, run post-fix):
+    // likely = [], possible = [94 Arcane Echoes, 119 Rampant Evolution,
+    // 141 Master Archivist] (console.log above). Master Archivist (id141) and
+    // Rampant Evolution (id119) were pinned 'likely' pre-fix ONLY because they
+    // inherit Echoes' rank through pre-existing propagation paths (Archivist's
+    // castFreeIfCost:1 fetch of Echoes; Rampant Evolution's unconditional
+    // deploy_from_deck into any character, reaching Archivist) — neither has
+    // its own cost<=1 self-loop or net<=0 cycle. Once Echoes drops from
+    // 'likely' to 'possible', both dependents drop with it (to 'possible',
+    // via the same inheritance paths). A locked EMPTY set (not
+    // toHaveLength(0)) so any regression that reintroduces a 'likely' verdict
+    // here is caught immediately.
+    expect(likely.map((c) => c.id).sort((a, b) => a - b)).toEqual([]);
   });
 });

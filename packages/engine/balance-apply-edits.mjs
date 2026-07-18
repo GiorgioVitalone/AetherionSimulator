@@ -332,11 +332,23 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
     return { ...c, cost: after.cost, ...(after.stats ? { stats: after.stats } : {}) };
   });
   const { index: proposedIndex } = indexFromRaw(proposedRaw);
+  // §DEFECT B fix: indexFromRaw only populates C/S/E — mirror
+  // computeSuggestions' pool construction (balance-suggestions.mjs ~254-255)
+  // so this gate assesses loop risk over the SAME pool the suggestions path
+  // does. Without heroes/transforms here, a hero/transform cost-reduction
+  // aura or free-acquisition ability (a loop SOURCE) is invisible to this
+  // classifier while computeSuggestions sees it — the two gating paths could
+  // disagree on the same proposed state.
+  const heroesAndTransforms = proposedRaw
+    .filter((c) => c.cardType === 'H' || c.cardType === 'T')
+    .map(toStatic);
+  const proposedPool = [...proposedIndex.values(), ...heroesAndTransforms];
   // §V4(a): actual starter-deck copy count where decked (evidence),
-  // LEGAL_MAX_COPIES where not (no evidence -> conservative).
-  const proposedPool = [...proposedIndex.values()];
+  // LEGAL_MAX_COPIES where not (no evidence -> conservative). A hero/
+  // transform is never decked/copied — pin at 1 (mirrors computeSuggestions).
   const copiesOf = new Map(
     proposedPool.map((sc) => {
+      if (sc.cardType === 'H' || sc.cardType === 'T') return [sc.id, 1];
       const n = copiesInStarterDeck(sc.id);
       return [sc.id, n > 0 ? n : LEGAL_MAX_COPIES];
     }),

@@ -180,6 +180,19 @@ function collectCostReducers(
     // the reducer wasn't wrapped in an `aura`.
     const copies = copyCountOf(c.id, copiesOf);
     for (const e of scanRiskyEffects(c.abilities).costReducers) {
+      // firstPerTurn EXCLUDED here: this pool feeds effectiveCost(), which
+      // governs loop SUSTAINABILITY — the marginal, per-iteration cost of
+      // repeating a within-turn cycle. A firstPerTurn reduction (runtime ref:
+      // cost-checker.ts:44, reductionMatches' usedThisTurn gate) discounts
+      // only the FIRST matching cast each turn; every subsequent same-turn
+      // cast pays full price. Modeling it as a standing discount would charge
+      // a one-time saving on every loop traversal, understating the true
+      // sustained cost (§ DEFECT A). Contrast with the maxPoolReduction guard
+      // in balance-apply-edits.mjs, which deliberately COUNTS firstPerTurn —
+      // that guard asks a different, conservative question ("could LOWERING
+      // this cost enable churn?"), not "is this loop sustainable?" — the two
+      // are not contradictory.
+      if (e.appliesTo.firstPerTurn === true) continue;
       out.push({
         cardType: e.appliesTo.cardType,
         tag: e.appliesTo.tag,
