@@ -545,11 +545,40 @@ describe('§R13-2: dynamic-valuation false-precision sweep', () => {
     expect(d.high).toBeGreaterThan(d.value);
   });
 
-  it('multiply(factor 0, a zero/shrink debuff): no longer scores 0 — widened + flagged', () => {
-    // Real pool usage of `multiply` (RIA-09 Verdant Vanguard) is an ALLIED
-    // growth buff — sign/target-side accounting is the caller's
-    // (valueForTotal's) responsibility, not this case's; an allied target is
-    // the shape this fix is verified against, matching established usage.
+  it('§R13-2b: multiply(factor 0) on an ENEMY is a body-zeroing DEBUFF — scores > 0, widened + flagged (the auditor probe that still hit 0 under the unsigned fix)', () => {
+    // The exact R13-2 example: a permanent enemy `multiply factor:0` zeroes the
+    // target's stats. The signed change (factor-1)*body = -1*body is a NEGATIVE
+    // total, which valueForTotal correctly values as an enemy debuff (not a
+    // worthless "buff on enemy" -> 0, which the unsigned magnitude produced).
+    const d = effectStaticValueDetailed({
+      type: 'modify_stats',
+      modifier: {},
+      dynamicModifier: { type: 'multiply', factor: 0 },
+      target: enemyCharacter,
+      duration: { type: 'until_end_of_turn' },
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.value).toBeGreaterThan(0);
+    expect(d.high).toBeGreaterThan(d.value);
+  });
+
+  it('§R13-2b: multiply(factor 0.5) on an ENEMY (partial shrink) is a valued debuff, widened + flagged', () => {
+    const d = effectStaticValueDetailed({
+      type: 'modify_stats',
+      modifier: {},
+      dynamicModifier: { type: 'multiply', factor: 0.5 },
+      target: enemyCharacter,
+      duration: { type: 'until_end_of_turn' },
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.value).toBeGreaterThan(0);
+  });
+
+  it('§R13-2b control: multiply(factor 0) shrink on an ALLIED target is a self-drawback (~0), not a buff', () => {
+    // Shrinking your OWN body is a downside rider, not a weapon — valueForTotal
+    // returns ZERO for a negative total on an allied target. This is the sign
+    // machinery working: the same effect is a debuff on an enemy and worthless
+    // on an ally.
     const d = effectStaticValueDetailed({
       type: 'modify_stats',
       modifier: {},
@@ -557,20 +586,19 @@ describe('§R13-2: dynamic-valuation false-precision sweep', () => {
       target: alliedCharacter,
       duration: { type: 'until_end_of_turn' },
     });
-    expect(d.flags).toContain('dynamic_amount');
-    expect(d.high).toBeGreaterThan(0);
+    expect(d.value).toBe(0);
   });
 
-  it('multiply(factor 0.5, a partial shrink): non-zero widened interval, flagged', () => {
+  it('§R12-4 control: multiply(factor 2) growth on an ALLIED target stays a positive buff (unchanged by the signed fix)', () => {
     const d = effectStaticValueDetailed({
       type: 'modify_stats',
       modifier: {},
-      dynamicModifier: { type: 'multiply', factor: 0.5 },
+      dynamicModifier: { type: 'multiply', factor: 2 },
       target: alliedCharacter,
       duration: { type: 'until_end_of_turn' },
     });
     expect(d.flags).toContain('dynamic_amount');
-    expect(d.high).toBeGreaterThan(0);
+    expect(d.value).toBeGreaterThan(0);
   });
 
   it('deploy_token inEachEmpty: widened [0, per×MAX_EMPTY_SLOTS], flagged (was a zero-width point)', () => {

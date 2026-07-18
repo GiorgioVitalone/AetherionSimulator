@@ -284,20 +284,24 @@ export function dynamicBonusDetailed(dyn: DynamicStatSource | undefined): Amount
       // OWN stats, not the fixed AVG_WEAK_BODY anchor — was zero-width and
       // unflagged. Widened to the same [0, value × SPREAD] policy other
       // dynamic-amount cases use, midpoint unchanged.
-      // §R13-2 (round-15 fix): `Math.max(0, factor - 1)` zeroed the ENTIRE case
-      // for factor < 1 (a SHRINK/zero debuff — e.g. factor:0 zeroes the
-      // target's stats — amount-evaluator.ts applies currentStat*(factor-1)
-      // regardless of direction) — a body-shrink is worth its magnitude just
-      // like a body-buff, not nothing. Switched to the absolute magnitude of
-      // the stat change for BOTH directions; sign/target-side accounting
-      // (allied-buff vs enemy-debuff) is left to the caller (valueForTotal),
-      // the same sign-agnostic-magnitude convention `equals_stat` above
-      // already uses — never a second sign model.
-      const v = Math.abs(dyn.factor - 1) * AVG_WEAK_BODY;
+      // §R13-2: `Math.max(0, factor - 1)` zeroed the ENTIRE case for factor < 1
+      // (a SHRINK/zero debuff — e.g. factor:0 zeroes the target's stats;
+      // amount-evaluator.ts applies currentStat*(factor-1) regardless of
+      // direction). §R13-2b (round-13 re-review): the first fix used the
+      // UNSIGNED magnitude, so a factor<1 shrink read as a POSITIVE amount and
+      // valueForTotal treated it as a worthless "buff on an enemy" -> 0 again
+      // (the auditor's exact enemy-factor:0 example still scored 0). Use the
+      // SIGNED change (factor-1)*body, exactly like `per_count` above, so the
+      // sign carries into valueForTotal: a growth (factor>1) is a positive
+      // total (buff allied / worthless enemy) and a shrink (factor<1) is a
+      // NEGATIVE total (self-drawback allied / valued DEBUFF on enemy). Widened
+      // to the same signed [min(0,spread), max(0,spread)] band per_count uses.
+      const base = (dyn.factor - 1) * AVG_WEAK_BODY;
+      const spread = base * DYNAMIC_AMOUNT_SPREAD;
       return normalizeRange({
-        value: v,
-        low: 0,
-        high: v * DYNAMIC_AMOUNT_SPREAD,
+        value: base,
+        low: Math.min(0, spread),
+        high: Math.max(0, spread),
         flags: ['dynamic_amount'],
       });
     }

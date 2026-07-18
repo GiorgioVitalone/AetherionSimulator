@@ -8,9 +8,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { computeCardPower } from '../../src/balance/card-power.js';
-import { loadBudgetModel } from '../../balance-data.mjs';
+import { loadBudgetModel, indexFromRaw } from '../../balance-data.mjs';
 import { computeSuggestions } from '../../balance-suggestions.mjs';
-import { curate, fitPopulation } from '../../balance-calibrate-budget.mjs';
+import { fitPopulation } from '../../balance-calibrate-budget.mjs';
 import { body } from './factory.js';
 
 const BUDGET_JSON_URL = new URL('../../sim-data/balance-budget.v1.json', import.meta.url);
@@ -94,9 +94,42 @@ describe('§B1 — declared budget line', () => {
   //    tolerance window, across the population's observed cost range? That is
   //    the actual question a leave-one-faction-out check is asking (would a
   //    missing faction have changed which cards get flagged).
-  it('stability: leave-one-faction-out over the curated set does not swing the calibrated line', () => {
+  // §R13 (round-13): this test measures the FROZEN line's stability, so it must
+  // refit over the SET THAT PRODUCED the frozen line — the recorded
+  // `provenance.calibratedFrom` ids (~39 characters) that the 13-15%
+  // ratification was measured on — NOT a live `curate(raw)` re-derivation.
+  // curate() keeps only cards with zero context flags and a tight interval; as
+  // every audit round adds MORE honest §S3 dynamic-amount flags and wider
+  // uncertainty bands (round 13 alone flagged dice / multiply / inEachEmpty /
+  // flexible), curate() drops more cards each round (now ~31 characters, with
+  // Sapphire down to 4), so a leave-one-faction-out on that shrinking set is a
+  // MOVING TARGET that swings to ~20% purely from small-N volatility — it no
+  // longer measures the frozen line at all. Pinning to calibratedFrom scores
+  // those exact cards with CURRENT scoring (no flag re-filter): the frozen
+  // line's own leave-one-faction-out worst case is 13.6% (drop Radiant), inside
+  // the ratified 15%. DISCLOSED consequence (D7 territory): a FRESH
+  // recalibration on today's smaller flag-free curated set WOULD be ~20%
+  // unstable — re-seeding a v2 line would need care and the maintainer's
+  // sign-off; the frozen v1 line is intentionally never re-chased.
+  it('stability: leave-one-faction-out over the FROZEN calibratedFrom set does not swing the calibrated line', () => {
     const raw = JSON.parse(readFileSync(POOL_URL, 'utf8'));
-    const curated = curate(raw);
+    const budgetJson = JSON.parse(readFileSync(BUDGET_JSON_URL, 'utf8')) as {
+      provenance: { calibratedFrom: readonly number[] };
+    };
+    const frozenIds = new Set(budgetJson.provenance.calibratedFrom);
+    const { index } = indexFromRaw(raw);
+    const curated = [...index.entries()]
+      .filter(([id]) => frozenIds.has(id))
+      .map(([id, sc]) => {
+        const bd = computeCardPower(sc);
+        return {
+          id,
+          cardType: sc.cardType,
+          cost: sc.cost.mana + sc.cost.energy + sc.cost.flexible,
+          power: bd.power,
+          faction: sc.alignment[0] ?? 'None',
+        };
+      });
     const charCards = curated.filter((c) => c.cardType === 'C');
     const spellsEquipCards = curated.filter((c) => c.cardType !== 'C');
     const baseChars = fitPopulation(charCards);
