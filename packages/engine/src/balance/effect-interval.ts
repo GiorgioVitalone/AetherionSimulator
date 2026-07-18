@@ -244,7 +244,19 @@ export function dynamicBonusDetailed(dyn: DynamicStatSource | undefined): Amount
       });
     }
     case 'equals_stat':
-      return { value: AVG_BODY_HP, low: AVG_BODY_HP, high: AVG_BODY_HP, flags: NO_FLAGS };
+      // §R12-4 (round-14 fix): the runtime (amount-evaluator.ts's
+      // equals_stat evaluation) grants the TARGET'S LIVE stat, not a fixed
+      // AVG_BODY_HP — a 0-stat target grants +0, a high-stat target grants
+      // far more than the midpoint. Was priced as a zero-width, unflagged
+      // fixed point; widened to the same [0, EXPECTED × SPREAD] policy the
+      // other dynamic-amount cases here use (never a second model), midpoint
+      // unchanged.
+      return normalizeRange({
+        value: AVG_BODY_HP,
+        low: 0,
+        high: AVG_BODY_HP * DYNAMIC_AMOUNT_SPREAD,
+        flags: ['dynamic_amount'],
+      });
     case 'x_cost':
       return {
         value: EXPECTED_X,
@@ -256,8 +268,17 @@ export function dynamicBonusDetailed(dyn: DynamicStatSource | undefined): Amount
       // §13c repair (was 0 — zeroed Synthetic Evolution entirely): multiplying a
       // body's stats by k adds (k−1) × its stats. Priced per affected body at the
       // conservative AVG_WEAK_BODY anchor; AoE width multiplies in buffValueDetailed.
+      // §R12-4 (round-14 fix): the real gain scales with each live target's
+      // OWN stats, not the fixed AVG_WEAK_BODY anchor — was zero-width and
+      // unflagged. Widened to the same [0, value × SPREAD] policy other
+      // dynamic-amount cases use, midpoint unchanged.
       const v = Math.max(0, dyn.factor - 1) * AVG_WEAK_BODY;
-      return { value: v, low: v, high: v, flags: NO_FLAGS };
+      return normalizeRange({
+        value: v,
+        low: 0,
+        high: v * DYNAMIC_AMOUNT_SPREAD,
+        flags: ['dynamic_amount'],
+      });
     }
     default:
       return assertNever(dyn);

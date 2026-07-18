@@ -477,6 +477,38 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     expect(d.high).toBeGreaterThanOrEqual(d.value);
   });
 
+  // ── §R12-4 (round-14 fix): equals_stat/multiply dynamicModifier cases were
+  // priced as zero-width, unflagged fixed points, though the runtime
+  // (amount-evaluator.ts) grants the TARGET'S LIVE stat / scales with each
+  // live target's stats. Widened to the same [midpoint-unchanged, honest
+  // high] + 'dynamic_amount' policy the other dynamic-amount cases use.
+
+  it('§R12-4: equals_stat dynamicModifier widens the interval and flags dynamic_amount (was zero-width, unflagged)', () => {
+    const d = effectStaticValueDetailed({
+      type: 'modify_stats',
+      modifier: {},
+      dynamicModifier: { type: 'equals_stat', stat: 'atk', sourceRef: 'hp' },
+      target: alliedCharacter,
+      duration: { type: 'until_end_of_turn' },
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBeLessThan(d.value);
+    expect(d.high).toBeGreaterThan(d.value);
+  });
+
+  it('§R12-4: multiply(factor 2) dynamicModifier widens the interval and flags dynamic_amount (was zero-width, unflagged)', () => {
+    const d = effectStaticValueDetailed({
+      type: 'modify_stats',
+      modifier: {},
+      dynamicModifier: { type: 'multiply', factor: 2 },
+      target: alliedCharacter,
+      duration: { type: 'until_end_of_turn' },
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBeLessThan(d.value);
+    expect(d.high).toBeGreaterThan(d.value);
+  });
+
   it('§X3: count with a valid (non-negative) max is unaffected (regression)', () => {
     const d = effectStaticValueDetailed({
       type: 'deal_damage',
