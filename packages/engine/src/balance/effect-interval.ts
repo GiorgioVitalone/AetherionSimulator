@@ -421,9 +421,21 @@ export function sumEffectsDetailed(effects: readonly Effect[]): EffectValueDetai
  * dynamic_amount. A fixed numeric count returns null (unchanged). */
 function dynamicTargetCountScale(effect: Effect): { lo: number; hi: number } | null {
   const target = 'target' in effect ? (effect.target as TargetExpr | undefined) : undefined;
-  if (!target || target.type !== 'up_to' || typeof target.count === 'number') return null;
-  const cnt = amountValDetailed(target.count);
+  if (!target || target.type !== 'up_to') return null;
   const clamp = (x: number): number => Math.min(Math.max(x, 1), AOE_WIDTH);
+  if (typeof target.count === 'number') {
+    // §R14-1b (round-14 re-review, Kimi K3): a FIXED `up_to` count is still a
+    // variable realized cardinality — "deal 2 to up to 2 enemies" hits 1..N
+    // depending on how many legal targets exist (target-resolver's
+    // minSelections/availability). The inner value anchored on aoeFactor =
+    // clamp(count) (the MAX), so widen DOWN to a single realized target
+    // (scale.lo = 1/clamp(count)); the midpoint/high stay at the optimistic
+    // max (scale.hi = 1). up_to-1 has no cardinality spread (returns null).
+    const maxC = clamp(target.count);
+    return maxC <= 1 ? null : { lo: 1 / maxC, hi: 1 };
+  }
+  // Dynamic (AmountExpr) count: the inner anchored on EXPECTED_COUNT.
+  const cnt = amountValDetailed(target.count);
   const expected = clamp(EXPECTED_COUNT);
   return { lo: clamp(cnt.low) / expected, hi: clamp(cnt.high) / expected };
 }

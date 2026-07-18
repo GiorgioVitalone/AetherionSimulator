@@ -677,14 +677,25 @@ describe('§R13-2: dynamic-valuation false-precision sweep', () => {
     expect(d.high).toBeGreaterThan(d.value);
   });
 
-  it('§R14-1 control: a FIXED up_to count stays a deterministic point on the count axis (only its own target-availability flag)', () => {
+  it('§R14-1b: a FIXED up_to count > 1 also widens DOWN over its realized cardinality (1..N targets), not a zero-width point', () => {
+    // Round-14 re-review (Kimi K3): "up to 2 enemies" realizes 1..2 targets, so
+    // its interval must span [1 target, 2 targets], not collapse to the max.
     const d = effectStaticValueDetailed({
       type: 'deal_damage',
       amount: fixed(2),
       target: { side: 'enemy', type: 'up_to', count: 2 } as never,
     });
-    // up_to always flags dynamic_amount (realized count uncertain), but a FIXED
-    // count is not widened by the dice/AmountExpr path — low === high === value.
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBeLessThan(d.value); // widened DOWN toward 1 realized target
+    expect(d.high).toBe(d.value); // midpoint/high stay at the optimistic max
+  });
+
+  it('§R14-1b control: up_to count 1 has no cardinality spread — stays a deterministic point', () => {
+    const d = effectStaticValueDetailed({
+      type: 'deal_damage',
+      amount: fixed(2),
+      target: { side: 'enemy', type: 'up_to', count: 1 } as never,
+    });
     expect(d.low).toBe(d.value);
     expect(d.high).toBe(d.value);
   });
