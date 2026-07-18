@@ -343,7 +343,12 @@ describe("§F2 — author mode serves the maintainer's new-card authoring workfl
     expect(row!.after.static).toBeTruthy(); // a full cost/stat suggestion, not withheld
     expect(row!.classification).toBeUndefined();
     expect(row!.gateReason).toBeUndefined();
-    expect(typeof row!.loopRiskNote).toBe('string');
+    // A vanilla stat-only body (no abilities) is correctly loop-free — unlike
+    // the self-copying spell below, 'none' here is the RIGHT answer, not a
+    // default that was never checked.
+    expect(row!.loopRisk).toBe('none');
+    expect(row!.proposedLoopRisk).toBe('none');
+    expect(row!.loopRiskNote).toBe('no loop risk at this cost');
   });
 
   it('opts.pool lets the maintainer score a candidate set without touching the committed baseline', () => {
@@ -351,6 +356,40 @@ describe("§F2 — author mode serves the maintainer's new-card authoring workfl
     const data = computeSuggestions({ mode: 'author', pool: [custom] });
     expect(data.cards).toHaveLength(1);
     expect(data.cards[0]!.id).toBe(888888);
+  });
+
+  it('R12-3: a brand-new cost-0 self-copying spell is NOT a false "none" — the authored card must join the loop pool it is scored against', () => {
+    // Same shape as echoesShaped (on_cast copy_card, filter matches itself,
+    // no excludeSelf) — assessLoopRisk([card]) alone reports 'likely'.
+    const selfCopy: Effect = {
+      type: 'copy_card',
+      source: 'discard',
+      destination: 'hand',
+      filter: { tag: 'Arcane', cardType: 'S' },
+    };
+    const newSpell = card({
+      id: 999998,
+      name: 'Self-Echo Prototype',
+      cardType: 'S',
+      rarity: 'Common',
+      tags: ['Arcane'],
+      cost: { mana: 0, energy: 0, flexible: 0 },
+      abilities: [triggered(onCast, [selfCopy])],
+    });
+    expect(assessLoopRisk([newSpell]).get(999998)).toBe('likely');
+
+    // opts.pool: [] — an empty pool, exactly the author "check a new card"
+    // workflow with no other cards to lean on.
+    const data = computeSuggestions({ mode: 'author', pool: [], card: newSpell });
+    const row = [...data.over, ...data.under].find((c) => c.id === 999998);
+    expect(row).toBeTruthy();
+    // Before the fix: the authored card was scored but absent from the loop
+    // pool assessLoopRisk ran over, so both fields defaulted to 'none' — a
+    // false safety answer. The card must see ITSELF as a loop source.
+    expect(row!.loopRisk).toBe('likely');
+    expect(row!.proposedLoopRisk).not.toBe('none');
+    expect(row!.loopRiskNote).toMatch(/loop risk at this cost/);
+    expect(row!.loopRiskNote).not.toBe('no loop risk at this cost');
   });
 });
 

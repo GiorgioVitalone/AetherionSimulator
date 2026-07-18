@@ -22,9 +22,9 @@ frozen constants, not a fit on this pool):
 - **Characters:** expected = 1.2 + 1.9·cost + rarity; window ±1.5.
 - **Spells/Equipment:** expected = 2.2 + 0.2·cost + rarity; window ±1.5.
 
-**Outliers:** 20 over budget · 6 under budget · 38 within.
+**Outliers:** 19 over budget · 6 under budget · 39 within.
 
-**Mode:** `campaign` — **Campaign gate summary:** AUTO_SAFE 0 · SIM_REQUIRED 16 · HUMAN_REWRITE 10 · BLOCKED 0 · autoEdit: none · 26 candidates remain.
+**Mode:** `campaign` — **Campaign gate summary:** AUTO_SAFE 0 · SIM_REQUIRED 16 · HUMAN_REWRITE 9 · BLOCKED 0 · autoEdit: none · 25 candidates remain.
 
 **Levers** — pick what fits the card's role:
 - **Stats / keyword** — surgical power change for characters (re-scored to land in-window).
@@ -66,9 +66,6 @@ frozen constants, not a fit on this pool):
   - **Keyword:** remove Flying → power 17.6 ✓
   - **Cost:** raise cost 7→8 (+1) → window [17.4, 20.4]
   - **Gate:** SIM_REQUIRED: no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
-- **Radiant Shield** — Common, cost 2, equipment  ·  power **5.2** vs **[1.1, 4.1]** (**+1.1 over**) — **[HUMAN_REWRITE]**
-  - **Ability** (5.2 of 5.2 power): scale down / add a cooldown / raise its activation cost — **chosen lever: this card was left unedited, needs a human ability rewrite** — "The first damage each turn to equipped character is reduced by 1."
-  - **Gate:** HUMAN_REWRITE — ability drives ≥ half the power on this over-budget card; needs a manual ability rewrite, not a numeric lever
 - **Archon's Guardian** — Mythic, cost 6, 3/3/0 [Flying]  ·  power **16.6** vs **[12.6, 15.6]** (**+1 over**) — **[SIM_REQUIRED]**
   - **Stats:** -1 HP (3/3/0 → 3/2/0) → power 15.6 ✓
   - **Keyword:** remove Flying → power 15.1 ✓
@@ -83,15 +80,9 @@ frozen constants, not a fit on this pool):
 - **Time Reversal** — Ethereal, cost 4, spell  ·  power **10.9** vs **[2.3, 5.3]** (**+5.6 over**) — **[HUMAN_REWRITE]**
   - **Ability** (10.9 of 10.9 power): scale down / add a cooldown / raise its activation cost — **chosen lever: this card was left unedited, needs a human ability rewrite** — "Shuffle your discard pile into your deck, then draw 3 cards."
   - **Gate:** HUMAN_REWRITE — ability drives ≥ half the power on this over-budget card; needs a manual ability rewrite, not a numeric lever
-- **Sapphire Sentinel** — Common, cost 2, 1/2/0 [Defender]  ·  power **11.2** vs **[3.5, 6.5]** (**+4.7 over**) — **[SIM_REQUIRED]**
-  - **Cost:** raise cost 2→5 (+3) → window [9.2, 12.2]
-  - **Gate:** SIM_REQUIRED: |Δcost| = 3 > 1; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
 - **Arcane Storm** — Legendary, cost 8, spell  ·  power **12** vs **[4.8, 7.8]** (**+4.2 over**) — **[HUMAN_REWRITE]**
   - **Ability** (12 of 12 power): scale down / add a cooldown / raise its activation cost — **chosen lever: this card was left unedited, needs a human ability rewrite** — "Return all enemy characters to their owners' hands. Draw a card for each character returned this way."
   - **Gate:** HUMAN_REWRITE — ability drives ≥ half the power on this over-budget card; needs a manual ability rewrite, not a numeric lever
-- **Crystal Golem** — Ethereal, cost 3, 1/3/0 [Defender]  ·  power **12.8** vs **[6.1, 9.1]** (**+3.7 over**) — **[SIM_REQUIRED]**
-  - **Cost:** raise cost 3→5 (+2) → window [10, 13]
-  - **Gate:** SIM_REQUIRED: |Δcost| = 2 > 1; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
 - **Mystic Librarian** — Common, cost 4, 2/4/0  ·  power **12.6** vs **[7.3, 10.3]** (**+2.3 over**) — **[HUMAN_REWRITE]**
   - **Stats:** -1 ATK, -2 HP (2/4/0 → 1/2/0) → power 9.6 ✓
   - **Ability** (6.6 of 12.6 power): scale down / add a cooldown / raise its activation cost — **chosen lever: this card was left unedited, needs a human ability rewrite** — "When deployed, draw two cards."
@@ -99,9 +90,18 @@ frozen constants, not a fit on this pool):
 - **Glimpse the Future** — Common, cost 3, spell  ·  power **6.6** vs **[1.3, 4.3]** (**+2.3 over**) — **[HUMAN_REWRITE]**
   - **Ability** (6.6 of 6.6 power): scale down / add a cooldown / raise its activation cost — **chosen lever: this card was left unedited, needs a human ability rewrite** — "Draw 2 cards, then discard 1."
   - **Gate:** HUMAN_REWRITE — ability drives ≥ half the power on this over-budget card; needs a manual ability rewrite, not a numeric lever
+- **Sapphire Sentinel** — Common, cost 2, 1/2/0 [Defender]  ·  power **8.6** vs **[3.5, 6.5]** (**+2.1 over**) — **[SIM_REQUIRED]**
+  - **Keyword:** remove Defender → power 5.6 ✓
+  - **Cost:** raise cost 2→4 (+2) → window [7.3, 10.3]
+  - **Gate:** SIM_REQUIRED: |Δcost| = 2 > 1; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
 - **Wizard’s Focus** — Common, cost 2, spell  ·  power **5.3** vs **[1.1, 4.1]** (**+1.2 over**) — **[HUMAN_REWRITE]**
   - **Ability** (5.3 of 5.3 power): scale down / add a cooldown / raise its activation cost — **chosen lever: this card was left unedited, needs a human ability rewrite** — "Draw a card. If you control an Arcane character, draw an additional card."
   - **Gate:** HUMAN_REWRITE — ability drives ≥ half the power on this over-budget card; needs a manual ability rewrite, not a numeric lever
+- **Crystal Golem** — Ethereal, cost 3, 1/3/0 [Defender]  ·  power **10.2** vs **[6.1, 9.1]** (**+1.1 over**) — **[SIM_REQUIRED]**
+  - **Stats:** -1 HP (1/3/0 → 1/2/0) → power 8.6 ✓
+  - **Keyword:** remove Defender → power 6.6 ✓
+  - **Cost:** raise cost 3→4 (+1) → window [8, 11]
+  - **Gate:** SIM_REQUIRED: no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
 - **Spellbound Adept** — Common, cost 3, 2/2/0  ·  power **9.3** vs **[5.4, 8.4]** (**+0.9 over**) — **[HUMAN_REWRITE]**
   - **Stats:** -1 ATK (2/2/0 → 1/2/0) → power 8.3 ✓
   - **Ability** (5.3 of 9.3 power): scale down / add a cooldown / raise its activation cost — **chosen lever: this card was left unedited, needs a human ability rewrite** — "Whenever you cast a spell, draw a card."
@@ -129,7 +129,7 @@ frozen constants, not a fit on this pool):
 - **Sanctuary** — Common, cost 2, spell  ·  power **1** vs **[1.1, 4.1]** (**−0.1 under**) — **[SIM_REQUIRED]**
   - **Ability** (1 of 1 power): scale up / lower its activation cost — "All allied characters gain Defender until end of turn."
   - **Cost:** lower cost 2→1 (−1) → window [0.9, 3.9]
-  - **Gate:** SIM_REQUIRED: no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
+  - **Gate:** SIM_REQUIRED: power interval straddles the budget window; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
 
 #### Sapphire
 - **Master Archivist** — Mythic, cost 6, 2/5/0  ·  power **11.1** vs **[12.6, 15.6]** (**−1.5 under**) — **[SIM_REQUIRED]**
