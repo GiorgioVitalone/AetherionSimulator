@@ -104,14 +104,29 @@ describe('§B1 — declared budget line', () => {
   // flexible), curate() drops more cards each round (now ~31 characters, with
   // Sapphire down to 4), so a leave-one-faction-out on that shrinking set is a
   // MOVING TARGET that swings to ~20% purely from small-N volatility — it no
-  // longer measures the frozen line at all. Pinning to calibratedFrom scores
-  // those exact cards with CURRENT scoring (no flag re-filter): the frozen
-  // line's own leave-one-faction-out worst case is 13.6% (drop Radiant), inside
-  // the ratified 15%. DISCLOSED consequence (D7 territory): a FRESH
-  // recalibration on today's smaller flag-free curated set WOULD be ~20%
-  // unstable — re-seeding a v2 line would need care and the maintainer's
-  // sign-off; the frozen v1 line is intentionally never re-chased.
-  it('stability: leave-one-faction-out over the FROZEN calibratedFrom set does not swing the calibrated line', () => {
+  // longer measures the frozen line at all. Pinning to calibratedFrom refits
+  // over those exact cards with CURRENT scoring: leaving out any one faction
+  // moves the refit character slope by well under the ratified 15% (worst is
+  // drop-Radiant, low-to-mid teens; MEASURE at audit time). That is the
+  // RATIFIED property — self-relative fold stability — and it holds.
+  //
+  // HONEST CAVEAT (do NOT read this as "the frozen line is still current"): the
+  // BASE refit itself has DRIFTED from the frozen line. The frozen v1 character
+  // slope is 1.9; refitting the same calibratedFrom set with today's scoring
+  // gives ~2.2 — roughly a 16% climb, because 13 audit rounds of honest
+  // valuation fixes have raised character scores. This is the freeze working as
+  // designed (D7 / D25): the frozen line intentionally does NOT chase scoring,
+  // so a gap between it and a fresh refit is EXPECTED and grows each round. The
+  // stability check above measures folds around the CURRENT refit base, not
+  // against the frozen slope — so it correctly certifies that a recalibration
+  // would be faction-robust, NOT that the frozen line still matches current
+  // scoring (it is ~16% off and widening). A v2 recalibration is increasingly
+  // warranted and needs the maintainer's explicit sign-off (D7); v1 is never
+  // silently re-chased. (For contrast, the OLD test refit over a live
+  // curate(raw) set that this round's new flags shrank to ~31 characters,
+  // Sapphire 4 — its folds swing to ~20%, a small-N artifact of a MOVING set,
+  // not a property of the frozen line.)
+  it('stability: leave-one-faction-out over the FROZEN calibratedFrom set does not swing the refit line', () => {
     const raw = JSON.parse(readFileSync(POOL_URL, 'utf8'));
     const budgetJson = JSON.parse(readFileSync(BUDGET_JSON_URL, 'utf8')) as {
       provenance: { calibratedFrom: readonly number[] };

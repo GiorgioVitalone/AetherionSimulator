@@ -292,9 +292,12 @@ export function computeSuggestions(rawOverrideOrOpts) {
   // The R12-3b fix used `copies ?? LEGAL_MAX_COPIES`, which still TRUSTED a
   // caller value — copies:1 gave 'possible', copies:0/-1 gave 'none', reviving
   // the R12-3 soft-risk bypass with no validation. A conservative loop-risk
-  // assessment must assume the worst legal stacking (3x) regardless of the
-  // author's stated intent to run fewer; the card's own reducer must never be
-  // under-stacked. (An authored H/T is already pinned at 1 by the H/T branch
+  // assessment must assume the worst legal stacking (LEGAL_MAX_COPIES) regardless
+  // of the author's stated intent to run fewer; the card's own reducer must never
+  // be under-stacked. (A Legendary's true legal max is 1, so LEGAL_MAX_COPIES=3
+  // over-stacks it — the SAFE over-flag direction, and identical to the
+  // pre-existing convention for an un-decked Legendary, copiesInStarterDeck→0→
+  // LEGAL_MAX_COPIES. An authored H/T is already pinned at 1 by the H/T branch
   // above, before this line — a hero/transform can only ever be 1 in play.)
   const copiesOf = new Map(
     pool.map((sc) => {
