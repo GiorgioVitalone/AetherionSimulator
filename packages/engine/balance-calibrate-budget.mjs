@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { computeCardPower } from './dist/balance/index.js';
 import { indexFromRaw, MIN_TOL, RMSE_MULT, RARITY_BONUS } from './balance-data.mjs';
 
-const OUT_URL = new URL('./sim-data/balance-budget.v1.json', import.meta.url);
+const OUT_URL = new URL('./sim-data/balance-budget.v2.json', import.meta.url);
 // "Confidently scored": zero context flags AND a near-point interval (§S3
 // powerHigh-powerLow) -- a vanilla body or plain fixed-value effect, not a
 // conditional/tutor/recursion/free-cast/rules-sensitive one.

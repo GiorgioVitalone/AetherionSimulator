@@ -72,7 +72,9 @@ export const RARITY_BONUS = { Common: 0, Ethereal: 0.75, Mythic: 1.5, Legendary:
 export const RARITY_ORDER = ['Common', 'Ethereal', 'Mythic', 'Legendary'];
 
 /**
- * §B1: load the FROZEN, declared budget line (sim-data/balance-budget.v1.json).
+ * §B1: load the FROZEN, declared budget line. §R13 (v2 re-seed, maintainer-
+ * authorized 2026-07-18): points at balance-budget.v2.json — v1 stays on disk
+ * as the frozen historical record; the loader always reads the CURRENT version.
  * Characters and spells/equipment are different POPULATIONS (a character's power
  * scales steeply with cost via stats, a spell/equipment's scales gently via
  * situational effects), so the file carries two separate lines, but neither is
@@ -83,7 +85,7 @@ export const RARITY_ORDER = ['Common', 'Ethereal', 'Mythic', 'Legendary'];
  * balance-calibrate-budget.mjs — the one-time, frozen-thereafter seeding script.
  */
 export function loadBudgetModel() {
-  const data = JSON.parse(readFileSync(new URL('./sim-data/balance-budget.v1.json', import.meta.url)));
+  const data = JSON.parse(readFileSync(new URL('./sim-data/balance-budget.v2.json', import.meta.url)));
   const modelFor = (cardType) => (cardType === 'C' ? data.characters : data.spellsEquip);
   const expectedFor = (cost, rarity, cardType) =>
     modelFor(cardType).intercept + modelFor(cardType).slope * cost + (data.rarityOffsets[rarity] ?? 0);
