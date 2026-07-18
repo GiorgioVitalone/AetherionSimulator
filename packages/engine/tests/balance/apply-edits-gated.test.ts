@@ -755,3 +755,24 @@ describe('§R18 — nested records (proposal entries, statDelta, marginals, play
     });
   });
 });
+
+describe('§R19 — a sparse proposals array does not pull an inherited entry from a polluted array index', () => {
+  it('Array(1) (a hole at index 0) with Object.prototype[0] set applies ZERO changes', () => {
+    const { raw } = loadBalanceData();
+    (Object.prototype as Record<number, unknown>)[0] = { id: 11, statDelta: { hp: -1 } };
+    try {
+      const sparse = Array(1); // length 1, NO own index 0 (a hole)
+      const result = applyEdits(raw, { mode: 'production', marginals: MARGINALS, proposals: sparse });
+      expect(result.changes).toHaveLength(0);
+    } finally {
+      delete (Object.prototype as Record<number, unknown>)[0];
+    }
+  });
+
+  it('control: a normal dense proposals array with a real own entry still classifies/applies', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: 11, statDelta: { hp: -1 } }], { marginals: MARGINALS });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe(11);
+  });
+});

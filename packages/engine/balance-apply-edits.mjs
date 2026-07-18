@@ -359,6 +359,27 @@ function isValidProposalEntry(p) {
   return isPlainRecord(p);
 }
 
+/** §R19 (round-19 auditor): normalize a caller proposals array to a list of
+ * own-property-only entries. Iterates OWN array indices only (Object.hasOwn) —
+ * Array.prototype.filter/map VISIT an inherited index in a SPARSE array (e.g.
+ * Object.prototype[0] set + `Array(1)`), which would otherwise smuggle an
+ * inherited proposal in. Each kept entry (and its statDelta) is copied to a
+ * null-proto own-props record. Used by BOTH the classification and the
+ * winner-application paths. */
+function sanitizeProposalList(proposals) {
+  const out = [];
+  if (!Array.isArray(proposals)) return out;
+  for (let i = 0; i < proposals.length; i++) {
+    if (!Object.hasOwn(proposals, i)) continue; // sparse hole / inherited index
+    const p = proposals[i];
+    if (!isValidProposalEntry(p)) continue;
+    const e = toOwnRecord(p);
+    if (e.statDelta != null && typeof e.statDelta === 'object') e.statDelta = toOwnRecord(e.statDelta);
+    out.push(e);
+  }
+  return out;
+}
+
 /** §P3 — apply EVERY proposal targeting one card, in order, composing their
  * deltas onto the SAME StaticCard (cost delta THEN stat delta both land). */
 function applyAllProposals(sc, list) {
@@ -395,17 +416,10 @@ export function classifyProposals(rawInput, proposals, optsIn = {}) {
   // §R12-1: drop any null/non-object entry BEFORE it can throw on `p.id` —
   // the rest of this function (and applyEdits' application of the winner)
   // only ever sees well-formed entries from here on.
-  // §R18 (round-18 auditor): a proposal ENTRY and its nested statDelta are read
-  // by key (p.id, p.costDelta, p.statDelta.hp/atk/arm) — a plain `{}` still
-  // inherits from a polluted Object.prototype, so `proposals:[{}]` with
-  // Object.prototype.id/statDelta set would identify and mutate a card. Copy
-  // every valid entry (and its statDelta) to a null-proto own-props record, so
-  // no keyed read below can reach an inherited value.
-  const validProposals = proposals.filter(isValidProposalEntry).map((p) => {
-    const e = toOwnRecord(p);
-    if (e.statDelta != null && typeof e.statDelta === 'object') e.statDelta = toOwnRecord(e.statDelta);
-    return e;
-  });
+  // §R18/§R19: normalize to own-property-only entries from OWN array indices —
+  // no keyed read below (p.id/costDelta/statDelta.*) can reach an inherited
+  // value, and a sparse array's inherited indices are skipped.
+  const validProposals = sanitizeProposalList(proposals);
   const { index: currentIndex } = indexFromRaw(rawInput);
   const model = loadBudgetModel();
 
@@ -651,16 +665,10 @@ export function applyEdits(rawInput, optsIn = {}) {
         // §R12-1: `proposals.filter(isValidProposalEntry)` mirrors what
         // classifyProposals already ran internally to derive `winner` — a
         // null/non-object entry sharing the array can't reach here anyway.
-        // §R18: sanitize each entry (+ statDelta) to null-proto own-props, the
-        // same close classifyProposals applies — this APPLICATION path must not
-        // read an inherited p.id/costDelta/statDelta from a polluted prototype.
-        const sanitizedProposals = proposals.filter(isValidProposalEntry).map((p) => {
-          const e = toOwnRecord(p);
-          if (e.statDelta != null && typeof e.statDelta === 'object')
-            e.statDelta = toOwnRecord(e.statDelta);
-          return e;
-        });
-        const combined = proposalsFor(sanitizedProposals, winner.id);
+        // §R18/§R19: same own-index, own-property-only normalization as
+        // classifyProposals — this APPLICATION path must not read an inherited
+        // entry/index/statDelta from a polluted prototype.
+        const combined = proposalsFor(sanitizeProposalList(proposals), winner.id);
         const after = applyAllProposals(currentIndex.get(winner.id), combined);
         const list = [
           {
