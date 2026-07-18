@@ -598,7 +598,10 @@ function effectStaticValueDetailedInner(effect: Effect): EffectValueDetailed {
       // [0, per × cappedCount] and flag; midpoint stays the optimistic max
       // (capped), so a count within the zone size is unchanged in value.
       {
-        const cap = effect.zone ? (ZONE_CAP[effect.zone] ?? MAX_BOARD_TARGETS) : MAX_BOARD_TARGETS;
+        // §R16-2b (round-16 re-review): a zone-less deploy_token defaults to
+        // 'frontline' at runtime (interpreter.ts: `effect.zone ?? 'frontline'`),
+        // so mirror that cap (3), not the full-board 7.
+        const cap = ZONE_CAP[effect.zone ?? 'frontline'] ?? MAX_BOARD_TARGETS;
         const v = per * Math.min(effect.count, cap);
         return { value: v, low: 0, high: v, isRemoval: false, flags: ['dynamic_amount'] };
       }
@@ -720,23 +723,29 @@ function effectStaticValueDetailedInner(effect: Effect): EffectValueDetailed {
       // (effect-interval.ts's caller). Valued as the shared enemy-facing
       // discard anchor, discounted for the symmetric cost (weights.ts's
       // SYMMETRIC_COST_DISCOUNT) since you pay the same price.
+      // §R16-4b (round-16 re-review): a discard's realized magnitude depends on
+      // the opponent's HAND SIZE — the runtime discards min(count, hand), and an
+      // empty hand discards 0. So the enemy/each_player penalty is not a
+      // zero-width point (the same availability class as the token/board
+      // widenings): widen the LOW to 0 (empty hand) and keep the midpoint/high
+      // at the full count, flagged dynamic_amount.
       if (effect.target.type === 'each_player') {
-        return det(effect.count * CARD_VALUE * 0.8 * SYMMETRIC_COST_DISCOUNT, false, [
-          'dynamic_amount',
-        ]);
+        const v = effect.count * CARD_VALUE * 0.8 * SYMMETRIC_COST_DISCOUNT;
+        return { value: v, low: 0, high: v, isRemoval: false, flags: ['dynamic_amount'] };
       }
       // §R16-4 (round-16 auditor): for DISCARD, only a LITERAL `side === 'enemy'`
-      // makes the opponent discard — the runtime interpreter targets the
-      // controller for `side === 'any'` (and `allied`), i.e. the CASTER discards
-      // (a self-cost, not an enemy penalty). isEnemyFacing (which counts `any`
-      // as offensive, correct for damage/removal) over-scored an `any` discard
-      // as +opponent-penalty. Value only the enemy case as a penalty; a self/any
-      // discard is scored 0 (a conservative floor — it is a drawback or a
-      // recycle enabler, never a gain against the opponent).
-      return det(
-        targetSide(effect.target) === 'enemy' ? effect.count * CARD_VALUE * 0.8 : 0,
-        false,
-      );
+      // makes the opponent discard — the runtime targets the controller for
+      // `side === 'any'` (and `allied'), i.e. the CASTER discards (a self-cost,
+      // not an enemy penalty). isEnemyFacing (which counts `any` as offensive,
+      // correct for damage/removal) over-scored an `any` discard as +opponent-
+      // penalty. Value only the enemy case as a penalty; a self/any discard is
+      // scored 0 (a conservative floor per the file's convention for self-costs
+      // — draw-enemy/allied-bounce are likewise 0; see D30).
+      if (targetSide(effect.target) === 'enemy') {
+        const v = effect.count * CARD_VALUE * 0.8;
+        return { value: v, low: 0, high: v, isRemoval: false, flags: ['dynamic_amount'] };
+      }
+      return det(0, false);
     case 'replacement':
       // §S2 round-5 correction: an EC-003 shield (on_would_take_damage
       // reduction — Shieldbearer Paladin id48, Radiant Shield id66) is NOT
