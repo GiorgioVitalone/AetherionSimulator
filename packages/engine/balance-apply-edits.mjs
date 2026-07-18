@@ -160,22 +160,44 @@ function applyList(raw, list, changes, vetoed) {
  * catches a fractional input even if composition happens to round-trip to
  * an integer) and the composed cost/stats themselves (defense in depth,
  * catches any non-integer result regardless of how it was produced).
+ * §R12-1 (fresh-auditor fix, 2026-07-18): the gate used to be
+ * `Number.isFinite(v) && !Number.isInteger(v)` — a BOOLEAN fails
+ * `Number.isFinite` too, so the whole conjunction was false and a boolean
+ * delta (e.g. `costDelta: true`) sailed through this check, then JS coerced
+ * it to 1 in the arithmetic downstream (`cost + true === cost + 1`), landing
+ * on a perfectly-integer composed result that cleared every later gate too.
+ * `Number.isInteger` alone is already false for EVERY non-integer-number
+ * input — booleans, strings, boxed Numbers, null/undefined (guarded
+ * separately via `!= null`), NaN, ±Infinity, arrays, plain objects — so it is
+ * the correct single gate; do not re-add a `Number.isFinite` conjunct.
  * Returns `{ classification, reason }` if the composed proposal is invalid,
  * else null. */
 function proposalViabilityVeto(scCurrent, scProposed, combined = []) {
   for (const p of combined) {
-    if (p.costDelta != null && Number.isFinite(p.costDelta) && !Number.isInteger(p.costDelta)) {
+    if (p.costDelta != null && !Number.isInteger(p.costDelta)) {
       return {
         classification: 'SIM_REQUIRED',
-        reason: `SIM_REQUIRED: non-integer costDelta (${p.costDelta}) — dose contract is integer steps`,
+        reason: `SIM_REQUIRED: non-integer costDelta (${JSON.stringify(p.costDelta)}) — dose contract is integer steps`,
       };
     }
-    if (p.statDelta) {
+    if (p.statDelta != null) {
+      // §R12-1: statDelta itself must be a plain object — a boolean/string/
+      // array statDelta (e.g. `statDelta: true`) previously iterated via
+      // `Object.entries`, which silently yields zero entries for a
+      // primitive instead of throwing, so the malformed value passed
+      // through unnoticed as a no-op rather than failing closed with a
+      // named reason.
+      if (typeof p.statDelta !== 'object' || Array.isArray(p.statDelta)) {
+        return {
+          classification: 'SIM_REQUIRED',
+          reason: `SIM_REQUIRED: statDelta must be a plain object of integer deltas, received ${typeof p.statDelta} — dose contract is integer steps`,
+        };
+      }
       for (const [key, v] of Object.entries(p.statDelta)) {
-        if (v != null && Number.isFinite(v) && !Number.isInteger(v)) {
+        if (v != null && !Number.isInteger(v)) {
           return {
             classification: 'SIM_REQUIRED',
-            reason: `SIM_REQUIRED: non-integer statDelta.${key} (${v}) — dose contract is integer steps`,
+            reason: `SIM_REQUIRED: non-integer statDelta.${key} (${JSON.stringify(v)}) — dose contract is integer steps`,
           };
         }
       }
@@ -284,9 +306,22 @@ function applyProposalToStatic(sc, proposal) {
 }
 
 /** §P3 — every proposal entry that targets the same card id (a cost delta
- * and a stat delta may arrive as two separate entries for one id). */
+ * and a stat delta may arrive as two separate entries for one id). Guards
+ * against a null/non-object entry sharing the array with well-formed ones
+ * (§R12-1) — `p.id` on `null`/a primitive would otherwise throw mid-filter. */
 function proposalsFor(proposals, id) {
-  return proposals.filter((p) => p.id === id);
+  return proposals.filter((p) => p != null && typeof p === 'object' && p.id === id);
+}
+
+/** §R12-1 (fresh-auditor fix, 2026-07-18) — a proposal ENTRY that is itself
+ * `null`/not a plain object (as opposed to a well-formed entry carrying a
+ * malformed delta, handled by proposalViabilityVeto) can share an array with
+ * otherwise-valid entries; without this guard `p.id` on such an entry throws
+ * mid-iteration in `classifyProposals`'s main loop. Silently dropping it here
+ * is fail-closed: it contributes no delta and produces no row, rather than
+ * crashing or being coerced into something applyable. */
+function isValidProposalEntry(p) {
+  return p != null && typeof p === 'object' && !Array.isArray(p);
 }
 
 /** §P3 — apply EVERY proposal targeting one card, in order, composing their
@@ -321,11 +356,15 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
   // this directly (applyEdits also guards its own entry, but this function
   // must be safe on its own).
   if (!Array.isArray(proposals)) return [];
+  // §R12-1: drop any null/non-object entry BEFORE it can throw on `p.id` —
+  // the rest of this function (and applyEdits' application of the winner)
+  // only ever sees well-formed entries from here on.
+  const validProposals = proposals.filter(isValidProposalEntry);
   const { index: currentIndex } = indexFromRaw(rawInput);
   const model = loadBudgetModel();
 
   const proposedRaw = rawInput.map((c) => {
-    const list = proposalsFor(proposals, c.id);
+    const list = proposalsFor(validProposals, c.id);
     const sc = currentIndex.get(c.id);
     if (list.length === 0 || !sc) return c;
     const after = applyAllProposals(sc, list);
@@ -357,10 +396,10 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
 
   const seenIds = new Set();
   const rows = [];
-  for (const p of proposals) {
+  for (const p of validProposals) {
     if (seenIds.has(p.id)) continue; // §P3: classify the combined proposal ONCE
     seenIds.add(p.id);
-    const combined = proposalsFor(proposals, p.id);
+    const combined = proposalsFor(validProposals, p.id);
     const sc = proposedIndex.get(p.id);
     const scCurrent = currentIndex.get(p.id);
     if (!sc || !scCurrent) {
@@ -389,6 +428,24 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
     // already the fully-composed proposed/current StaticCards, so their own
     // total cost IS the real before/after — diff that directly.
     const costK = Math.abs(totalCost(sc) - totalCost(scCurrent));
+    // §R12-2 (fresh-auditor fix, 2026-07-18) — the ±1 dose discipline was
+    // enforced for cost (costK > 1, above) but had no stat equivalent: an
+    // explicit statDelta:{hp:-2} (or two accumulated {hp:-1} entries on the
+    // same card, composed by applyAllProposals before this point) classified
+    // AUTO_SAFE even though the maintainer's contract is "±1 then measure"
+    // for stats exactly as for cost. statK is the max absolute NET per-axis
+    // delta (after accumulation) across hp/atk/arm/bulk (hp+arm, since a body
+    // can be reshaped between HP and ARM without moving either alone by more
+    // than 1) — mirrored by classifyCandidate's `statK > 1` gate.
+    const statK =
+      sc.stats && scCurrent.stats
+        ? Math.max(
+            Math.abs(sc.stats.hp - scCurrent.stats.hp),
+            Math.abs(sc.stats.atk - scCurrent.stats.atk),
+            Math.abs(sc.stats.arm - scCurrent.stats.arm),
+            Math.abs(sc.stats.hp + sc.stats.arm - (scCurrent.stats.hp + scCurrent.stats.arm)),
+          )
+        : 0;
 
     // §P2/§Q2 — direction is ALWAYS the SIGN of the residual change (proposed
     // − current, both against the FROZEN budget line), never caller-supplied
@@ -423,6 +480,7 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
       copies: copiesInStarterDeck(p.id) || 1,
       abilityShare: bd.power > 0 ? bd.abilityValue / bd.power : 0,
       costK,
+      statK,
       flags: bd.flags,
       proposedLoopRisk: proposedRisk.get(p.id) ?? 'none',
       powerLow: bd.powerLow,
@@ -494,14 +552,22 @@ export function applyEdits(rawInput, { mode = 'production', arm = 'all', flatten
   const changes = [];
   const vetoed = [];
   if (mode === 'production') {
-    if (proposals) {
+    // §R12-1(b) (fresh-auditor fix, 2026-07-18) — this used to be
+    // `if (proposals)`, a truthiness check that treats `proposals: false`,
+    // `''`, or `0` (all EXPLICITLY supplied, just malformed) the same as
+    // "omitted", falling through to the `else` branch below and silently
+    // running the generated-suggestions path instead of failing closed.
+    // `!== undefined` is the correct "was a proposals option supplied at
+    // all" test — anything supplied that isn't an array is caught by the
+    // Array.isArray check right after and produces zero changes.
+    if (proposals !== undefined) {
       // §H2-3 — a caller-supplied `proposals` that isn't an array (e.g. a
       // single object instead of a one-element array) used to TypeError
       // inside classifyProposals. Fail closed here too: record why, apply
       // zero changes, never throw.
       if (!Array.isArray(proposals)) {
         vetoed.push(
-          `proposals must be an array of {id, costDelta?, statDelta?} — received ${typeof proposals}; fail closed, zero changes applied`,
+          `proposals must be an array of {id, costDelta?, statDelta?} — received ${typeof proposals} (${JSON.stringify(proposals)}); fail closed, zero changes applied`,
         );
         return { raw, changes, lpCount: 0, vetoed };
       }
@@ -517,7 +583,10 @@ export function applyEdits(rawInput, { mode = 'production', arm = 'all', flatten
         const { index: currentIndex } = indexFromRaw(rawInput);
         // §P3: apply ALL proposal entries for the winning id (e.g. a cost
         // delta + a stat delta on the same card), not just the first match.
-        const combined = proposalsFor(proposals, winner.id);
+        // §R12-1: `proposals.filter(isValidProposalEntry)` mirrors what
+        // classifyProposals already ran internally to derive `winner` — a
+        // null/non-object entry sharing the array can't reach here anyway.
+        const combined = proposalsFor(proposals.filter(isValidProposalEntry), winner.id);
         const after = applyAllProposals(currentIndex.get(winner.id), combined);
         const list = [
           {

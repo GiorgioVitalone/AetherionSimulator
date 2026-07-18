@@ -292,3 +292,155 @@ describe('§H2-4 — rankOf never returns NaN on an unknown-id (edge/copies-less
     expect(candidates.every((c: { rank: number }) => Number.isFinite(c.rank))).toBe(true);
   });
 });
+
+/**
+ * §R12-1 (fresh-auditor fix, 2026-07-18) — two confirmed fail-OPEN paths:
+ * (a) `proposalViabilityVeto`'s gate was `Number.isFinite(v) && !Number.isInteger(v)`
+ *     — a BOOLEAN fails `Number.isFinite` too, so the whole check was false and
+ *     `{ id: 78, costDelta: true }` was NOT rejected; JS then coerced
+ *     `true -> 1` in the cost arithmetic and Crystal Golem's cost went 3 -> 4
+ *     via AUTO_SAFE. (b) `applyEdits`'s `if (proposals)` treated an explicitly
+ *     supplied `proposals: false | '' | 0` as OMITTED, silently falling
+ *     through to the generated-suggestions auto-apply path instead of failing
+ *     closed on a malformed-but-supplied container.
+ */
+describe('§R12-1 — malformed proposals fail CLOSED, never open', () => {
+  const CRYSTAL_GOLEM_ID = 78; // Sapphire, cost 3 mana / 1 ATK / 3 HP
+
+  it('costDelta: true (boolean) classifies SIM_REQUIRED, never AUTO_SAFE, and is never applied', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: CRYSTAL_GOLEM_ID, costDelta: true }], {
+      marginals: MARGINALS,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).toBe('SIM_REQUIRED');
+    expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+    expect(rows[0]!.reason).toMatch(/integer/i);
+
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: MARGINALS,
+      proposals: [{ id: CRYSTAL_GOLEM_ID, costDelta: true }],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+
+  it('statDelta: true (boolean, not an object) classifies SIM_REQUIRED, never AUTO_SAFE', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: CRYSTAL_GOLEM_ID, statDelta: true }] as never, {
+      marginals: MARGINALS,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).toBe('SIM_REQUIRED');
+    expect(rows[0]!.reason).toMatch(/integer/i);
+  });
+
+  it('a boxed Number costDelta (`new Number(-1)`) classifies SIM_REQUIRED, never AUTO_SAFE', () => {
+    const { raw } = loadBalanceData();
+    const boxed = new Number(-1); // deliberately a boxed Number, not a primitive — the malformed input under test
+    const rows = classifyProposals(raw, [{ id: CRYSTAL_GOLEM_ID, costDelta: boxed }] as never, {
+      marginals: MARGINALS,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).toBe('SIM_REQUIRED');
+    expect(rows[0]!.reason).toMatch(/integer/i);
+  });
+
+  it('a null entry sharing the proposals array never throws and applies zero changes', () => {
+    const { raw } = loadBalanceData();
+    expect(() => classifyProposals(raw, [null] as never)).not.toThrow();
+    expect(classifyProposals(raw, [null] as never)).toHaveLength(0);
+
+    expect(() =>
+      applyEdits(raw, { mode: 'production', marginals: MARGINALS, proposals: [null] as never }),
+    ).not.toThrow();
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: MARGINALS,
+      proposals: [null] as never,
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+
+  it.each([
+    ['false', false],
+    ['empty string', ''],
+    ['zero', 0],
+  ])(
+    'proposals: %s (supplied but non-array) applies ZERO changes — distinct from omitting `proposals`',
+    (_label, proposals) => {
+      const { raw } = loadBalanceData();
+      const result = applyEdits(raw, {
+        mode: 'production',
+        marginals: MARGINALS,
+        proposals: proposals as never,
+      });
+      expect(result.changes).toHaveLength(0);
+      expect(result.vetoed.some((v: string) => /must be an array/.test(v))).toBe(true);
+    },
+  );
+
+  it('a valid integer proposal on the same card still classifies and applies normally (control)', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: CRYSTAL_GOLEM_ID, costDelta: -1 }], {
+      marginals: MARGINALS,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.reason).not.toMatch(/dose contract is integer steps/);
+  });
+});
+
+/**
+ * §R12-2 (fresh-auditor fix, 2026-07-18) — the ±1 dose discipline was
+ * enforced for COST (`costK > 1`, balance-gates.mjs) but had no equivalent
+ * cap on stat deltas: an explicit `statDelta: { hp: -2 }` classified
+ * AUTO_SAFE even though `{ hp: -1 }` alone already succeeds, and same-card
+ * entries ACCUMULATE (applyAllProposals composes them before classification),
+ * so two `{ hp: -1 }` entries silently compose to -2 with the same gap.
+ * Fix: `statK` — the max absolute NET per-axis delta across hp/atk/arm/bulk
+ * — mirrors `costK` and forces SIM_REQUIRED once |Δstat| > 1.
+ */
+describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 1 dose cap', () => {
+  const RADIANT_ANGEL_ID = 51; // Radiant, cost/stats such that a single -1 HP trim is AUTO_SAFE
+
+  it('an explicit statDelta: { hp: -2 } classifies SIM_REQUIRED naming |Δstat|, never AUTO_SAFE', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -2 } }], {
+      marginals: MARGINALS,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).toBe('SIM_REQUIRED');
+    expect(rows[0]!.reason).toMatch(/\|Δstat\| = 2 > 1/);
+
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: MARGINALS,
+      proposals: [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -2 } }],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+
+  it('two ACCUMULATED { hp: -1 } entries on the same card compose to -2 and classify SIM_REQUIRED', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(
+      raw,
+      [
+        { id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } },
+        { id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } },
+      ],
+      { marginals: MARGINALS },
+    );
+    expect(rows).toHaveLength(1); // §P3: classified ONCE at the combined state
+    expect(rows[0]!.classification).toBe('SIM_REQUIRED');
+    expect(rows[0]!.reason).toMatch(/\|Δstat\| = 2 > 1/);
+  });
+
+  it('a single { hp: -1 } on the same card is still AUTO_SAFE (control — the ±1 dose is not over-restricted)', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } }], {
+      marginals: MARGINALS,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).toBe('AUTO_SAFE');
+  });
+});

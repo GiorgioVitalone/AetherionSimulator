@@ -77,8 +77,9 @@ function straddlesWindow(c) {
  * 2. HUMAN_REWRITE   — over-budget, ability-driven (abilityShare >= 0.5), OR
  *    (§X2) the chosen lever is a semantic no-op (no cost AND no stat change).
  * 3. SIM_REQUIRED    — any of: risky flags, proposedLoopRisk 'possible',
- *    |Δcost| > 1, interval straddles the window, marginals absent, or a
- *    faction-direction violation (nerf below 45% / buff above 55%).
+ *    |Δcost| > 1, |Δstat| > 1 (§R12-2), interval straddles the window,
+ *    marginals absent, or a faction-direction violation (nerf below 45% /
+ *    buff above 55%).
  * 4. AUTO_SAFE       — everything else.
  * Returns { classification, reason } — `reason` is shown both as the "why
  * gated" explanation and as the candidate's "what unlocks it" hint.
@@ -109,6 +110,14 @@ export function classifyCandidate(c, opts) {
   if (riskyFlags.length) reasons.push(`flags: ${riskyFlags.join(', ')}`);
   if (c.proposedLoopRisk === 'possible') reasons.push('loop risk possible at the proposed cost');
   if (c.costK > 1) reasons.push(`|Δcost| = ${c.costK} > 1`);
+  // §R12-2 (fresh-auditor fix, 2026-07-18) — the ±1 dose discipline was
+  // enforced for cost (above) but had no stat equivalent: an explicit
+  // statDelta:{hp:-2}, or two accumulated {hp:-1} entries on the same card,
+  // classified AUTO_SAFE even though the maintainer's contract is "±1 then
+  // measure" for stats exactly as for cost. `c.statK` (undefined for callers
+  // that never set it, e.g. the generated-suggestions path's ±1-only stat
+  // trims) safely fails this comparison and never trips the gate.
+  if (c.statK > 1) reasons.push(`|Δstat| = ${c.statK} > 1`);
   if (straddlesWindow(c)) reasons.push('power interval straddles the budget window');
   if (!opts.marginals) {
     reasons.push('no faction marginals supplied — conservative default (no data, no auto edit)');
