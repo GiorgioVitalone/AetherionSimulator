@@ -1,6 +1,7 @@
 /**
  * §B1 — the declared, frozen budget line. No simulations: pure math over the
- * frozen JSON (sim-data/balance-budget.v1.json) and the committed fixture pool.
+ * frozen JSON (currently sim-data/balance-budget.v2.json; v1 kept as history)
+ * and the committed fixture pool.
  * The whole point: "how much power a cost buys" is an abstract DESIGN CONSTANT,
  * never re-derived from the pool being judged (that was budgetModelByType's
  * self-fit bug — a mispriced pool moved its own goalposts).

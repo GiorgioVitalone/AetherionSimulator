@@ -1,6 +1,6 @@
 // balance-refit.mjs — iterate suggest → apply on the starter pool until the
 // in-window count stabilizes, then write the converged card set for re-simulation.
-// Since §B1 the budget line is FROZEN (balance-budget.v1.json): computeSuggestions
+// Since §B1 the budget line is FROZEN (currently balance-budget.v2.json): computeSuggestions
 // no longer re-fits per pass, and this tool measures "within" against those same
 // frozen windows — one source of truth for judgment.
 // Env: PASSES (default 4), FLATTEN_LP (default 30), OUT (/tmp/aetherion-cards-refit.json).
