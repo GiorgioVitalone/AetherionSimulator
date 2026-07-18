@@ -211,9 +211,9 @@ node balance-compare.mjs        # writes balance-compare.html — before/after o
 node balance-rebalance.mjs      # compares function-preserving balance vectors; writes a pool + a SIM-confirm command
 ```
 
-The budget model (`a + b·cost + rarity bonus`, ±RMSE window) lives in `balance-data.mjs`
-(`budgetModel` + `RARITY_BONUS`), shared by the dashboard and the suggestions generator so they stay
-in lockstep. `balance-suggestions.mjs` lists every card outside its window and proposes, per card, a
+The budget model (`a + b·cost + rarity bonus`, ±RMSE window) is a FROZEN, versioned line
+(`sim-data/balance-budget.v1.json`), loaded by `balance-data.mjs` and shared by the dashboard and the
+suggestions generator so they stay in lockstep — it is never refitted on the judged pool. `balance-suggestions.mjs` lists every card outside its window and proposes, per card, a
 stat/keyword edit (**re-scored through the formula** to verify it lands back inside), a cost re-cost,
 and — when the ability drives the score — an ability note. See `docs/balance-suggestions.md`.
 
