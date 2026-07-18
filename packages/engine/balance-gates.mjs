@@ -208,11 +208,17 @@ function isValidPlayRate(v) {
  * entirely, not just that one card's rank. */
 export function playRatesMalformed(playRates) {
   if (playRates == null) return false;
+  // §R15-3b (round-15 re-review): a PROTOTYPED playRates (Object.create({7:1e6}))
+  // has no OWN values, so Object.values misses the poisoned inherited rate that
+  // rankOf later reads via playRates[c.id]. Treat any non-plain object as
+  // malformed — the same own-vs-inherited close R15-3 made for marginals/stats.
+  const proto = Object.getPrototypeOf(playRates);
+  if (proto !== Object.prototype && proto !== null) return true;
   return Object.values(playRates).some((v) => v != null && !isValidPlayRate(v));
 }
 
 /**
- * §B4 — exposure ranking: rank = |edge| × copies-in-deck × play-rate
+ * §B4 — exposure ranking: rank = |power − expected| (residual) × copies-in-deck × play-rate
  * (play-rate from opts.playRates[cardId], defaults to 1). This orders which
  * card is the next EXPERIMENT to run — it does NOT predict the effect size
  * of applying the edit; a high-rank card is simply the one whose current

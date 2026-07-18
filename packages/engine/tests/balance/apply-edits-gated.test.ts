@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { applyEdits, classifyProposals } from '../../balance-apply-edits.mjs';
 import { computeSuggestions } from '../../balance-suggestions.mjs';
 import { loadBalanceData } from '../../balance-data.mjs';
-import { rankOf, selectCampaignEdits } from '../../balance-gates.mjs';
+import { rankOf, selectCampaignEdits, playRatesMalformed } from '../../balance-gates.mjs';
 
 const MARGINALS = { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 };
 
@@ -600,5 +600,16 @@ describe('§R15-2 — §B4 exposure ranks on |power − expected| × copies × p
   it('play-rate scales the residual exposure', () => {
     const c = { id: 7, residual: 2, copies: 3, edge: 0 };
     expect(rankOf(c, { playRates: { 7: 0.5 } })).toBeCloseTo(3, 5); // 2 × 3 × 0.5
+  });
+});
+
+describe('§R15-3b — a prototyped playRates object is treated as malformed (parity with marginals/statDelta)', () => {
+  it('Object.create({7:1e6}) is malformed — the inherited rate cannot silently inflate a rank', () => {
+    expect(playRatesMalformed(Object.create({ 7: 1e6 }))).toBe(true);
+    // a plain object and a null-proto object are fine
+    expect(playRatesMalformed({ 7: 0.5 })).toBe(false);
+    const np = Object.create(null);
+    np[7] = 0.5;
+    expect(playRatesMalformed(np)).toBe(false);
   });
 });
