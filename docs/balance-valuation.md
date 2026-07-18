@@ -233,7 +233,8 @@ scatter plus **per-faction and per-rarity** status/mean-Δ breakdowns that surfa
 mispricing (Radiant runs above budget; Ethereal/Mythic cards under-deliver on their rarity). Then
 per-deck cost curves; stat/trait/ability **value drivers**; intra-card synergy multipliers +
 <!-- §R13-5 (round-13 auditor): the "value vs cost" and "cost-budget window" panels above RENDER the
-same FROZEN, versioned budget line (sim-data/balance-budget.v1.json) that the rest of the system uses,
+same FROZEN, versioned budget line (currently sim-data/balance-budget.v2.json; v1 kept as history)
+that the rest of the system uses,
 loaded via balance-data.mjs — the dashboard does NOT refit a live least-squares line on the displayed
 pool. The `a + b·cost + rarity bonus` shape and its ±RMSE band were derived ONCE by regression
 (Theil-Sen) on a mechanically-curated card set and then frozen; the phrasing above describes that

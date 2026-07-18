@@ -21,8 +21,8 @@ const { model } = sug;
 // (each with its own slope/intercept/tol), plus expectedFor(cost, rarity, cardType)
 // and tolFor(cardType). There is no root-level tol/slope/intercept (the previous
 // destructure silently pulled `undefined` for all three, rendering "model:{}" /
-// "±undefined"). The frozen line (sim-data/balance-budget.v1.json) happens to
-// share tolerance=1.5 across both populations — chartTol below takes the max of
+// "±undefined"). The frozen line (currently sim-data/balance-budget.v2.json)
+// shares tolerance=1.5 across both populations — chartTol below takes the max of
 // the two so the visual band stays correct even if that ever diverges; each
 // row's own status/delta always uses its OWN cardType's tolFor/expectedFor.
 const { expectedFor, tolFor } = model;

@@ -120,7 +120,7 @@ const meanByCost = new Map([...byCost].map(([k, a]) => [k, a.reduce((s, v) => s 
 for (const c of cards) c.costResidual = round(c.power - meanByCost.get(c.cost));
 
 // ── Cost budget window: the FROZEN declared budget line (§B1 — sim-data/
-// balance-budget.v1.json), the SAME windows the suggestions/gates pipeline judges
+// balance-budget.v2.json, the current version; v1 kept as history), the SAME windows the suggestions/gates pipeline judges
 // with — never fitted on the pool being displayed (a mispriced pool must not move
 // its own goalposts). Rarity is a declared offset applied once inside expectedFor;
 // tolerance is per card type. Δ = power − expected; status = under/within/over.

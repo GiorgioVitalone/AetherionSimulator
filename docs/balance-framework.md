@@ -214,9 +214,10 @@ card data — every claim in this document covers four of six factions.
 Card-level scoring and the balancing-suggestion machinery were rebuilt after the
 2026-07-14 27-edit patch disaster (Arcane Echoes / Master Archivist cut into a
 free-loop catastrophe by an unguarded prescription). The declared budget line
-(`packages/engine/sim-data/balance-budget.v1.json`) replaces the old pool
-self-fit: frozen, versioned, design constants derived once from a curated
-vanilla-card list, never refit to the live pool. `balance-suggestions.mjs` runs
+(currently `packages/engine/sim-data/balance-budget.v2.json` — the maintainer-
+authorized 2026-07-18 re-seed; v1 kept on disk as frozen history) replaces the
+old pool self-fit: frozen, versioned, design constants derived once from a
+curated vanilla-card list, never refit to the live pool. `balance-suggestions.mjs` runs
 in two modes: `author` (informational — every outlier in scope gets a full
 arithmetic suggestion, nothing withheld, no gate classifications/faction
 gates/sim directives, just an informational loop-risk note; scope is
