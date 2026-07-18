@@ -1027,6 +1027,39 @@ describe('loop-risk — per-axis net-cost accounting (R12-5)', () => {
     const risk = assessLoopRisk([flexCostManaGainCopier]);
     expect(risk.get(952)).toBe('likely');
   });
+
+  it('§R12-2b: a flexible-COST self-copier that gains 3 FLEXIBLE is NOT likely — a banked flexible gain cannot pay a recurring cost the runtime can only satisfy from mana/energy', () => {
+    // Kimi K3 (round-12 re-review) flagged that loopResourceGain drops a
+    // flexible-typed gain. That gain CAN be produced (executeGainResource banks
+    // it), but the runtime's affordability check (getAvailableResources,
+    // actions/cost-checker.ts) counts only mana/energy, so a banked flexible
+    // resource can never actually pay a loop's recurring cost. Dropping it
+    // matches that runtime behavior: residFlex = max(0, 3 - 0) = 3 -> 'none'.
+    // This test pins that contract — if the runtime is ever changed to spend
+    // flexible-banked resources, this would flip and the drop would need
+    // revisiting (loop-graph.ts loopResourceGain).
+    const flexCostFlexGainCopier: StaticCard = card({
+      id: 953,
+      name: 'Flexible-Cost Flexible-Gain Copier',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 0, energy: 0, flexible: 3 },
+      abilities: [
+        triggered(onCast, [
+          { type: 'gain_resource', resourceType: 'flexible', amount: 3 },
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([flexCostFlexGainCopier]);
+    expect(risk.get(953)).not.toBe('likely');
+    expect(risk.get(953)).toBe('none');
+  });
 });
 
 // ── Item 3: no false-positive explosion ──────────────────────────────────────
@@ -1160,5 +1193,12 @@ describe('loop-risk — no false positives on plain cards', () => {
     // toHaveLength(0)) so any regression that reintroduces a 'likely' verdict
     // here is caught immediately.
     expect(likely.map((c) => c.id).sort((a, b) => a - b)).toEqual([]);
+    // §R12-2b (round-12 re-review, Kimi K3): also PIN the 'possible' set, not
+    // just likely=[]. Previously the possible set was only console.log-ed, so a
+    // future change silently demoting Echoes/Archivist/Rampant Evolution to
+    // 'none' (e.g. a per-axis or reducer regression) would have passed unnoticed
+    // while still satisfying likely=[]. Locking it makes the live census a
+    // two-sided pin.
+    expect(possible.map((c) => c.id).sort((a, b) => a - b)).toEqual([94, 119, 141]);
   });
 });

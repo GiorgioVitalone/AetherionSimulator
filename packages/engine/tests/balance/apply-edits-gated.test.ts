@@ -397,8 +397,11 @@ describe('§R12-1 — malformed proposals fail CLOSED, never open', () => {
  * AUTO_SAFE even though `{ hp: -1 }` alone already succeeds, and same-card
  * entries ACCUMULATE (applyAllProposals composes them before classification),
  * so two `{ hp: -1 }` entries silently compose to -2 with the same gap.
- * Fix: `statK` — the max absolute NET per-axis delta across hp/atk/arm/bulk
- * — mirrors `costK` and forces SIM_REQUIRED once |Δstat| > 1.
+ * Fix: `statK` — §R12-2b (round-12 re-review): the SUM of absolute per-stat
+ * deltas across hp/atk/arm (each touched stat is one dose). The first fix used
+ * a per-axis MAX, so a two-stat edit like { hp: -1, atk: -1 } scored statK 1
+ * and slipped the gate while the analogous two-axis cost move (costK 2) was
+ * blocked. Summing forces SIM_REQUIRED once the total |Δstat| across stats > 1.
  */
 describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 1 dose cap', () => {
   const RADIANT_ANGEL_ID = 51; // Radiant, cost/stats such that a single -1 HP trim is AUTO_SAFE
@@ -442,5 +445,30 @@ describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 
     });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.classification).toBe('AUTO_SAFE');
+  });
+
+  it('§R12-2b: a two-stat { hp: -1, atk: -1 } edit is a 2-unit dose and classifies SIM_REQUIRED (per-axis MAX would have passed it AUTO_SAFE)', () => {
+    // The round-12 re-review (Kimi K3) showed the original per-axis-max statK
+    // let a combined two-stat edit through: max(1,1,0) = 1 <= 1 -> AUTO_SAFE and
+    // auto-applied a 2-power-point nerf, while the analogous two-axis cost move
+    // (costK = |Δtotal| = 2) is blocked. Sum-of-|Δ| = 1 + 1 = 2 -> SIM_REQUIRED.
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(
+      raw,
+      [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1, atk: -1 } }],
+      {
+        marginals: MARGINALS,
+      },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).toBe('SIM_REQUIRED');
+    expect(rows[0]!.reason).toMatch(/\|Δstat\| = 2 > 1/);
+
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: MARGINALS,
+      proposals: [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1, atk: -1 } }],
+    });
+    expect(result.changes).toHaveLength(0);
   });
 });

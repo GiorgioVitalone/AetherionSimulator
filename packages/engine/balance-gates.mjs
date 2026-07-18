@@ -114,9 +114,14 @@ export function classifyCandidate(c, opts) {
   // enforced for cost (above) but had no stat equivalent: an explicit
   // statDelta:{hp:-2}, or two accumulated {hp:-1} entries on the same card,
   // classified AUTO_SAFE even though the maintainer's contract is "±1 then
-  // measure" for stats exactly as for cost. `c.statK` (undefined for callers
-  // that never set it, e.g. the generated-suggestions path's ±1-only stat
-  // trims) safely fails this comparison and never trips the gate.
+  // measure". §R12-2b (round-12 re-review): statK is the SUM of absolute
+  // per-stat deltas (each touched stat is one dose), NOT a per-axis max —
+  // {hp:-1, atk:-1} is a 2-unit change and trips this gate, matching the way
+  // costK counts a two-axis cost move. BOTH the explicit-proposal path
+  // (classifyProposals) AND the generated-suggestions path (computeSuggestions)
+  // now set c.statK, so the dose cap is live on both (the generated path can
+  // pick a mag-2 trim, STAT_TRIM_MAX = 2). A caller that never sets statK
+  // leaves it undefined, and `undefined > 1` is false — safely inert.
   if (c.statK > 1) reasons.push(`|Δstat| = ${c.statK} > 1`);
   if (straddlesWindow(c)) reasons.push('power interval straddles the budget window');
   if (!opts.marginals) {

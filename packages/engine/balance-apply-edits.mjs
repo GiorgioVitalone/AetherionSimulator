@@ -432,19 +432,26 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
     // enforced for cost (costK > 1, above) but had no stat equivalent: an
     // explicit statDelta:{hp:-2} (or two accumulated {hp:-1} entries on the
     // same card, composed by applyAllProposals before this point) classified
-    // AUTO_SAFE even though the maintainer's contract is "±1 then measure"
-    // for stats exactly as for cost. statK is the max absolute NET per-axis
-    // delta (after accumulation) across hp/atk/arm/bulk (hp+arm, since a body
-    // can be reshaped between HP and ARM without moving either alone by more
-    // than 1) — mirrored by classifyCandidate's `statK > 1` gate.
+    // AUTO_SAFE even though the maintainer's contract is "±1 then measure".
+    // §R12-2b (round-12 re-review, Kimi K3): the first fix used per-axis MAX,
+    // so a two-stat edit like {hp:-1, atk:-1} scored statK 1 and slipped the
+    // gate while the analogous two-axis COST move (costK = |Δtotal| = 2) is
+    // blocked. statK is now the SUM of absolute per-stat deltas across the
+    // three independent printed stats (hp/atk/arm): each stat you touch is one
+    // dose. Stats are independent dimensions (unlike cost axes, which sum for
+    // affordability), so touching two of them is a two-unit change and must be
+    // measured — hence sum-of-|Δ|, which is STRICTER than costK's |Δtotal| by
+    // design. It is also strictly stricter than the first fix's max+bulk form:
+    // besides catching {hp:-1, atk:-1} (max 1 -> sum 2), it now also gates a
+    // bulk-neutral reshape like {hp:+1, arm:-1} (old bulk term 0 -> sum 2) —
+    // that is a two-stat change and should be sim-measured, so the extra
+    // gating is the intended fail-closed direction. Mirrored by
+    // classifyCandidate's `statK > 1` gate.
     const statK =
       sc.stats && scCurrent.stats
-        ? Math.max(
-            Math.abs(sc.stats.hp - scCurrent.stats.hp),
-            Math.abs(sc.stats.atk - scCurrent.stats.atk),
-            Math.abs(sc.stats.arm - scCurrent.stats.arm),
-            Math.abs(sc.stats.hp + sc.stats.arm - (scCurrent.stats.hp + scCurrent.stats.arm)),
-          )
+        ? Math.abs(sc.stats.hp - scCurrent.stats.hp) +
+          Math.abs(sc.stats.atk - scCurrent.stats.atk) +
+          Math.abs(sc.stats.arm - scCurrent.stats.arm)
         : 0;
 
     // §P2/§Q2 — direction is ALWAYS the SIGN of the residual change (proposed

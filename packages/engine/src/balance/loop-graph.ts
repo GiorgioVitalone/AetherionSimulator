@@ -125,10 +125,16 @@ function edgeEffectSpec(e: Effect): EdgeEffectSpec | undefined {
  * gain of one specific axis must never be summed into the other, or a loop
  * that pays mana and regenerates energy would read as self-funding when the
  * runtime can never actually pay a mana cost from an energy pool
- * (actions/cost-checker.ts's specific-axis shortage check). There is no
- * flexible GAIN in the DSL/runtime (no card credits a flexible-typed
- * resource); the `flexible` case is handled only to keep the switch
- * exhaustive and intentionally contributes to neither axis. */
+ * (actions/cost-checker.ts's specific-axis shortage check). §R12-2b (round-12
+ * re-review, Kimi K3): a flexible-typed gain CAN occur (ResourceType includes
+ * 'flexible' and effects/interpreter.ts's executeGainResource banks it) —
+ * dropping it (contributing to neither axis) is correct not because it can't
+ * be produced, but because the runtime cannot SPEND it: getAvailableResources
+ * (actions/cost-checker.ts) counts only mana/energy when testing affordability,
+ * so a banked flexible gain can never actually pay a loop's recurring cost.
+ * Excluding it matches that runtime behavior. (If the runtime is ever changed
+ * to spend flexible-banked resources, this drop would become a false negative
+ * and must be revisited — see the flexible-gain regression test.) */
 interface AxisGain {
   readonly mana: number;
   readonly energy: number;

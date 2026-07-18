@@ -235,6 +235,19 @@ export function computeSuggestions(rawOverrideOrOpts) {
       c.costAfter = Math.max(0, c.cost - c.costK);
       c.after = { static: withCostDelta(c.sc, c.costAfter - c.cost), totalCost: c.costAfter, lever: c.costAfter < c.cost ? `cost −${c.cost - c.costAfter}` : '(min cost)' };
     }
+    // §R12-2b (round-12 re-review, Kimi K3): expose statK on the generated path
+    // too — the classifier's `statK > 1` dose gate was dead code here because
+    // computeSuggestions never set it, so a mag-2 stat trim (STAT_TRIM_MAX = 2)
+    // was caught only by the incidental costK coupling, not the dose gate
+    // itself. Sum of absolute per-stat deltas between the chosen lever's
+    // composed stats and the current stats — identical semantics to
+    // classifyProposals' statK (each touched stat is one dose).
+    c.statK =
+      c.after.static.stats && c.sc.stats
+        ? Math.abs(c.after.static.stats.hp - c.sc.stats.hp) +
+          Math.abs(c.after.static.stats.atk - c.sc.stats.atk) +
+          Math.abs(c.after.static.stats.arm - c.sc.stats.arm)
+        : 0;
   }
 
   // §S4/B2/B3 — loop risk (CURRENT and PROPOSED) + gate classification. §Z2
@@ -271,11 +284,18 @@ export function computeSuggestions(rawOverrideOrOpts) {
   // decked, never copied) — defaulting it to LEGAL_MAX_COPIES like an
   // un-decked non-hero card would overstate its reducer's stacking 3x. The
   // authored card has no deck membership at all (that's the point of
-  // opts.card) — pin it at its stated copy count, or 1 if unstated.
+  // opts.card) — §R12-2b/R12-3b (round-12 re-review, Kimi K3): pin it at its
+  // stated copy count, or LEGAL_MAX_COPIES if unstated. The first fix defaulted
+  // it to 1, which made the authored card LESS conservative than an identical
+  // un-decked pool card (3x) — its own reducer aura under-stacked, softening
+  // the loop-risk note on exactly the card being drafted. An authored C/S/E can
+  // legally run up to LEGAL_MAX_COPIES, so no-evidence -> conservative, matching
+  // every other un-decked card below. (An authored H/T is already pinned at 1
+  // by the H/T branch above, before this line.)
   const copiesOf = new Map(
     pool.map((sc) => {
       if (sc.cardType === 'H' || sc.cardType === 'T') return [sc.id, 1];
-      if (authoredCard && sc.id === authoredCard.id) return [sc.id, authoredCard.copies ?? 1];
+      if (authoredCard && sc.id === authoredCard.id) return [sc.id, authoredCard.copies ?? LEGAL_MAX_COPIES];
       const n = copiesInStarterDeck(sc.id);
       return [sc.id, n > 0 ? n : LEGAL_MAX_COPIES];
     }),
