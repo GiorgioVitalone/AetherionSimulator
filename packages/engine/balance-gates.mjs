@@ -84,7 +84,18 @@ function straddlesWindow(c) {
  * Returns { classification, reason } — `reason` is shown both as the "why
  * gated" explanation and as the candidate's "what unlocks it" hint.
  */
-export function classifyCandidate(c, opts) {
+/** §R17 (round-17 auditor): a NULL-PROTO copy of `o`'s OWN enumerable props —
+ * reading from it can never pick up an inherited value (prototyped bag OR a
+ * polluted Object.prototype). Every exported gate that takes a caller `opts`
+ * sanitizes it, so evidence (marginals/playRates) is consumed own-only. */
+function toOwnRecord(o) {
+  const out = Object.create(null);
+  if (o != null && typeof o === 'object' && !Array.isArray(o)) Object.assign(out, o);
+  return out;
+}
+
+export function classifyCandidate(c, optsIn) {
+  const opts = toOwnRecord(optsIn);
   if (c.proposedLoopRisk === 'likely') {
     return {
       classification: 'BLOCKED',
@@ -236,7 +247,8 @@ export function playRatesMalformed(playRates) {
  * comparison"). Missing/non-finite edge or copies default to 0 (lowest
  * possible exposure, never a crash or a NaN); the final rank itself is also
  * clamped to 0 if it still somehow comes out non-finite. */
-export function rankOf(c, opts) {
+export function rankOf(c, optsIn) {
+  const opts = toOwnRecord(optsIn); // §R17: own-property-only playRates
   // §R16-3 (round-16 auditor): if the whole playRates bag is malformed —
   // including a PROTOTYPED object (Object.create({victim:1e6})) that
   // playRatesMalformed now flags — rankOf must NOT read its (inherited) value,
@@ -271,7 +283,8 @@ export function rankOf(c, opts) {
  * which edit applies, exactly like malformed marginals suppress
  * classification. `opts` defaults to `{}` (no playRates ⇒ never malformed).
  */
-export function selectCampaignEdits(outliers, opts = {}) {
+export function selectCampaignEdits(outliers, optsIn = {}) {
+  const opts = toOwnRecord(optsIn); // §R17: own-property-only playRates
   const ranked = [...outliers].sort((a, b) => b.rank - a.rank);
   const top = ranked.find((c) => c.classification === 'AUTO_SAFE') ?? null;
   const autoEdit = top !== null && !playRatesMalformed(opts.playRates) ? top : null;

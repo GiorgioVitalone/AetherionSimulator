@@ -384,7 +384,8 @@ function applyAllProposals(sc, list) {
  * state, not once per entry. `opts`: { marginals, playRates } — forwarded to
  * classifyCandidate/rankOf unchanged.
  */
-export function classifyProposals(rawInput, proposals, opts = {}) {
+export function classifyProposals(rawInput, proposals, optsIn = {}) {
+  const opts = toOwnRecord(optsIn); // §R17: own-property-only marginals/playRates
   // §H2-3 — a single object (not wrapped in an array) used to TypeError deep
   // inside (proposalsFor's .filter, the `for (const p of proposals)` loop).
   // Fail closed instead: zero rows, never throw, regardless of what called
