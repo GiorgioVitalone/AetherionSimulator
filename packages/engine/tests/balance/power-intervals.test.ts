@@ -525,6 +525,111 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
   });
 });
 
+// ── §R13-2 (round-15 fix): four confirmed false-precision defects — a
+// variable RUNTIME magnitude priced as a zero-width, unflagged point.
+
+describe('§R13-2: dynamic-valuation false-precision sweep', () => {
+  it('dice: low < mean < high (roll range), flagged dynamic_amount (was zero-width, unflagged)', () => {
+    // Routed through `heal` (not deal_damage) so the dice range's own width
+    // is observed directly — deal_damage's kill-clamp (dmgToEffectValue)
+    // otherwise saturates a 2d6 mean AND its max roll to the same
+    // AVG_ENEMY_BODY×REMOVAL_WEIGHT ceiling, masking the amountValDetailed
+    // widening this test targets.
+    const d = effectStaticValueDetailed({
+      type: 'heal',
+      amount: { type: 'dice', count: 2, sides: 6 },
+      target: alliedCharacter,
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBeLessThan(d.value);
+    expect(d.high).toBeGreaterThan(d.value);
+  });
+
+  it('multiply(factor 0, a zero/shrink debuff): no longer scores 0 — widened + flagged', () => {
+    // Real pool usage of `multiply` (RIA-09 Verdant Vanguard) is an ALLIED
+    // growth buff — sign/target-side accounting is the caller's
+    // (valueForTotal's) responsibility, not this case's; an allied target is
+    // the shape this fix is verified against, matching established usage.
+    const d = effectStaticValueDetailed({
+      type: 'modify_stats',
+      modifier: {},
+      dynamicModifier: { type: 'multiply', factor: 0 },
+      target: alliedCharacter,
+      duration: { type: 'until_end_of_turn' },
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.high).toBeGreaterThan(0);
+  });
+
+  it('multiply(factor 0.5, a partial shrink): non-zero widened interval, flagged', () => {
+    const d = effectStaticValueDetailed({
+      type: 'modify_stats',
+      modifier: {},
+      dynamicModifier: { type: 'multiply', factor: 0.5 },
+      target: alliedCharacter,
+      duration: { type: 'until_end_of_turn' },
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.high).toBeGreaterThan(0);
+  });
+
+  it('deploy_token inEachEmpty: widened [0, per×MAX_EMPTY_SLOTS], flagged (was a zero-width point)', () => {
+    const d = effectStaticValueDetailed({
+      type: 'deploy_token',
+      inEachEmpty: true,
+      count: 1,
+      zone: 'frontline',
+      token: { atk: 2, hp: 2 },
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBe(0);
+    expect(d.high).toBeGreaterThan(d.value);
+  });
+
+  it('deploy_token fixed count: stays a deterministic flat point (unaffected regression)', () => {
+    const d = effectStaticValueDetailed({
+      type: 'deploy_token',
+      count: 2,
+      zone: 'frontline',
+      token: { atk: 2, hp: 2 },
+    });
+    expect(d.flags).not.toContain('dynamic_amount');
+    expect(d.low).toBe(d.value);
+    expect(d.high).toBe(d.value);
+  });
+
+  it('gain_resource flexible: widened [0, full] around a halved midpoint, flagged (was a flat point)', () => {
+    const d = effectStaticValueDetailed({
+      type: 'gain_resource',
+      resourceType: 'flexible',
+      amount: 2,
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBe(0);
+    expect(d.high).toBeGreaterThan(d.value);
+  });
+
+  it('gain_resource mana/energy: unchanged deterministic flat point (regression)', () => {
+    const dMana = effectStaticValueDetailed({
+      type: 'gain_resource',
+      resourceType: 'mana',
+      amount: 2,
+    });
+    expect(dMana.flags).not.toContain('dynamic_amount');
+    expect(dMana.low).toBe(dMana.value);
+    expect(dMana.high).toBe(dMana.value);
+
+    const dEnergy = effectStaticValueDetailed({
+      type: 'gain_resource',
+      resourceType: 'energy',
+      amount: 2,
+    });
+    expect(dEnergy.flags).not.toContain('dynamic_amount');
+    expect(dEnergy.low).toBe(dEnergy.value);
+    expect(dEnergy.high).toBe(dEnergy.value);
+  });
+});
+
 // Round-8 review exact-value pin (effect level, no recurrence entanglement):
 // a conditionally-granted flat ability spans [0, UNDISCOUNTED flat] around the
 // CONDITION_DISCOUNT midpoint — the high is the full value, NOT value/0.7^2

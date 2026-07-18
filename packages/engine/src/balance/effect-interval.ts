@@ -32,6 +32,7 @@ import {
   FACE_WEIGHT,
   FLAT_ONE,
   HEAL_URGENCY,
+  MAX_EMPTY_SLOTS,
   REMOVAL_WEIGHT,
   RESERVE_TAP_VALUE,
   RESOURCE_VALUE,
@@ -191,8 +192,19 @@ function amountValDetailed(expr: AmountExpr): AmountRange {
         flags: ['dynamic_amount'],
       };
     case 'dice': {
+      // §R13-2 (round-15 fix): the runtime rolls `count` dice of `sides` and
+      // sums the faces (rng-prepass.ts's rollDice, 1..sides per die) — a
+      // genuinely variable runtime magnitude that was priced as a zero-width,
+      // unflagged mean. The mean stays the midpoint (unchanged); low/high are
+      // the honest roll range (all 1s / all max faces), flagged the same way
+      // other variable-runtime sources here are.
       const v = expr.count * ((expr.sides + 1) / 2);
-      return { value: v, low: v, high: v, flags: NO_FLAGS };
+      return {
+        value: v,
+        low: expr.count * 1,
+        high: expr.count * expr.sides,
+        flags: ['dynamic_amount'],
+      };
     }
     case 'count': {
       // §X3 (round-9 fix): the DSL types `max` as a bare optional number — the
@@ -272,7 +284,16 @@ export function dynamicBonusDetailed(dyn: DynamicStatSource | undefined): Amount
       // OWN stats, not the fixed AVG_WEAK_BODY anchor — was zero-width and
       // unflagged. Widened to the same [0, value × SPREAD] policy other
       // dynamic-amount cases use, midpoint unchanged.
-      const v = Math.max(0, dyn.factor - 1) * AVG_WEAK_BODY;
+      // §R13-2 (round-15 fix): `Math.max(0, factor - 1)` zeroed the ENTIRE case
+      // for factor < 1 (a SHRINK/zero debuff — e.g. factor:0 zeroes the
+      // target's stats — amount-evaluator.ts applies currentStat*(factor-1)
+      // regardless of direction) — a body-shrink is worth its magnitude just
+      // like a body-buff, not nothing. Switched to the absolute magnitude of
+      // the stat change for BOTH directions; sign/target-side accounting
+      // (allied-buff vs enemy-debuff) is left to the caller (valueForTotal),
+      // the same sign-agnostic-magnitude convention `equals_stat` above
+      // already uses — never a second sign model.
+      const v = Math.abs(dyn.factor - 1) * AVG_WEAK_BODY;
       return normalizeRange({
         value: v,
         low: 0,
@@ -449,24 +470,57 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
         flags: a.flags,
       };
     }
-    case 'gain_resource':
+    case 'gain_resource': {
       // §13 repair: a banked resource ≈ ACCEL_RAMP_TEMPO stats of tempo (was 1.0).
-      return det(
-        effect.amount * (effect.temporary === true ? RESOURCE_VALUE_TEMP : RESOURCE_VALUE),
-        false,
-      );
+      // §R13-2 (round-15 fix): mana/energy gains are genuinely spendable at
+      // full value (cost-checker.ts's getAvailableResources counts them) —
+      // unchanged, still a flat point. A `flexible` gain is NOT: the same
+      // getAvailableResources only tallies mana/energy, so a banked flexible
+      // resource cannot pay any cost today — its real utility is uncertain
+      // (0 if the runtime is never fixed, full if it is), not a safe flat
+      // point. Also ties to the loop detector's D24 treatment, which already
+      // drops flexible resources to their LOW (unspendable) bound for the
+      // same reason.
+      const unit = effect.temporary === true ? RESOURCE_VALUE_TEMP : RESOURCE_VALUE;
+      if (effect.resourceType === 'flexible') {
+        const full = effect.amount * unit;
+        return {
+          value: full * 0.5,
+          low: 0,
+          high: full,
+          isRemoval: false,
+          flags: ['dynamic_amount'],
+        };
+      }
+      return det(effect.amount * unit, false);
+    }
     case 'deploy_token': {
       // §13 repair: tokens are real bodies (were priced at half stats, no traits,
       // no zone). A Reserve token additionally taps +1 temp resource per turn
       // (Rulebook 8 Upkeep 4) — the battery the §12c run measured.
-      const n = effect.inEachEmpty === true ? EMPTY_SLOTS_EXPECTED : effect.count;
       const t = effect.token;
       const stats = t.atk * W_ATK + t.hp * W_HP + (t.arm ?? 0) * W_ARM;
       let per = stats * TOKEN_BODY_FACTOR;
       const tokenStats = { atk: t.atk, hp: t.hp, arm: t.arm ?? 0 };
       for (const tr of t.traits ?? []) per += traitValue(tr, tokenStats, {});
       if (effect.zone === 'reserve') per += RESERVE_TAP_VALUE;
-      return det(per * n, false);
+      // §R13-2 (round-15 fix): `inEachEmpty` deploys into the ACTUAL empty
+      // slots at cast time (0 when the zone is already full, up to the zone's
+      // capacity — interpreter.ts's executeDeployToken), not a fixed
+      // EMPTY_SLOTS_EXPECTED count — was a zero-width, unflagged point. The
+      // fixed-count branch (a declared, non-inEachEmpty count) stays
+      // deterministic — that magnitude IS statically known.
+      if (effect.inEachEmpty === true) {
+        const v = per * EMPTY_SLOTS_EXPECTED;
+        return {
+          value: v,
+          low: 0,
+          high: per * MAX_EMPTY_SLOTS,
+          isRemoval: false,
+          flags: ['dynamic_amount'],
+        };
+      }
+      return det(per * effect.count, false);
     }
     case 'counter_spell':
       // §13 repair: a counter trades 1-for-1 with the opponent's CHOSEN best
