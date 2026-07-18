@@ -187,10 +187,21 @@ function proposalViabilityVeto(scCurrent, scProposed, combined = []) {
       // primitive instead of throwing, so the malformed value passed
       // through unnoticed as a no-op rather than failing closed with a
       // named reason.
-      if (typeof p.statDelta !== 'object' || Array.isArray(p.statDelta)) {
+      // §R15-3 (round-15 auditor): reject a non-object, an array, OR a
+      // PROTOTYPED object. The integer check below enumerates OWN entries
+      // (Object.entries), but the stat composer reads INHERITED hp/atk/arm — so
+      // `Object.create({hp:true})` has no own entries, passes, and then the
+      // composer coerces the inherited `true` to 1. Only a plain record (proto
+      // === Object.prototype or null) is a trustworthy delta bag.
+      const sdProto = p.statDelta == null ? null : Object.getPrototypeOf(p.statDelta);
+      if (
+        typeof p.statDelta !== 'object' ||
+        Array.isArray(p.statDelta) ||
+        (sdProto !== Object.prototype && sdProto !== null)
+      ) {
         return {
           classification: 'SIM_REQUIRED',
-          reason: `SIM_REQUIRED: statDelta must be a plain object of integer deltas, received ${typeof p.statDelta} — dose contract is integer steps`,
+          reason: `SIM_REQUIRED: statDelta must be a plain object of integer deltas, received ${Array.isArray(p.statDelta) ? 'array' : typeof p.statDelta} — dose contract is integer steps`,
         };
       }
       for (const [key, v] of Object.entries(p.statDelta)) {
@@ -486,6 +497,10 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
       // judgments).
       copies: copiesInStarterDeck(p.id) || 1,
       abilityShare: bd.power > 0 ? bd.abilityValue / bd.power : 0,
+      // §R15-2 (round-15 auditor): §B4 exposure ranks on |power − expected|
+      // (residual from the budget line), so carry it for rankOf — the proposed
+      // card's own residual, not the tolerance-window `edge`.
+      residual: Math.abs(residualProposed),
       costK,
       statK,
       flags: bd.flags,

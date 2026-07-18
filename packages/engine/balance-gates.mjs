@@ -138,14 +138,29 @@ export function classifyCandidate(c, opts) {
     // trust boundary covers plausible-but-wrong numbers) — it is DOMAIN-invalid
     // and must fail closed exactly like a non-finite value, or a Verdant:-1 /
     // Radiant:101 marginal silently defeats the faction-direction protection.
-    const badKey = Object.keys(opts.marginals).find(
-      (k) =>
-        opts.marginals[k] != null &&
-        (!Number.isFinite(opts.marginals[k]) ||
-          opts.marginals[k] < 0 ||
-          opts.marginals[k] > 100),
-    );
-    if (badKey) {
+    // §R15-3 (round-15 auditor): reject a PROTOTYPED marginals object. The
+    // validation below enumerates OWN keys (Object.keys), but `opts.marginals[
+    // c.faction]` reads INHERITED properties too — so `Object.create({Sapphire:
+    // 101})` has no own keys, passes the domain check, and then the faction
+    // read pulls the poisoned inherited 101. Fail closed unless the object's
+    // prototype is the plain Object.prototype (or null) — an exotic/prototyped
+    // evidence object is untrustworthy for ANY faction.
+    const proto = Object.getPrototypeOf(opts.marginals);
+    const badKey =
+      proto !== Object.prototype && proto !== null
+        ? '<prototype>'
+        : Object.keys(opts.marginals).find(
+            (k) =>
+              opts.marginals[k] != null &&
+              (!Number.isFinite(opts.marginals[k]) ||
+                opts.marginals[k] < 0 ||
+                opts.marginals[k] > 100),
+          );
+    if (badKey === '<prototype>') {
+      reasons.push(
+        'marginals is a prototyped/exotic object (not a plain record) — inherited values cannot be trusted, no auto edit',
+      );
+    } else if (badKey) {
       reasons.push(
         `marginals object has an invalid value for ${badKey} (${opts.marginals[badKey]}) — non-finite or outside [0,100]; whole marginals object is unreliable, no auto edit`,
       );
@@ -218,9 +233,16 @@ export function playRatesMalformed(playRates) {
 export function rankOf(c, opts) {
   const raw = opts.playRates?.[c.id];
   const playRate = isValidPlayRate(raw) ? raw : 1;
-  const edge = Number.isFinite(c.edge) ? c.edge : 0;
+  // §R15-2 (round-15 auditor): §B4 exposure = |power − expected| × copies ×
+  // play-rate. Rank on the RESIDUAL (distance from the budget line), NOT `edge`
+  // (distance past the tolerance window), which collapses to 0 for within-window
+  // cards and rounds sub-tolerance residual away — inverting the true ranking.
+  // Fall back to |edge| only for legacy candidates that carry no residual.
+  const residual = Number.isFinite(c.residual)
+    ? Math.abs(c.residual)
+    : Math.abs(Number.isFinite(c.edge) ? c.edge : 0);
   const copies = Number.isFinite(c.copies) ? c.copies : 0;
-  const rank = Math.abs(edge) * copies * playRate;
+  const rank = residual * copies * playRate;
   return Number.isFinite(rank) ? rank : 0;
 }
 

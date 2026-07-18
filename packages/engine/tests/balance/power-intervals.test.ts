@@ -690,14 +690,15 @@ describe('§R13-2: dynamic-valuation false-precision sweep', () => {
     expect(d.high).toBe(d.value); // midpoint/high stay at the optimistic max
   });
 
-  it('§R14-1b control: up_to count 1 has no cardinality spread — stays a deterministic point', () => {
+  it('§R15-1: up_to count 1 realizes 0 OR 1 target (minSelections:0), so it widens DOWN to 0 — the high stays at the single-target value', () => {
     const d = effectStaticValueDetailed({
       type: 'deal_damage',
       amount: fixed(2),
       target: { side: 'enemy', type: 'up_to', count: 1 } as never,
     });
-    expect(d.low).toBe(d.value);
-    expect(d.high).toBe(d.value);
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBe(0); // 0 realized targets
+    expect(d.high).toBe(d.value); // 1 target = the optimistic single-target value
   });
 });
 

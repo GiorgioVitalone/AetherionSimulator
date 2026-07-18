@@ -419,25 +419,49 @@ export function sumEffectsDetailed(effects: readonly Effect[]): EffectValueDetai
  * (relative to the EXPECTED_COUNT the point used, both clamped to AOE_WIDTH)
  * widens every effect type uniformly — never narrows, and carries
  * dynamic_amount. A fixed numeric count returns null (unchanged). */
+/** Full one-side board capacity (Reserve 2 + Frontline 3 + High Ground 2 =
+ * 7, Rulebook zones) and per-zone caps — the MAX realized cardinality for a
+ * board-wide target. */
+const MAX_BOARD_TARGETS = 7;
+const ZONE_CAP: Readonly<Record<string, number>> = { reserve: 2, frontline: 3, high_ground: 2 };
+
+/** §R14-1 / §R15-1: any target whose REALIZED cardinality varies at runtime is
+ * priced by aoeFactor at a single point, leaving the effect interval too
+ * narrow for the straddle gate. The runtime realizes 0..max targets
+ * (target-resolver minSelections can be 0 — no legal target), so every such
+ * effect must widen DOWN to 0 and UP to its true max. Returns the multiplier
+ * range relative to the point aoeFactor already applied, or null for a
+ * genuinely fixed single target. */
 function dynamicTargetCountScale(effect: Effect): { lo: number; hi: number } | null {
   const target = 'target' in effect ? (effect.target as TargetExpr | undefined) : undefined;
-  if (!target || target.type !== 'up_to') return null;
+  if (!target) return null;
   const clamp = (x: number): number => Math.min(Math.max(x, 1), AOE_WIDTH);
-  if (typeof target.count === 'number') {
-    // §R14-1b (round-14 re-review, Kimi K3): a FIXED `up_to` count is still a
-    // variable realized cardinality — "deal 2 to up to 2 enemies" hits 1..N
-    // depending on how many legal targets exist (target-resolver's
-    // minSelections/availability). The inner value anchored on aoeFactor =
-    // clamp(count) (the MAX), so widen DOWN to a single realized target
-    // (scale.lo = 1/clamp(count)); the midpoint/high stay at the optimistic
-    // max (scale.hi = 1). up_to-1 has no cardinality spread (returns null).
-    const maxC = clamp(target.count);
-    return maxC <= 1 ? null : { lo: 1 / maxC, hi: 1 };
+  if (target.type === 'up_to') {
+    // Inner anchored on clamp(count) (fixed) or clamp(EXPECTED_COUNT) (dynamic);
+    // declared policy caps an up_to at AOE_WIDTH, so `hi` stays at the point
+    // (scale.hi = 1 for fixed, or the dice range for dynamic), and `lo` -> 0
+    // (0 realized targets — minSelections:0).
+    if (typeof target.count === 'number') {
+      return { lo: 0, hi: 1 };
+    }
+    const cnt = amountValDetailed(target.count);
+    const expected = clamp(EXPECTED_COUNT);
+    return { lo: 0, hi: clamp(cnt.high) / expected };
   }
-  // Dynamic (AmountExpr) count: the inner anchored on EXPECTED_COUNT.
-  const cnt = amountValDetailed(target.count);
-  const expected = clamp(EXPECTED_COUNT);
-  return { lo: clamp(cnt.low) / expected, hi: clamp(cnt.high) / expected };
+  if (target.type === 'all_characters' || target.type === 'all_characters_in_zone') {
+    // §R15-1 (round-15 auditor): aoeFactor prices these at the flat AOE_WIDTH
+    // board-wide EXPECTED, but the realized count is 0 (empty board/zone) up to
+    // the zone/board CAPACITY — so a heal-all/board-wipe interval must span
+    // [0, capacity]. Unlike up_to, the high extends to the true capacity (NOT
+    // capped at AOE_WIDTH), since a board-wide effect genuinely hits the whole
+    // board when it is full.
+    const cap =
+      target.type === 'all_characters_in_zone'
+        ? (ZONE_CAP[target.zone] ?? MAX_BOARD_TARGETS)
+        : MAX_BOARD_TARGETS;
+    return { lo: 0, hi: cap / AOE_WIDTH };
+  }
+  return null;
 }
 
 export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {

@@ -425,11 +425,11 @@ describe('§R12-1 — malformed proposals fail CLOSED, never open', () => {
  * blocked. Summing forces SIM_REQUIRED once the total |Δstat| across stats > 1.
  */
 describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 1 dose cap', () => {
-  const RADIANT_ANGEL_ID = 51; // Radiant, cost/stats such that a single -1 HP trim is AUTO_SAFE
+  const STABLE_DOSE_ID = 11; // §R15-1: Zombie Horde — a STABLE (no board-wide effect) card whose single -1 HP trim is AUTO_SAFE, so the dose gate (not a straddle) decides. id 51 now has a widened all_characters interval and straddles for any edit.
 
   it('an explicit statDelta: { hp: -2 } classifies SIM_REQUIRED naming |Δstat|, never AUTO_SAFE', () => {
     const { raw } = loadBalanceData();
-    const rows = classifyProposals(raw, [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -2 } }], {
+    const rows = classifyProposals(raw, [{ id: STABLE_DOSE_ID, statDelta: { hp: -2 } }], {
       marginals: MARGINALS,
     });
     expect(rows).toHaveLength(1);
@@ -439,7 +439,7 @@ describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 
     const result = applyEdits(raw, {
       mode: 'production',
       marginals: MARGINALS,
-      proposals: [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -2 } }],
+      proposals: [{ id: STABLE_DOSE_ID, statDelta: { hp: -2 } }],
     });
     expect(result.changes).toHaveLength(0);
   });
@@ -449,8 +449,8 @@ describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 
     const rows = classifyProposals(
       raw,
       [
-        { id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } },
-        { id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } },
+        { id: STABLE_DOSE_ID, statDelta: { hp: -1 } },
+        { id: STABLE_DOSE_ID, statDelta: { hp: -1 } },
       ],
       { marginals: MARGINALS },
     );
@@ -461,7 +461,7 @@ describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 
 
   it('a single { hp: -1 } on the same card is still AUTO_SAFE (control — the ±1 dose is not over-restricted)', () => {
     const { raw } = loadBalanceData();
-    const rows = classifyProposals(raw, [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } }], {
+    const rows = classifyProposals(raw, [{ id: STABLE_DOSE_ID, statDelta: { hp: -1 } }], {
       marginals: MARGINALS,
     });
     expect(rows).toHaveLength(1);
@@ -474,13 +474,9 @@ describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 
     // auto-applied a 2-power-point nerf, while the analogous two-axis cost move
     // (costK = |Δtotal| = 2) is blocked. Sum-of-|Δ| = 1 + 1 = 2 -> SIM_REQUIRED.
     const { raw } = loadBalanceData();
-    const rows = classifyProposals(
-      raw,
-      [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1, atk: -1 } }],
-      {
-        marginals: MARGINALS,
-      },
-    );
+    const rows = classifyProposals(raw, [{ id: STABLE_DOSE_ID, statDelta: { hp: -1, atk: -1 } }], {
+      marginals: MARGINALS,
+    });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.classification).toBe('SIM_REQUIRED');
     expect(rows[0]!.reason).toMatch(/\|Δstat\| = 2 > 1/);
@@ -488,7 +484,7 @@ describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 
     const result = applyEdits(raw, {
       mode: 'production',
       marginals: MARGINALS,
-      proposals: [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1, atk: -1 } }],
+      proposals: [{ id: STABLE_DOSE_ID, statDelta: { hp: -1, atk: -1 } }],
     });
     expect(result.changes).toHaveLength(0);
   });
@@ -503,7 +499,7 @@ describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 
  * [0,100].
  */
 describe('§R13-4 — out-of-[0,100] marginals fail CLOSED, never AUTO_SAFE', () => {
-  const RADIANT_ANGEL_ID = 51;
+  const STABLE_DOSE_ID = 11; // §R15-1: stable, no board-wide widening
 
   it.each([
     ['a negative marginal (Verdant:-1)', { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: -1 }],
@@ -512,7 +508,7 @@ describe('§R13-4 — out-of-[0,100] marginals fail CLOSED, never AUTO_SAFE', ()
     '%s makes the whole marginals object fail closed — a single-unit trim is not AUTO_SAFE',
     (_label, marginals) => {
       const { raw } = loadBalanceData();
-      const rows = classifyProposals(raw, [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } }], {
+      const rows = classifyProposals(raw, [{ id: STABLE_DOSE_ID, statDelta: { hp: -1 } }], {
         marginals,
       });
       expect(rows).toHaveLength(1);
@@ -522,7 +518,7 @@ describe('§R13-4 — out-of-[0,100] marginals fail CLOSED, never AUTO_SAFE', ()
       const result = applyEdits(raw, {
         mode: 'production',
         marginals,
-        proposals: [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } }],
+        proposals: [{ id: STABLE_DOSE_ID, statDelta: { hp: -1 } }],
       });
       expect(result.changes).toHaveLength(0);
     },
@@ -530,10 +526,79 @@ describe('§R13-4 — out-of-[0,100] marginals fail CLOSED, never AUTO_SAFE', ()
 
   it('control: the same trim with all marginals in [0,100] is still AUTO_SAFE', () => {
     const { raw } = loadBalanceData();
-    const rows = classifyProposals(raw, [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } }], {
+    const rows = classifyProposals(raw, [{ id: STABLE_DOSE_ID, statDelta: { hp: -1 } }], {
       marginals: MARGINALS,
     });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.classification).toBe('AUTO_SAFE');
+  });
+});
+
+describe('§R15-1 — board-wide/up_to cardinality widens the interval, blocking unsafe AUTO_SAFE cuts', () => {
+  it('Celestial Aegis (id 72, heal-all) — the all_characters interval spans [0, capacity] and straddles → SIM_REQUIRED, not AUTO_SAFE', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: 72, costDelta: -1 }], { marginals: MARGINALS });
+    expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: MARGINALS,
+      proposals: [{ id: 72, costDelta: -1 }],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+
+  it('Chain Lightning (id 89, up_to) — realized 0..N targets (minSelections:0) widen the interval → SIM_REQUIRED', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: 89, costDelta: -1 }], { marginals: MARGINALS });
+    expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+  });
+});
+
+describe('§R15-3 — prototyped/exotic evidence fails CLOSED (inherited properties cannot be trusted)', () => {
+  it('a marginals object with a poisoned PROTOTYPE (no own keys) is rejected — Object.create({Onyx:101}) never AUTO_SAFE', () => {
+    // id 11 is AUTO_SAFE for a single {hp:-1} with a plain [0,100] marginals
+    // object (the R13-4 control), so the ONLY thing flipping it here is the
+    // prototype poisoning — the guard is the deciding factor.
+    const { raw } = loadBalanceData();
+    const poisoned = Object.create({ Onyx: 101 });
+    const rows = classifyProposals(raw, [{ id: 11, statDelta: { hp: -1 } }], {
+      marginals: poisoned,
+    });
+    expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+    expect(rows[0]!.reason).toMatch(/prototyped|exotic|not a plain/i);
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: poisoned,
+      proposals: [{ id: 11, statDelta: { hp: -1 } }],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+
+  it('a statDelta with a poisoned PROTOTYPE (Object.create({hp:true})) is rejected — the inherited boolean cannot coerce to a written stat', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: 143, statDelta: Object.create({ hp: true }) }], {
+      marginals: MARGINALS,
+    });
+    expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+    expect(rows[0]!.reason).toMatch(/plain object|integer/i);
+  });
+});
+
+describe('§R15-2 — §B4 exposure ranks on |power − expected| × copies × play-rate (residual), not the tolerance-window edge', () => {
+  it('a card 1.55 off the line at 2 copies outranks one 1.65 off at 1 copy — the residual×copies product, which the old edge formula (0 for a within-window card) inverted', () => {
+    // Auditor's concrete inversion: Celestial-shaped (residual 1.55, 2 copies,
+    // edge 0 because within the tolerance window) vs Uriel-shaped (residual
+    // 1.65, 1 copy). Contract rank: 3.10 vs 1.65. Old edge rank: 0 vs ~0.2 —
+    // inverted. rankOf must use residual.
+    const celestial = { id: 1, residual: 1.55, copies: 2, edge: 0 };
+    const uriel = { id: 2, residual: 1.65, copies: 1, edge: 0.2 };
+    expect(rankOf(celestial, {})).toBeCloseTo(3.1, 5);
+    expect(rankOf(uriel, {})).toBeCloseTo(1.65, 5);
+    expect(rankOf(celestial, {})).toBeGreaterThan(rankOf(uriel, {}));
+  });
+
+  it('play-rate scales the residual exposure', () => {
+    const c = { id: 7, residual: 2, copies: 3, edge: 0 };
+    expect(rankOf(c, { playRates: { 7: 0.5 } })).toBeCloseTo(3, 5); // 2 × 3 × 0.5
   });
 });

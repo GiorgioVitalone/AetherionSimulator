@@ -150,6 +150,12 @@ export function computeSuggestions(rawOverrideOrOpts) {
     c.hi = round(exp + tol, 1);
     c.status = c.power > exp + tol ? 'over' : c.power < exp - tol ? 'under' : 'within';
     c.edge = c.status === 'over' ? round(c.power - c.hi, 1) : c.status === 'under' ? round(c.lo - c.power, 1) : 0;
+    // §R15-2 (round-15 auditor): the §B4 EXPOSURE ranking is |power − expected| ×
+    // copies × play-rate (spec §B4) — the distance from the budget LINE, NOT the
+    // `edge` distance past the tolerance WINDOW (which is 0 for any within-window
+    // card and rounds away sub-tolerance residual, inverting the ranking). `edge`
+    // stays for the suggestion DISPLAY sort; `residual` drives rankOf.
+    c.residual = round(Math.abs(c.power - exp), 2);
   }
 
   const searchStatEdit = (c) => {
