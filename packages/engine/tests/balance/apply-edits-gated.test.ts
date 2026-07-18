@@ -613,3 +613,27 @@ describe('§R15-3b — a prototyped playRates object is treated as malformed (pa
     expect(playRatesMalformed(np)).toBe(false);
   });
 });
+
+describe('§R15-2 integration — the PRODUCERS populate residual, so ranking follows it end-to-end (not the edge fallback)', () => {
+  it('a classifyProposals row carries residual = |power − expected| and rankOf ranks on it (fails if the producer stops setting residual)', () => {
+    const { raw } = loadBalanceData();
+    const row = classifyProposals(raw, [{ id: 78, statDelta: { hp: -1 } }], { marginals: MARGINALS })[0]!;
+    // residual is populated by the production path (balance-apply-edits base row),
+    // NOT left undefined (which would silently drop rankOf back to |edge|).
+    expect(typeof (row as { residual?: number }).residual).toBe('number');
+    const r = row as { residual: number; copies: number; edge?: number };
+    // rankOf must equal residual × copies (× playRate 1), i.e. it uses residual,
+    // not edge. If the producer reverted, residual would be undefined and this
+    // would instead equal |edge| × copies.
+    expect(rankOf(row, {})).toBeCloseTo(r.residual * r.copies, 5);
+  });
+
+  it('every computeSuggestions candidate carries residual', () => {
+    const sug = computeSuggestions({ mode: 'campaign', marginals: MARGINALS });
+    const candidates = [...sug.over, ...sug.under];
+    expect(candidates.length).toBeGreaterThan(0);
+    for (const c of candidates) {
+      expect(typeof (c as { residual?: number }).residual).toBe('number');
+    }
+  });
+});
