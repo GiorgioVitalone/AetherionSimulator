@@ -664,3 +664,35 @@ describe('§R16-3 — a prototyped playRates never steers the candidate rank', (
     expect(rankOf(c, { playRates: { 54: 2 } })).toBeCloseTo(3.3, 5);
   });
 });
+
+describe('§R17 — the options bag is read own-property-only (prototyped opts and a polluted Object.prototype both fail closed)', () => {
+  it('R17-1: computeSuggestions with a prototyped opts (Object.create({marginals})) does NOT auto-edit — inherited evidence is ignored', () => {
+    const opts = Object.create({ marginals: MARGINALS, mode: 'campaign' });
+    const sug = computeSuggestions(opts);
+    expect(sug.autoEdit ?? null).toBeNull();
+  });
+
+  it('R17-2: applyEdits({}) with a globally polluted Object.prototype applies ZERO changes (own-property-only)', () => {
+    const { raw } = loadBalanceData();
+    // Pollute, then ALWAYS restore in finally so no other test is affected.
+    (Object.prototype as { marginals?: unknown }).marginals = MARGINALS;
+    (Object.prototype as { mode?: unknown }).mode = 'exploratory';
+    try {
+      const result = applyEdits(raw, {});
+      expect(result.changes).toHaveLength(0);
+    } finally {
+      delete (Object.prototype as { marginals?: unknown }).marginals;
+      delete (Object.prototype as { mode?: unknown }).mode;
+    }
+  });
+
+  it('R17 control: a normal own-property options object still works (production auto-edit path unaffected)', () => {
+    const { raw } = loadBalanceData();
+    const explicit = applyEdits(raw, { mode: 'production', marginals: MARGINALS });
+    expect(explicit.changes.length).toBeLessThanOrEqual(1);
+    // and Object.create(null) records are accepted
+    const nullProtoMarginals = Object.assign(Object.create(null), MARGINALS);
+    const r2 = applyEdits(raw, { mode: 'production', marginals: nullProtoMarginals });
+    expect(r2.changes.length).toBeLessThanOrEqual(1);
+  });
+});

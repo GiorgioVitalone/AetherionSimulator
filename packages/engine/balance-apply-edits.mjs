@@ -341,6 +341,17 @@ function isPlainRecord(o) {
   return proto === Object.prototype || proto === null;
 }
 
+/** §R17 (round-17 auditor): return a NULL-PROTOTYPE object holding only `o`'s
+ * OWN enumerable properties. Destructuring/reading from the result can never
+ * pick up an inherited value — this defeats BOTH a prototyped bag
+ * (Object.create({mode})) AND a globally polluted Object.prototype (which even
+ * a plain `{}` would otherwise inherit through). Non-objects/arrays -> empty. */
+export function toOwnRecord(o) {
+  const out = Object.create(null);
+  if (o != null && typeof o === 'object' && !Array.isArray(o)) Object.assign(out, o);
+  return out;
+}
+
 function isValidProposalEntry(p) {
   // §R16-1: reject a PROTOTYPED proposal entry — Object.create({id:11,
   // statDelta:{hp:-1}}) has no own keys, so the integer/id validation misses
@@ -583,12 +594,13 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
  *
  * Returns { raw, changes, lpCount, vetoed }. */
 export function applyEdits(rawInput, optsIn = {}) {
-  // §R16-1 (round-16 auditor): a PROTOTYPED options object —
-  // Object.create({mode:'exploratory'}) — has no own keys but destructures the
-  // inherited `mode`, silently entering bulk exploratory application. Sanitize
-  // to a plain record (an exotic options bag falls back to {} => the gated
-  // production default), so `mode` can only come from an own property.
-  const opts = isPlainRecord(optsIn) ? optsIn : {};
+  // §R16-1/§R17-2 (round-16/17 auditor): a PROTOTYPED options object
+  // (Object.create({mode:'exploratory'})) OR a globally polluted Object.prototype
+  // would leak an INHERITED `mode`/`marginals` through destructuring, silently
+  // entering bulk apply. toOwnRecord copies only OWN enumerable props into a
+  // null-proto object, so every destructured field below can ONLY come from an
+  // own property (exotic/polluted -> the gated production default).
+  const opts = toOwnRecord(optsIn);
   const { mode = 'production', arm = 'all', flattenLp = 0, marginals, playRates, proposals } = opts;
   const raw = JSON.parse(JSON.stringify(rawInput));
   const changes = [];

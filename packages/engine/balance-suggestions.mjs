@@ -91,7 +91,12 @@ export function copiesInStarterDeck(id) {
 
 export function computeSuggestions(rawOverrideOrOpts) {
   const rawOverride = Array.isArray(rawOverrideOrOpts) ? rawOverrideOrOpts : undefined;
-  const opts = Array.isArray(rawOverrideOrOpts) || !rawOverrideOrOpts ? {} : rawOverrideOrOpts;
+  // §R17-1 (round-17 auditor): sanitize the options bag to a NULL-PROTO record
+  // of its OWN enumerable props, so a prototyped opts (Object.create({marginals}))
+  // or a polluted Object.prototype cannot leak an inherited mode/marginals/
+  // playRates into campaign gating. (Same close as applyEdits' toOwnRecord.)
+  const optsRaw = Array.isArray(rawOverrideOrOpts) || !rawOverrideOrOpts ? {} : rawOverrideOrOpts;
+  const opts = Object.assign(Object.create(null), typeof optsRaw === 'object' ? optsRaw : {});
   const mode = opts.mode === 'author' ? 'author' : 'campaign';
   const poolOverride = rawOverride || opts.pool;
   const { index, raw } = poolOverride
