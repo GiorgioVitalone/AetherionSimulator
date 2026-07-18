@@ -939,6 +939,96 @@ describe('loop-risk — mutable-range filter predicates (V4b)', () => {
   });
 });
 
+// ── §R12-5: resource axes must not be summed into one scalar ───────────────
+
+describe('loop-risk — per-axis net-cost accounting (R12-5)', () => {
+  it('a cost-3-MANA self-copier that gains 3 ENERGY is NOT likely (residual mana 3 > 0 — energy cannot pay a mana cost)', () => {
+    // Pre-fix: costSum(3) - gainSum(3) = 0 <=0 -> 'likely', because the old
+    // model summed mana+energy into one scalar on both sides. The runtime
+    // can never pay this card's 3-MANA cost from a 3-ENERGY gain (specific-
+    // axis shortage check, actions/cost-checker.ts) — no real loop. Post-fix:
+    // residMana = max(0, 3-0) = 3, residEnergy = max(0, 0-3) = 0, leftover =
+    // max(0, 0-3) + max(0, 3-0) = 3 (spare energy, but nothing left to pay
+    // mana with), residFlex = max(0, 0-3) = 0 -> netResidual = 3 (>2) ->
+    // 'none'.
+    const manaCostEnergyGainCopier: StaticCard = card({
+      id: 950,
+      name: 'Mana-Cost Energy-Gain Copier',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 3, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          { type: 'gain_resource', resourceType: 'energy', amount: 3 },
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([manaCostEnergyGainCopier]);
+    expect(risk.get(950)).not.toBe('likely');
+    expect(risk.get(950)).toBe('none');
+  });
+
+  it('control: the same shape gaining 3 MANA (same axis as its cost) is unchanged — still likely', () => {
+    // Proves the fix didn't touch same-axis loops: mana cost, mana gain ->
+    // residMana = max(0, 3-3) = 0 -> netResidual = 0 <=0 -> 'likely'.
+    const manaCostManaGainCopier: StaticCard = card({
+      id: 951,
+      name: 'Mana-Cost Mana-Gain Copier',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 3, energy: 0, flexible: 0 },
+      abilities: [
+        triggered(onCast, [
+          { type: 'gain_resource', resourceType: 'mana', amount: 3 },
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([manaCostManaGainCopier]);
+    expect(risk.get(951)).toBe('likely');
+  });
+
+  it('a FLEXIBLE-cost self-copier that gains 3 MANA is still likely — spare same-axis mana pays a flexible cost', () => {
+    // Cost is 3 FLEXIBLE (no specific mana/energy need at all): residMana = 0,
+    // residEnergy = 0, leftover = max(0, 3-0) + max(0, 0-0) = 3 (all 3 mana is
+    // spare, since there's no mana-specific need to consume it first),
+    // residFlex = max(0, 3-3) = 0 -> netResidual = 0 <=0 -> 'likely'. Mirrors
+    // the runtime's own flexible-payment rule (cost-checker.ts canAfford:
+    // flexible draws from whatever mana/energy remains after specific costs).
+    const flexCostManaGainCopier: StaticCard = card({
+      id: 952,
+      name: 'Flexible-Cost Mana-Gain Copier',
+      cardType: 'S',
+      tags: ['Arcane'],
+      cost: { mana: 0, energy: 0, flexible: 3 },
+      abilities: [
+        triggered(onCast, [
+          { type: 'gain_resource', resourceType: 'mana', amount: 3 },
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    const risk = assessLoopRisk([flexCostManaGainCopier]);
+    expect(risk.get(952)).toBe('likely');
+  });
+});
+
 // ── Item 3: no false-positive explosion ──────────────────────────────────────
 
 describe('loop-risk — no false positives on plain cards', () => {
