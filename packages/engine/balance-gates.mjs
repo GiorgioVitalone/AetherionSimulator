@@ -96,6 +96,12 @@ function toOwnRecord(o) {
 
 export function classifyCandidate(c, optsIn) {
   const opts = toOwnRecord(optsIn);
+  // §R18 (round-18 auditor): the marginals RECORD is read by faction key
+  // (marginals[c.faction]) — a plain `{}` still inherits from a polluted
+  // Object.prototype, so sanitize the supplied record to null-proto own-props
+  // (ONLY when supplied — undefined must stay undefined so the "no marginals"
+  // fail-closed path below is preserved).
+  if (opts.marginals != null) opts.marginals = toOwnRecord(opts.marginals);
   if (c.proposedLoopRisk === 'likely') {
     return {
       classification: 'BLOCKED',
@@ -248,7 +254,10 @@ export function playRatesMalformed(playRates) {
  * possible exposure, never a crash or a NaN); the final rank itself is also
  * clamped to 0 if it still somehow comes out non-finite. */
 export function rankOf(c, optsIn) {
-  const opts = toOwnRecord(optsIn); // §R17: own-property-only playRates
+  const opts = toOwnRecord(optsIn); // §R17: own-property-only options bag
+  // §R18: the playRates RECORD is read by card-id key — sanitize to null-proto
+  // so a polluted Object.prototype can't inject an inherited rate.
+  if (opts.playRates != null) opts.playRates = toOwnRecord(opts.playRates);
   // §R16-3 (round-16 auditor): if the whole playRates bag is malformed —
   // including a PROTOTYPED object (Object.create({victim:1e6})) that
   // playRatesMalformed now flags — rankOf must NOT read its (inherited) value,
@@ -284,7 +293,8 @@ export function rankOf(c, optsIn) {
  * classification. `opts` defaults to `{}` (no playRates ⇒ never malformed).
  */
 export function selectCampaignEdits(outliers, optsIn = {}) {
-  const opts = toOwnRecord(optsIn); // §R17: own-property-only playRates
+  const opts = toOwnRecord(optsIn); // §R17: own-property-only options bag
+  if (opts.playRates != null) opts.playRates = toOwnRecord(opts.playRates); // §R18: nested record
   const ranked = [...outliers].sort((a, b) => b.rank - a.rank);
   const top = ranked.find((c) => c.classification === 'AUTO_SAFE') ?? null;
   const autoEdit = top !== null && !playRatesMalformed(opts.playRates) ? top : null;

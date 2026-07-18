@@ -395,7 +395,17 @@ export function classifyProposals(rawInput, proposals, optsIn = {}) {
   // §R12-1: drop any null/non-object entry BEFORE it can throw on `p.id` —
   // the rest of this function (and applyEdits' application of the winner)
   // only ever sees well-formed entries from here on.
-  const validProposals = proposals.filter(isValidProposalEntry);
+  // §R18 (round-18 auditor): a proposal ENTRY and its nested statDelta are read
+  // by key (p.id, p.costDelta, p.statDelta.hp/atk/arm) — a plain `{}` still
+  // inherits from a polluted Object.prototype, so `proposals:[{}]` with
+  // Object.prototype.id/statDelta set would identify and mutate a card. Copy
+  // every valid entry (and its statDelta) to a null-proto own-props record, so
+  // no keyed read below can reach an inherited value.
+  const validProposals = proposals.filter(isValidProposalEntry).map((p) => {
+    const e = toOwnRecord(p);
+    if (e.statDelta != null && typeof e.statDelta === 'object') e.statDelta = toOwnRecord(e.statDelta);
+    return e;
+  });
   const { index: currentIndex } = indexFromRaw(rawInput);
   const model = loadBudgetModel();
 
@@ -641,7 +651,16 @@ export function applyEdits(rawInput, optsIn = {}) {
         // §R12-1: `proposals.filter(isValidProposalEntry)` mirrors what
         // classifyProposals already ran internally to derive `winner` — a
         // null/non-object entry sharing the array can't reach here anyway.
-        const combined = proposalsFor(proposals.filter(isValidProposalEntry), winner.id);
+        // §R18: sanitize each entry (+ statDelta) to null-proto own-props, the
+        // same close classifyProposals applies — this APPLICATION path must not
+        // read an inherited p.id/costDelta/statDelta from a polluted prototype.
+        const sanitizedProposals = proposals.filter(isValidProposalEntry).map((p) => {
+          const e = toOwnRecord(p);
+          if (e.statDelta != null && typeof e.statDelta === 'object')
+            e.statDelta = toOwnRecord(e.statDelta);
+          return e;
+        });
+        const combined = proposalsFor(sanitizedProposals, winner.id);
         const after = applyAllProposals(currentIndex.get(winner.id), combined);
         const list = [
           {

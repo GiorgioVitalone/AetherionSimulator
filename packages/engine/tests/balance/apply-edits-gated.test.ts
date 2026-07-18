@@ -555,17 +555,18 @@ describe('§R15-1 — board-wide/up_to cardinality widens the interval, blocking
 });
 
 describe('§R15-3 — prototyped/exotic evidence fails CLOSED (inherited properties cannot be trusted)', () => {
-  it('a marginals object with a poisoned PROTOTYPE (no own keys) is rejected — Object.create({Onyx:101}) never AUTO_SAFE', () => {
-    // id 11 is AUTO_SAFE for a single {hp:-1} with a plain [0,100] marginals
-    // object (the R13-4 control), so the ONLY thing flipping it here is the
-    // prototype poisoning — the guard is the deciding factor.
+  it('a marginals object whose data lives only on its PROTOTYPE has that inherited data IGNORED — Object.create({Onyx:101}) never AUTO_SAFE (own-property-only)', () => {
+    // §R18: evidence is consumed own-property-only, so an inherited faction rate
+    // (here a poisoned 101) is not read — the card falls to the conservative
+    // "no marginal for this faction" path, never AUTO_SAFE. id 11 IS AUTO_SAFE
+    // for {hp:-1} with a plain [0,100] marginals (R13-4 control), so ignoring
+    // the inherited value is the deciding factor.
     const { raw } = loadBalanceData();
-    const poisoned = Object.create({ Onyx: 101 });
+    const poisoned = Object.create({ Onyx: 101, Radiant: 50, Sapphire: 50, Verdant: 50 });
     const rows = classifyProposals(raw, [{ id: 11, statDelta: { hp: -1 } }], {
       marginals: poisoned,
     });
     expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
-    expect(rows[0]!.reason).toMatch(/prototyped|exotic|not a plain/i);
     const result = applyEdits(raw, {
       mode: 'production',
       marginals: poisoned,
@@ -574,13 +575,20 @@ describe('§R15-3 — prototyped/exotic evidence fails CLOSED (inherited propert
     expect(result.changes).toHaveLength(0);
   });
 
-  it('a statDelta with a poisoned PROTOTYPE (Object.create({hp:true})) is rejected — the inherited boolean cannot coerce to a written stat', () => {
+  it('a statDelta whose fields live only on its PROTOTYPE has them IGNORED — Object.create({hp:true}) never mutates a stat (own-property-only)', () => {
     const { raw } = loadBalanceData();
     const rows = classifyProposals(raw, [{ id: 143, statDelta: Object.create({ hp: true }) }], {
       marginals: MARGINALS,
     });
+    // the inherited hp:true is ignored -> the statDelta is effectively empty ->
+    // a no-op edit, never an AUTO_SAFE write of a coerced boolean.
     expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
-    expect(rows[0]!.reason).toMatch(/plain object|integer/i);
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: MARGINALS,
+      proposals: [{ id: 143, statDelta: Object.create({ hp: true }) }],
+    });
+    expect(result.changes).toHaveLength(0);
   });
 });
 
@@ -617,7 +625,9 @@ describe('§R15-3b — a prototyped playRates object is treated as malformed (pa
 describe('§R15-2 integration — the PRODUCERS populate residual, so ranking follows it end-to-end (not the edge fallback)', () => {
   it('a classifyProposals row carries residual = |power − expected| and rankOf ranks on it (fails if the producer stops setting residual)', () => {
     const { raw } = loadBalanceData();
-    const row = classifyProposals(raw, [{ id: 78, statDelta: { hp: -1 } }], { marginals: MARGINALS })[0]!;
+    const row = classifyProposals(raw, [{ id: 78, statDelta: { hp: -1 } }], {
+      marginals: MARGINALS,
+    })[0]!;
     // residual is populated by the production path (balance-apply-edits base row),
     // NOT left undefined (which would silently drop rankOf back to |edge|).
     expect(typeof (row as { residual?: number }).residual).toBe('number');
@@ -694,5 +704,54 @@ describe('§R17 — the options bag is read own-property-only (prototyped opts a
     const nullProtoMarginals = Object.assign(Object.create(null), MARGINALS);
     const r2 = applyEdits(raw, { mode: 'production', marginals: nullProtoMarginals });
     expect(r2.changes.length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('§R18 — nested records (proposal entries, statDelta, marginals, playRates) are read own-property-only even under a polluted Object.prototype', () => {
+  const withPollutedPrototype = (props: Record<string, unknown>, fn: () => void) => {
+    for (const [k, v] of Object.entries(props)) (Object.prototype as Record<string, unknown>)[k] = v;
+    try {
+      fn();
+    } finally {
+      for (const k of Object.keys(props)) delete (Object.prototype as Record<string, unknown>)[k];
+    }
+  };
+
+  it('an empty proposal entry [{}] cannot identify or mutate a card via an inherited id/statDelta', () => {
+    const { raw } = loadBalanceData();
+    withPollutedPrototype({ id: 11, statDelta: { hp: -1 } }, () => {
+      const result = applyEdits(raw, { mode: 'production', marginals: MARGINALS, proposals: [{}] });
+      expect(result.changes).toHaveLength(0);
+    });
+  });
+
+  it('an empty marginals {} does not inherit faction rates from a polluted prototype (stays fail-closed)', () => {
+    const { raw } = loadBalanceData();
+    withPollutedPrototype({ Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 }, () => {
+      const result = applyEdits(raw, {
+        mode: 'production',
+        marginals: {},
+        proposals: [{ id: 11, statDelta: { hp: -1 } }],
+      });
+      expect(result.changes).toHaveLength(0);
+    });
+  });
+
+  it('an empty playRates {} does not inherit a rate from a polluted prototype (rankOf uses the neutral 1)', () => {
+    withPollutedPrototype({ 11: 100 }, () => {
+      expect(rankOf({ id: 11, residual: 2, copies: 1 }, { playRates: {} })).toBeCloseTo(2, 5);
+    });
+  });
+
+  it('an empty statDelta {} does not inherit a stat delta from a polluted prototype', () => {
+    const { raw } = loadBalanceData();
+    withPollutedPrototype({ hp: -1 }, () => {
+      const result = applyEdits(raw, {
+        mode: 'production',
+        marginals: MARGINALS,
+        proposals: [{ id: 11, statDelta: {} }],
+      });
+      expect(result.changes).toHaveLength(0);
+    });
   });
 });
