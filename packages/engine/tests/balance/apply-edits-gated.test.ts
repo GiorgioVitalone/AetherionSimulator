@@ -15,6 +15,27 @@ import { rankOf, selectCampaignEdits } from '../../balance-gates.mjs';
 
 const MARGINALS = { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: 50 };
 
+describe('§R14-1 — a dice-derived TARGET COUNT widens the interval, blocking an unsafe AUTO_SAFE', () => {
+  it('Arcane Barrage (id 139, "2 dmg to 1d4 targets") no longer AUTO_SAFEs a cost cut — its widened interval straddles the window', () => {
+    // Round-14 auditor: the dice target-count was priced at a single point
+    // (interval [4,4]), so a costDelta:-1 slipped through AUTO_SAFE and applied.
+    // With the count widened to [2,5], the interval straddles the budget window
+    // -> SIM_REQUIRED, never applied.
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: 139, costDelta: -1 }], { marginals: MARGINALS });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+    expect(rows[0]!.reason).toMatch(/straddle/i);
+
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: MARGINALS,
+      proposals: [{ id: 139, costDelta: -1 }],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+});
+
 describe('§F1 — production default applies ONLY the campaign autoEdit', () => {
   it('production + marginals applies exactly the campaign autoEdit (0 or 1 change)', () => {
     const { raw } = loadBalanceData();

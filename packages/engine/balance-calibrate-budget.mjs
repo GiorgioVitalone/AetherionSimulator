@@ -1,6 +1,12 @@
-// balance-calibrate-budget.mjs — ONE-TIME calibration: derive
-// sim-data/balance-budget.v1.json from mechanically-curated "simple,
-// confidently-scored" cards. §B1: judgment of "how much power a cost buys"
+// balance-calibrate-budget.mjs — versioned re-seed: derive
+// sim-data/balance-budget.v2.json (v1 was the 2026-07-14 seed; v2 is the
+// maintainer-authorized 2026-07-18 re-seed) from mechanically-curated "simple,
+// confidently-scored" cards. §B1: judgment of "how much power a cost buys".
+// NOTE: the human-ratified `stabilityContract` and `recalibrationReason`
+// provenance fields in the committed v2 JSON are added by hand (they record a
+// maintainer decision this generator cannot know); this script emits the
+// line values + method + calibratedFrom, which reproduce the committed
+// numbers.
 // must be an abstract DESIGN CONSTANT, never re-derived from the pool being
 // judged (a mispriced pool would move its own goalposts) -- this script runs
 // ONCE to seed the constants from the curated set, writes the frozen JSON,
@@ -92,7 +98,7 @@ function run() {
   const spellsEquip = fitPopulation(curated.filter((c) => c.cardType !== 'C'));
 
   const json = {
-    version: '1.0.0',
+    version: '2.0.0',
     provenance: {
       date: new Date().toISOString().slice(0, 10),
       method:

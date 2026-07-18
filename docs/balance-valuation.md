@@ -212,7 +212,8 @@ node balance-rebalance.mjs      # compares function-preserving balance vectors; 
 ```
 
 The budget model (`a + b·cost + rarity bonus`, ±RMSE window) is a FROZEN, versioned line
-(`sim-data/balance-budget.v1.json`), loaded by `balance-data.mjs` and shared by the dashboard and the
+(currently `sim-data/balance-budget.v2.json`, maintainer-authorized re-seed 2026-07-18; v1 kept on
+disk as frozen history), loaded by `balance-data.mjs` and shared by the dashboard and the
 suggestions generator so they stay in lockstep — it is never refitted on the judged pool. `balance-suggestions.mjs` lists every card outside its window and proposes, per card, a
 stat/keyword edit (**re-scored through the formula** to verify it lands back inside), a cost re-cost,
 and — when the ability drives the score — an ability note. See `docs/balance-suggestions.md`.
@@ -224,8 +225,9 @@ overview KPIs; deck-value panels + ranking; card-value **spread** (stacked-by-fa
 per-faction box plots, spread-metric table); **value vs cost** (power-vs-cost scatter with the
 mean-power-per-cost curve, power/cost efficiency rankings, cost-curve residuals — the cost lens the
 raw score itself omits); a **cost-budget window** with a delta view — the expected power is
-`a + b·cost + rarity bonus` (a least-squares cost line shifted UP per rarity tier, so higher-rarity
-cards are allowed more power), widened into a ±RMSE tolerance band (a window, not a strict value);
+`a + b·cost + rarity bonus` (a Theil-Sen robust-median cost line shifted UP per rarity tier, so
+higher-rarity cards are allowed more power), widened into a ±RMSE tolerance band (a window, not a
+strict value);
 each card gets a Δ vs that rarity-adjusted expected and an under/within/over status, shown as a delta
 scatter plus **per-faction and per-rarity** status/mean-Δ breakdowns that surface systematic
 mispricing (Radiant runs above budget; Ethereal/Mythic cards under-deliver on their rarity). Then

@@ -656,6 +656,38 @@ describe('§R13-2: dynamic-valuation false-precision sweep', () => {
     expect(dEnergy.low).toBe(dEnergy.value);
     expect(dEnergy.high).toBe(dEnergy.value);
   });
+
+  it('§R14-1: damage to an up_to target whose COUNT is a dice roll widens over the target cardinality (was zero-width)', () => {
+    // Arcane Barrage shape: "deal 2 to 1d4 target enemies". Runtime rolls 1d4
+    // as maxSelections (rng-prepass -> target-resolver); the count is variable,
+    // so the effect value must span [few targets, many targets], not collapse
+    // to a single EXPECTED_COUNT point.
+    const d = effectStaticValueDetailed({
+      type: 'deal_damage',
+      amount: fixed(2),
+      target: {
+        side: 'enemy',
+        type: 'up_to',
+        count: { type: 'dice', count: 1, sides: 4 },
+      } as never,
+    });
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBeLessThan(d.high); // NOT zero-width
+    expect(d.low).toBeLessThan(d.value);
+    expect(d.high).toBeGreaterThan(d.value);
+  });
+
+  it('§R14-1 control: a FIXED up_to count stays a deterministic point on the count axis (only its own target-availability flag)', () => {
+    const d = effectStaticValueDetailed({
+      type: 'deal_damage',
+      amount: fixed(2),
+      target: { side: 'enemy', type: 'up_to', count: 2 } as never,
+    });
+    // up_to always flags dynamic_amount (realized count uncertain), but a FIXED
+    // count is not widened by the dice/AmountExpr path — low === high === value.
+    expect(d.low).toBe(d.value);
+    expect(d.high).toBe(d.value);
+  });
 });
 
 // Round-8 review exact-value pin (effect level, no recurrence entanglement):

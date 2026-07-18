@@ -575,7 +575,7 @@ function dashboardApp() {
     return section(
       'budget',
       'Cost budget & delta',
-      `declared budget line v${b.version} (frozen, sim-data/balance-budget.v1.json — never fitted on this pool): characters ${f1(b.characters.intercept)} + ${f1(b.characters.slope)}·cost ±${b.characters.tol}; spells/equip ${f1(b.spellsEquip.intercept)} + ${f1(b.spellsEquip.slope)}·cost ±${b.spellsEquip.tol}; rarity offset (Ethereal +${rb.Ethereal}, Mythic +${rb.Mythic}, Legendary +${rb.Legendary}) — Δ = power − expected`,
+      `declared budget line v${b.version} (frozen, sim-data/balance-budget.v${(b.version || '').split('.')[0]}.json — never fitted on this pool): characters ${f1(b.characters.intercept)} + ${f1(b.characters.slope)}·cost ±${b.characters.tol}; spells/equip ${f1(b.spellsEquip.intercept)} + ${f1(b.spellsEquip.slope)}·cost ±${b.spellsEquip.tol}; rarity offset (Ethereal +${rb.Ethereal}, Mythic +${rb.Mythic}, Legendary +${rb.Legendary}) — Δ = power − expected`,
       `<div class="panel"><h3 class="hdr">Δ vs the declared budget (green band = within ±${b.tolMax}, dashed = on budget; point size = copies)</h3>${deltaScatter(pts, xMax)}<div class="legend"><span><i style="background:${SC.under}"></i>under budget</span><span><i style="background:${SC.within}"></i>within window</span><span><i style="background:${SC.over}"></i>over budget</span></div></div>
       <div class="panel" style="margin-top:14px"><h3 class="hdr">Overall — ${cs.under} under · ${cs.within} within · ${cs.over} over</h3>${statusStack}</div>
       <div class="grid two" style="margin-top:14px">

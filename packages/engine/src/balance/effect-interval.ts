@@ -408,7 +408,40 @@ export function sumEffectsDetailed(effects: readonly Effect[]): EffectValueDetai
 }
 
 /** Detailed sibling of effectStaticValue — the one core valuation path. */
+/** §R14-1 (round-14 auditor): an `up_to` target whose COUNT is a dynamic
+ * AmountExpr (e.g. Arcane Barrage's "deal 2 to 1d4 targets") is rolled at
+ * runtime (rng-prepass.ts -> target-resolver.ts maxSelections), but aoeFactor
+ * prices it at the single EXPECTED_COUNT point, leaving the effect's interval
+ * zero-width — so the damage/destroy/buff/etc. value did not widen with the
+ * target CARDINALITY (only the per-target amount widened). Every effect that
+ * targets `up_to` scales LINEARLY with the chosen count via aoeFactor, so a
+ * single post-hoc scale of the whole interval by the count's own [min,max]
+ * (relative to the EXPECTED_COUNT the point used, both clamped to AOE_WIDTH)
+ * widens every effect type uniformly — never narrows, and carries
+ * dynamic_amount. A fixed numeric count returns null (unchanged). */
+function dynamicTargetCountScale(effect: Effect): { lo: number; hi: number } | null {
+  const target = 'target' in effect ? (effect.target as TargetExpr | undefined) : undefined;
+  if (!target || target.type !== 'up_to' || typeof target.count === 'number') return null;
+  const cnt = amountValDetailed(target.count);
+  const clamp = (x: number): number => Math.min(Math.max(x, 1), AOE_WIDTH);
+  const expected = clamp(EXPECTED_COUNT);
+  return { lo: clamp(cnt.low) / expected, hi: clamp(cnt.high) / expected };
+}
+
 export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
+  const d = effectStaticValueDetailedInner(effect);
+  const scale = dynamicTargetCountScale(effect);
+  if (scale === null) return d;
+  const corners = [d.low * scale.lo, d.low * scale.hi, d.high * scale.lo, d.high * scale.hi];
+  return {
+    ...d,
+    low: Math.min(d.low, ...corners),
+    high: Math.max(d.high, ...corners),
+    flags: [...new Set<PowerFlag>([...d.flags, 'dynamic_amount'])],
+  };
+}
+
+function effectStaticValueDetailedInner(effect: Effect): EffectValueDetailed {
   switch (effect.type) {
     case 'destroy':
     case 'sacrifice':
