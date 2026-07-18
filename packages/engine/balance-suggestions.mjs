@@ -62,11 +62,14 @@ const withCostDelta = (sc, delta) => {
  * IN ADDITION to the pool even if it belongs to no deck (author mode only;
  * §14 "check a new card" workflow — deck membership is never required to
  * score a card).
- * Author mode's scope is EVERY card in the pool (opts.pool ?? the full
+ * Author mode's scope is every C/S/E card in the pool (opts.pool ?? the full
  * committed card list — not just the 4 starter decks) plus opts.card, so a
  * brand-new, un-decked card can be scored and given a cost suggestion without
- * a sim. Campaign mode's scope remains the 4 starter decks (copies/play-rate
- * ranking needs real deck membership).
+ * a sim. Heroes/transforms/resources are OUT of that scoring surface (they
+ * have no rarity-adjusted cost budget to be judged against) — but H/T ARE
+ * included as loop-graph sources, same as campaign mode. Campaign mode's
+ * scope remains the 4 starter decks (copies/play-rate ranking needs real
+ * deck membership).
  * Back-compat: a bare array (`computeSuggestions(rawCards)`) is still treated
  * as the legacy `rawOverride` — a full SimCard array to fit a PATCHED pool
  * instead of the baseline (used by balance-apply-edits.mjs / balance-lab to
@@ -252,16 +255,27 @@ export function computeSuggestions(rawOverrideOrOpts) {
   // re-acquired), so they only need to act as SOURCES here — nothing else
   // targets them, and that's fine (heroes need not be classifiable targets).
   const heroesAndTransforms = raw.filter((c) => c.cardType === 'H' || c.cardType === 'T').map(toStatic);
-  const pool = [...index.values(), ...heroesAndTransforms];
+  // R12-3: the authored card (opts.card, author mode only) is scored above but
+  // was never added to the loop-analysis pool built here — it defaulted to
+  // 'none' loop risk even when its own ability makes it a self-loop (e.g. an
+  // on_cast copy_card whose filter matches itself). It must be visible to the
+  // acquisition/loop graph as both a candidate and a potential source, exactly
+  // like every other C/S/E card. Campaign mode never sets opts.card, so this
+  // is a no-op there.
+  const authoredCard = mode === 'author' ? opts.card : undefined;
+  const pool = [...index.values(), ...heroesAndTransforms, ...(authoredCard ? [authoredCard] : [])];
   // §V4(a): reducer multiplicity — actual starter-deck copy count where the
   // card IS decked (evidence), LEGAL_MAX_COPIES where it isn't (no evidence
   // -> conservative), never a blanket max that would over-flag broadly. A
   // hero/transform can only ever have exactly ONE in-play instance (never
   // decked, never copied) — defaulting it to LEGAL_MAX_COPIES like an
-  // un-decked non-hero card would overstate its reducer's stacking 3x.
+  // un-decked non-hero card would overstate its reducer's stacking 3x. The
+  // authored card has no deck membership at all (that's the point of
+  // opts.card) — pin it at its stated copy count, or 1 if unstated.
   const copiesOf = new Map(
     pool.map((sc) => {
       if (sc.cardType === 'H' || sc.cardType === 'T') return [sc.id, 1];
+      if (authoredCard && sc.id === authoredCard.id) return [sc.id, authoredCard.copies ?? 1];
       const n = copiesInStarterDeck(sc.id);
       return [sc.id, n > 0 ? n : LEGAL_MAX_COPIES];
     }),
