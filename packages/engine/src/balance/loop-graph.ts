@@ -12,7 +12,14 @@
  * via copy_card, return_from_discard, search_deck, or deploy_from_deck — and
  * finds cycles (including self-loops) through it. A cost-reduction aura or a
  * search_deck's castFreeIfCost annotates edges/cards with a lowered effective
- * cost; cycles are classified by their net mana cost per traversal.
+ * cost; cycles are classified by their net PER-AXIS resource residual per
+ * traversal (§R12-5): mana/energy/flexible are tracked separately, and a gain
+ * of one specific axis (e.g. energy) never offsets a cost on the OTHER
+ * specific axis (mana) — only spare same-axis gains can pay a flexible cost.
+ * This mirrors the runtime split (actions/cost-checker.ts rejects a shortage
+ * on either specific axis; effects/interpreter.ts credits a gain to its
+ * specific resourceType), where a card that pays mana and regenerates energy
+ * is NOT self-funding.
  *
  * Filter-resolution mirrors the RUNTIME semantics in
  * effects/target-resolver.ts's applyFilter: trait/tag/cardType exact-or-
@@ -32,11 +39,11 @@
 import type { Effect } from '../types/effects.js';
 import type { TargetExpr, TargetFilter } from '../types/targets.js';
 import type { Trigger } from '../types/triggers.js';
-import type { CardTypeCode } from '../types/common.js';
+import type { CardTypeCode, ResourceCost } from '../types/common.js';
 import type { StaticCard } from './types.js';
 import { flattenEffects } from './signal-extract.js';
 import { scanRiskyEffects } from './risky-effects.js';
-import { abilityThrottle, activationCostTotal, isRepeatableTrigger } from './loop-detector.js';
+import { abilityThrottle, isRepeatableTrigger } from './loop-detector.js';
 
 export type LoopRisk = 'none' | 'possible' | 'likely';
 
@@ -114,7 +121,20 @@ function edgeEffectSpec(e: Effect): EdgeEffectSpec | undefined {
   }
 }
 
-function loopResourceGain(flat: readonly Effect[]): number {
+/** Per-axis resource gain (§R12-5): mana and energy tracked SEPARATELY — a
+ * gain of one specific axis must never be summed into the other, or a loop
+ * that pays mana and regenerates energy would read as self-funding when the
+ * runtime can never actually pay a mana cost from an energy pool
+ * (actions/cost-checker.ts's specific-axis shortage check). There is no
+ * flexible GAIN in the DSL/runtime (no card credits a flexible-typed
+ * resource); the `flexible` case is handled only to keep the switch
+ * exhaustive and intentionally contributes to neither axis. */
+interface AxisGain {
+  readonly mana: number;
+  readonly energy: number;
+}
+
+function loopResourceGain(flat: readonly Effect[]): AxisGain {
   // Only explicit gain_resource effects count. The universal Discard-for-
   // Energy floor (≥1 resource/turn) is a once-per-turn GAME rule, not a card
   // effect — it never appears here, and we deliberately never add it in, so a
@@ -131,9 +151,26 @@ function loopResourceGain(flat: readonly Effect[]): number {
   // Excluding `temporary` gains understated net cost for exactly the shape
   // that matters most (a card that funds its own recast via a temporary
   // gain), letting a genuinely self-sustaining loop classify 'none'.
-  let sum = 0;
-  for (const e of flat) if (e.type === 'gain_resource') sum += e.amount;
-  return sum;
+  let mana = 0;
+  let energy = 0;
+  for (const e of flat) {
+    if (e.type !== 'gain_resource') continue;
+    switch (e.resourceType) {
+      case 'mana':
+        mana += e.amount;
+        break;
+      case 'energy':
+        energy += e.amount;
+        break;
+      case 'flexible':
+        break;
+      default: {
+        const _exhaustive: never = e.resourceType;
+        return _exhaustive;
+      }
+    }
+  }
+  return { mana, energy };
 }
 
 // ── Cost-reduction annotations (auras) ────────────────────────────────────────
@@ -226,7 +263,7 @@ function canCoexist(a: readonly string[], b: readonly string[]): boolean {
  * model understated stacked reducers; naive full-pool summing overstated
  * impossible cross-faction combinations — this scopes the same way the
  * existing cardType/tag match already scopes, extended to alignment). */
-function effectiveCost(card: StaticCard, reducers: readonly CostReducer[]): number {
+function totalReductionFor(card: StaticCard, reducers: readonly CostReducer[]): number {
   let reduction = 0;
   for (const r of reducers) {
     if (r.cardType !== undefined && card.cardType !== r.cardType) continue;
@@ -235,8 +272,35 @@ function effectiveCost(card: StaticCard, reducers: readonly CostReducer[]): numb
     reduction += r.reduction;
   }
   const printed = totalCost(card);
-  if (printed >= 1) reduction = Math.min(reduction, printed - 1);
-  return Math.max(0, printed - reduction);
+  if (printed >= 1) return Math.min(reduction, printed - 1);
+  return reduction;
+}
+
+function effectiveCost(card: StaticCard, reducers: readonly CostReducer[]): number {
+  const reduction = totalReductionFor(card, reducers);
+  return Math.max(0, totalCost(card) - reduction);
+}
+
+/** Lowers the loosest axis first (flexible → energy → mana), mirroring the
+ * runtime's own discount order (actions/cost-checker.ts discountCost) — the
+ * PER-AXIS counterpart of effectiveCost, needed so §R12-5's net-residual
+ * accounting can tell a mana need from an energy need after reducers apply. */
+function discountAxisCost(cost: ResourceCost, reduction: number): ResourceCost {
+  let left = reduction;
+  const take = (n: number): number => {
+    const d = Math.min(n, left);
+    left -= d;
+    return n - d;
+  };
+  const flexible = take(cost.flexible);
+  const energy = take(cost.energy);
+  const mana = take(cost.mana);
+  return { mana, energy, flexible };
+}
+
+function effectiveCostByAxis(card: StaticCard, reducers: readonly CostReducer[]): ResourceCost {
+  const reduction = totalReductionFor(card, reducers);
+  return discountAxisCost(card.cost, reduction);
 }
 
 // ── Graph edges ───────────────────────────────────────────────────────────────
@@ -246,7 +310,7 @@ function effectiveCost(card: StaticCard, reducers: readonly CostReducer[]): numb
 interface AbilitySource {
   readonly from: number;
   readonly targets: readonly number[];
-  readonly resourceGain: number;
+  readonly resourceGain: AxisGain;
   readonly unconditionalFree?: boolean;
   readonly castFreeIfCost?: number;
   /** §H3-4 (batch-C): mana/energy/flexible cost to FIRE `from`'s activated
@@ -254,8 +318,17 @@ interface AbilitySource {
    * whatever the acquired card itself costs to (re)cast. Previously ignored,
    * which understated the true per-loop cost of an activated-ability engine
    * (e.g. a hero's cooldown-gated recycle ability that costs real mana to
-   * fire each time, independent of what it fetches). */
-  readonly activationCost: number;
+   * fire each time, independent of what it fetches). Kept per-axis (§R12-5)
+   * so its mana/energy/flexible components fold into the same per-axis need
+   * as the per-card costs, rather than collapsing to one scalar. */
+  readonly activationCost: ResourceCost;
+}
+
+/** The activated trigger's own firing cost, per axis (all-zero for any other
+ * trigger type). §R12-5 companion to the old scalar activationCostTotal
+ * (loop-detector.ts) — this module needs the axis split, not the sum. */
+function activationCostByAxis(t: Trigger): ResourceCost {
+  return t.type === 'activated' ? t.cost : { mana: 0, energy: 0, flexible: 0 };
 }
 
 /** Is this trigger loop-shaped for the ACQUISITION graph (broader than v1's
@@ -279,7 +352,7 @@ function buildSources(cards: readonly StaticCard[]): readonly AbilitySource[] {
 
       const flat = flattenEffects(ab.effects);
       const gain = loopResourceGain(flat);
-      const activationCost = activationCostTotal(ab.trigger);
+      const activationCost = activationCostByAxis(ab.trigger);
       for (const e of flat) {
         const spec = edgeEffectSpec(e);
         if (spec === undefined) continue;
@@ -359,18 +432,25 @@ function classifyGroup(
   // deploy_from_deck. Track those separately from the fuzzy "near threshold"
   // signal (which only bumps risk to 'possible', not free).
   const freeMembers = new Set<number>();
-  let gainSum = 0;
+  let gainSum: AxisGain = { mana: 0, energy: 0 };
   // §H3-4 (batch-C): the activated trigger's own firing cost, charged once
   // per contributing source per traversal — additive with the per-card cast
   // costs summed below, never a substitute for them.
-  let activationCostSum = 0;
+  let activationCostSum: ResourceCost = { mana: 0, energy: 0, flexible: 0 };
   let freeCastNear = false;
   for (const src of sources) {
     if (!members.has(src.from)) continue;
     const targetsInGroup = src.targets.filter((t) => members.has(t));
     if (targetsInGroup.length === 0) continue;
-    gainSum += src.resourceGain;
-    activationCostSum += src.activationCost;
+    gainSum = {
+      mana: gainSum.mana + src.resourceGain.mana,
+      energy: gainSum.energy + src.resourceGain.energy,
+    };
+    activationCostSum = {
+      mana: activationCostSum.mana + src.activationCost.mana,
+      energy: activationCostSum.energy + src.activationCost.energy,
+      flexible: activationCostSum.flexible + src.activationCost.flexible,
+    };
     for (const t of targetsInGroup) {
       if (src.unconditionalFree === true) {
         freeMembers.add(t);
@@ -384,13 +464,30 @@ function classifyGroup(
     }
   }
 
-  let costSum = activationCostSum;
+  let costSum: ResourceCost = activationCostSum;
   for (const id of members) {
     if (freeMembers.has(id)) continue;
-    costSum += effectiveCost(cardById.get(id) as StaticCard, reducers);
+    const axisCost = effectiveCostByAxis(cardById.get(id) as StaticCard, reducers);
+    costSum = {
+      mana: costSum.mana + axisCost.mana,
+      energy: costSum.energy + axisCost.energy,
+      flexible: costSum.flexible + axisCost.flexible,
+    };
   }
 
-  const net = costSum - gainSum;
+  // §R12-5: per-axis net residual — mana and energy are tracked SEPARATELY,
+  // so a gain on one specific axis can never pay a cost on the OTHER specific
+  // axis. Only genuinely SPARE same-axis gains (what's left after covering
+  // that axis's own need) can pay a flexible cost, mirroring the runtime's
+  // own flexible-payment rule (actions/cost-checker.ts canAfford: flexible
+  // draws from whatever mana/energy remains after specific costs are paid).
+  const residMana = Math.max(0, costSum.mana - gainSum.mana);
+  const residEnergy = Math.max(0, costSum.energy - gainSum.energy);
+  const leftover =
+    Math.max(0, gainSum.mana - costSum.mana) + Math.max(0, gainSum.energy - costSum.energy);
+  const residFlex = Math.max(0, costSum.flexible - leftover);
+  const netResidual = residMana + residEnergy + residFlex;
+
   // A direct, unthrottled self-copy at cost ≤1 is 'likely' regardless of the
   // net-cost arithmetic below — the classic Arcane-Echoes-at-1 failure mode:
   // at that price the chain is bounded only by discard/deck supply, not mana.
@@ -403,8 +500,8 @@ function classifyGroup(
     (freeMembers.has(soleMember) ||
       effectiveCost(cardById.get(soleMember) as StaticCard, reducers) <= 1);
 
-  if (net <= 0 || selfLoopCheap) return 'likely';
-  if (net <= 2 || freeCastNear) return 'possible';
+  if (netResidual <= 0 || selfLoopCheap) return 'likely';
+  if (netResidual <= 2 || freeCastNear) return 'possible';
   return 'none';
 }
 
