@@ -127,18 +127,27 @@ export function classifyCandidate(c, opts) {
   if (!opts.marginals) {
     reasons.push('no faction marginals supplied — conservative default (no data, no auto edit)');
   } else {
-    // A non-finite value (NaN/±Infinity/non-number) anywhere in the marginals
-    // object means the object came from a bad computation upstream — it can't
-    // be trusted for ANY faction, not just the one that's broken. Fail closed
-    // on the WHOLE object rather than per-faction: a caller that can produce
-    // one bad number can produce others silently, and per-faction fail-closed
-    // would still auto-apply edits sourced from the same suspect batch.
+    // A STRUCTURALLY INVALID value (NaN/±Infinity/non-number, OR a percentage
+    // outside [0,100]) anywhere in the marginals object means the object came
+    // from a bad computation upstream — it can't be trusted for ANY faction,
+    // not just the one that's broken. Fail closed on the WHOLE object rather
+    // than per-faction: a caller that can produce one bad number can produce
+    // others silently, and per-faction fail-closed would still auto-apply edits
+    // sourced from the same suspect batch. §R13-4 (round-13 auditor): a win
+    // rate below 0 or above 100 is not "dishonest but valid evidence" (the D21
+    // trust boundary covers plausible-but-wrong numbers) — it is DOMAIN-invalid
+    // and must fail closed exactly like a non-finite value, or a Verdant:-1 /
+    // Radiant:101 marginal silently defeats the faction-direction protection.
     const badKey = Object.keys(opts.marginals).find(
-      (k) => opts.marginals[k] != null && !Number.isFinite(opts.marginals[k]),
+      (k) =>
+        opts.marginals[k] != null &&
+        (!Number.isFinite(opts.marginals[k]) ||
+          opts.marginals[k] < 0 ||
+          opts.marginals[k] > 100),
     );
     if (badKey) {
       reasons.push(
-        `marginals object has a non-finite value for ${badKey} (${opts.marginals[badKey]}) — whole marginals object is unreliable, no auto edit`,
+        `marginals object has an invalid value for ${badKey} (${opts.marginals[badKey]}) — non-finite or outside [0,100]; whole marginals object is unreliable, no auto edit`,
       );
     } else {
       const pct = opts.marginals[c.faction];

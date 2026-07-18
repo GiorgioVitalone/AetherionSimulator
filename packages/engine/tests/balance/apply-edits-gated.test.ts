@@ -472,3 +472,47 @@ describe('§R12-2 — |Δstat| > 1 is never AUTO_SAFE, mirroring the |Δcost| > 
     expect(result.changes).toHaveLength(0);
   });
 });
+
+/**
+ * §R13-4 (round-13 auditor) — a faction win rate outside [0,100] is DOMAIN-invalid
+ * (structurally impossible), not merely dishonest-but-valid evidence (the D21 trust
+ * boundary). The gate previously rejected only non-finite marginals, so a Verdant:-1 or
+ * Radiant:101 slipped through and silently defeated the faction-direction protection. The
+ * whole marginals object must now fail closed if ANY supplied value is non-finite OR out of
+ * [0,100].
+ */
+describe('§R13-4 — out-of-[0,100] marginals fail CLOSED, never AUTO_SAFE', () => {
+  const RADIANT_ANGEL_ID = 51;
+
+  it.each([
+    ['a negative marginal (Verdant:-1)', { Onyx: 50, Radiant: 50, Sapphire: 50, Verdant: -1 }],
+    ['an over-100 marginal (Radiant:101)', { Onyx: 50, Radiant: 101, Sapphire: 50, Verdant: 50 }],
+  ])(
+    '%s makes the whole marginals object fail closed — a single-unit trim is not AUTO_SAFE',
+    (_label, marginals) => {
+      const { raw } = loadBalanceData();
+      const rows = classifyProposals(raw, [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } }], {
+        marginals,
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.classification).not.toBe('AUTO_SAFE');
+      expect(rows[0]!.reason).toMatch(/outside \[0,100\]|non-finite|invalid value/);
+
+      const result = applyEdits(raw, {
+        mode: 'production',
+        marginals,
+        proposals: [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } }],
+      });
+      expect(result.changes).toHaveLength(0);
+    },
+  );
+
+  it('control: the same trim with all marginals in [0,100] is still AUTO_SAFE', () => {
+    const { raw } = loadBalanceData();
+    const rows = classifyProposals(raw, [{ id: RADIANT_ANGEL_ID, statDelta: { hp: -1 } }], {
+      marginals: MARGINALS,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.classification).toBe('AUTO_SAFE');
+  });
+});

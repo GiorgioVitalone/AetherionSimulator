@@ -17,7 +17,7 @@ import {
   playRatesMalformed,
 } from '../../balance-gates.mjs';
 import { computeSuggestions } from '../../balance-suggestions.mjs';
-import { body, card, triggered } from './factory.js';
+import { aura, body, card, triggered } from './factory.js';
 
 const onCast = { type: 'on_cast' } as const;
 
@@ -390,6 +390,61 @@ describe("§F2 — author mode serves the maintainer's new-card authoring workfl
     expect(row!.proposedLoopRisk).not.toBe('none');
     expect(row!.loopRiskNote).toMatch(/loop risk at this cost/);
     expect(row!.loopRiskNote).not.toBe('no loop risk at this cost');
+  });
+
+  it('R13-1: a caller-supplied copies count is IGNORED for the authored card — its own reducer is always stacked at the legal max', () => {
+    // The auditor showed the R12-3b `copies ?? LEGAL_MAX_COPIES` still TRUSTED
+    // a caller value: copies:1 softened a self-looping card to 'possible',
+    // copies:0/-1 to 'none', reviving the R12-3 bypass. A conservative
+    // loop-risk assessment must assume the worst legal stacking (3x) regardless
+    // of the author's stated intent. This card's own -1 Arcane-S cost-reduction
+    // aura + on_cast self-copy only crosses the cost<=1 'likely' threshold when
+    // its reducer stacks 3x (cost 3 - min(3,2) = 1); at 1x it would be 'possible'.
+    const selfReducerCopier = card({
+      id: 999997,
+      name: 'Self-Reducer Echo Prototype',
+      cardType: 'S',
+      rarity: 'Common',
+      tags: ['Arcane'],
+      cost: { mana: 3, energy: 0, flexible: 0 },
+      abilities: [
+        aura([
+          {
+            type: 'cost_reduction',
+            reduction: 1,
+            appliesTo: { tag: 'Arcane', cardType: 'S' },
+            duration: { type: 'while_in_play' },
+          },
+        ]),
+        triggered(onCast, [
+          {
+            type: 'copy_card',
+            source: 'discard',
+            destination: 'hand',
+            filter: { tag: 'Arcane', cardType: 'S' },
+          },
+        ]),
+      ],
+    });
+    // Even though the caller says "I'll only run 1 copy", the assessment pins 3x.
+    const data = computeSuggestions({
+      mode: 'author',
+      pool: [],
+      card: { ...selfReducerCopier, copies: 1 },
+    });
+    const row = [...data.over, ...data.under].find((c) => c.id === 999997);
+    expect(row).toBeTruthy();
+    expect(row!.loopRisk).toBe('likely');
+  });
+
+  it('R13-1: an authored card whose id collides with a HERO/transform id fails closed (throws), not just C/S/E ids', () => {
+    // The collision check previously used the C/S/E-only `index`, so a new card
+    // reusing a hero/transform/resource id slipped past and silently overwrote.
+    // id 3 (Kaelthar, a transform) is in the committed pool but not in `index`.
+    const collidingCard = body(3, 'Impostor', 4, 4, 0, { rarity: 'Common' });
+    expect(() => computeSuggestions({ mode: 'author', card: collidingCard })).toThrow(
+      /collides with an existing pool card/,
+    );
   });
 });
 

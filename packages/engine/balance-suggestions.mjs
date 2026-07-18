@@ -115,7 +115,10 @@ export function computeSuggestions(rawOverrideOrOpts) {
       // would silently overwrite an existing pool card's row with the
       // caller's version — if the intent is to score a MODIFIED existing
       // card, that's what proposals/campaign mode are for, not opts.card.
-      if (index.has(opts.card.id)) {
+      // §R13-4 (round-13 auditor): check against EVERY raw card id, not just
+      // the C/S/E `index` — a new spell reusing a HERO/transform/resource id
+      // (e.g. 133) previously slipped past because index omits H/T/R.
+      if (raw.some((c) => c.id === opts.card.id)) {
         throw new Error(
           `computeSuggestions: opts.card.id '${opts.card.id}' collides with an existing pool card — a new card must have a new id; to score a modified existing card use proposals/campaign mode instead`,
         );
@@ -284,18 +287,19 @@ export function computeSuggestions(rawOverrideOrOpts) {
   // decked, never copied) — defaulting it to LEGAL_MAX_COPIES like an
   // un-decked non-hero card would overstate its reducer's stacking 3x. The
   // authored card has no deck membership at all (that's the point of
-  // opts.card) — §R12-2b/R12-3b (round-12 re-review, Kimi K3): pin it at its
-  // stated copy count, or LEGAL_MAX_COPIES if unstated. The first fix defaulted
-  // it to 1, which made the authored card LESS conservative than an identical
-  // un-decked pool card (3x) — its own reducer aura under-stacked, softening
-  // the loop-risk note on exactly the card being drafted. An authored C/S/E can
-  // legally run up to LEGAL_MAX_COPIES, so no-evidence -> conservative, matching
-  // every other un-decked card below. (An authored H/T is already pinned at 1
-  // by the H/T branch above, before this line.)
+  // opts.card) — §R13-1 (round-13 auditor): pin an authored C/S/E card at
+  // LEGAL_MAX_COPIES UNCONDITIONALLY, ignoring any caller-supplied `copies`.
+  // The R12-3b fix used `copies ?? LEGAL_MAX_COPIES`, which still TRUSTED a
+  // caller value — copies:1 gave 'possible', copies:0/-1 gave 'none', reviving
+  // the R12-3 soft-risk bypass with no validation. A conservative loop-risk
+  // assessment must assume the worst legal stacking (3x) regardless of the
+  // author's stated intent to run fewer; the card's own reducer must never be
+  // under-stacked. (An authored H/T is already pinned at 1 by the H/T branch
+  // above, before this line — a hero/transform can only ever be 1 in play.)
   const copiesOf = new Map(
     pool.map((sc) => {
       if (sc.cardType === 'H' || sc.cardType === 'T') return [sc.id, 1];
-      if (authoredCard && sc.id === authoredCard.id) return [sc.id, authoredCard.copies ?? LEGAL_MAX_COPIES];
+      if (authoredCard && sc.id === authoredCard.id) return [sc.id, LEGAL_MAX_COPIES];
       const n = copiesInStarterDeck(sc.id);
       return [sc.id, n > 0 ? n : LEGAL_MAX_COPIES];
     }),
