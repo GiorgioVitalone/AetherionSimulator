@@ -580,9 +580,7 @@ function effectStaticValueDetailedInner(effect: Effect): EffectValueDetailed {
       // §R13-2 (round-15 fix): `inEachEmpty` deploys into the ACTUAL empty
       // slots at cast time (0 when the zone is already full, up to the zone's
       // capacity — interpreter.ts's executeDeployToken), not a fixed
-      // EMPTY_SLOTS_EXPECTED count — was a zero-width, unflagged point. The
-      // fixed-count branch (a declared, non-inEachEmpty count) stays
-      // deterministic — that magnitude IS statically known.
+      // EMPTY_SLOTS_EXPECTED count — was a zero-width, unflagged point.
       if (effect.inEachEmpty === true) {
         const v = per * EMPTY_SLOTS_EXPECTED;
         return {
@@ -593,7 +591,17 @@ function effectStaticValueDetailedInner(effect: Effect): EffectValueDetailed {
           flags: ['dynamic_amount'],
         };
       }
-      return det(per * effect.count, false);
+      // §R16-2 (round-16 auditor): even a DECLARED fixed count is not statically
+      // realized — executeDeployToken stops when the destination zone fills, so
+      // the token count is 0 (zone already full) up to min(count, zone capacity)
+      // (a declared count above the zone's cap can never all land). Widen over
+      // [0, per × cappedCount] and flag; midpoint stays the optimistic max
+      // (capped), so a count within the zone size is unchanged in value.
+      {
+        const cap = effect.zone ? (ZONE_CAP[effect.zone] ?? MAX_BOARD_TARGETS) : MAX_BOARD_TARGETS;
+        const v = per * Math.min(effect.count, cap);
+        return { value: v, low: 0, high: v, isRemoval: false, flags: ['dynamic_amount'] };
+      }
     }
     case 'counter_spell':
       // §13 repair: a counter trades 1-for-1 with the opponent's CHOSEN best
@@ -717,7 +725,18 @@ function effectStaticValueDetailedInner(effect: Effect): EffectValueDetailed {
           'dynamic_amount',
         ]);
       }
-      return det(isEnemyFacing(effect.target) ? effect.count * CARD_VALUE * 0.8 : 0, false);
+      // §R16-4 (round-16 auditor): for DISCARD, only a LITERAL `side === 'enemy'`
+      // makes the opponent discard — the runtime interpreter targets the
+      // controller for `side === 'any'` (and `allied`), i.e. the CASTER discards
+      // (a self-cost, not an enemy penalty). isEnemyFacing (which counts `any`
+      // as offensive, correct for damage/removal) over-scored an `any` discard
+      // as +opponent-penalty. Value only the enemy case as a penalty; a self/any
+      // discard is scored 0 (a conservative floor — it is a drawback or a
+      // recycle enabler, never a gain against the opponent).
+      return det(
+        targetSide(effect.target) === 'enemy' ? effect.count * CARD_VALUE * 0.8 : 0,
+        false,
+      );
     case 'replacement':
       // §S2 round-5 correction: an EC-003 shield (on_would_take_damage
       // reduction — Shieldbearer Paladin id48, Radiant Shield id66) is NOT

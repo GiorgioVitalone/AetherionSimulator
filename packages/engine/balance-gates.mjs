@@ -237,7 +237,12 @@ export function playRatesMalformed(playRates) {
  * possible exposure, never a crash or a NaN); the final rank itself is also
  * clamped to 0 if it still somehow comes out non-finite. */
 export function rankOf(c, opts) {
-  const raw = opts.playRates?.[c.id];
+  // §R16-3 (round-16 auditor): if the whole playRates bag is malformed —
+  // including a PROTOTYPED object (Object.create({victim:1e6})) that
+  // playRatesMalformed now flags — rankOf must NOT read its (inherited) value,
+  // or a caller steers the candidate ORDER (the experiment-pick order, §B4)
+  // even though auto-apply is suppressed. Fall back to the neutral rate 1.
+  const raw = playRatesMalformed(opts.playRates) ? undefined : opts.playRates?.[c.id];
   const playRate = isValidPlayRate(raw) ? raw : 1;
   // §R15-2 (round-15 auditor): §B4 exposure = |power − expected| × copies ×
   // play-rate. Rank on the RESIDUAL (distance from the budget line), NOT `edge`

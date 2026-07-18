@@ -637,3 +637,30 @@ describe('§R15-2 integration — the PRODUCERS populate residual, so ranking fo
     }
   });
 });
+
+describe('§R16-1 — prototyped options and proposal entries fail CLOSED (own-validate/inherited-consume)', () => {
+  it('a prototyped options object (Object.create({mode:"exploratory"})) does NOT enter bulk mode — zero changes', () => {
+    const { raw } = loadBalanceData();
+    const result = applyEdits(raw, Object.create({ mode: 'exploratory', arm: 'all' }));
+    expect(result.changes).toHaveLength(0);
+  });
+
+  it('a prototyped proposal ENTRY (Object.create({id,statDelta})) is rejected — its inherited fields never mutate a card', () => {
+    const { raw } = loadBalanceData();
+    const result = applyEdits(raw, {
+      mode: 'production',
+      marginals: MARGINALS,
+      proposals: [Object.create({ id: 11, statDelta: { hp: -1 } })],
+    });
+    expect(result.changes).toHaveLength(0);
+  });
+});
+
+describe('§R16-3 — a prototyped playRates never steers the candidate rank', () => {
+  it('rankOf falls back to the neutral rate 1 when playRates is prototyped (Object.create({54:1e6}))', () => {
+    const c = { id: 54, residual: 1.65, copies: 1 };
+    expect(rankOf(c, { playRates: Object.create({ 54: 1e6 }) })).toBeCloseTo(1.65, 5);
+    // a plain own rate still applies
+    expect(rankOf(c, { playRates: { 54: 2 } })).toBeCloseTo(3.3, 5);
+  });
+});

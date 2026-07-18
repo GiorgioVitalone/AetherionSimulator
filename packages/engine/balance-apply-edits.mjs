@@ -331,8 +331,21 @@ function proposalsFor(proposals, id) {
  * mid-iteration in `classifyProposals`'s main loop. Silently dropping it here
  * is fail-closed: it contributes no delta and produces no row, rather than
  * crashing or being coerced into something applyable. */
+/** §R16-1 (round-16 auditor): a PLAIN record — a non-null, non-array object
+ * whose prototype is the plain Object.prototype (or null). Own-property
+ * validation is worthless if the consumer reads INHERITED props, so any
+ * evidence/option/proposal bag that isn't a plain record is untrustworthy. */
+function isPlainRecord(o) {
+  if (o == null || typeof o !== 'object' || Array.isArray(o)) return false;
+  const proto = Object.getPrototypeOf(o);
+  return proto === Object.prototype || proto === null;
+}
+
 function isValidProposalEntry(p) {
-  return p != null && typeof p === 'object' && !Array.isArray(p);
+  // §R16-1: reject a PROTOTYPED proposal entry — Object.create({id:11,
+  // statDelta:{hp:-1}}) has no own keys, so the integer/id validation misses
+  // it, but applyProposalToStatic reads the inherited fields and mutates.
+  return isPlainRecord(p);
 }
 
 /** §P3 — apply EVERY proposal targeting one card, in order, composing their
@@ -569,7 +582,14 @@ export function classifyProposals(rawInput, proposals, opts = {}) {
  *     (writes to a generated-pools/ scratch dir), and this file's own CLI.
  *
  * Returns { raw, changes, lpCount, vetoed }. */
-export function applyEdits(rawInput, { mode = 'production', arm = 'all', flattenLp = 0, marginals, playRates, proposals } = {}) {
+export function applyEdits(rawInput, optsIn = {}) {
+  // §R16-1 (round-16 auditor): a PROTOTYPED options object —
+  // Object.create({mode:'exploratory'}) — has no own keys but destructures the
+  // inherited `mode`, silently entering bulk exploratory application. Sanitize
+  // to a plain record (an exotic options bag falls back to {} => the gated
+  // production default), so `mode` can only come from an own property.
+  const opts = isPlainRecord(optsIn) ? optsIn : {};
+  const { mode = 'production', arm = 'all', flattenLp = 0, marginals, playRates, proposals } = opts;
   const raw = JSON.parse(JSON.stringify(rawInput));
   const changes = [];
   const vetoed = [];

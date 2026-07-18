@@ -614,16 +614,37 @@ describe('§R13-2: dynamic-valuation false-precision sweep', () => {
     expect(d.high).toBeGreaterThan(d.value);
   });
 
-  it('deploy_token fixed count: stays a deterministic flat point (unaffected regression)', () => {
+  it('§R16-2: deploy_token fixed count widens DOWN to 0 (zone can be full) and flags — realized 0..min(count, zone cap)', () => {
+    // Round-16 auditor: executeDeployToken stops when the destination zone
+    // fills, so even a declared count of 2 realizes 0..2 tokens. Not a
+    // zero-width point.
     const d = effectStaticValueDetailed({
       type: 'deploy_token',
       count: 2,
       zone: 'frontline',
       token: { atk: 2, hp: 2 },
     });
-    expect(d.flags).not.toContain('dynamic_amount');
-    expect(d.low).toBe(d.value);
-    expect(d.high).toBe(d.value);
+    expect(d.flags).toContain('dynamic_amount');
+    expect(d.low).toBe(0); // zone already full
+    expect(d.high).toBe(d.value); // both slots land = the optimistic max
+  });
+
+  it('§R16-2: a declared count ABOVE the zone capacity is capped at the zone size (can never all land)', () => {
+    // 5 tokens into a 3-slot frontline → at most 3 realize; the high is capped
+    // at 3×per, not 5×per.
+    const d = effectStaticValueDetailed({
+      type: 'deploy_token',
+      count: 5,
+      zone: 'frontline',
+      token: { atk: 2, hp: 2 },
+    });
+    const three = effectStaticValueDetailed({
+      type: 'deploy_token',
+      count: 3,
+      zone: 'frontline',
+      token: { atk: 2, hp: 2 },
+    });
+    expect(d.value).toBe(three.value); // count 5 caps to the 3-slot zone
   });
 
   it('gain_resource flexible: widened [0, full] around a halved midpoint, flagged (was a flat point)', () => {
@@ -729,5 +750,26 @@ describe('§W1 exact band (round-8 review, round-13 corrected)', () => {
     expect(v.value).toBeCloseTo(1.0 * 0.7, 5); // FLAT_ONE × CONDITION_DISCOUNT (unchanged)
     expect(v.low).toBe(0);
     expect(v.high).toBeCloseTo(5.5, 5); // nested `destroy enemy` magnitude × on_deploy recurrence (1.0)
+  });
+});
+
+describe('§R16-4 — discard side handling matches the runtime', () => {
+  it('a discard targeting side:enemy is an opponent penalty (>0), but side:any is the CASTER discarding — scored 0, not a penalty', () => {
+    // Runtime targets the opponent ONLY for literal side:enemy; side:any falls
+    // to the controller (the caster discards). isEnemyFacing counts `any` as
+    // offensive (right for damage/removal) — for DISCARD that over-scored an
+    // `any` self-discard as a +opponent penalty.
+    const enemy = effectStaticValueDetailed({
+      type: 'discard',
+      count: 1,
+      target: { type: 'target_card_in_hand', side: 'enemy' },
+    } as never);
+    const any = effectStaticValueDetailed({
+      type: 'discard',
+      count: 1,
+      target: { type: 'target_card_in_hand', side: 'any' },
+    } as never);
+    expect(enemy.value).toBeGreaterThan(0);
+    expect(any.value).toBe(0);
   });
 });
