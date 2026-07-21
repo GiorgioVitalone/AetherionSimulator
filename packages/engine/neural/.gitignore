@@ -1,0 +1,10 @@
+# Python env + caches (use `uv venv` / `uv pip install -r requirements.txt`)
+.venv/
+__pycache__/
+*.pyc
+
+# Generated training data — large, regenerate with neural-datagen.mjs
+data/
+
+# model/ (value-net.json, model-meta.json) is small; keep it if you want the trained
+# artifact versioned, or add `model/` here to treat it as regenerable.

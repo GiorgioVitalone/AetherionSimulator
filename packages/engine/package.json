@@ -21,9 +21,9 @@
   },
   "devDependencies": {
     "@aetherion-sim/config": "workspace:*",
+    "eslint": "^9.28.0",
     "typescript": "^5.8.0",
-    "vitest": "^3.2.0",
     "typescript-eslint": "^8.33.0",
-    "eslint": "^9.28.0"
+    "vitest": "^3.2.0"
   }
 }

@@ -111,3 +111,6 @@ export {
   chooseChoiceResponse,
   shouldKeepHand,
 } from './bot/index.js';
+
+// ── Neural (value-net featurizer) ────────────────────────────────────────────
+export { featurize, FEATURE_SCHEMA_VERSION, FEATURE_LENGTH } from './neural/featurizer.js';

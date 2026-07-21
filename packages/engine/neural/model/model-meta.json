@@ -1,0 +1,15 @@
+{
+  "modelSchemaVersion": 1,
+  "featureSchemaVersion": 1,
+  "featureLength": 374,
+  "arch": [
+    128,
+    64
+  ],
+  "dropout": 0.4,
+  "teacher": "rollout-heuristic-r8",
+  "trainGames": 2550,
+  "valGames": 450,
+  "valAuc": 0.7610157134071015,
+  "modelSha256": "a4c2ce6ed63bd7f82c5cb147bd3bdc78186ea9f5b6c34b6bc6081a533f5e8132"
+}

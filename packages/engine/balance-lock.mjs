@@ -59,10 +59,16 @@ function loadLedgerEntry(ledgerId) {
   return { entry, archive };
 }
 
-function findRolloutPilot(archive, tag) {
+export function findRolloutPilot(archive, tag) {
   const pilot = (archive.pilots || []).find((p) => p.kind === 'agg' && p.label.includes(tag));
   if (!pilot) throw new Error(`balance-lock: archive has no kind:'agg' pilot with label containing "${tag}"`);
   return pilot;
+}
+
+/** Non-throwing lookup — used for the OPTIONAL r16 rung, which archives graded
+ * before its introduction will not have. Returns undefined when absent. */
+function findOptionalRolloutPilot(archive, tag) {
+  return (archive.pilots || []).find((p) => p.kind === 'agg' && p.label.includes(tag));
 }
 
 /** Pool two agg pilots' matchupDetail into unordered-pair {wA, n} sums, non-mirror only. */
@@ -88,19 +94,24 @@ function poolMatchupDetail(pilots) {
 export function gradeRatification(archive, thresholds = TARGETS) {
   const r8 = findRolloutPilot(archive, 'r8');
   const r12 = findRolloutPilot(archive, 'r12');
+  // r16 is OPTIONAL — a 4th convergence-ladder rung (RXX_GPP in balance-verify.mjs).
+  // Archives graded before its introduction have no such pilot; grading must be
+  // byte-identical to today when it's absent.
+  const r16 = findOptionalRolloutPilot(archive, 'r16');
+  const rungs = r16 ? [r8, r12, r16] : [r8, r12];
 
   // ── Pooled per-faction marginals + Wilson CI ──
   const pooledMarg = {};
   for (const f of FACTIONS) {
-    const w = r8.marg[f].w + r12.marg[f].w;
-    const n = r8.marg[f].n + r12.marg[f].n;
+    const w = rungs.reduce((sum, r) => sum + r.marg[f].w, 0);
+    const n = rungs.reduce((sum, r) => sum + r.marg[f].n, 0);
     pooledMarg[f] = { w, n, wilson: wilson(w, n) };
   }
   const mids = FACTIONS.map((f) => pooledMarg[f].wilson[1]);
   const pooledSpread = Math.max(...mids) - Math.min(...mids);
 
   // ── Pooled non-mirror matchup cells -> worst-cell deviation from 50% ──
-  const pooledPairs = poolMatchupDetail([r8, r12]);
+  const pooledPairs = poolMatchupDetail(rungs);
   let worst = { dev: 0 };
   for (const [key, { wA, n }] of Object.entries(pooledPairs)) {
     if (n <= 0) continue;
@@ -109,8 +120,9 @@ export function gradeRatification(archive, thresholds = TARGETS) {
   }
 
   // ── Pooled mirrorFp (weighted by games) + min decided% ──
-  const pooledMirrorFp = (r8.mirrorFp * r8.games + r12.mirrorFp * r12.games) / (r8.games + r12.games);
-  const pooledDecided = Math.min(r8.decidedPct, r12.decidedPct);
+  const totalGames = rungs.reduce((sum, r) => sum + r.games, 0);
+  const pooledMirrorFp = rungs.reduce((sum, r) => sum + r.mirrorFp * r.games, 0) / totalGames;
+  const pooledDecided = Math.min(...rungs.map((r) => r.decidedPct));
 
   // ── grades ──
   const grades = [];
@@ -133,7 +145,7 @@ export function gradeRatification(archive, thresholds = TARGETS) {
 
   add('Mirror FP edge (pooled)', `${pct(pooledMirrorFp - 50)} over 50%`, Math.abs(pooledMirrorFp - 50) <= thresholds.mirrorFpEdgePp.flagAbove);
 
-  add('Decided% (min of r8/r12)', pct(pooledDecided), pooledDecided >= thresholds.decidedPct.flagBelow);
+  add(`Decided% (min of ${r16 ? 'r8/r12/r16' : 'r8/r12'})`, pct(pooledDecided), pooledDecided >= thresholds.decidedPct.flagBelow);
 
   for (const f of FACTIONS) {
     const midR8 = r8.marg[f].wilson[1];
@@ -143,11 +155,23 @@ export function gradeRatification(archive, thresholds = TARGETS) {
     add(`Convergence (r8→r12): ${f}`, `drift ${pct(drift)}${ciOverlap ? ', CIs overlap' : ', CIs disjoint'}`, drift <= 3 || ciOverlap);
   }
 
+  if (r16) {
+    for (const f of FACTIONS) {
+      const midR12 = r12.marg[f].wilson[1];
+      const midR16 = r16.marg[f].wilson[1];
+      const drift = Math.abs(midR16 - midR12);
+      const ciOverlap = overlap(r12.marg[f].wilson, r16.marg[f].wilson);
+      add(`Convergence (r12→r16): ${f}`, `drift ${pct(drift)}${ciOverlap ? ', CIs overlap' : ', CIs disjoint'}`, drift <= 3 || ciOverlap);
+    }
+  }
+
   return {
     grades,
     pass,
     pooled: { marg: pooledMarg, spread: pooledSpread, worst, mirrorFp: pooledMirrorFp, decidedPct: pooledDecided },
-    rungRunHashes: { [r8.label]: r8.runHash ?? null, [r12.label]: r12.runHash ?? null },
+    rungRunHashes: r16
+      ? { [r8.label]: r8.runHash ?? null, [r12.label]: r12.runHash ?? null, [r16.label]: r16.runHash ?? null }
+      : { [r8.label]: r8.runHash ?? null, [r12.label]: r12.runHash ?? null },
   };
 }
 

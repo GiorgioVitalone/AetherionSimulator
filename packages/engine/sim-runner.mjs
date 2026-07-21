@@ -21,6 +21,14 @@
 //   turnCap:         number  (hard turn limit before a game is force-ended; default 80)
 //   abilitiesOn:     boolean (hydrate card/hero abilities onto instances; default true)
 //   botPolicy:       "random" | "heuristic"  (both seats; default "heuristic")
+//   botPolicySeat:   { 0: "heuristic"|"random"|"rollout", 1: ... }  (optional;
+//                     lets seat 0 and seat 1 run DIFFERENT policies, for
+//                     bot-vs-bot head-to-heads. A spec where both seats name
+//                     the SAME policy folds into the monolithic `botPolicy`
+//                     field above and is omitted from the resolved/hashed
+//                     config — byte-identical to setting `botPolicy` alone.
+//                     Unset ⇒ omitted ⇒ the monolithic `botPolicy` path is
+//                     untouched.
 //   firstPlayerCompensation:
 //       "none"        — no compensation (engine default)
 //       "card"        — second player draws +1 card at game start
@@ -95,11 +103,14 @@ import {
   chooseReactiveAction,
   chooseChoiceResponse,
   shouldKeepHand,
+  featurize,
+  FEATURE_SCHEMA_VERSION,
 } from './dist/index.js';
 import { gameplanFor } from './dist/bot/gameplan.js';
 import { summarizeStats } from './dist/sim/summarize-stats.js';
 import { getDeck } from './deck-loader.mjs';
 import { makeRolloutPilot } from './pilot-rollout.mjs';
+import { makeValuePilot, computeModelSha } from './pilot-value.mjs';
 
 const CARDS = process.env.AETHERION_CARDS
   ? process.env.AETHERION_CARDS
@@ -658,6 +669,17 @@ export function remapSeatSwap(r, trueFA, trueFB) {
     spellsCastA: r.spellsCastB,
     spellsCastB: r.spellsCastA,
     dx,
+    // trainingRows.mover is stored in PHYSICAL-seat space; remap to true-deck space so
+    // the downstream faction stamp (finalize: mover===0?fA:fB) is correct for swapped
+    // games. y is already the swap-invariant "side-to-move won" bit — leave it untouched.
+    ...(r.trainingRows
+      ? { trainingRows: r.trainingRows.map((row) => ({ ...row, mover: flip(row.mover) })) }
+      : {}),
+    // decisionLog.mover is stored in PHYSICAL-seat space, same as trainingRows.mover
+    // above; remap to true-deck space so the downstream faction stamp is correct.
+    ...(r.decisionLog
+      ? { decisionLog: r.decisionLog.map((row) => ({ ...row, mover: flip(row.mover) })) }
+      : {}),
   };
 }
 
@@ -760,9 +782,31 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   // Outcome-driven rollout pilot (botPolicy === 'rollout'): one instance per game,
   // forking THIS actor at each active-player decision point. Deterministic — its
   // rollout seeds derive purely from `seed`. Heuristic/random paths never touch it.
-  const rolloutPilot = config.botPolicy === 'rollout'
-    ? makeRolloutPilot({ rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps, seedMode: config.rolloutSeedMode, playoutBackend: config.playoutBackend })
+  // config.botPolicySeat is only ever present (see resolveConfig) for a GENUINE
+  // per-seat split, so a monolithic run allocates exactly ONE shared pilot here
+  // (its decisionIndex counts every decision of the game, exactly as before) —
+  // byte-identical to the v10 baseline. A split allocates one pilot PER SEAT that
+  // needs it, each counting only that seat's own decisions.
+  const rolloutOpts = { rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps, seedMode: config.rolloutSeedMode, playoutBackend: config.playoutBackend, valueLeafModelPath: config.valueLeafModelPath, collectDecisionLog: config.collectDecisionLog };
+  const rolloutPilot = !config.botPolicySeat && config.botPolicy === 'rollout' ? makeRolloutPilot(rolloutOpts) : null;
+  // Neural value-net greedy pilot (botPolicy === 'valueGreedy'): same one-
+  // instance-per-monolithic-run / one-per-split-seat allocation discipline as
+  // the rollout pilot above, sharing `valueModelPath` from the resolved config.
+  const valueOpts = { modelPath: config.valueModelPath };
+  const valuePilot = !config.botPolicySeat && config.botPolicy === 'valueGreedy' ? makeValuePilot(valueOpts) : null;
+  const botPilotsBySeat = config.botPolicySeat
+    ? {
+        0: config.botPolicySeat[0] === 'rollout' ? makeRolloutPilot(rolloutOpts)
+          : config.botPolicySeat[0] === 'valueGreedy' ? makeValuePilot(valueOpts)
+          : null,
+        1: config.botPolicySeat[1] === 'rollout' ? makeRolloutPilot(rolloutOpts)
+          : config.botPolicySeat[1] === 'valueGreedy' ? makeValuePilot(valueOpts)
+          : null,
+      }
     : null;
+  // Resolve seat 0/1's effective policy + pilot for this decision point.
+  const policyForSeat = (seatIdx) => (config.botPolicySeat ? config.botPolicySeat[seatIdx] : config.botPolicy);
+  const pilotForSeat = (seatIdx) => (config.botPolicySeat ? botPilotsBySeat[seatIdx] : (rolloutPilot ?? valuePilot));
 
   let leaderAt10 = null; // 0|1|'tie' — side ahead on LP at SNOWBALL_TURN
   let equipPlayed = 0;   // count of attach_equipment actions actually dispatched
@@ -771,6 +815,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   let spellsCounters = 0; // reactive Counter/Flash casts (REACTIVE_ACTION) dispatched
   let steps = 0;
   let lastTurn = -1;
+  let trainingRowsLastTurn = -1;
+  const trainingRows = [];
   const actionCounts = {};
   while (steps++ < STEP_CAP) {
     const snap = actor.getSnapshot();
@@ -780,6 +826,14 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     if (config.__trace && gs.turnNumber !== lastTurn) {
       lastTurn = gs.turnNumber;
       config.__trace.onTurn(gs, { spellsCastA, spellsCastB, equipPlayed, spellsCounters, actionCounts });
+    }
+    // Value-net training-data collection (opt-in, parallel-safe): buffer one
+    // featurized row per turn start; labeled + attached to the plain result
+    // object at game end below (rides back across worker boundaries — unlike
+    // __trace, which is a function hook and cannot cross workers).
+    if (config.collectTrainingData && gs.turnNumber !== trainingRowsLastTurn) {
+      trainingRowsLastTurn = gs.turnNumber;
+      trainingRows.push({ f: Array.from(featurize(gs)), turn: gs.turnNumber, mover: gs.activePlayerIndex });
     }
     if (gs.winner != null) break;
     if (gs.turnNumber > config.turnCap) break;
@@ -811,7 +865,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     if (gs.pendingPriority != null) {
       try {
         let react = null;
-        if (config.botPolicy === 'heuristic' || config.botPolicy === 'rollout') {
+        const reactPolicy = policyForSeat(gs.pendingPriority.toRespondPlayerId);
+        if (reactPolicy === 'heuristic' || reactPolicy === 'rollout' || reactPolicy === 'valueGreedy') {
           // Minor decision (scarce reactive cards): both the heuristic and the
           // outcome-driven pilot use the engine's sensible, archetype-neutral
           // reactive policy. The pilot's archetype-neutral SEARCH is on the main
@@ -832,7 +887,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     const pc = gs.pendingChoice;
     try {
       if (pc) {
-        const competent = config.botPolicy === 'heuristic' || config.botPolicy === 'rollout';
+        const pcPolicy = policyForSeat(pc.playerId);
+        const competent = pcPolicy === 'heuristic' || pcPolicy === 'rollout' || pcPolicy === 'valueGreedy';
         if (pc.type === 'mulligan') {
           const keep = competent ? shouldKeepHand(gs, pc.playerId) : true;
           actor.send({ type: 'MULLIGAN_DECISION', playerId: pc.playerId, keep });
@@ -845,12 +901,15 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
         continue;
       }
       let action;
-      if (config.botPolicy === 'heuristic') {
+      const actPolicy = policyForSeat(gs.activePlayerIndex);
+      if (actPolicy === 'heuristic') {
         action = chooseAction(gs);
-      } else if (config.botPolicy === 'rollout') {
-        // OUTCOME-DRIVEN pilot: fork this actor, roll each candidate out, pick by
-        // game outcome (win-rate, LP-diff tiebreak) — no archetype/board prior.
-        action = rolloutPilot.chooseAction(actor, gs, seed, config.turnCap);
+      } else if (actPolicy === 'rollout' || actPolicy === 'valueGreedy') {
+        // OUTCOME-DRIVEN rollout pilot: fork this actor, roll each candidate out,
+        // pick by game outcome (win-rate, LP-diff tiebreak) — no archetype/board
+        // prior. NEURAL value-net pilot: one-ply search over each candidate's
+        // afterstate, scored by the value net — see pilot-value.mjs.
+        action = pilotForSeat(gs.activePlayerIndex).chooseAction(actor, gs, seed, config.turnCap);
       } else {
         const choices = concreteActions(computeAvailableActions(gs, gs.activePlayerIndex));
         action = choices.length && rnd() < RANDOM_ACTION_PROB ? choices[Math.floor(rnd() * choices.length)] : null;
@@ -903,6 +962,20 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     // Candidate-generation pruning telemetry (T2, rollout only) — computeRunHash
     // never reads this field either (same hash-exemption as dx/__diag/__trace).
     ...(rolloutPilot ? { candidatePruning: rolloutPilot.diag } : {}),
+    // Value-net training rows (opt-in via config.collectTrainingData) — labeled
+    // here from the resolved winner and attached to the plain result object so
+    // they ride back across worker boundaries. Draws/timeouts (winner not 0|1)
+    // yield clean binary labels only, so nothing is attached for them.
+    ...(config.collectTrainingData && decided
+      ? { trainingRows: trainingRows.map(row => ({ ...row, y: row.mover === winner ? 1 : 0 })) }
+      : {}),
+    // Decision log (opt-in via config.collectDecisionLog) — the foundation for
+    // pilotability analysis + policy-net distillation. computeRunHash never reads
+    // this field (same hash-exemption as dx/__diag/__trace/trainingRows). Only
+    // attached when the game actually decided, mirroring trainingRows above.
+    ...(config.collectDecisionLog && rolloutPilot && decided
+      ? { decisionLog: rolloutPilot.decisionLog }
+      : {}),
   };
 }
 
@@ -988,19 +1061,52 @@ export function normalizeCardStatOverride(map) {
   return Object.keys(out).length ? out : null;
 }
 
+const BOT_POLICIES = ['heuristic', 'random', 'rollout', 'valueGreedy'];
+
+// Normalize a botPolicySeat spec ({ 0: policy, 1: policy }) to a genuine
+// per-seat split, or null when it's absent, malformed, or both seats name the
+// SAME policy (a "split" that isn't actually one — folds into the monolithic
+// botPolicy field instead, see resolveConfig). Pure.
+function normalizeBotPolicySeat(spec) {
+  if (!spec || typeof spec !== 'object') return null;
+  const p0 = spec[0], p1 = spec[1];
+  if (!BOT_POLICIES.includes(p0) || !BOT_POLICIES.includes(p1)) return null;
+  if (p0 === p1) return null;
+  return { 0: p0, 1: p1 };
+}
+
 function resolveConfig(config = {}) {
+  const botPolicySeat = normalizeBotPolicySeat(config.botPolicySeat);
+  // A uniform (non-split) botPolicySeat spec resolves the monolithic botPolicy
+  // to that seat's policy instead — so { 0: 'rollout', 1: 'rollout' } replays
+  // byte-identical (same runHash) to plain botPolicy: 'rollout'.
+  const uniformSeatPolicy = !botPolicySeat && config.botPolicySeat && typeof config.botPolicySeat === 'object'
+    && BOT_POLICIES.includes(config.botPolicySeat[0]) && config.botPolicySeat[0] === config.botPolicySeat[1]
+    ? config.botPolicySeat[0]
+    : undefined;
+  const resolvedBotPolicy = uniformSeatPolicy ?? (config.botPolicy ?? 'heuristic');
+  const rolloutActive = resolvedBotPolicy === 'rollout'
+    || (botPolicySeat != null && (botPolicySeat[0] === 'rollout' || botPolicySeat[1] === 'rollout'));
+  const valueGreedyActive = resolvedBotPolicy === 'valueGreedy'
+    || (botPolicySeat != null && (botPolicySeat[0] === 'valueGreedy' || botPolicySeat[1] === 'valueGreedy'));
   return {
     matchups: config.matchups ?? 'all-pairs',
     gamesPerPairing: config.gamesPerPairing ?? 60,
     turnCap: config.turnCap ?? 80,
     abilitiesOn: config.abilitiesOn ?? true,
-    botPolicy: config.botPolicy ?? 'heuristic',
+    botPolicy: resolvedBotPolicy,
+    // Per-seat policy split (see the doc header + normalizeBotPolicySeat). Only
+    // emitted (and hashed) for a GENUINE split — a uniform spec folds into
+    // `botPolicy` above and never reaches here, so a default/monolithic run
+    // (or a uniform per-seat spec) is byte-identical to the v10 baseline.
+    ...(botPolicySeat ? { botPolicySeat } : {}),
     // Outcome-driven rollout pilot knobs. ONLY emitted (and hashed) when the
-    // rollout policy is selected, so any heuristic/random run is byte-identical to
-    // the v10 baseline. `rollouts` = playouts per candidate; `rolloutPlayout` =
-    // the default policy inside a playout ('random' = archetype-neutral, primary;
-    // 'heuristic' = the value-bot cross-check); `maxCandidates` caps branching.
-    ...(config.botPolicy === 'rollout'
+    // rollout policy is active on at least one seat, so any heuristic/random run
+    // is byte-identical to the v10 baseline. `rollouts` = playouts per candidate;
+    // `rolloutPlayout` = the default policy inside a playout ('random' =
+    // archetype-neutral, primary; 'heuristic' = the value-bot cross-check);
+    // `maxCandidates` caps branching.
+    ...(rolloutActive
       ? {
           rollouts: config.rollouts ?? 16,
           rolloutPlayout: config.rolloutPlayout ?? 'random',
@@ -1048,6 +1154,41 @@ function resolveConfig(config = {}) {
           ...(config.playoutBackend && config.playoutBackend !== 'actor'
             ? { playoutBackend: config.playoutBackend }
             : {}),
+          // Stage E — valueLeafModelPath: when set, a TRUNCATED (non-terminal)
+          // rollout leaf is scored by this value net's win-probability instead
+          // of the LP-diff heuristic; terminal leaves are unaffected. A real
+          // rules dimension (a different net picks different games), so it is
+          // deliberately NOT stripped by computeRunHash. The model's own
+          // content hash (`valueLeafModelSha`) and the featurizer's schema
+          // version are hashed alongside it, same discipline as valueModelPath
+          // above. Emitted (and hashed) ONLY when set ⇒ an unset run stays
+          // byte-identical to every historical runHash.
+          ...(config.valueLeafModelPath
+            ? {
+                valueLeafModelPath: config.valueLeafModelPath,
+                ...(computeModelSha(config.valueLeafModelPath)
+                  ? { valueLeafModelSha: computeModelSha(config.valueLeafModelPath) }
+                  : {}),
+                valueLeafFeatureSchemaVersion: FEATURE_SCHEMA_VERSION,
+              }
+            : {}),
+        }
+      : {}),
+    // Neural value-net greedy pilot (botPolicy 'valueGreedy'). ONLY emitted (and
+    // hashed) when the policy is active on at least one seat, so any
+    // heuristic/random/rollout run is byte-identical to before. `valueModelPath`
+    // is a real rules dimension — a different net picks different games — so it
+    // is deliberately NOT stripped by computeRunHash. The model's own content
+    // hash (`valueModelSha`) and the featurizer's schema version are hashed
+    // alongside it: two configs naming the same path but a DIFFERENT model file
+    // (or a stale featurizer) must not collide on runHash.
+    ...(valueGreedyActive
+      ? {
+          valueModelPath: config.valueModelPath ?? null,
+          ...(config.valueModelPath && computeModelSha(config.valueModelPath)
+            ? { valueModelSha: computeModelSha(config.valueModelPath) }
+            : {}),
+          valueFeatureSchemaVersion: FEATURE_SCHEMA_VERSION,
         }
       : {}),
     // STALL-FIX knob: resolve the end-of-turn hand-size discard choice (which the
@@ -1228,6 +1369,14 @@ function resolveConfig(config = {}) {
     ...(config.__diag !== undefined ? { __diag: config.__diag } : {}),
     // Per-turn telemetry collector (read-only side-channel; same hash-strip as __diag).
     ...(config.__trace !== undefined ? { __trace: config.__trace } : {}),
+    // Value-net training-data collection (opt-in harness knob; read-only
+    // side-channel). Stripped from the hashed config in computeRunHash, so
+    // attaching it keeps runHash byte-identical to a run without it set.
+    ...(config.collectTrainingData ? { collectTrainingData: true } : {}),
+    // Decision-log collection (opt-in harness knob; read-only side-channel, rollout
+    // policy only). Stripped from the hashed config in computeRunHash, so attaching
+    // it keeps runHash byte-identical to a run without it set.
+    ...(config.collectDecisionLog ? { collectDecisionLog: true } : {}),
   };
 }
 
@@ -1476,10 +1625,19 @@ function computeRunHash(results, config, deckLabels = []) {
   // backends must hash identically — that equality IS the T7 equivalence
   // claim. Stripping an absent key is a no-op, so historical hashes are
   // untouched. Pinned in rollout-pin.test.ts.
-  const { __diag, __trace, playoutBackend, ...hashedConfig } = config;
+  // collectTrainingData is a harness-only data-collection knob (like __diag):
+  // it changes nothing about gameplay, so it must strip out identically to a
+  // run without it set. result.trainingRows is a result field computeRunHash
+  // never reads (rows array above builds hashes from fA/fB/seed/winner/
+  // firstPlayer/turns/timedOut/leaderAt10 only), so it needs no handling here.
+  // collectDecisionLog is the same discipline: a harness-only data-collection
+  // knob (result.decisionLog is never read here either).
+  const { __diag, __trace, playoutBackend, collectTrainingData, collectDecisionLog, ...hashedConfig } = config;
   void __diag;
   void __trace;
   void playoutBackend;
+  void collectTrainingData;
+  void collectDecisionLog;
   const payload = JSON.stringify(hashedConfig) + '\n' + deckLabels.join(',') + '\n' + rows.join('\n');
   return createHash('sha256').update(payload).digest('hex').slice(0, 16);
 }
@@ -1527,7 +1685,34 @@ function generateResults(plan, config, shard = null) {
 function finalize(results, config, plan) {
   const summary = summarize(results, config);
   const deckLabels = plan.map(p => p.label);
-  return { ...summary, deckLabels, runHash: computeRunHash(results, config, deckLabels) };
+  return {
+    ...summary,
+    deckLabels,
+    runHash: computeRunHash(results, config, deckLabels),
+    // Value-net training rows (opt-in via config.collectTrainingData): the
+    // summary object above never retains raw per-game results, so flatten each
+    // game's labeled rows here — stamped with the mover's faction (fA if it
+    // moved as seat 0, fB if seat 1) — for callers like neural-datagen.mjs.
+    // Hash-exempt: computeRunHash above is computed from `results` directly and
+    // never reads this field.
+    ...(config.collectTrainingData
+      ? {
+          trainingRows: results.flatMap((r, gi) =>
+            (r.trainingRows || []).map(row => ({ ...row, game: gi, faction: row.mover === 0 ? r.fA : r.fB })),
+          ),
+        }
+      : {}),
+    // Decision-log rows (opt-in via config.collectDecisionLog): flattened the same
+    // way as trainingRows above, stamped with a unique game id + the mover's
+    // faction. Hash-exempt: computeRunHash above never reads this field.
+    ...(config.collectDecisionLog
+      ? {
+          decisionLog: results.flatMap((r, gi) =>
+            (r.decisionLog || []).map(row => ({ ...row, game: gi, faction: row.mover === 0 ? r.fA : r.fB })),
+          ),
+        }
+      : {}),
+  };
 }
 
 export function runSim(rawConfig = {}) {
@@ -1621,6 +1806,10 @@ function parseCliConfig(argv) {
     else if (key === 'firstPlayerDrawsNormally') cfg[key] = val === 'true';
     else if (key === 'seatAlternation') cfg[key] = val === 'true';
     else if (key === 'disableFactionHeroReach') cfg[key] = { faction: val };
+    else if (key === 'botPolicySeat0' || key === 'botPolicySeat1') {
+      cfg.botPolicySeat = cfg.botPolicySeat || {};
+      cfg.botPolicySeat[key === 'botPolicySeat0' ? 0 : 1] = val;
+    }
     else if (key === 'factions') cfg.matchups = val.split(',');
     else if (key === 'disableEffectTypes') cfg[key] = val.split(',').filter(Boolean);
     else cfg[key] = val;

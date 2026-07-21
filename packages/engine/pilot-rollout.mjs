@@ -42,7 +42,15 @@ import {
   chooseChoiceResponse,
   shouldKeepHand,
   enumerateConcretePlayerActions,
+  featurize,
 } from './dist/index.js';
+// Stage E — truncated-rollout leaf scoring via a value net. loadValueNet/forward
+// are pilot-value.mjs's sync JS MLP (schema + paritySamples validated at load).
+// NOTE: pilot-value.mjs imports hydratePersistedSnapshot/makeSnapshotFork back
+// from this module — a circular ESM import of function declarations only,
+// which Node resolves fine (function declarations are hoisted before either
+// module body runs).
+import { loadValueNet, forward } from './pilot-value.mjs';
 
 // mulberry32 — identical generator to the runner's, seeded per decision branch.
 function rngf(a) {
@@ -286,6 +294,30 @@ function outcomeScore(fin, meSeat, turnCap, closingReward = false) {
   return base + 0.5 * Math.max(-1, Math.min(1, diff));
 }
 
+// Stage E — score a TRUNCATED (non-terminal) rollout leaf with a value net's
+// win-probability instead of the LP-diff heuristic in outcomeScore. The net
+// predicts P(featurize(leafState).activePlayerIndex wins); when the leaf's
+// active player differs from `meSeat` we invert. Mapped onto outcomeScore's
+// decided-result scale ([-1, 1]) via 2*meWin-1 so a truncated leaf is directly
+// comparable to a terminal +1/-1. TERMINAL leaves (winner set) never call this
+// — they keep outcomeScore's +1/-1 unchanged. Exported for direct math tests.
+export function valueLeafScore(net, leafState, meSeat) {
+  const p = forward(net.layers, featurize(leafState));
+  const meWin = leafState.activePlayerIndex === meSeat ? p : 1 - p;
+  return 2 * meWin - 1;
+}
+
+// Per-leaf score selection (Stage E): a DECIDED leaf (fin.winner set) ALWAYS
+// uses outcomeScore's +1/-1 — the net is never consulted for a real terminal
+// result, net configured or not. Only a TRUNCATED leaf (fin.winner == null)
+// AND a configured net uses valueLeafScore instead. Exported for direct
+// selection tests.
+export function scoreLeaf(fin, meSeat, turnCap, closingReward, valueLeafNet) {
+  return valueLeafNet && fin.winner == null
+    ? valueLeafScore(valueLeafNet, fin, meSeat)
+    : outcomeScore(fin, meSeat, turnCap, closingReward);
+}
+
 // ── The pilot: choose one action by rollout outcome, or null to END_PHASE ─────
 // `actor` is the LIVE runner actor at a decision point; `gs` its current state.
 // Returns a PlayerAction or null (END_PHASE). Pure w.r.t. the live actor: it only
@@ -328,6 +360,18 @@ export function makeRolloutPilot(opts = {}) {
   const depth = opts.depth ?? (fairPilot ? 0 : 3);
   const closingReward = opts.closingReward ?? true; // reward decided+fast wins, penalize stalls
   const fixHandSizeStall = opts.fixHandSizeStall ?? false; // gated end-phase discard fix in playouts
+  // Stage E — truncated-rollout leaf scored by a value net instead of the
+  // LP-diff heuristic. Unset (the default) ⇒ byte-identical: outcomeScore is
+  // called exactly as before for every leaf, terminal or truncated. Loaded
+  // (and parity-checked) ONCE here at construction — a bad model file throws
+  // immediately rather than mid-game, same discipline as pilot-value.mjs.
+  const valueLeafModelPath = opts.valueLeafModelPath ?? null;
+  const valueLeafNet = valueLeafModelPath ? loadValueNet(valueLeafModelPath) : null;
+  // Opt-in decision logging — the foundation for pilotability analysis + policy-net
+  // distillation. Unset (the default) ⇒ byte-identical: chooseAction never builds or
+  // pushes a record, so it cannot perturb the rollout's RNG/decisionIndex or the
+  // chosen action. Same discipline as collectTrainingData in sim-runner.mjs.
+  const collectDecisionLog = opts.collectDecisionLog ?? false;
 
   // A per-decision counter folded into the rollout seed for determinism. Reset by
   // the runner at game start via reset().
@@ -337,8 +381,16 @@ export function makeRolloutPilot(opts = {}) {
   // in this pilot's game: raw = pre-cap enumerated candidates, retained = post
   // per-kind-cap + maxCandidates survivors, prunedByKind = per-kind drop counts.
   const diag = { raw: 0, retained: 0, prunedByKind: {} };
+  // Decision-log buffer (hash-exempt; opt-in via collectDecisionLog). One record
+  // per decision: the candidates weighed, their rollout values, and which was
+  // chosen. Accumulated across every decision in this pilot's game.
+  const decisionLog = [];
 
-  function reset() { decisionIndex = 0; diag.raw = 0; diag.retained = 0; diag.prunedByKind = {}; }
+  function reset() {
+    decisionIndex = 0;
+    diag.raw = 0; diag.retained = 0; diag.prunedByKind = {};
+    decisionLog.length = 0;
+  }
 
   function chooseAction(actor, gs, gameSeed, turnCap) {
     const di = decisionIndex++;
@@ -402,7 +454,7 @@ export function makeRolloutPilot(opts = {}) {
         // reachable there) and for any pre-transition send failure.
       }
       const fin = playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall, fairPilot);
-      const score = outcomeScore(fin, meSeat, turnCap, closingReward);
+      const score = scoreLeaf(fin, meSeat, turnCap, closingReward, valueLeafNet);
       fork.stop();
       return score;
     };
@@ -420,10 +472,28 @@ export function makeRolloutPilot(opts = {}) {
       // when it is at least as good — biasing toward action, not idleness.
       if (best == null || mean > best.mean + 1e-12) best = { action: options[ci].action, mean, ci };
     }
+    if (collectDecisionLog) {
+      const heuristicAction = heuristicChooseAction(gs);
+      const heuristicIdx = options.findIndex(o => actionsEqual(o.action, heuristicAction));
+      const passIdx = options.findIndex(o => o.action === null);
+      decisionLog.push({
+        turn: gs.turnNumber,
+        mover: gs.activePlayerIndex,
+        features: Array.from(featurize(gs)),
+        candidates: options.map((o, i) => ({
+          action: o.action,
+          value: stats[i].n ? stats[i].sum / stats[i].n : null,
+          playouts: stats[i].n,
+        })),
+        chosenIdx: best.ci,
+        heuristicIdx,
+        passIdx,
+      });
+    }
     return best ? best.action : null;
   }
 
-  return { chooseAction, reset, diag, meta: { rollouts, playoutPolicy, maxCandidates, candidateGen, candidateKindCaps, seedMode, playoutBackend, depth, closingReward, search, fixHandSizeStall, fairPilot } };
+  return { chooseAction, reset, diag, decisionLog, meta: { rollouts, playoutPolicy, maxCandidates, candidateGen, candidateKindCaps, seedMode, playoutBackend, depth, closingReward, search, fixHandSizeStall, fairPilot, valueLeafModelPath, collectDecisionLog } };
 }
 
 // ── Budget allocators (flat default; UCB1 optional behind opts.search==="ucb") ─
@@ -542,6 +612,33 @@ function ownBodies(gs, meSeat) {
 
 function sameCandidate(a, b) {
   return a.type === b.type && keyOf(a) === keyOf(b);
+}
+
+// actionsEqual — decision-log-only identity check between a heuristic action
+// (src/bot/heuristic.ts chooseAction, or null for END_PHASE) and a rollout
+// candidate's action, so heuristicIdx can locate the heuristic's pick among
+// this decision's enumerated `options`. null <-> null is a match (both mean
+// "end the phase"); null <-> non-null is never a match. Otherwise: same
+// `type`, plus every identifying field the PlayerAction union carries
+// (state-machine/types.ts), compared only where present on either side.
+const ACTION_ID_FIELDS = [
+  'cardInstanceId', 'attackerInstanceId', 'targetId', 'targetInstanceId',
+  'toZone', 'zone', 'slotIndex', 'abilityIndex', 'xValue',
+  'selectedTargetIds', 'equipmentInstanceId',
+];
+function actionsEqual(a, b) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  if (a.type !== b.type) return false;
+  return ACTION_ID_FIELDS.every(f => fieldEqual(a[f], b[f]));
+}
+function fieldEqual(x, y) {
+  if (Array.isArray(x) || Array.isArray(y)) {
+    const xa = x ?? [];
+    const ya = y ?? [];
+    return xa.length === ya.length && xa.every((v, i) => v === ya[i]);
+  }
+  return x === y;
 }
 
 // Stable candidate ordering: attacks first (most outcome-relevant), then deploys,

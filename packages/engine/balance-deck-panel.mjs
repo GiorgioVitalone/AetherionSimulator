@@ -299,8 +299,25 @@ function diagFor(aSide, bSide, gpp, seatAlt) {
   };
 }
 
+// Stronger/affordable bot knobs (mirror balance-verify.mjs): expose the existing
+// rollout-pilot switches so a deck panel can read decks with heuristic playouts, full
+// candidate enumeration, and the snapshot backend. Env-inherited by shard children.
+// Unset ⇒ omitted (byte-identical to prior panels). rolloutPlayout/candidateGen change
+// the runHash by design (different bot); playoutBackend is hash-exempt.
+const ROLLOUT_PLAYOUT = process.env.ROLLOUT_PLAYOUT;
+if (ROLLOUT_PLAYOUT !== undefined && ROLLOUT_PLAYOUT !== 'random' && ROLLOUT_PLAYOUT !== 'heuristic') { console.error(`ROLLOUT_PLAYOUT must be 'random' or 'heuristic' (got "${ROLLOUT_PLAYOUT}")`); process.exit(1); }
+const CAND_GEN = process.env.CAND_GEN;
+if (CAND_GEN !== undefined && CAND_GEN !== 'legacy' && CAND_GEN !== 'full') { console.error(`CAND_GEN must be 'legacy' or 'full' (got "${CAND_GEN}")`); process.exit(1); }
+const PLAYOUT_BACKEND = process.env.PLAYOUT_BACKEND;
+if (PLAYOUT_BACKEND !== undefined && PLAYOUT_BACKEND !== 'actor' && PLAYOUT_BACKEND !== 'snapshot') { console.error(`PLAYOUT_BACKEND must be 'actor' or 'snapshot' (got "${PLAYOUT_BACKEND}")`); process.exit(1); }
+const STRONGER_KNOBS = {
+  ...(ROLLOUT_PLAYOUT !== undefined ? { rolloutPlayout: ROLLOUT_PLAYOUT } : {}),
+  ...(CAND_GEN !== undefined ? { candidateGen: CAND_GEN } : {}),
+  ...(PLAYOUT_BACKEND !== undefined ? { playoutBackend: PLAYOUT_BACKEND } : {}),
+};
+
 // ── Run one runSim call per pairing ──────────────────────────────────────────
-const BASE = { ...manifest.rules, firstPlayer: 'alternating', seatAlternation: true, fixHandSizeStall: true, termination: 'tiebreak', abilitiesOn: true, turnCap: 80, botPolicy: 'rollout', ...RUNG_PARAMS, gamesPerPairing: GPP };
+const BASE = { ...manifest.rules, firstPlayer: 'alternating', seatAlternation: true, fixHandSizeStall: true, termination: 'tiebreak', abilitiesOn: true, turnCap: 80, botPolicy: 'rollout', ...RUNG_PARAMS, ...STRONGER_KNOBS, gamesPerPairing: GPP };
 if (!IS_SHARD_CHILD) {
   console.log(`Pool: ${poolAbsPath}  sha256/16 ${poolSha}  set ${deckSet.version}  pairings ${pairings.length}  gpp ${GPP}  rung r${RUNG}`);
 }

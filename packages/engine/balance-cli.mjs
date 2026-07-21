@@ -92,7 +92,7 @@ async function runVerify(flags, { kindOverride } = {}) {
   const res = spawnSync('node', ['balance-verify.mjs'], { cwd: ENGINE_DIR, env, stdio: 'inherit' });
   if (res.status !== 0) process.exit(res.status ?? 1);
 
-  const KNOBS = ['GPP_MATRIX', 'RL_GPP', 'RH_GPP', 'RX_GPP', 'SKIP_ROLLOUT', 'FOCUS', 'RESOURCE_DECK', 'AETHERION_CARDS', 'WORKERS', 'HEUR_RAMP', 'RULE_OFF', 'COMP', 'CAND_GEN', 'SEED_MODE', 'ROLLOUT_MAXC', 'PLAYOUT_BACKEND'];
+  const KNOBS = ['GPP_MATRIX', 'RL_GPP', 'RH_GPP', 'RX_GPP', 'RXX_GPP', 'SKIP_ROLLOUT', 'FOCUS', 'RESOURCE_DECK', 'AETHERION_CARDS', 'WORKERS', 'HEUR_RAMP', 'RULE_OFF', 'COMP', 'CAND_GEN', 'SEED_MODE', 'ROLLOUT_MAXC', 'PLAYOUT_BACKEND', 'ROLLOUT_PLAYOUT', 'SEED_BASE'];
   const knobEnv = Object.fromEntries(KNOBS.map((k) => [k, env[k]]).filter(([, v]) => v !== undefined));
 
   const entry = appendRun({ kind, label, resultPath: gaugeOut, env: knobEnv, preset: flags.preset });

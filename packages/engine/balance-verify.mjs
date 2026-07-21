@@ -74,6 +74,7 @@ const GPP_MATRIX = +(process.env.GPP_MATRIX || 1000);
 const RL_GPP = +(process.env.RL_GPP || 16);
 const RH_GPP = +(process.env.RH_GPP || 8);
 const RX_GPP = +(process.env.RX_GPP || 0); // >0 adds a 3rd rollout rung (r12 d3 c8)
+const RXX_GPP = +(process.env.RXX_GPP || 0); // >0 adds a 4th rollout rung (r16 d3 c8)
 const SKIP_ROLLOUT = process.env.SKIP_ROLLOUT === '1';
 // FOCUS=<faction>: run ONLY that faction's pairings (3 cross + mirror). For a
 // candidate pool that edits a single faction's cards, the other six pairings are
@@ -118,6 +119,25 @@ if (PLAYOUT_BACKEND !== undefined && PLAYOUT_BACKEND !== 'actor' && PLAYOUT_BACK
   console.error(`PLAYOUT_BACKEND must be 'actor' or 'snapshot' (got "${PLAYOUT_BACKEND}")`);
   process.exit(1);
 }
+// ROLLOUT_PLAYOUT (stronger-bot gate): 'random' (default) | 'heuristic' — the policy
+// used DURING each rollout playout. 'heuristic' is a different (stronger) bias family
+// than uniform-random; the gate's cross-pilot agreement check runs both. Unlike
+// PLAYOUT_BACKEND this CHANGES the games, so it is a rules dimension (hashed, not
+// hash-exempt) — threaded like candidateGen; unset ⇒ omitted ⇒ byte-identical.
+const ROLLOUT_PLAYOUT = process.env.ROLLOUT_PLAYOUT;
+if (ROLLOUT_PLAYOUT !== undefined && ROLLOUT_PLAYOUT !== 'random' && ROLLOUT_PLAYOUT !== 'heuristic') {
+  console.error(`ROLLOUT_PLAYOUT must be 'random' or 'heuristic' (got "${ROLLOUT_PLAYOUT}")`);
+  process.exit(1);
+}
+// SEED_BASE (stronger-bot gate): the game-seed base for this panel. Default 12345 keeps
+// every prior panel byte-identical; set a DIFFERENT integer to run an independent 2nd seed
+// block (the gate's cross-seed stability check). A rules/measurement dimension (changes the
+// games → changes the hash), so it is NOT stripped from computeRunHash.
+const SEED_BASE = process.env.SEED_BASE !== undefined ? +process.env.SEED_BASE : 12345;
+if (!Number.isInteger(SEED_BASE)) {
+  console.error(`SEED_BASE must be an integer (got "${process.env.SEED_BASE}")`);
+  process.exit(1);
+}
 const OUT = process.env.GAUGE_OUT || '/tmp/balance-verify-result.json';
 // Parallel is byte-identical to serial (proven via runHash — see sim-parallel.mjs),
 // so this is a pure speedup and every number/verdict below is unchanged. WORKERS=1
@@ -136,7 +156,7 @@ const BASE = {
   termination: 'tiebreak',
   abilitiesOn: true,
   turnCap: 80,
-  seedBase: 12345,
+  seedBase: SEED_BASE,
   ...manifestRules,
   // §13q seat-asymmetry fix (2026-07-10): side:'any' target resolution now returns
   // APNAP order (active player first) instead of seat order, and the harness
@@ -312,6 +332,7 @@ async function runAggPilot(label, pilotCfg, gpp) {
     ...(SEED_MODE !== undefined ? { rolloutSeedMode: SEED_MODE } : {}),
     ...(ROLLOUT_MAXC !== undefined ? { maxCandidates: ROLLOUT_MAXC } : {}),
     ...(PLAYOUT_BACKEND !== undefined ? { playoutBackend: PLAYOUT_BACKEND } : {}),
+    ...(ROLLOUT_PLAYOUT !== undefined ? { rolloutPlayout: ROLLOUT_PLAYOUT } : {}),
     decks: realDecks, matchups, gamesPerPairing: gpp,
   });
   const marg = {};
@@ -448,7 +469,7 @@ function report(p) {
 }
 
 // ── Run the panel ────────────────────────────────────────────────────────────
-console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}${FOCUS ? `  FOCUS=${FOCUS}` : ''}${CAND_GEN !== undefined ? `  CAND_GEN=${CAND_GEN}` : ''}${SEED_MODE !== undefined ? `  SEED_MODE=${SEED_MODE}` : ''}${ROLLOUT_MAXC !== undefined ? `  ROLLOUT_MAXC=${ROLLOUT_MAXC}` : ''}`);
+console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  RXX_GPP=${RXX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}${FOCUS ? `  FOCUS=${FOCUS}` : ''}${CAND_GEN !== undefined ? `  CAND_GEN=${CAND_GEN}` : ''}${SEED_MODE !== undefined ? `  SEED_MODE=${SEED_MODE}` : ''}${ROLLOUT_MAXC !== undefined ? `  ROLLOUT_MAXC=${ROLLOUT_MAXC}` : ''}`);
 console.log(`Pool: ${POOL_PATH}  sha256/16 ${POOL_SHA}`);
 console.log(`Ruleset: ${manifest ? `manifest v${manifest.version} (locked)` : 'pre-lock hardcoded fallback'}${ruleOverrides.length ? ` — ${ruleOverrides.length} override(s) in effect` : ''}`);
 if (FOCUS) console.log(`FOCUS mode: only ${FOCUS}-involving pairings run — non-${FOCUS} marginals/grades are vs-${FOCUS} cells only; combine with the reference panel's pack-internal counts for full marginals.`);
@@ -490,6 +511,12 @@ if (!SKIP_ROLLOUT) {
     console.log('\nRunning rollout-max (r12 d3 c8) — convergence ladder rung 3…');
     await add(await runAggPilot('rollout-max (r12 d3 c8)', { botPolicy: 'rollout', rollouts: 12, rolloutDepth: 3, maxCandidates: 8 }, RX_GPP));
   }
+  // RXX_GPP>0 adds a 4th, even stronger rung (r16 d3 c8) — the convergence
+  // ladder's next probe past r12, per docs/balance-targets.md §4's gate.
+  if (RXX_GPP > 0) {
+    console.log('\nRunning rollout-ultra (r16 d3 c8) — convergence ladder rung 4…');
+    await add(await runAggPilot('rollout-ultra (r16 d3 c8)', { botPolicy: 'rollout', rollouts: 16, rolloutDepth: 3, maxCandidates: 8 }, RXX_GPP));
+  }
 }
 
 // ── Cross-pilot agreement (the validity gate) ────────────────────────────────
@@ -504,7 +531,7 @@ if (FOCUS) {
 }
 
 writeFileSync(OUT, JSON.stringify({ generatedFrom: 'balance-verify.mjs', pool: { path: String(POOL_PATH), sha256_16: POOL_SHA }, focus: FOCUS || null, config: {
-  GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, heurRamp: process.env.HEUR_RAMP === '1',
+  GPP_MATRIX, RL_GPP, RH_GPP, RX_GPP, RXX_GPP, heurRamp: process.env.HEUR_RAMP === '1',
   ...(CAND_GEN !== undefined ? { CAND_GEN } : {}),
   ...(SEED_MODE !== undefined ? { SEED_MODE } : {}),
   ...(ROLLOUT_MAXC !== undefined ? { ROLLOUT_MAXC } : {}),
