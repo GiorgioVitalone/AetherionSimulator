@@ -25,6 +25,12 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build
         run: pnpm build
+      - name: Generate pools
+        # decision-log's datagen smoke reads generated-pools/aetherion-CURRENT.json
+        # (gitignored). make-pools.mjs copies the frozen references (hash-verified)
+        # and derives the live candidates; deterministic, <1s.
+        run: node make-pools.mjs
+        working-directory: packages/engine
       - name: Test
         # Includes the engine balance-sim suite, which runs the committed starter
         # decks (packages/engine/sim-data) and asserts runHash determinism.
