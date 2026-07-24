@@ -8,6 +8,7 @@ import type { AbilityDSL } from '../types/ability.js';
 import { hasOpenSlot, getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 import { getValidAttackTargets, type AttackTarget } from '../zones/targeting.js';
 import { canAfford, effectiveCost } from './cost-checker.js';
+import { isFlashSpell } from './reactive-actions.js';
 import { meetsEquipRequirement } from './equip-eligibility.js';
 import { isReserveTapEligible } from './reserve-tap.js';
 import { evaluateCondition } from '../effects/condition-evaluator.js';
@@ -80,21 +81,43 @@ export function computeAvailableActions(state: GameState): AvailableActions {
   const opponent = state.players[opponentIndex];
   const isStrategy = state.phase === 'strategy';
   const isAction = state.phase === 'action';
+  // RULES-ACCURACY FIX (config.transformAtStartOfTurn): the engine machine
+  // pauses in a start-of-turn transform window (phase still 'upkeep') only
+  // when this flag is ON — see game-machine.ts's startOfTurnTransform state.
+  // Absent/false ⇒ byte-identical no-op (this is always false, since the
+  // engine never pauses there when the flag is off).
+  const isStartOfTurnWindow =
+    state.phase === 'upkeep' && state.config?.transformAtStartOfTurn === true;
+  // FLASH-AT-WILL (config.flashAtWill — engine ticket Tier 3, part 1): Flash is
+  // usable "at any time" per the Rulebook, not just proactively in Strategy.
+  // Widens the ACTIVE player's proactive cast surface to the Flash-tagged
+  // subset of hand spells during the Action Phase too (non-Flash spells stay
+  // Strategy-only). See game-state.ts's GameConfig.flashAtWill for the known
+  // opponent's-turn limitation. Absent/false ⇒ byte-identical no-op.
+  const flashAtWillInAction = isAction && state.config?.flashAtWill === true;
 
   return {
     canDeploy: isStrategy ? computeDeployOptions(player, state) : [],
-    canCastSpell: isStrategy ? computeSpellOptions(player, state) : [],
+    canCastSpell: isStrategy
+      ? computeSpellOptions(player, state)
+      : flashAtWillInAction
+        ? computeSpellOptions(player, state, true)
+        : [],
     canAttachEquipment: isStrategy ? computeEquipOptions(player, state) : [],
     canMove: isStrategy ? computeMoveOptions(player) : [],
     canActivateAbility: isStrategy ? computeActivateOptions(player, state) : [],
     canAttack: isAction ? computeAttackOptions(player, opponent, state) : [],
     canDiscardForEnergy: isStrategy && computeCanDiscardForEnergy(player, state),
-    canTransform: isStrategy && computeCanTransform(state, player, opponent),
-    canEndPhase: isStrategy || isAction,
+    canTransform:
+      (isStrategy || isStartOfTurnWindow) && computeCanTransform(state, player, opponent),
+    canEndPhase: isStrategy || isAction || isStartOfTurnWindow,
     canTapReserve:
       isStrategy && state.config?.reserveTapChoice === true
         ? player.zones.reserve
-            .filter((c): c is NonNullable<typeof c> => c !== null && isReserveTapEligible(c, state.config))
+            .filter(
+              (c): c is NonNullable<typeof c> =>
+                c !== null && isReserveTapEligible(c, state.config),
+            )
             .map((c) => c.instanceId)
         : [],
   };
@@ -186,11 +209,16 @@ function getOpenSlotIndices(player: PlayerState, zone: ZoneType): readonly numbe
 
 // ── Spells ────────────────────────────────────────────────────────────────────
 
-function computeSpellOptions(player: PlayerState, state: GameState): readonly CastSpellOption[] {
+function computeSpellOptions(
+  player: PlayerState,
+  state: GameState,
+  flashOnly = false,
+): readonly CastSpellOption[] {
   const options: CastSpellOption[] = [];
 
   for (const card of player.hand) {
     if (card.cardType !== 'S') continue;
+    if (flashOnly && !isFlashSpell(card)) continue;
     if (!canAfford(player, effectiveCost(player, card, state.config))) continue;
     options.push({ cardInstanceId: card.instanceId, cost: card.cost });
   }
@@ -318,6 +346,20 @@ function computeActivateOptions(player: PlayerState, state: GameState): readonly
       // you activated it"). It becomes available once N of this player's
       // TURN_STARTs have elapsed since the last activation.
       if (onCooldown(state, src.id, i, activatedTrigger.cooldown)) continue;
+
+      // RULES-ACCURACY FIX (config.heroAbilitiesOncePerTurn): every Hero
+      // activated ability (Trigger/Counter/Flash/Ultimate) may be used only
+      // once per turn, regardless of any per-ability DSL oncePerTurn flag.
+      // Applies ONLY to the Hero (src.card is undefined for the Hero
+      // pseudo-source above); character activated abilities are unaffected.
+      // Absent/false ⇒ byte-identical no-op.
+      if (
+        state.config?.heroAbilitiesOncePerTurn === true &&
+        src.card === undefined &&
+        activatedThisTurn(state, src.id, i)
+      ) {
+        continue;
+      }
 
       if (!canAfford(player, activatedTrigger.cost)) continue;
 

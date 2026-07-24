@@ -46,6 +46,7 @@ interface DistModule {
     seed?: number,
   ) => { winner: number | null; activePlayerIndex: number };
   FEATURE_LENGTH: number;
+  FEATURE_SCHEMA_VERSION: number;
 }
 
 interface MinimalRegistry {
@@ -80,11 +81,16 @@ function deckFor(heroDefId: number): Record<string, unknown> {
 // REGARDLESS of the input feature vector — isolates the leaf-scoring MATH
 // (perspective handling + the [0,1] -> [-1,1] mapping) from the featurizer's
 // actual output, which is exactly what "leaf-scoring math" needs to test.
-function writeConstantNet(dir: string, featureLength: number, bias: number): string {
+function writeConstantNet(
+  dir: string,
+  featureLength: number,
+  bias: number,
+  schemaVersion: number,
+): string {
   const p = bias === 0 ? 0.5 : 1 / (1 + Math.exp(-bias));
   const net = {
     featureLength,
-    featureSchemaVersion: 1,
+    featureSchemaVersion: schemaVersion,
     arch: [featureLength, 1],
     activation: 'relu-hidden-sigmoid-out',
     layers: [{ W: [new Array(featureLength).fill(0)], b: [bias] }],
@@ -115,7 +121,7 @@ d('value-leaf — leaf-scoring math (valueLeafScore)', () => {
 
     const bias = 1; // p = sigmoid(1)
     const p = 1 / (1 + Math.exp(-bias));
-    const netPath = writeConstantNet(dir, dist.FEATURE_LENGTH, bias);
+    const netPath = writeConstantNet(dir, dist.FEATURE_LENGTH, bias, dist.FEATURE_SCHEMA_VERSION);
     const net = loadValueNet(netPath);
 
     const leaf = dist.createGame(deckFor(HERO_ONYX), deckFor(HERO_RADIANT), registryFor('Onyx'), 1);
@@ -136,7 +142,7 @@ d('value-leaf — leaf-scoring math (valueLeafScore)', () => {
 
     const bias = -0.5; // p = sigmoid(-0.5)
     const p = 1 / (1 + Math.exp(-bias));
-    const netPath = writeConstantNet(dir, dist.FEATURE_LENGTH, bias);
+    const netPath = writeConstantNet(dir, dist.FEATURE_LENGTH, bias, dist.FEATURE_SCHEMA_VERSION);
     const net = loadValueNet(netPath);
 
     const leaf = dist.createGame(deckFor(HERO_ONYX), deckFor(HERO_RADIANT), registryFor('Onyx'), 1);
@@ -155,7 +161,7 @@ d('value-leaf — leaf-scoring math (valueLeafScore)', () => {
       valueLeafScore: (net: LeafNet, leafState: unknown, meSeat: number) => number;
     };
 
-    const netPath = writeConstantNet(dir, dist.FEATURE_LENGTH, 0);
+    const netPath = writeConstantNet(dir, dist.FEATURE_LENGTH, 0, dist.FEATURE_SCHEMA_VERSION);
     const net = loadValueNet(netPath);
     const leaf = dist.createGame(deckFor(HERO_ONYX), deckFor(HERO_RADIANT), registryFor('Onyx'), 1);
 
@@ -256,7 +262,7 @@ const TINY_ROLLOUT_BASE = {
   maxCandidates: 5,
 };
 // Same pin as tests/sim/rollout-pin.test.ts — kept in sync deliberately.
-const PINNED_HASH = '75445f3d041917bc';
+const PINNED_HASH = 'd3e0878929a5c6e1';
 
 interface RunSimResult {
   runHash: string;
@@ -283,7 +289,7 @@ dRunner('value-leaf wired into sim-runner (valueLeafModelPath)', () => {
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), 'value-leaf-runner-'));
     const dist = (await import(distPath)) as unknown as DistModule;
-    modelPath = writeConstantNet(dir, dist.FEATURE_LENGTH, 0.3);
+    modelPath = writeConstantNet(dir, dist.FEATURE_LENGTH, 0.3, dist.FEATURE_SCHEMA_VERSION);
   });
   afterAll(() => {
     rmSync(dir, { recursive: true, force: true });

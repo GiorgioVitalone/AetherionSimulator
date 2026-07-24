@@ -22,7 +22,11 @@ import { ZONE_SLOTS, MAX_HAND_SIZE, RESOURCE_DECK_SIZE } from '../types/game-sta
 import type { ResourceType, Trait } from '../types/common.js';
 import { intrinsicValue, staticFromInstance } from '../bot/value-pilot.js';
 
-export const FEATURE_SCHEMA_VERSION = 1;
+// v2 (2026-07-21): RESOURCE_DECK_SIZE corrected from 15 to 12 (deck-legality.ts /
+// ruleset-v1.json / the Rulebook all say 12) — RESOURCE_BANK_NORM below changes
+// value, so stored training data (and any value net trained under the old norm)
+// is invalidated. Retrain is out of scope for this fix.
+export const FEATURE_SCHEMA_VERSION = 2;
 
 // ── Normalization constants (documented; keep features roughly in [0, 1]) ────
 const LP_NORM = 30;

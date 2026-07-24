@@ -1,8 +1,9 @@
 -- cards-balance-v2.sql — Aetherion starter-deck rebalance (skill-aware method)
 -- Baseline: RAW "Cards" table (live DB export == sim-data/aetherion-cards.json).
--- Ruleset: ruleset-v1 (all 9 locked rules). Measured at the validated r8d3 rung via
--- paired comparison (common random numbers). Stats/cost are ABSOLUTE targets (idempotent).
--- 32 cards changed.
+-- Ruleset: ruleset-v2 (v1's 9 locked rules + the engine-ticket corrections). Measured at the
+-- validated r8d3 rung via paired comparison (common random numbers) under ruleset-v2:
+-- win-rate spread 36 -> 2.3 (all four starters 48.7-51.0%), confirmed across two independent runs (2.0 at gpp150, 2.3 at gpp500, +-2.5% CI).
+-- Stats/cost are ABSOLUTE targets (idempotent). 30 cards changed.
 
 BEGIN;
 
@@ -17,10 +18,6 @@ UPDATE "Cards" SET cost = jsonb_set(cost, '{mana}', '4') WHERE id = 11;
 UPDATE "Cards" SET stats = jsonb_set(stats, '{hp}', '3') WHERE id = 16;
 UPDATE "Cards" SET cost = jsonb_set(cost, '{mana}', '4') WHERE id = 16;
 
--- Morgath, the Undying (id 17) [Onyx]: hp 4->3, atk 4->3
-UPDATE "Cards" SET stats = jsonb_set(stats, '{hp}', '3') WHERE id = 17;
-UPDATE "Cards" SET stats = jsonb_set(stats, '{atk}', '3') WHERE id = 17;
-
 -- Dark Bond (id 20) [Onyx]: mana 3->2
 UPDATE "Cards" SET cost = jsonb_set(cost, '{mana}', '2') WHERE id = 20;
 
@@ -33,14 +30,13 @@ UPDATE "Cards" SET cost = jsonb_set(cost, '{mana}', '2') WHERE id = 31;
 -- Haunting (id 38) [Onyx]: mana 5->2
 UPDATE "Cards" SET cost = jsonb_set(cost, '{mana}', '2') WHERE id = 38;
 
--- Protector of Faith (id 47) [Radiant]: atk 1->2
+-- Protector of Faith (id 47) [Radiant]: hp 3->4, atk 1->2
+UPDATE "Cards" SET stats = jsonb_set(stats, '{hp}', '4') WHERE id = 47;
 UPDATE "Cards" SET stats = jsonb_set(stats, '{atk}', '2') WHERE id = 47;
 
--- Shieldbearer Paladin (id 48) [Radiant]: hp 3->2
-UPDATE "Cards" SET stats = jsonb_set(stats, '{hp}', '2') WHERE id = 48;
-
--- Faithkeeper of Dawn (id 49) [Radiant]: hp 4->2
+-- Faithkeeper of Dawn (id 49) [Radiant]: hp 4->2, atk 2->3
 UPDATE "Cards" SET stats = jsonb_set(stats, '{hp}', '2') WHERE id = 49;
+UPDATE "Cards" SET stats = jsonb_set(stats, '{atk}', '3') WHERE id = 49;
 
 -- Radiant Angel (id 51) [Radiant]: atk 3->4
 UPDATE "Cards" SET stats = jsonb_set(stats, '{atk}', '4') WHERE id = 51;

@@ -84,11 +84,11 @@
   },
   "gameplayPin": {
     "configDescription": "TINY_BASE (Onyx vs Radiant, 6 games, seedBase 31337) + ruleset-v1 rules",
-    "runHash": "a6ec99ffa18aca7e"
+    "runHash": "84e9881874fb11f5"
   },
   "legacyPin": {
     "configDescription": "TINY_BASE (Onyx vs Radiant, 6 games, seedBase 31337) (flags off)",
-    "runHash": "744b9e75eb2e4292"
+    "runHash": "b142747b3b47ad87"
   },
   "amendment": "see docs/balance-framework.md §1 — v1 never mutates; changes produce ruleset-v2.json"
 }

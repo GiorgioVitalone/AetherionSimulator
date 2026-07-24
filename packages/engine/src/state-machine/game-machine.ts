@@ -53,6 +53,12 @@ export const gameMachine = setup({
       const player = context.gameState.players[context.gameState.activePlayerIndex];
       return player.mainDeck.length === 0;
     },
+    // RULES-ACCURACY FIX (config.transformAtStartOfTurn): gates entry into the
+    // new startOfTurnTransform state (between Reserve Energy and Strategy).
+    // Absent/false ⇒ byte-identical no-op — reserveEnergy always goes straight
+    // to strategy.
+    transformAtStartOfTurnEnabled: ({ context }) =>
+      context.gameState.config?.transformAtStartOfTurn === true,
   },
   actions: {
     refreshAllCards: assign({
@@ -168,6 +174,47 @@ export const gameMachine = setup({
         },
       };
     }),
+    // RULES-ACCURACY FIX (config.startOfTurnTriggerAfterReserve): fires the
+    // 'next_turn_start'/'next_upkeep' scheduled triggers during Upkeep, in the
+    // LEGACY position (before Reserve Energy Generation). No-ops when the flag
+    // is ON (the fixed-order action below runs instead, after Reserve Energy).
+    // Absent/false ⇒ byte-identical no-op.
+    fireStartOfTurnTriggersLegacyOrder: assign(({ context }) => {
+      if (context.gameState.config?.startOfTurnTriggerAfterReserve === true) return {};
+      const r1 = runScheduledEffects(context.gameState, 'next_turn_start');
+      const afterFirst = { ...r1.state, log: [...r1.state.log, ...r1.events] };
+      const r2 = runScheduledEffects(afterFirst, 'next_upkeep');
+      return { gameState: { ...r2.state, log: [...r2.state.log, ...r2.events] } };
+    }),
+    // RULES-ACCURACY FIX (config.startOfTurnTriggerAfterReserve): fires the same
+    // triggers in the FIXED position (after Reserve Energy Generation). No-ops
+    // when the flag is OFF (the legacy-order action above runs instead, during
+    // Upkeep). Absent/false ⇒ byte-identical no-op.
+    fireStartOfTurnTriggersFixedOrder: assign(({ context }) => {
+      if (context.gameState.config?.startOfTurnTriggerAfterReserve !== true) return {};
+      const r1 = runScheduledEffects(context.gameState, 'next_turn_start');
+      const afterFirst = { ...r1.state, log: [...r1.state.log, ...r1.events] };
+      const r2 = runScheduledEffects(afterFirst, 'next_upkeep');
+      return { gameState: { ...r2.state, log: [...r2.state.log, ...r2.events] } };
+    }),
+    // RULES-ACCURACY FIX (config.endPhaseOrderFix): fires the 'end_of_turn'
+    // scheduled triggers in the LEGACY position (before Remove Temporary
+    // Resources / Hand Size Limit, during endPhase entry). No-ops when the flag
+    // is ON. Absent/false ⇒ byte-identical no-op.
+    fireScheduledEndOfTurnLegacyOrder: assign(({ context }) => {
+      if (context.gameState.config?.endPhaseOrderFix === true) return {};
+      const result = runScheduledEffects(context.gameState, 'end_of_turn');
+      return { gameState: { ...result.state, log: [...result.state.log, ...result.events] } };
+    }),
+    // RULES-ACCURACY FIX (config.endPhaseOrderFix): fires the same triggers in
+    // the FIXED position (after Remove Temporary Resources / Hand Size Limit,
+    // just before passTurn). No-ops when the flag is OFF. Absent/false ⇒
+    // byte-identical no-op.
+    fireScheduledEndOfTurnFixedOrder: assign(({ context }) => {
+      if (context.gameState.config?.endPhaseOrderFix !== true) return {};
+      const result = runScheduledEffects(context.gameState, 'end_of_turn');
+      return { gameState: { ...result.state, log: [...result.state.log, ...result.events] } };
+    }),
     setHandSizeChoice: assign(({ context }) => {
       const player = context.gameState.players[context.gameState.activePlayerIndex];
       const excess = player.hand.length - MAX_HAND_SIZE;
@@ -266,8 +313,7 @@ export const gameMachine = setup({
             'expireUpkeepMods',
             'refreshAllCards',
             'tickStatuses',
-            { type: 'fireScheduled', params: { timing: 'next_turn_start' as const } },
-            { type: 'fireScheduled', params: { timing: 'next_upkeep' as const } },
+            'fireStartOfTurnTriggersLegacyOrder',
             'drawResource',
           ],
           always: [
@@ -307,8 +353,34 @@ export const gameMachine = setup({
         // Upkeep step 4 — Reserve Energy Generation (Rulebook 8). Runs after the
         // draws (steps 2/3) and before the Strategy Phase.
         reserveEnergy: {
-          entry: 'reserveEnergy',
-          always: { target: 'strategy' },
+          entry: ['reserveEnergy', 'fireStartOfTurnTriggersFixedOrder'],
+          always: [
+            {
+              target: 'startOfTurnTransform',
+              guard: { type: 'transformAtStartOfTurnEnabled' },
+            },
+            { target: 'strategy' },
+          ],
+        },
+
+        // RULES-ACCURACY FIX (config.transformAtStartOfTurn) — a start-of-turn
+        // window, after Reserve Energy Generation and before Strategy, during
+        // which the active player may declare a Hero transformation. Only
+        // entered when the flag is ON (see transformAtStartOfTurnEnabled
+        // guard); OFF ⇒ this state is never reached (byte-identical no-op).
+        startOfTurnTransform: {
+          on: {
+            PLAYER_ACTION: {
+              actions: 'applyPlayerAction',
+            },
+            END_PHASE: {
+              target: 'strategy',
+            },
+          },
+          always: {
+            target: '#aetherionGame.gameOver',
+            guard: { type: 'hasWinner' },
+          },
         },
 
         strategy: {
@@ -336,7 +408,9 @@ export const gameMachine = setup({
         // Reactive response window (Rulebook 14). The responder casts a Counter/
         // Flash (REACTIVE_ACTION) or passes (PRIORITY_PASS); two passes close the
         // window and resolve the chain LIFO, clearing pendingPriority. Then we
-        // return to strategy so the active player continues their turn.
+        // return to the phase the window opened from (strategy for casts; the
+        // action phase under config.responseWindowsOnAllActions / flashAtWill)
+        // so the active player continues their turn.
         priorityWindow: {
           on: {
             REACTIVE_ACTION: {
@@ -350,6 +424,16 @@ export const gameMachine = setup({
             {
               target: '#aetherionGame.gameOver',
               guard: { type: 'hasWinner' },
+            },
+            {
+              // The window opened during the Action Phase (gs.phase is unchanged
+              // while a window is open) — return there, mirroring the strategy
+              // return below. Off-flag + flashAtWill off this never fires, since
+              // only strategy-phase casts open windows.
+              target: 'action',
+              guard: ({ context }) =>
+                context.gameState.pendingPriority == null &&
+                context.gameState.phase === 'action',
             },
             {
               target: 'strategy',
@@ -368,16 +452,27 @@ export const gameMachine = setup({
               target: 'endPhase',
             },
           },
-          always: {
-            target: '#aetherionGame.gameOver',
-            guard: { type: 'hasWinner' },
-          },
+          always: [
+            {
+              target: '#aetherionGame.gameOver',
+              guard: { type: 'hasWinner' },
+            },
+            {
+              // TIER 4 (config.responseWindowsOnAllActions): Action-Phase actions
+              // (declare_attack, and activate_ability/attach_equipment/move under
+              // the same flag — plus flashAtWill Flash casts) can open a priority
+              // window; route to it exactly like the strategy phase does. Never
+              // fires when no window can open (pendingPriority stays null).
+              target: 'priorityWindow',
+              guard: { type: 'windowOpen' },
+            },
+          ],
         },
 
         endPhase: {
           entry: [
             { type: 'setPhase', params: { phase: 'end' as const } },
-            { type: 'fireScheduled', params: { timing: 'end_of_turn' as const } },
+            'fireScheduledEndOfTurnLegacyOrder',
             'removeTemps',
             'expireEndOfTurnMods',
           ],
@@ -421,7 +516,7 @@ export const gameMachine = setup({
         },
 
         passTurn: {
-          entry: 'executeTurnPass',
+          entry: ['fireScheduledEndOfTurnFixedOrder', 'executeTurnPass'],
           always: {
             target: 'upkeep',
           },

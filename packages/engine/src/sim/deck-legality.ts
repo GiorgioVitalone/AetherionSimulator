@@ -14,6 +14,8 @@ export const MAIN_MIN = 40;
 export const MAIN_MAX = 60;
 export const COPY_LIMIT = 3;
 export const LEGENDARY_COPY_LIMIT = 1;
+export const ETHEREAL_COPY_LIMIT = 2;
+export const MYTHIC_COPY_LIMIT = 2;
 // sim-data/ruleset-v1.json rules.resourceDeckSize (frozen at 12, not the 15-card
 // physical starter deck size).
 export const RESOURCE_DECK_SIZE = 12;
@@ -57,7 +59,16 @@ export interface LegalityResult {
 }
 
 function copyLimitFor(rarity: string): number {
-  return rarity === 'Legendary' ? LEGENDARY_COPY_LIMIT : COPY_LIMIT;
+  switch (rarity) {
+    case 'Legendary':
+      return LEGENDARY_COPY_LIMIT;
+    case 'Ethereal':
+      return ETHEREAL_COPY_LIMIT;
+    case 'Mythic':
+      return MYTHIC_COPY_LIMIT;
+    default:
+      return COPY_LIMIT;
+  }
 }
 
 function checkMain(

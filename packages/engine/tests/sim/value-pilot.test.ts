@@ -480,10 +480,11 @@ d('loadValueNet() / makeValuePilot(modelPath) — load-time guards', () => {
   });
 
   it('THROWS when featureLength does not match the engine FEATURE_LENGTH', async () => {
+    const dist = (await import(distPath)) as unknown as { FEATURE_SCHEMA_VERSION: number };
     const { loadValueNet } = (await import(pilotPath)) as {
       loadValueNet: (p: string) => unknown;
     };
-    const p = writeNet({ featureLength: 999 });
+    const p = writeNet({ featureLength: 999, featureSchemaVersion: dist.FEATURE_SCHEMA_VERSION });
     expect(() => loadValueNet(p)).toThrow(/featureLength/);
   });
 
@@ -497,19 +498,26 @@ d('loadValueNet() / makeValuePilot(modelPath) — load-time guards', () => {
   });
 
   it('THROWS when a paritySample fails to reproduce under forward() (weight/transpose bug guard)', async () => {
-    const dist = (await import(distPath)) as unknown as { FEATURE_LENGTH: number };
+    const dist = (await import(distPath)) as unknown as {
+      FEATURE_LENGTH: number;
+      FEATURE_SCHEMA_VERSION: number;
+    };
     const { loadValueNet } = (await import(pilotPath)) as {
       loadValueNet: (p: string) => unknown;
     };
     const p = writeNet({
       featureLength: dist.FEATURE_LENGTH,
+      featureSchemaVersion: dist.FEATURE_SCHEMA_VERSION,
       paritySamples: [{ f: [1, 1], prob: 0.1234 }], // deliberately wrong expected prob
     });
     expect(() => loadValueNet(p)).toThrow(/parity/);
   });
 
   it('a fully consistent net (matching FEATURE_LENGTH, correct parity) loads cleanly', async () => {
-    const dist = (await import(distPath)) as unknown as { FEATURE_LENGTH: number };
+    const dist = (await import(distPath)) as unknown as {
+      FEATURE_LENGTH: number;
+      FEATURE_SCHEMA_VERSION: number;
+    };
     const { loadValueNet } = (await import(pilotPath)) as {
       loadValueNet: (p: string) => { featureLength: number };
     };
@@ -520,6 +528,7 @@ d('loadValueNet() / makeValuePilot(modelPath) — load-time guards', () => {
     const net = loadValueNet(
       writeNet({
         featureLength: len,
+        featureSchemaVersion: dist.FEATURE_SCHEMA_VERSION,
         layers: [{ W: [new Array(len).fill(0).map((_, i) => (i < 2 ? 1 : 0))], b: [0] }],
         paritySamples: [{ f, prob: 1 / (1 + Math.exp(-2)) }],
       }),
@@ -532,7 +541,10 @@ d('loadValueNet() / makeValuePilot(modelPath) — load-time guards', () => {
 // return a real PlayerAction | null from chooseAction — never a Promise. ────
 d('value pilot (valueGreedy) — file-backed model, end-to-end sync check', () => {
   it('chooseAction with a real value-net.json returns a plain action/null, not a Promise', async () => {
-    const dist = (await import(distPath)) as unknown as DistModule & { FEATURE_LENGTH: number };
+    const dist = (await import(distPath)) as unknown as DistModule & {
+      FEATURE_LENGTH: number;
+      FEATURE_SCHEMA_VERSION: number;
+    };
     const { makeValuePilot } = (await import(pilotPath)) as {
       makeValuePilot: (opts: { modelPath: string }) => {
         chooseAction: (actor: unknown, gs: unknown, seed: number, turnCap: number) => unknown;
@@ -547,7 +559,7 @@ d('value pilot (valueGreedy) — file-backed model, end-to-end sync check', () =
       const len = dist.FEATURE_LENGTH;
       const net = {
         featureLength: len,
-        featureSchemaVersion: 1,
+        featureSchemaVersion: dist.FEATURE_SCHEMA_VERSION,
         arch: [len, 1],
         activation: 'relu-hidden-sigmoid-out',
         layers: [{ W: [new Array(len).fill(0)], b: [0] }],
@@ -595,7 +607,7 @@ dRunner('valueGreedy wiring does not disturb the rollout pilot (byte-identical)'
     maxCandidates: 5,
   };
   // Same pin as tests/sim/rollout-pin.test.ts — kept in sync deliberately.
-  const PINNED_HASH = '75445f3d041917bc';
+  const PINNED_HASH = 'd3e0878929a5c6e1';
 
   it('a run WITHOUT valueGreedy hashes identically to the pinned rollout hash', async () => {
     const { runSim } = (await import(runnerPath)) as {

@@ -324,14 +324,107 @@ export function executeReactiveResponse(
   state: GameState,
   action: PlayerAction,
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  if (action.type !== 'cast_spell' || state.pendingPriority == null) {
+  if (state.pendingPriority == null) {
     return { state, events: [] };
   }
+  const responderId = state.pendingPriority.toRespondPlayerId;
   const triggerPool = getAllRegisteredTriggers(state);
-  const resolved = castReactiveSpell(state, action, state.pendingPriority.toRespondPlayerId);
+  let resolved: { readonly state: GameState; readonly events: readonly GameEvent[] };
+  if (action.type === 'cast_spell') {
+    resolved = castReactiveSpell(state, action, responderId);
+  } else if (action.type === 'activate_ability' && state.config?.boardReactions === true) {
+    // BOARD REACTIONS (config.boardReactions, Tier 3 part 2): a battlefield
+    // character or the Hero responds via `activate_ability` (reused — same
+    // shape a proactive activation uses) instead of `cast_spell`. Absent/false
+    // ⇒ byte-identical no-op: `activate_ability` never reaches here off-flag,
+    // since computeReactiveActions never offers a 'board' option off-flag.
+    resolved = activateBoardReaction(state, action, responderId);
+  } else {
+    return { state, events: [] };
+  }
   const dispatched = dispatchTriggers(resolved.state, resolved.events, 0, triggerPool);
   const finalState = recomputeAuras(dispatched.newState);
   return { state: finalState, events: [...resolved.events, ...dispatched.events] };
+}
+
+// A board Counter/Flash (config.boardReactions): pays the ability's own
+// trigger.cost (default free) and exhausts the source, but — unlike a hand
+// spell's discard-and-chain-link path — it stays on the battlefield. Effects
+// resolve immediately (Activate-style, no stack push): a `target_spell` effect
+// (e.g. counter_spell) auto-resolves against the newest enemy stack item via
+// the interpreter's own target resolution (see target-resolver.ts), so no
+// explicit target needs threading here. Priority flips back to the other
+// player exactly as a hand reactive cast does.
+function activateBoardReaction(
+  state: GameState,
+  action: { cardInstanceId: string; abilityIndex: number; xValue?: number },
+  responderId: 0 | 1,
+): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+  const player = state.players[responderId];
+  const isHero = action.cardInstanceId === `hero_${String(player.hero.cardDefId)}`;
+  const boardCard = isHero ? null : findOnBattlefield(state, action.cardInstanceId);
+  if (!isHero && boardCard === null) return { state, events: [] };
+  if (boardCard !== null && (boardCard.exhausted || boardCard.summoningSick)) {
+    return { state, events: [] };
+  }
+  // Once-per-window guard (Hero Counter/Flash): a source may react at most once per
+  // priority window. Board cards enforce this via exhaustion; the Hero has no board card
+  // to exhaust, so gate it explicitly — otherwise a free-cost Hero Counter/Flash could
+  // fire every window all game. Block if this source already reacted this window: scan
+  // back to the last chain-advancing event (a SPELL_CAST pushes a new link / TURN_START
+  // bounds the scan); a prior ABILITY_ACTIVATED by this source within the window blocks.
+  if (state.pendingPriority != null) {
+    for (let i = state.log.length - 1; i >= 0; i--) {
+      const e = state.log[i]!;
+      if (e.type === 'TURN_START' || e.type === 'SPELL_CAST') break;
+      if (e.type === 'ABILITY_ACTIVATED' && e.cardInstanceId === action.cardInstanceId)
+        return { state, events: [] };
+    }
+  }
+
+  const abilities = isHero ? player.hero.abilities : boardCard!.abilities;
+  const ability = abilities[action.abilityIndex];
+  if (ability === undefined || ability.type !== 'triggered') return { state, events: [] };
+  const trigger = ability.trigger;
+  if (trigger.type !== 'on_counter' && trigger.type !== 'on_flash') return { state, events: [] };
+
+  const cost = addXCost(trigger.cost ?? { mana: 0, energy: 0, flexible: 0 }, action.xValue ?? 0);
+  if (!canAfford(player, cost)) return { state, events: [] };
+  let payState = setPlayer(state, responderId, payCost(player, cost));
+  if (boardCard !== null) {
+    payState = updateCardInState(payState, action.cardInstanceId, (c) => ({
+      ...c,
+      hasActed: true,
+      exhausted: true,
+    }));
+  }
+
+  const activatedEvent: GameEvent = {
+    type: 'ABILITY_ACTIVATED',
+    cardInstanceId: action.cardInstanceId,
+    abilityIndex: action.abilityIndex,
+  };
+  const ran = runAbilityEffects(
+    payState,
+    action.cardInstanceId,
+    ability.effects,
+    responderId,
+    action.xValue,
+  );
+  const other = responderId === 0 ? 1 : 0;
+  const finalState: GameState = {
+    ...ran.state,
+    pendingPriority: {
+      type: 'priority',
+      toRespondPlayerId: other,
+      // Preserve the base action's window kind (off-flag it can only ever be
+      // 'cast', so this is byte-identical to the legacy hardcode).
+      window: state.pendingPriority!.window,
+      baseStackItemId: state.pendingPriority!.baseStackItemId,
+      passes: 0,
+    },
+  };
+  return { state: finalState, events: [activatedEvent, ...ran.events] };
 }
 
 export function executePriorityPass(state: GameState): {
@@ -384,7 +477,9 @@ function castReactiveSpell(
     pendingPriority: {
       type: 'priority',
       toRespondPlayerId: other,
-      window: 'cast',
+      // Preserve the base action's window kind (off-flag it can only ever be
+      // 'cast', so this is byte-identical to the legacy hardcode).
+      window: state.pendingPriority!.window,
       baseStackItemId: state.pendingPriority!.baseStackItemId,
       passes: 0,
     },
@@ -396,6 +491,10 @@ function castReactiveSpell(
 
 // A Counter targets the newest enemy spell on the stack when no explicit target
 // is given, so its counter_spell effect resolves against the spell it responds to.
+// TIER 4 (config.responseWindowsOnAllActions): ANY enemy stack item is a legal
+// default counter target, so a reactive cast in an attack/ability/equip/move
+// window counters the base action it responds to. Off-flag the scan stays
+// spell-only (legacy, byte-identical).
 function reactiveTargets(
   state: GameState,
   selected: readonly string[] | undefined,
@@ -403,9 +502,10 @@ function reactiveTargets(
 ): readonly string[] {
   if (selected !== undefined && selected.length > 0) return selected;
   const enemyId = responderId === 0 ? 1 : 0;
+  const anyKind = state.config?.responseWindowsOnAllActions === true;
   for (let i = state.stack.length - 1; i >= 0; i--) {
     const item = state.stack[i]!;
-    if (item.type === 'spell' && item.controllerId === enemyId) return [item.id];
+    if (item.controllerId === enemyId && (anyKind || item.type === 'spell')) return [item.id];
   }
   return [];
 }
@@ -736,6 +836,28 @@ function executeAttachEquipment(
     cardDefId: equipCard.cardDefId,
     playerId: equipCard.owner,
   };
+  // TIER 4 (config.responseWindowsOnAllActions): attach_equipment opens a
+  // response window (Rulebook 14) — payment, hand-removal, attachment, and any
+  // replaced-equipment destruction happen now (the physical/cost half), but the
+  // equipment's deploy-time EFFECTS defer through the stack and resolve only
+  // when the window closes. An equipment with no deploy effects stays inline
+  // (a window over nothing is pointless). Absent/false ⇒ legacy inline path.
+  const equipEffects = abilityEffects(equipCard.abilities, true);
+  if (state.config?.responseWindowsOnAllActions === true && equipEffects.length > 0) {
+    const stackItem: StackItem = {
+      id: `equip_${equipCard.instanceId}`,
+      type: 'equip',
+      sourceInstanceId: equipCard.instanceId,
+      sourceCardDefId: equipCard.cardDefId,
+      controllerId: state.activePlayerIndex,
+      effects: equipEffects,
+      targets: [],
+      ...(xPaid !== undefined ? { xPaid } : {}),
+    };
+    const withStack: GameState = { ...attachedState, stack: [...attachedState.stack, stackItem] };
+    const resolved = openWindowOrResolve(withStack, stackItem.id, 'equip');
+    return { state: resolved.state, events: [...replacedEvents, attachEvent, ...resolved.events] };
+  }
   // Run the equipment's deploy-time effects (e.g. Steel-Root Armor's +0/+X HP)
   // now that it is attached, threading the X paid so x_cost stat grants scale.
   const ran = runAbilityEffects(
@@ -844,6 +966,24 @@ function executeMove(
   // Slowed characters cannot move (Rulebook 16).
   const mover = findOnBattlefield(state, action.cardInstanceId);
   if (mover !== null && isSlowed(mover)) return { state, events: [] };
+  // TIER 4 (config.responseWindowsOnAllActions): move opens a response window
+  // (Rulebook 14) — the zone move DEFERS through the stack. A zone move is not
+  // an Effect, so the StackItem carries the declaration (mover + destination,
+  // effects empty) and resolveStack re-invokes moveCard when the window closes
+  // (fizzling if the mover left or was Slowed mid-window). Absent/false ⇒
+  // legacy inline path.
+  if (state.config?.responseWindowsOnAllActions === true) {
+    const stackItem: StackItem = {
+      id: `move_${action.cardInstanceId}_${action.toZone}`,
+      type: 'move',
+      sourceInstanceId: action.cardInstanceId,
+      controllerId: state.activePlayerIndex,
+      effects: [],
+      targets: [action.toZone],
+    };
+    const withStack: GameState = { ...state, stack: [...state.stack, stackItem] };
+    return openWindowOrResolve(withStack, stackItem.id, 'move');
+  }
   const newZones = moveCard(player.zones, action.cardInstanceId, action.toZone);
 
   const fromLoc = (['reserve', 'frontline', 'high_ground'] as const).find((z) => {
@@ -905,6 +1045,27 @@ function executeActivateAbility(
       hasActed: true,
       exhausted: true,
     }));
+  }
+
+  // TIER 4 (config.responseWindowsOnAllActions): activate_ability opens a
+  // response window (Rulebook 14) — cost payment and exhaustion happen now (like
+  // a cast's pay/discard: spent, never refunded), but the ability's EFFECTS defer
+  // through the stack and resolve only when the window closes. An activation
+  // with no effects stays inline (a window over nothing is pointless).
+  // Absent/false ⇒ legacy inline path.
+  if (state.config?.responseWindowsOnAllActions === true && effects.length > 0) {
+    const stackItem: StackItem = {
+      id: `ability_${action.cardInstanceId}_${String(action.abilityIndex)}`,
+      type: 'ability',
+      sourceInstanceId: action.cardInstanceId,
+      controllerId: state.activePlayerIndex,
+      effects,
+      targets: [],
+      ...(action.xValue !== undefined ? { xPaid: action.xValue } : {}),
+    };
+    const withStack: GameState = { ...payState, stack: [...payState.stack, stackItem] };
+    const resolved = openWindowOrResolve(withStack, stackItem.id, 'ability');
+    return { state: resolved.state, events: [activatedEvent, ...resolved.events] };
   }
 
   const ran = runAbilityEffects(
@@ -969,6 +1130,24 @@ function executeDeclareAttack(
   state: GameState,
   action: { attackerInstanceId: string; targetId: string },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+  // TIER 4 (config.responseWindowsOnAllActions): declare_attack opens a response
+  // window (Rulebook 14) — the whole combat DEFERS through the stack. Combat
+  // damage steps are not expressible as Effect[], so the StackItem carries the
+  // declaration (attacker + target, effects empty) and resolveStack re-invokes
+  // resolveCombat when the window closes; a Counter on the chain removes the
+  // attack item so the combat never happens. Absent/false ⇒ legacy inline path.
+  if (state.config?.responseWindowsOnAllActions === true) {
+    const stackItem: StackItem = {
+      id: `attack_${action.attackerInstanceId}`,
+      type: 'attack',
+      sourceInstanceId: action.attackerInstanceId,
+      controllerId: state.activePlayerIndex,
+      effects: [],
+      targets: [action.targetId],
+    };
+    const withStack: GameState = { ...state, stack: [...state.stack, stackItem] };
+    return openWindowOrResolve(withStack, stackItem.id, 'attack');
+  }
   const result = resolveCombat(state, action.attackerInstanceId, action.targetId);
   return { state: result.newState, events: result.events };
 }

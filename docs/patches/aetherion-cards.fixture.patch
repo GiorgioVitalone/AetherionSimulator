@@ -1,5 +1,5 @@
 diff --git a/packages/engine/sim-data/aetherion-cards.json b/packages/engine/sim-data/aetherion-cards.json
-index 261d469..2ef36f6 100644
+index 261d469..b84a5dd 100644
 --- a/packages/engine/sim-data/aetherion-cards.json
 +++ b/packages/engine/sim-data/aetherion-cards.json
 @@ -548,7 +548,7 @@
@@ -116,17 +116,6 @@ index 261d469..2ef36f6 100644
  "energy": 0,
  "flexible": 0
  },
-@@ -4818,8 +4818,8 @@
- "flexible": 0
- },
- "stats": {
--"hp": 4,
--"atk": 4,
-+"hp": 3,
-+"atk": 3,
- "arm": 0
- },
- "abilities": [
 @@ -4924,12 +4924,12 @@
  ],
  "traits": [],
@@ -142,29 +131,24 @@ index 261d469..2ef36f6 100644
  "atk": 2,
  "arm": 0
  },
-@@ -5057,7 +5057,7 @@
- "flexible": 0
- },
- "stats": {
--"hp": 3,
-+"hp": 2,
- "atk": 2,
- "arm": 0
- },
-@@ -5112,7 +5112,7 @@
+@@ -5112,8 +5112,8 @@
  "flexible": 0
  },
  "stats": {
 -"hp": 4,
+-"atk": 2,
 +"hp": 2,
- "atk": 2,
++"atk": 3,
  "arm": 0
  },
-@@ -5175,7 +5175,7 @@
+ "abilities": [
+@@ -5174,8 +5174,8 @@
+ "flexible": 0
  },
  "stats": {
- "hp": 3,
+-"hp": 3,
 -"atk": 1,
++"hp": 4,
 +"atk": 2,
  "arm": 0
  },

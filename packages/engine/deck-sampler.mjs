@@ -28,7 +28,11 @@ const DECK_SIZE = 40;
 export const RESOURCE_DECK_SIZE = 12;
 
 const factionOf = (c) => (Array.isArray(c.alignment) ? c.alignment[0] : c.alignment);
-const copyLimit = (c) => (c.rarity === 'Legendary' ? 1 : 3);
+const copyLimit = (c) => {
+  if (c.rarity === 'Legendary') return 1;
+  if (c.rarity === 'Ethereal' || c.rarity === 'Mythic') return 2;
+  return 3;
+};
 const resourceTypeFor = (faction) => (ENERGY_FACTIONS.has(faction) ? 'energy' : 'mana');
 
 // Resource cards (alignment-neutral): pick by name, mirroring sim-runner.mjs.

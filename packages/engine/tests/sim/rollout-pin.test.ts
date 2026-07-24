@@ -51,7 +51,7 @@ const TINY_ROLLOUT_BASE = {
 };
 
 // Computed once via runSim(TINY_ROLLOUT_BASE).runHash — see recompute note above.
-const PINNED_HASH = '75445f3d041917bc';
+const PINNED_HASH = 'd3e0878929a5c6e1';
 
 interface RunSimResult {
   runHash: string;

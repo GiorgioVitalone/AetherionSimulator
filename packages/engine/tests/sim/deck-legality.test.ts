@@ -25,6 +25,8 @@ const cards: Record<number, CardFacts> = {
   11: { id: 11, cardType: 'S', faction: 'Onyx', rarity: 'Common' },
   12: { id: 12, cardType: 'E', faction: 'Onyx', rarity: 'Common' },
   13: { id: 13, cardType: 'C', faction: 'Onyx', rarity: 'Legendary' },
+  14: { id: 14, cardType: 'C', faction: 'Onyx', rarity: 'Ethereal' },
+  15: { id: 15, cardType: 'C', faction: 'Onyx', rarity: 'Mythic' },
   20: { id: 20, cardType: 'C', faction: 'Radiant', rarity: 'Common' },
 };
 const heroes: Record<number, HeroFacts> = {
@@ -115,6 +117,56 @@ describe('validateDeck', () => {
     );
     expect(r.legal).toBe(false);
     expect(r.errors.some((e) => e.includes('exceeds limit 1'))).toBe(true);
+  });
+
+  it('rejects more than 2 copies of an Ethereal card', () => {
+    const main = [...bigMain.slice(0, 37), 14, 14, 14];
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources },
+      bigIndex,
+    );
+    expect(r.legal).toBe(false);
+    expect(r.errors.some((e) => e.includes('exceeds limit 2'))).toBe(true);
+  });
+
+  it('accepts exactly 2 copies of an Ethereal card', () => {
+    const main = [...bigMain.slice(0, 38), 14, 14];
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources },
+      bigIndex,
+    );
+    expect(r.legal).toBe(true);
+    expect(r.errors).toEqual([]);
+  });
+
+  it('rejects more than 2 copies of a Mythic card', () => {
+    const main = [...bigMain.slice(0, 37), 15, 15, 15];
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources },
+      bigIndex,
+    );
+    expect(r.legal).toBe(false);
+    expect(r.errors.some((e) => e.includes('exceeds limit 2'))).toBe(true);
+  });
+
+  it('accepts exactly 2 copies of a Mythic card', () => {
+    const main = [...bigMain.slice(0, 38), 15, 15];
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources },
+      bigIndex,
+    );
+    expect(r.legal).toBe(true);
+    expect(r.errors).toEqual([]);
+  });
+
+  it('accepts exactly 3 copies of a Common card', () => {
+    const main = [...bigMain.slice(0, 37), 10, 10, 10];
+    const r = validateDeck(
+      { heroDefId: 1, mainDeckDefIds: main, resourceDeckDefIds: resources },
+      bigIndex,
+    );
+    expect(r.legal).toBe(true);
+    expect(r.errors).toEqual([]);
   });
 
   it('rejects off-faction main-deck cards (hero alignment consistency)', () => {

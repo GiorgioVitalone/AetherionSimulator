@@ -103,8 +103,10 @@ import {
   chooseReactiveAction,
   chooseChoiceResponse,
   shouldKeepHand,
+  applyMulligan,
   featurize,
   FEATURE_SCHEMA_VERSION,
+  RESOURCE_DECK_SIZE,
 } from './dist/index.js';
 import { gameplanFor } from './dist/bot/gameplan.js';
 import { summarizeStats } from './dist/sim/summarize-stats.js';
@@ -156,12 +158,18 @@ const energyR = rCards.find(c => /energy/i.test(c.name)) || rCards[rCards.length
 // Target a LEGAL, REALISTIC 40-card main deck with a sensible type mix that
 // guarantees Equipment + Spells + Characters. Quotas (~24 C / ~10 S / ~6 E) are
 // clamped to each faction's copy-limited pool; any shortfall is backfilled from a
-// global round-robin. Copy limits (3 / 1-Legendary) are never exceeded.
+// global round-robin. Copy limits (3 / 2-Ethereal / 2-Mythic / 1-Legendary) are never exceeded.
 // Deterministic: stable pool order, round-robin pass order — no Math.random.
 const DECK_SIZE = 40;
 const TYPE_QUOTA = { C: 24, S: 10, E: 6 };
 
-function copyLimit(c) { return c.rarity === 'Legendary' ? 1 : 3; }
+// Mirror deck-legality.ts's copyLimitFor (Rulebook is authoritative): Legendary 1,
+// Ethereal 2, Mythic 2, Common 3.
+function copyLimit(c) {
+  if (c.rarity === 'Legendary') return 1;
+  if (c.rarity === 'Ethereal' || c.rarity === 'Mythic') return 2;
+  return 3;
+}
 
 // Round-robin copies of a type's cards into `main` up to `quota` (and the deck cap),
 // tracking per-card copies used so far. Returns number of cards added.
@@ -191,7 +199,7 @@ function buildDeck(f) {
   for (const t of ['C', 'S', 'E']) fillType(main, byType[t], TYPE_QUOTA[t], used);
   if (main.length < DECK_SIZE) fillType(main, pool, DECK_SIZE, used);
   const rid = ENERGY_FACTIONS.has(f) ? energyR.id : manaR.id;
-  return { heroDefId: hero.id, mainDeckDefIds: main.slice(0, DECK_SIZE), resourceDeckDefIds: Array.from({ length: 15 }, () => rid) };
+  return { heroDefId: hero.id, mainDeckDefIds: main.slice(0, DECK_SIZE), resourceDeckDefIds: Array.from({ length: RESOURCE_DECK_SIZE }, () => rid) };
 }
 const decks = Object.fromEntries(FACTIONS.map(f => [f, buildDeck(f)]));
 
@@ -316,7 +324,7 @@ function concreteActions(acts) {
 // Applied at game start to the SECOND player (the one not active on turn 1).
 
 let compInstanceCounter = 0;
-function applyCompensation(gs, mode, faction) {
+export function applyCompensation(gs, mode, faction) {
   if (mode === 'none' || mode === 'reserveT1') return gs;
   const second = gs.activePlayerIndex === 0 ? 1 : 0;
   const wantCard = mode === 'card' || mode === 'both' || mode === 'play_or_draw';
@@ -336,6 +344,24 @@ function applyCompensation(gs, mode, faction) {
     return np;
   });
   return { ...gs, players };
+}
+
+// RULES-ACCURACY FIX (config.firstPlayerCompAfterMulligan, harness-only):
+// pre-resolves BOTH players' opening-hand mulligan decisions via the engine's
+// pure `applyMulligan`, mirroring the main loop's own mulligan-decision policy
+// exactly (see the `pc.type === 'mulligan'` branch further below). Used only so
+// `applyCompensation` can run strictly AFTER mulligans resolve (Rulebook: "after
+// any mulligans") instead of before. Only called when the flag is ON.
+export function resolveMulligans(gs, policyForSeat) {
+  let state = gs;
+  while (state.pendingChoice && state.pendingChoice.type === 'mulligan') {
+    const pc = state.pendingChoice;
+    const pcPolicy = policyForSeat(pc.playerId);
+    const competent = pcPolicy === 'heuristic' || pcPolicy === 'rollout' || pcPolicy === 'valueGreedy';
+    const keep = competent ? shouldKeepHand(state, pc.playerId) : true;
+    state = applyMulligan(state, pc.playerId, keep);
+  }
+  return state;
 }
 
 // ── First-player control (diagnostic ablation) ────────────────────────────────
@@ -710,7 +736,17 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     ? { 0: gameplanFor(fA), 1: gameplanFor(fB) }
     : undefined;
   const secondFaction = gs.activePlayerIndex === 0 ? fB : fA;
-  gs = applyCompensation(gs, config.firstPlayerCompensation, secondFaction);
+  const policyForSeat = (seatIdx) => (config.botPolicySeat ? config.botPolicySeat[seatIdx] : config.botPolicy);
+  // RULES-ACCURACY FIX (config.firstPlayerCompAfterMulligan, harness-only): the
+  // book applies the second-player compensation "after any mulligans" — pre-
+  // resolve both players' mulligan decisions (mirroring the main loop's own
+  // policy below) via the engine's pure applyMulligan BEFORE compensation, so a
+  // mulliganing second player still keeps the bonus. Absent/false ⇒
+  // byte-identical no-op — compensation runs before the actor (and its
+  // MULLIGAN_DECISION-driven mulligan flow) exactly as before.
+  gs = config.firstPlayerCompAfterMulligan
+    ? applyCompensation(resolveMulligans(gs, policyForSeat), config.firstPlayerCompensation, secondFaction)
+    : applyCompensation(gs, config.firstPlayerCompensation, secondFaction);
   // Thread the termination + ablation knobs onto GameState so the engine's
   // transform gate, the heuristic bot, and the effect interpreter all see them.
   // A per-game `diag` (from the collector) is a mutable accumulator; it is NOT in
@@ -770,6 +806,21 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       // absent ⇒ byte-identical.
       ...(config.firstPlayerSkipsFirstResource ? { firstPlayerSkipsFirstResource: true } : {}),
       ...(config.firstPlayerDrawsNormally ? { firstPlayerDrawsNormally: true } : {}),
+      // RULES-ACCURACY FIXES — book-order/timing corrections under evaluation for
+      // ruleset-v2. ON-only hashed; absent ⇒ byte-identical.
+      ...(config.endPhaseOrderFix ? { endPhaseOrderFix: true } : {}),
+      ...(config.startOfTurnTriggerAfterReserve ? { startOfTurnTriggerAfterReserve: true } : {}),
+      ...(config.transformAtStartOfTurn ? { transformAtStartOfTurn: true } : {}),
+      ...(config.heroAbilitiesOncePerTurn ? { heroAbilitiesOncePerTurn: true } : {}),
+      // ENGINE CODE TICKET — Tier 3: Flash usable at-will (Action Phase too) +
+      // battlefield/Hero Counter/Flash reactions. ON-only hashed; absent ⇒
+      // byte-identical no-op (see game-state.ts's GameConfig doc comments).
+      ...(config.flashAtWill ? { flashAtWill: true } : {}),
+      ...(config.boardReactions ? { boardReactions: true } : {}),
+      // ENGINE CODE TICKET — Tier 4: response windows on ALL actions (attack/
+      // ability/equip/move), not just casts. ON-only hashed & threaded; absent
+      // ⇒ byte-identical no-op (see game-state.ts's GameConfig doc comment).
+      ...(config.responseWindowsOnAllActions ? { responseWindowsOnAllActions: true } : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -804,8 +855,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
           : null,
       }
     : null;
-  // Resolve seat 0/1's effective policy + pilot for this decision point.
-  const policyForSeat = (seatIdx) => (config.botPolicySeat ? config.botPolicySeat[seatIdx] : config.botPolicy);
+  // Resolve seat 0/1's effective pilot for this decision point (policyForSeat
+  // is defined earlier, before compensation/mulligan resolution, for reuse there).
   const pilotForSeat = (seatIdx) => (config.botPolicySeat ? botPilotsBySeat[seatIdx] : (rolloutPilot ?? valuePilot));
 
   let leaderAt10 = null; // 0|1|'tie' — side ahead on LP at SNOWBALL_TURN
@@ -1335,6 +1386,23 @@ function resolveConfig(config = {}) {
     // FIRST-PLAYER COMPENSATION CANDIDATES (§13r) — see game-state.ts. ON-only hashed.
     ...(config.firstPlayerSkipsFirstResource ? { firstPlayerSkipsFirstResource: true } : {}),
     ...(config.firstPlayerDrawsNormally ? { firstPlayerDrawsNormally: true } : {}),
+    // RULES-ACCURACY FIXES — book-order/timing corrections under evaluation for
+    // ruleset-v2 (endPhaseOrderFix/startOfTurnTriggerAfterReserve/
+    // transformAtStartOfTurn are engine GameConfig flags — see game-state.ts;
+    // firstPlayerCompAfterMulligan is harness-only, see playGame/resolveMulligans
+    // above). All ON-only hashed; absent ⇒ byte-identical.
+    ...(config.endPhaseOrderFix ? { endPhaseOrderFix: true } : {}),
+    ...(config.startOfTurnTriggerAfterReserve ? { startOfTurnTriggerAfterReserve: true } : {}),
+    ...(config.transformAtStartOfTurn ? { transformAtStartOfTurn: true } : {}),
+    ...(config.heroAbilitiesOncePerTurn ? { heroAbilitiesOncePerTurn: true } : {}),
+    // ENGINE CODE TICKET — Tier 3 (see game-state.ts's GameConfig doc comments).
+    // ON-only hashed; absent ⇒ byte-identical.
+    ...(config.flashAtWill ? { flashAtWill: true } : {}),
+    ...(config.boardReactions ? { boardReactions: true } : {}),
+    // ENGINE CODE TICKET — Tier 4 (see game-state.ts's GameConfig doc comment).
+    // ON-only hashed; absent ⇒ byte-identical.
+    ...(config.responseWindowsOnAllActions ? { responseWindowsOnAllActions: true } : {}),
+    ...(config.firstPlayerCompAfterMulligan ? { firstPlayerCompAfterMulligan: true } : {}),
     // MEASUREMENT-HARNESS KNOB — seat-neutral panels (see playPairing). NOT a rule;
     // affects only which seat each deck sits in per game, hashed so ON runs differ.
     ...(config.seatAlternation ? { seatAlternation: true } : {}),
@@ -1805,6 +1873,9 @@ function parseCliConfig(argv) {
     else if (key === 'firstPlayerSkipsFirstResource') cfg[key] = val === 'true';
     else if (key === 'firstPlayerDrawsNormally') cfg[key] = val === 'true';
     else if (key === 'seatAlternation') cfg[key] = val === 'true';
+    else if (key === 'flashAtWill') cfg[key] = val === 'true';
+    else if (key === 'boardReactions') cfg[key] = val === 'true';
+    else if (key === 'responseWindowsOnAllActions') cfg[key] = val === 'true';
     else if (key === 'disableFactionHeroReach') cfg[key] = { faction: val };
     else if (key === 'botPolicySeat0' || key === 'botPolicySeat1') {
       cfg.botPolicySeat = cfg.botPolicySeat || {};

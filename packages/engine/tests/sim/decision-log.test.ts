@@ -48,7 +48,7 @@ const TINY_ROLLOUT_BASE = {
 
 // Same pinned hash as rollout-pin.test.ts — collectDecisionLog must be
 // hash-exempt, so unset it reproduces exactly this value.
-const PINNED_HASH = '75445f3d041917bc';
+const PINNED_HASH = 'd3e0878929a5c6e1';
 
 interface DecisionCandidate {
   action: unknown;

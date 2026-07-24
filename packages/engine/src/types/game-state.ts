@@ -366,6 +366,78 @@ export interface GameConfig {
    * this flag narrows `turnState.firstPlayerFirstTurn`'s effect to that
    * restriction alone. Absent/false ⇒ byte-identical no-op. */
   readonly firstPlayerDrawsNormally?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: End-Phase
+   * resolves Resolve End-of-Turn Effects BEFORE Remove Temporary Resources / Hand
+   * Size Limit). When true, reorders the End-Phase sub-steps to match the
+   * Rulebook: Remove Temporary Resources → Hand Size Limit → Resolve
+   * End-of-Turn Effects (game-machine.ts endPhase/passTurn). Absent/false ⇒
+   * byte-identical no-op. */
+  readonly endPhaseOrderFix?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior:
+   * start-of-turn scheduled triggers, 'next_turn_start'/'next_upkeep', fire
+   * during Upkeep BEFORE Reserve Energy Generation). When true, fires those
+   * triggers AFTER Reserve Energy Generation instead, matching the Rulebook's
+   * step order (step 5 after step 4). Absent/false ⇒ byte-identical no-op. */
+  readonly startOfTurnTriggerAfterReserve?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior:
+   * transformation is only declarable during the Strategy Phase). When true,
+   * also opens a start-of-turn transform window — after Reserve Energy
+   * Generation, before Strategy — during which the active player may declare
+   * a transform (or end the window). All existing transform conditions
+   * (LP <= 10 / resource-deck-empty / deficit / printed trigger) are
+   * unchanged; only the timing window is widened. Absent/false ⇒
+   * byte-identical no-op. */
+  readonly transformAtStartOfTurn?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: Hero
+   * activated abilities (Trigger/Counter/Flash/Ultimate) are repeatable within
+   * a turn unless the individual ability's DSL sets its own oncePerTurn flag).
+   * When true, adds a blanket once-per-turn lockout to every Hero activated
+   * ability, regardless of any per-ability DSL flag. Character activated
+   * abilities are unaffected. Absent/false ⇒ byte-identical no-op. */
+  readonly heroAbilitiesOncePerTurn?: boolean;
+  /** ENGINE CODE TICKET — Tier 3, part 1 (default absent/false ⇒ legacy engine
+   * behavior: a Flash-tagged spell is only proactively castable in the
+   * Strategy Phase, exactly like any other spell). Rulebook: Flash "can be
+   * activated at any time." When true, widens the ACTIVE player's proactive
+   * cast surface for Flash-tagged hand spells (only — non-Flash spells stay
+   * Strategy-only) to also include the Action Phase. Resolves through the
+   * existing cast path (executeCastSpell → openWindowOrResolve), so a Flash
+   * cast that finds the opponent holding no legal response still resolves
+   * inline. The Action-Phase priority window this can open is wired in the
+   * game machine (action → priorityWindow → action) — added alongside
+   * responseWindowsOnAllActions (Tier 4); before that wiring an Action-Phase
+   * window was unresolvable by an XState-driven caller. Widening the
+   * opponent's-turn / non-active-player cast surface remains out of scope.
+   * Absent/false ⇒ byte-identical no-op. */
+  readonly flashAtWill?: boolean;
+  /** ENGINE CODE TICKET — Tier 3, part 2 (default absent/false ⇒ legacy engine
+   * behavior: `computeReactiveActions` only scans the responder's HAND for
+   * Counter/Flash spells). Rulebook: Counter/Flash are not restricted to
+   * spells — a battlefield Character or the Hero may carry an on_counter/
+   * on_flash ability. When true, `computeReactiveActions` also scans the
+   * responder's battlefield zones and Hero for such abilities (ready,
+   * non-summoning-sick sources only), and a board reaction is executed
+   * ACTIVATE-style — its own trigger.cost (default free) is paid and the
+   * source is exhausted, but it stays on the battlefield (never discarded,
+   * unlike a hand spell). Absent/false ⇒ byte-identical no-op. */
+  readonly boardReactions?: boolean;
+  /** ENGINE CODE TICKET — Tier 4 (default absent/false ⇒ legacy engine behavior:
+   * a reactive priority window (Rulebook 14) opens ONLY on spell casts). When
+   * true, response windows also open on declare_attack, activate_ability
+   * (Trigger/Ultimate), attach_equipment, and move: the base action is pushed
+   * onto the stack and its resolution is DEFERRED until the window closes
+   * (both players pass), exactly like a cast. Attack and move resolutions
+   * (combat damage steps, zone moves) cannot be expressed as Effect[] — their
+   * StackItems carry the declaration (attacker/target, mover/destination) and
+   * `resolveStack` re-invokes `resolveCombat` / `moveCard` at resolution time;
+   * a reaction that invalidates the declaration fizzles it. Under this flag a
+   * Counter may also target ANY enemy stack item (not only spells), so the new
+   * windows are answerable. The game machine's `action` phase gains a
+   * windowOpen → priorityWindow transition (returning to `action` when the
+   * window closes), which also resolves the flashAtWill known limitation of an
+   * unresolvable Action-Phase window. Absent/false ⇒ byte-identical no-op: the
+   * four handlers gate at the top and run their untouched legacy inline path. */
+  readonly responseWindowsOnAllActions?: boolean;
 }
 
 /** Mutable diagnostic accumulator (see GameConfig.diag). Written by the engine
@@ -772,7 +844,12 @@ export interface PlayerResponse {
 
 export interface StackItem {
   readonly id: string;
-  readonly type: 'spell' | 'ability' | 'attack';
+  /** 'spell' is pushed by casts; 'ability'/'attack'/'equip'/'move' are pushed
+   * only under config.responseWindowsOnAllActions (Tier 4) — 'attack'/'move'
+   * carry a DECLARATION (attacker+target / mover+destination in
+   * sourceInstanceId+targets, effects empty) that resolveStack re-invokes
+   * through resolveCombat / moveCard at resolution time. */
+  readonly type: 'spell' | 'ability' | 'attack' | 'equip' | 'move';
   readonly sourceInstanceId: string;
   /** DIAGNOSTIC: the source's card def id, carried through to the SPELL_CAST
    * event emitted on resolution. See CardDeployedEvent.cardDefId. Optional
@@ -789,14 +866,16 @@ export interface StackItem {
 // ── PendingPriority (open reactive response window) ───────────────────────────
 // Rulebook Section 14: a windowable action opens a response window in which the
 // non-active player (then the active player) may add Counter/Flash links to the
-// chain, resolving LIFO once both pass. Minimal-faithful slice: spell casts only.
+// chain, resolving LIFO once both pass. Spell casts open 'cast' windows; under
+// config.responseWindowsOnAllActions the other base actions open their own
+// window kinds.
 
 export interface PendingPriority {
   readonly type: 'priority';
   /** Who may add a link (or pass) right now. */
   readonly toRespondPlayerId: 0 | 1;
   /** The kind of base action that opened the window. */
-  readonly window: 'cast';
+  readonly window: 'cast' | 'attack' | 'ability' | 'equip' | 'move';
   /** Stack id of the base action that opened this window. */
   readonly baseStackItemId: string;
   /** Number of consecutive passes so far — two closes the window (LIFO resolve). */
@@ -1087,7 +1166,7 @@ export const ZONE_SLOTS = {
 } as const;
 
 export const MAX_HAND_SIZE = 8;
-export const RESOURCE_DECK_SIZE = 15;
+export const RESOURCE_DECK_SIZE = 12;
 export const INITIAL_HAND_SIZE = 5;
 export const MULLIGAN_HAND_SIZE = 4;
 export const MAX_TRIGGER_DEPTH = 10;

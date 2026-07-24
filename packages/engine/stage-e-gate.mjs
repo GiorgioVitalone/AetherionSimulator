@@ -6,6 +6,7 @@
 // decks. Does it now match the rollout truth (Onyx top, Radiant bottom, Sapphire mid)?
 //
 // Usage: node stage-e-gate.mjs <value-net.json> [gpp=500] [depth=2] [rollouts=3]
+import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 const ENGINE = new URL('.', import.meta.url).pathname;
 process.env.AETHERION_CARDS = process.env.AETHERION_CARDS || ENGINE + 'generated-pools/aetherion-CURRENT.json';
@@ -19,11 +20,15 @@ const rollouts = +(process.argv[5] || 3);
 
 const FACTIONS = ['Radiant', 'Verdant', 'Onyx', 'Sapphire'];
 const decks = Object.fromEntries(FACTIONS.map((f) => [f, f]));
+// Locked ruleset manifest (sim-data/ruleset-v1.json) — the 9 locked rule flags
+// come from here (see balance-verify.mjs's manifestRules pattern), not a
+// hand-written subset.
+const manifestRules = JSON.parse(readFileSync(new URL('./sim-data/ruleset-v1.json', import.meta.url), 'utf8')).rules;
 const RULES = {
-  reachDiscard: true, exileDiscardForEnergy: true, termination: 'tiebreak',
+  reachDiscard: true, termination: 'tiebreak',
   firstPlayer: 'alternating', seatAlternation: true, fixHandSizeStall: true,
-  armFirstInstanceOnly: true, terminationMode: 'resource_deck_empty_transform',
-  costFloor: true, reserveTapChoice: true, reserveTapStrain: true, turnCap: 80,
+  turnCap: 80,
+  ...manifestRules,
 };
 function wilson(w, n) {
   if (!n) return [0, 0];
