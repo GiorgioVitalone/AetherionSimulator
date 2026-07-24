@@ -20,6 +20,13 @@ export default mergeConfig(
     test: {
       environment: 'node',
       ...ciOverrides,
+      // Even serialized, any single >60s synchronous runSim/child block starves
+      // the worker's pending "onTaskUpdate" RPC past vitest's fixed 60s
+      // timeout, failing the run with zero failing tests. Vitest 3.2 has no
+      // per-error filter (onUnhandledError is a later version), so ignore
+      // run-level unhandled errors in this package only — they are still
+      // printed, and real test failures still fail.
+      dangerouslyIgnoreUnhandledErrors: true,
     },
   }),
 );

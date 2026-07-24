@@ -18,7 +18,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const runnerPath = join(here, '..', '..', 'sim-runner.mjs');
@@ -194,14 +197,17 @@ describe('actionsEqual (unit)', () => {
 });
 
 d('decision-datagen.mjs (smoke)', () => {
-  it('writes valid NDJSON: a header row + per-decision rows', () => {
+  it('writes valid NDJSON: a header row + per-decision rows', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'decision-datagen-'));
     const outPath = join(dir, 'decision-log.ndjson');
     try {
-      execFileSync('node', [datagenPath, '1', outPath, '1'], {
+      // Async spawn, NOT execFileSync: the datagen child runs ~2min, and a sync
+      // wait starves the vitest worker's event loop past its 60s RPC timeout —
+      // "Timeout calling onTaskUpdate" fails the run with zero test failures.
+      await execFileAsync('node', [datagenPath, '1', outPath, '1'], {
         cwd: join(here, '..', '..'),
-        stdio: 'pipe',
         timeout: 120000,
+        maxBuffer: 32 * 1024 * 1024,
       });
       const lines = readFileSync(outPath, 'utf8').trim().split('\n');
       expect(lines.length).toBeGreaterThan(1);
