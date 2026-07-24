@@ -1794,6 +1794,20 @@ before RD12 adoption is finalized (could be pilot artifact: tap-order interactio
 3. **Mirror-FP probe:** quantify the +5 edge's source (tap-choice ordering vs economy tempo);
    instrument-level.
 
+### 13p addendum. The 10-card Resource Deck exploratory — overshoots as pre-registered; 12 stands (2026-07-03)
+
+Half-size exploratory panel (`34cf3a286ea726f6`, RESOURCE_DECK=10, GPP 1000/150/100/60 — the
+~25-min format, first use; CI ±4.4 is decisive here). **Every pre-registered bound hit:**
+Radiant **38.1** [33.9–42.5] (predicted 36–43 — buried, hard FAIL below the 43 line); spread
+**17.5** (predicted 10–18; nearly double RD12's 9.6); mirror FP r4 **+6.2** (predicted ≥+5 —
+worst measured); flips at 21.9–24.5 (predicted 21–23). The adoption-candidate condition
+(spread ≤9 AND R ≥43 AND FP ≤+4) fails on all three legs. Pooled: S 55.6 / V 54.2 / O 52.1 /
+R 38.1 — a three-over-one shape with Radiant the victim; Radiant v Verdant worsens to
+**26.9/73.1** (from 34.1 at RD12), and Sapphire becomes a pure flip deck (unflipped win% 7.7–13.9
+at rollouts). **Verdict: RD10 is dominated by RD12 on every axis — 12 stands.** The queue is
+unchanged: Radiant top-end relief (the last cell), then the first-player probe (elevated at 12,
+worse at 10 — the trend confirms tighter economies compound the first-mover edge).
+
 ### 13q. Rule lock — verdict layer, FP gate, ablation battery, adoption (2026-07-10)
 
 Everything from here runs through the new pipeline: presets + thresholds from
