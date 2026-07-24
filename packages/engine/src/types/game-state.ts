@@ -244,6 +244,200 @@ export interface GameConfig {
    * NEUTRAL gameplan), a byte-identical no-op; the engine's resolution path never
    * consults this field, so it cannot affect any runHash. */
   readonly botGameplan?: Record<0 | 1, Gameplan>;
+  /** FAIR-PILOT KNOB (default absent/false ⇒ engine-default heuristic constants &
+   * rollout policy). When true, the heuristic value model recurses into wrapper
+   * effects (conditional/composite/choose_one) and values recursion/tutor/copy/ramp
+   * effects, the reactive + mulligan policy is card-advantage / curve aware, and the
+   * rollout pilot rolls to game end and counters high-threat spells. Read ONLY by the
+   * bot (src/bot/*) and the rollout pilot; the engine's resolution path never consults
+   * it, so it cannot affect any runHash on its own. Absent/false ⇒ byte-identical
+   * no-op (the v-current hash). */
+  readonly fairPilot?: boolean;
+  /** BOT-POLICY KNOB (default absent/false ⇒ engine-default blind last-resort
+   * discard). When true, the heuristic pilot's `discard_for_energy` stops being a
+   * reflexive pitch: it fires ONLY to fund a specific play that is short by exactly
+   * one resource, pitches a single matching-type card to pay for it, and only when
+   * the play's value exceeds the pitched card's value plus a tempo margin. Read ONLY
+   * by the bot (src/bot/*); the engine's resolution path never consults it, so it
+   * cannot affect any runHash on its own. Absent/false ⇒ byte-identical no-op. */
+  readonly reachDiscard?: boolean;
+  /** RULE VARIANT (default absent/false ⇒ engine-default: discarded card goes to the
+   * discard pile). When true, a card spent via `discard_for_energy` is EXILED (removed
+   * from the game) instead of binned, so the resource mechanic no longer doubles as
+   * graveyard fuel for reanimation (Onyx's Grave Digger / Morgath / Necrotic Revival /
+   * Kaelthar). The +1 temporary resource and the CARD_DISCARDED event are unchanged —
+   * only the card's destination differs. Read by the discard executor only. Absent/
+   * false ⇒ byte-identical no-op. */
+  readonly exileDiscardForEnergy?: boolean;
+  /** BOT-POLICY KNOB (default absent/false ⇒ engine-default atk+hp valuation). When
+   * true, the heuristic pilot consults the first-principles card-power / synergy
+   * engine (src/balance) ON TOP of its existing heuristics: deploy and keep/pitch
+   * decisions rank by `computeCardPower` (stats + keywords + abilities + intra-card
+   * synergy, on the same scale as atk+hp) plus a bounded board/hero inter-card synergy
+   * bonus, so it plays the cards that actually combo with its board and hero. Read
+   * ONLY by the bot (src/bot/*); the engine's resolution path never consults it, so it
+   * cannot affect any runHash on its own. Absent/false ⇒ byte-identical no-op. */
+  readonly valuePilot?: boolean;
+  /** BOT-POLICY KNOB (default absent/false ⇒ no change; only meaningful on top of
+   * `valuePilot`). The per-card power score is cost-free, so ramp enablers score ~0
+   * and the value pilot structurally under-deploys the ramp archetype (the same
+   * blindness computeDeckValue's `acceleration` term fixes at the DECK level). When
+   * true, the deploy ranking adds an early-game tempo bonus for `ramp` signals
+   * (weight × ACCEL_RAMP_TEMPO, fading linearly to 0 by the resource-deck horizon),
+   * so the pilot actually starts the ramp plan it was dealt. Read ONLY by the bot
+   * (src/bot/*); the engine's resolution path never consults it, so it cannot affect
+   * any runHash on its own. Absent/false ⇒ byte-identical no-op. */
+  readonly rampPilot?: boolean;
+  /** RULE GUARD (default absent/false ⇒ engine-default: cost reductions floor at
+   * zero). When true, stacked cost reductions can never take a card below an
+   * effective TOTAL cost of 1 unless its printed cost is already 0 — the
+   * engine-wide "(minimum 1)" Lyria's Supreme Intellect already prints, applied
+   * to every discount. Exists because an unfloored discount × a cheap self-copy
+   * spell produced a 0-cost infinite loop (§12c: budget-cut Arcane Echoes ×
+   * Wizard's Robe — 7,990 casts in one game, step-cap abort). Read by
+   * effectiveCost only. Absent/false ⇒ byte-identical no-op. */
+  readonly costFloor?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: Reserve
+   * Energy Generation happens AUTOMATICALLY at Upkeep for every eligible ready
+   * Reserve character). Rulebook 8 step 4 says the active player MAY exhaust
+   * them — it is a choice. When true, the automatic upkeep generation is off and
+   * a `tap_reserve` player action (Strategy phase, per character) replaces it:
+   * same eligibility, same +1 temporary resource of the card's type, same
+   * all-abilities-disabled exhaustion until next Upkeep. Absent/false ⇒
+   * byte-identical no-op. */
+  readonly reserveTapChoice?: boolean;
+  /** RULES CHANGE UNDER MEASUREMENT (§13m; default absent/false ⇒ tapping is
+   * free). When true, generating Reserve Energy STRAINS the character: it takes
+   * 1 direct damage (no ARM mitigation, no damage triggers — wear, not an
+   * attack), and a character with 1 HP left is too weak to generate at all.
+   * Exists because the free tap annuity is the measured source of Verdant's
+   * structural income surplus (§13l): this converts free income into income
+   * paid for in board material. Applies to both the automatic path and the
+   * `tap_reserve` action. Absent/false ⇒ byte-identical no-op. */
+  readonly reserveTapStrain?: boolean;
+  /** RULES CHANGE UNDER MEASUREMENT (§13o; default absent ⇒ deck-construction
+   * default: the full 15-card Resource Deck). When set, each player's Resource
+   * Deck is truncated to this many cards AFTER the setup shuffle (preserving the
+   * deck's resource-type mix in expectation). Smaller decks cap total permanent
+   * income and empty sooner — under `terminationMode:
+   * resource_deck_empty_transform` that opens the transform gate earlier.
+   * Read at game setup only. Absent ⇒ byte-identical no-op. */
+  readonly resourceDeckSize?: number;
+  /** RULE ABLATION PROBE (default absent/false ⇒ engine-default: any player may,
+   * once per turn, discard a hand card for +1 temporary resource MATCHING the
+   * card's type — Mana if Magic-aligned, Energy if Tech-aligned, per Rulebook 11;
+   * the action's name understates it). When true, the `discard_for_energy` action
+   * is never offered. Exists to MEASURE the rule's contribution to faction
+   * balance. Measured (§12a, 20k games/arm): a universal surprise-tempo valve —
+   * props reach/aggro finishers (Onyx +2.9 pp, Radiant +1.3), suppresses the
+   * long-game counter deck (Sapphire −4.0), null on Verdant (−0.3). Diagnostic,
+   * not a proposed rules change. Absent/false ⇒ byte-identical no-op. */
+  readonly disableDiscardForEnergy?: boolean;
+  /** RULES-ACCURACY FIX — §13q (default absent/false ⇒ legacy engine behavior:
+   * side:'any' target resolution returns players in SEAT order [0, 1] regardless
+   * of who is active). When true, side:'any' returns [activePlayer, nonActivePlayer]
+   * instead, matching the Rulebook's APNAP intent ("Active Player's triggers
+   * first" — see trigger-matcher.ts) already enforced downstream for per-event
+   * trigger ordering. Without this, a symmetric AoE effect (side:'any') emits its
+   * CARD_DESTROYED/DAMAGE_DEALT events seat-0-first no matter which player is
+   * active, and the downstream per-event trigger sort can't undo cross-card
+   * emission order — measured to shift a matchup's win rate ~5pp purely from
+   * which deck sits in seat 0. Only the player ORDER changes (same two players,
+   * same cards); no other resolution behavior is affected. Absent/false ⇒
+   * byte-identical no-op. */
+  readonly apnapAnyOrderFix?: boolean;
+  /** CANDIDATE RULE VARIANT UNDER EVALUATION (§13r; default absent/false ⇒ no
+   * change: the locked `firstPlayerCompensation: 'card'` rule stands). Alternative
+   * to that rule: when true, the FIRST PLAYER does not draw a Resource Card
+   * during their FIRST Upkeep (the game's very first turn only) — everything
+   * else about that Upkeep is unchanged. Under `resourceDeckSize` +
+   * `terminationMode: 'resource_deck_empty_transform'` this also delays that
+   * player's Resource Deck emptying by one turn (intended, not special-cased).
+   * Mutually exclusive with `firstPlayerCompensation` at the harness level —
+   * they are competing compensation levers under measurement, not stackable.
+   * Absent/false ⇒ byte-identical no-op. */
+  readonly firstPlayerSkipsFirstResource?: boolean;
+  /** CANDIDATE RULE VARIANT UNDER EVALUATION (§13r; default absent/false ⇒ no
+   * change: the engine-default first-player-first-turn Main Deck draw skip
+   * stays in force). When true, DISABLES ONLY that draw skip — the first
+   * player draws a card on their first turn like any other turn. The
+   * companion "first player cannot declare attacks on turn 1" restriction
+   * (available-actions.ts, combat-resolver.ts) is untouched and still applies;
+   * this flag narrows `turnState.firstPlayerFirstTurn`'s effect to that
+   * restriction alone. Absent/false ⇒ byte-identical no-op. */
+  readonly firstPlayerDrawsNormally?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: End-Phase
+   * resolves Resolve End-of-Turn Effects BEFORE Remove Temporary Resources / Hand
+   * Size Limit). When true, reorders the End-Phase sub-steps to match the
+   * Rulebook: Remove Temporary Resources → Hand Size Limit → Resolve
+   * End-of-Turn Effects (game-machine.ts endPhase/passTurn). Absent/false ⇒
+   * byte-identical no-op. */
+  readonly endPhaseOrderFix?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior:
+   * start-of-turn scheduled triggers, 'next_turn_start'/'next_upkeep', fire
+   * during Upkeep BEFORE Reserve Energy Generation). When true, fires those
+   * triggers AFTER Reserve Energy Generation instead, matching the Rulebook's
+   * step order (step 5 after step 4). Absent/false ⇒ byte-identical no-op. */
+  readonly startOfTurnTriggerAfterReserve?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior:
+   * transformation is only declarable during the Strategy Phase). When true,
+   * also opens a start-of-turn transform window — after Reserve Energy
+   * Generation, before Strategy — during which the active player may declare
+   * a transform (or end the window). All existing transform conditions
+   * (LP <= 10 / resource-deck-empty / deficit / printed trigger) are
+   * unchanged; only the timing window is widened. Absent/false ⇒
+   * byte-identical no-op. */
+  readonly transformAtStartOfTurn?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: Hero
+   * activated abilities (Trigger/Counter/Flash/Ultimate) are repeatable within
+   * a turn unless the individual ability's DSL sets its own oncePerTurn flag).
+   * When true, adds a blanket once-per-turn lockout to every Hero activated
+   * ability, regardless of any per-ability DSL flag. Character activated
+   * abilities are unaffected. Absent/false ⇒ byte-identical no-op. */
+  readonly heroAbilitiesOncePerTurn?: boolean;
+  /** ENGINE CODE TICKET — Tier 3, part 1 (default absent/false ⇒ legacy engine
+   * behavior: a Flash-tagged spell is only proactively castable in the
+   * Strategy Phase, exactly like any other spell). Rulebook: Flash "can be
+   * activated at any time." When true, widens the ACTIVE player's proactive
+   * cast surface for Flash-tagged hand spells (only — non-Flash spells stay
+   * Strategy-only) to also include the Action Phase. Resolves through the
+   * existing cast path (executeCastSpell → openWindowOrResolve), so a Flash
+   * cast that finds the opponent holding no legal response still resolves
+   * inline. The Action-Phase priority window this can open is wired in the
+   * game machine (action → priorityWindow → action) — added alongside
+   * responseWindowsOnAllActions (Tier 4); before that wiring an Action-Phase
+   * window was unresolvable by an XState-driven caller. Widening the
+   * opponent's-turn / non-active-player cast surface remains out of scope.
+   * Absent/false ⇒ byte-identical no-op. */
+  readonly flashAtWill?: boolean;
+  /** ENGINE CODE TICKET — Tier 3, part 2 (default absent/false ⇒ legacy engine
+   * behavior: `computeReactiveActions` only scans the responder's HAND for
+   * Counter/Flash spells). Rulebook: Counter/Flash are not restricted to
+   * spells — a battlefield Character or the Hero may carry an on_counter/
+   * on_flash ability. When true, `computeReactiveActions` also scans the
+   * responder's battlefield zones and Hero for such abilities (ready,
+   * non-summoning-sick sources only), and a board reaction is executed
+   * ACTIVATE-style — its own trigger.cost (default free) is paid and the
+   * source is exhausted, but it stays on the battlefield (never discarded,
+   * unlike a hand spell). Absent/false ⇒ byte-identical no-op. */
+  readonly boardReactions?: boolean;
+  /** ENGINE CODE TICKET — Tier 4 (default absent/false ⇒ legacy engine behavior:
+   * a reactive priority window (Rulebook 14) opens ONLY on spell casts). When
+   * true, response windows also open on declare_attack, activate_ability
+   * (Trigger/Ultimate), attach_equipment, and move: the base action is pushed
+   * onto the stack and its resolution is DEFERRED until the window closes
+   * (both players pass), exactly like a cast. Attack and move resolutions
+   * (combat damage steps, zone moves) cannot be expressed as Effect[] — their
+   * StackItems carry the declaration (attacker/target, mover/destination) and
+   * `resolveStack` re-invokes `resolveCombat` / `moveCard` at resolution time;
+   * a reaction that invalidates the declaration fizzles it. Under this flag a
+   * Counter may also target ANY enemy stack item (not only spells), so the new
+   * windows are answerable. The game machine's `action` phase gains a
+   * windowOpen → priorityWindow transition (returning to `action` when the
+   * window closes), which also resolves the flashAtWill known limitation of an
+   * unresolvable Action-Phase window. Absent/false ⇒ byte-identical no-op: the
+   * four handlers gate at the top and run their untouched legacy inline path. */
+  readonly responseWindowsOnAllActions?: boolean;
 }
 
 /** Mutable diagnostic accumulator (see GameConfig.diag). Written by the engine
@@ -514,7 +708,13 @@ export interface ActiveStatus {
   readonly sourceAuraId?: string;
 }
 
-export type StatusEffectType = 'persistent' | 'regeneration' | 'slowed' | 'stunned' | 'hexproof' | 'anti_redirect';
+export type StatusEffectType =
+  | 'persistent'
+  | 'regeneration'
+  | 'slowed'
+  | 'stunned'
+  | 'hexproof'
+  | 'anti_redirect';
 
 /** A replacement effect currently active on a card. Registered by a `replacement`
  * effect; consulted by the damage/destruction pipeline. `usedThisTurn` enforces
@@ -644,8 +844,17 @@ export interface PlayerResponse {
 
 export interface StackItem {
   readonly id: string;
-  readonly type: 'spell' | 'ability' | 'attack';
+  /** 'spell' is pushed by casts; 'ability'/'attack'/'equip'/'move' are pushed
+   * only under config.responseWindowsOnAllActions (Tier 4) — 'attack'/'move'
+   * carry a DECLARATION (attacker+target / mover+destination in
+   * sourceInstanceId+targets, effects empty) that resolveStack re-invokes
+   * through resolveCombat / moveCard at resolution time. */
+  readonly type: 'spell' | 'ability' | 'attack' | 'equip' | 'move';
   readonly sourceInstanceId: string;
+  /** DIAGNOSTIC: the source's card def id, carried through to the SPELL_CAST
+   * event emitted on resolution. See CardDeployedEvent.cardDefId. Optional
+   * for non-spell stack items, which never emit SPELL_CAST. */
+  readonly sourceCardDefId?: number;
   readonly controllerId: 0 | 1;
   readonly effects: readonly Effect[];
   readonly targets: readonly string[];
@@ -657,14 +866,16 @@ export interface StackItem {
 // ── PendingPriority (open reactive response window) ───────────────────────────
 // Rulebook Section 14: a windowable action opens a response window in which the
 // non-active player (then the active player) may add Counter/Flash links to the
-// chain, resolving LIFO once both pass. Minimal-faithful slice: spell casts only.
+// chain, resolving LIFO once both pass. Spell casts open 'cast' windows; under
+// config.responseWindowsOnAllActions the other base actions open their own
+// window kinds.
 
 export interface PendingPriority {
   readonly type: 'priority';
   /** Who may add a link (or pass) right now. */
   readonly toRespondPlayerId: 0 | 1;
   /** The kind of base action that opened the window. */
-  readonly window: 'cast';
+  readonly window: 'cast' | 'attack' | 'ability' | 'equip' | 'move';
   /** Stack id of the base action that opened this window. */
   readonly baseStackItemId: string;
   /** Number of consecutive passes so far — two closes the window (LIFO resolve). */
@@ -704,18 +915,27 @@ export type GameEvent =
 export interface CardDeployedEvent {
   readonly type: 'CARD_DEPLOYED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: the definition id the instance was minted from. Lets Layer-2
+   * balance tooling (balance-deck-panel.mjs) attribute this event to a card
+   * without reconstructing identity from end-of-game zone state (which loses
+   * instances that left every zone, e.g. exiled). Not read by any trigger. */
+  readonly cardDefId: number;
   readonly zone: ZoneType;
   readonly playerId: 0 | 1;
 }
 export interface CardDestroyedEvent {
   readonly type: 'CARD_DESTROYED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   readonly cause: 'combat' | 'effect' | 'sacrifice';
   readonly playerId: 0 | 1;
 }
 export interface CardBouncedEvent {
   readonly type: 'CARD_BOUNCED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   /** Owner of the bounced card. Lets `on_leaves_battlefield` / ally variants apply
    * their side filter. Optional so existing literals stay valid. */
   readonly playerId?: 0 | 1;
@@ -723,12 +943,16 @@ export interface CardBouncedEvent {
 export interface CardExiledEvent {
   readonly type: 'CARD_EXILED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   /** Owner of the exiled card. See CardBouncedEvent.playerId. */
   readonly playerId?: 0 | 1;
 }
 export interface CardSacrificedEvent {
   readonly type: 'CARD_SACRIFICED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
 }
 export interface DamageDealtEvent {
   readonly type: 'DAMAGE_DEALT';
@@ -754,6 +978,11 @@ export interface HeroHealedEvent {
 export interface SpellCastEvent {
   readonly type: 'SPELL_CAST';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. Optional here (unlike the
+   * other DIAGNOSTIC cardDefId fields) because a StackItem's sourceCardDefId
+   * can be absent (see stack-resolver.ts); omitted rather than faked as 0 so
+   * consumers can distinguish "unknown" from a real def id of 0. */
+  readonly cardDefId?: number;
   readonly playerId: 0 | 1;
 }
 export interface SpellCounteredEvent {
@@ -779,6 +1008,8 @@ export interface CardDrawnEvent {
 export interface CardDiscardedEvent {
   readonly type: 'CARD_DISCARDED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   readonly playerId: 0 | 1;
 }
 export interface ResourceGainedEvent {
@@ -791,6 +1022,11 @@ export interface EquipmentAttachedEvent {
   readonly type: 'EQUIPMENT_ATTACHED';
   readonly equipmentId: string;
   readonly targetId: string;
+  /** DIAGNOSTIC: definition id + controller of the attached equipment, so
+   * usage telemetry can attribute attaches without state reconstruction
+   * (same pattern as the other card events). Not read by game logic. */
+  readonly cardDefId: number;
+  readonly playerId: 0 | 1;
 }
 export interface TurnStartEvent {
   readonly type: 'TURN_START';
@@ -859,6 +1095,12 @@ export interface TriggerFiredEvent {
 export interface TurnState {
   readonly discardedForEnergy: boolean;
   readonly firstPlayerFirstTurn: boolean;
+  /** Precise gate for `resource_deck_empty_transform`: set at the active player's
+   * Upkeep, BEFORE the resource draw, to whether their Resource Deck was already
+   * empty (nothing to draw). Recorded ONLY under that termination mode; absent ≡
+   * false. `computeCanTransform` reads this so transform unlocks on the first turn
+   * that STARTS empty (not the turn the last card is drawn). */
+  readonly resourceDeckEmptyAtUpkeep?: boolean;
   /** Per-player flag: did this player gain a Temporary Resource this turn? Set by
    * the `gain_resource` effect (temporary) and read by the `event_context`
    * Condition `gained_temporary_resource_this_turn` (RIA-09 Biotech Harvest).
@@ -924,7 +1166,7 @@ export const ZONE_SLOTS = {
 } as const;
 
 export const MAX_HAND_SIZE = 8;
-export const RESOURCE_DECK_SIZE = 15;
+export const RESOURCE_DECK_SIZE = 12;
 export const INITIAL_HAND_SIZE = 5;
 export const MULLIGAN_HAND_SIZE = 4;
 export const MAX_TRIGGER_DEPTH = 10;

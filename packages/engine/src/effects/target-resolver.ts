@@ -130,13 +130,16 @@ const ADJACENT_ZONES: Record<ZoneType, readonly ZoneType[]> = {
  * Resolve a counterable spell on the stack. Per Rulebook 14, a Counter targets
  * a spell currently on the chain; the topmost (last-in) enemy spell is the
  * natural response target, so we offer enemy-controlled spell stack items
- * (newest first). Returns a select_targets choice, or empty when none exist.
+ * (newest first). TIER 4 (config.responseWindowsOnAllActions): ANY enemy stack
+ * item is counterable, so a Counter can answer an attack/ability/equip/move
+ * declaration. Returns a select_targets choice, or empty when none exist.
  */
 function resolveTargetSpell(state: GameState, context: EffectContext): ResolvedTargets {
   const enemyId = context.controllerId === 0 ? 1 : 0;
+  const anyKind = state.config?.responseWindowsOnAllActions === true;
   const spells = [...state.stack]
     .reverse()
-    .filter((item) => item.type === 'spell' && item.controllerId === enemyId);
+    .filter((item) => item.controllerId === enemyId && (anyKind || item.type === 'spell'));
   if (spells.length === 0) {
     return { resolved: true, targetIds: [] };
   }
@@ -335,6 +338,11 @@ function getPlayersBySide(
     case 'enemy':
       return [state.players[context.controllerId === 0 ? 1 : 0]];
     case 'any':
+      if (state.config?.apnapAnyOrderFix === true) {
+        const activeIdx = state.activePlayerIndex;
+        const nonActiveIdx = activeIdx === 0 ? 1 : 0;
+        return [state.players[activeIdx], state.players[nonActiveIdx]];
+      }
       return [...state.players];
   }
 }

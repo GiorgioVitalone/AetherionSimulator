@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { computeAvailableActions } from '../../src/actions/available-actions.js';
+import { drawResourceCard } from '../../src/state-machine/actions.js';
 import {
   mockGameState,
   mockPlayerState,
@@ -36,10 +37,15 @@ describe('Transform availability — termination knob + printed trigger', () => 
     expect(computeAvailableActions(state).canTransform).toBe(false);
   });
 
-  it('allows transform UNCONDITIONALLY when Resource Deck is empty in resource_deck_empty_transform mode', () => {
+  it('allows transform when the Resource Deck was empty at Upkeep (before-draw flag set)', () => {
     const state = mockGameState({
       phase: 'strategy',
       config: { terminationMode: 'resource_deck_empty_transform' },
+      turnState: {
+        discardedForEnergy: false,
+        firstPlayerFirstTurn: false,
+        resourceDeckEmptyAtUpkeep: true,
+      },
       players: [
         mockPlayerState(0, { ...healthyHeroOverrides(), resourceDeck: [] }),
         mockPlayerState(1),
@@ -48,19 +54,45 @@ describe('Transform availability — termination knob + printed trigger', () => 
     expect(computeAvailableActions(state).canTransform).toBe(true);
   });
 
-  it('does NOT allow transform in resource_deck_empty_transform mode while Resource Deck still has cards', () => {
+  it('does NOT allow transform when the deck is empty but the at-Upkeep flag is unset (the turn the last card was drawn)', () => {
+    // Deck is empty NOW, but resourceDeckEmptyAtUpkeep was never set (it had a card at
+    // this turn's Upkeep). The before-draw rule must withhold transform this turn.
     const state = mockGameState({
       phase: 'strategy',
       config: { terminationMode: 'resource_deck_empty_transform' },
       players: [
-        mockPlayerState(0, {
-          ...healthyHeroOverrides(),
-          resourceDeck: [{ instanceId: 'rd_0', resourceType: 'mana', exhausted: false }],
-        }),
+        mockPlayerState(0, { ...healthyHeroOverrides(), resourceDeck: [] }),
         mockPlayerState(1),
       ],
     });
     expect(computeAvailableActions(state).canTransform).toBe(false);
+  });
+
+  it('before-draw timing: drawing the last card withholds transform that turn, then unlocks it the next', () => {
+    // Turn N: deck has 1 card. drawResourceCard records the PRE-draw state (not empty)
+    // and draws the card; transform stays unavailable this turn.
+    const turnN = mockGameState({
+      phase: 'upkeep',
+      config: { terminationMode: 'resource_deck_empty_transform' },
+      players: [
+        mockPlayerState(0, {
+          ...healthyHeroOverrides(),
+          resourceDeck: [{ instanceId: 'rd_last', resourceType: 'mana', exhausted: false }],
+        }),
+        mockPlayerState(1),
+      ],
+    });
+    const afterDrawN = drawResourceCard(turnN).state;
+    expect(afterDrawN.turnState.resourceDeckEmptyAtUpkeep).toBe(false);
+    expect(computeAvailableActions({ ...afterDrawN, phase: 'strategy' }).canTransform).toBe(false);
+
+    // Next turn: the deck already STARTS empty at Upkeep → drawResourceCard draws 0 and
+    // records empty; transform now unlocks.
+    const afterDrawNext = drawResourceCard({ ...afterDrawN, phase: 'upkeep' }).state;
+    expect(afterDrawNext.turnState.resourceDeckEmptyAtUpkeep).toBe(true);
+    expect(computeAvailableActions({ ...afterDrawNext, phase: 'strategy' }).canTransform).toBe(
+      true,
+    );
   });
 
   it('respects already-used transform: empty Resource Deck does not re-enable a spent transform', () => {

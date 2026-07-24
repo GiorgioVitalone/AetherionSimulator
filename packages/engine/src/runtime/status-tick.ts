@@ -8,12 +8,7 @@
  * Aura-sourced statuses (`sourceAuraId` set) are continuous — they are rebuilt
  * every recompute and must NOT be ticked/decremented here.
  */
-import type {
-  GameState,
-  CardInstance,
-  GameEvent,
-  ActiveStatus,
-} from '../types/game-state.js';
+import type { GameState, CardInstance, GameEvent, ActiveStatus } from '../types/game-state.js';
 import { removeCardFromState } from '../effects/state-helpers.js';
 import { isExiledOnDestruction } from '../effects/destruction-destination.js';
 
@@ -24,12 +19,12 @@ export interface StatusTickResult {
 
 /** True if a card should skip its Upkeep refresh because it is Stunned. */
 export function isStunned(card: CardInstance): boolean {
-  return card.statusEffects.some(s => s.statusType === 'stunned');
+  return card.statusEffects.some((s) => s.statusType === 'stunned');
 }
 
 /** True if a card cannot move because it is Slowed. */
 export function isSlowed(card: CardInstance): boolean {
-  return card.statusEffects.some(s => s.statusType === 'slowed');
+  return card.statusEffects.some((s) => s.statusType === 'slowed');
 }
 
 /**
@@ -62,11 +57,17 @@ export function tickStatusEffects(state: GameState, playerIndex: 0 | 1): StatusT
       events.push({
         type: 'CARD_DESTROYED',
         cardInstanceId: stepped.card.instanceId,
+        cardDefId: stepped.card.cardDefId,
         cause: 'effect',
         playerId: stepped.card.owner,
       });
       if (!stepped.card.isToken && isExiledOnDestruction(stepped.card)) {
-        events.push({ type: 'CARD_EXILED', cardInstanceId: stepped.card.instanceId, playerId: stepped.card.owner });
+        events.push({
+          type: 'CARD_EXILED',
+          cardInstanceId: stepped.card.instanceId,
+          cardDefId: stepped.card.cardDefId,
+          playerId: stepped.card.owner,
+        });
       }
       currentState = removeCardFromState(currentState, stepped.card.instanceId);
     }
@@ -96,7 +97,11 @@ function stepCard(card: CardInstance): StepResult {
         const healed = Math.min(status.value, card.baseHp - hp);
         if (healed > 0) {
           hp += healed;
-          events.push({ type: 'CHARACTER_HEALED', cardInstanceId: card.instanceId, amount: healed });
+          events.push({
+            type: 'CHARACTER_HEALED',
+            cardInstanceId: card.instanceId,
+            amount: healed,
+          });
         }
         pushDecremented(next, status);
         break;
@@ -104,7 +109,12 @@ function stepCard(card: CardInstance): StepResult {
       case 'persistent': {
         if (status.value > 0) {
           hp -= status.value;
-          events.push({ type: 'DAMAGE_DEALT', sourceId: card.instanceId, targetId: card.instanceId, amount: status.value });
+          events.push({
+            type: 'DAMAGE_DEALT',
+            sourceId: card.instanceId,
+            targetId: card.instanceId,
+            amount: status.value,
+          });
         }
         pushDecremented(next, status);
         break;

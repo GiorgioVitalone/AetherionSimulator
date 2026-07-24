@@ -47,7 +47,7 @@ d('deck-sampler', () => {
       expect(decks).toHaveLength(5);
       for (const deck of decks) {
         expect(deck.mainDeckDefIds.length).toBe(40);
-        expect(deck.resourceDeckDefIds.length).toBe(15);
+        expect(deck.resourceDeckDefIds.length).toBe(12);
         const r = validateDeck(deck, m.cardIndex);
         expect(r.errors).toEqual([]);
         expect(r.legal).toBe(true);
@@ -103,13 +103,13 @@ d('deck-sampler', () => {
     expect(m.multisetHash([1, 2])).not.toBe(m.multisetHash([1, 1, 2]));
   });
 
-  it('resource deck is exactly 15 of the faction resource id', async () => {
+  it('resource deck is exactly 12 of the faction resource id', async () => {
     const m = (await import(samplerPath)) as unknown as Sampler;
     const raw = JSON.parse(readFileSync(cardsPath, 'utf8')) as Array<{ id: number; cardType: string; name: string }>;
     const rIds = new Set(raw.filter((c) => c.cardType === 'R').map((c) => c.id));
     for (const f of FACTIONS) {
       const [deck] = m.sampleFactionDecks(f, 1, { seed: 5 });
-      expect(deck.resourceDeckDefIds).toHaveLength(15);
+      expect(deck.resourceDeckDefIds).toHaveLength(12);
       expect(new Set(deck.resourceDeckDefIds).size).toBe(1);
       expect(rIds.has(deck.resourceDeckDefIds[0] as number)).toBe(true);
     }

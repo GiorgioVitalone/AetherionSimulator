@@ -12,7 +12,7 @@
 - **Mana** — Magic resource
 - **Energy** — Tech resource (sometimes called "Tech" in legacy text)
 - **Flexible** — Player chooses Mana or Energy
-- Resource Deck: exactly 15 cards, separate from Main Deck
+- Resource Deck: exactly 12 cards, separate from Main Deck
 
 ## Card Types
 - **Hero** (H) — 1 per deck, has Life Points, transformation mechanic
@@ -33,5 +33,5 @@
 
 ## Deck Rules
 - Main Deck: 40-60 cards, max 3 copies per non-Hero
-- Resource Deck: exactly 15 cards
+- Resource Deck: exactly 12 cards
 - Hero determines allowed alignments and resource types

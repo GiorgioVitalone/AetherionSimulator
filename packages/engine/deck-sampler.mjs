@@ -2,7 +2,7 @@
  * Seeded faction-deck sampler for the balance simulator (WS-C).
  *
  * Produces DIVERSE, LEGAL, DETERMINISTIC decks for a faction: one per archetype
- * template, each a legal 40-card main deck + 15 resource cards. Same seed ⇒
+ * template, each a legal 40-card main deck + 12 resource cards. Same seed ⇒
  * byte-identical output; distinct seeds ⇒ distinct samples. Pure data + a seeded
  * RNG; no Math.random, no Date.
 
@@ -23,10 +23,16 @@ const raw = JSON.parse(readFileSync(CARDS_PATH, 'utf8'));
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const ENERGY_FACTIONS = new Set(['Verdant']);
 const DECK_SIZE = 40;
-const RESOURCE_DECK_SIZE = 15;
+// sim-data/ruleset-v1.json rules.resourceDeckSize (frozen at 12, not the 15-card
+// physical starter deck size).
+export const RESOURCE_DECK_SIZE = 12;
 
 const factionOf = (c) => (Array.isArray(c.alignment) ? c.alignment[0] : c.alignment);
-const copyLimit = (c) => (c.rarity === 'Legendary' ? 1 : 3);
+const copyLimit = (c) => {
+  if (c.rarity === 'Legendary') return 1;
+  if (c.rarity === 'Ethereal' || c.rarity === 'Mythic') return 2;
+  return 3;
+};
 const resourceTypeFor = (faction) => (ENERGY_FACTIONS.has(faction) ? 'energy' : 'mana');
 
 // Resource cards (alignment-neutral): pick by name, mirroring sim-runner.mjs.

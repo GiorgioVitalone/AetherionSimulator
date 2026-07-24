@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "rules": {
+    "armFirstInstanceOnly": true,
+    "terminationMode": "resource_deck_empty_transform",
+    "costFloor": true,
+    "reserveTapChoice": true,
+    "reserveTapStrain": true,
+    "exileDiscardForEnergy": true,
+    "resourceDeckSize": 12,
+    "firstPlayerCompensation": "card",
+    "apnapAnyOrderFix": true,
+    "endPhaseOrderFix": true,
+    "startOfTurnTriggerAfterReserve": true,
+    "transformAtStartOfTurn": true,
+    "heroAbilitiesOncePerTurn": true,
+    "firstPlayerCompAfterMulligan": true,
+    "flashAtWill": true,
+    "boardReactions": true,
+    "responseWindowsOnAllActions": true
+  },
+  "amendment": "ruleset-v2 — supersedes ruleset-v1 (v1 never mutates). Adds the engine-ticket rule-accuracy fixes (Tiers 2-4) reconciling the engine to the Rulebook: End-Phase sub-step order, start-of-turn trigger timing, transform at start-of-turn, hero abilities once-per-turn, first-player compensation after mulligans, Flash usable at-will, battlefield/Hero Counter+Flash reactions, and response windows on all actions (not just spell casts). Authored 2026-07-22 during the engine-vs-Rulebook reconciliation; each flag is byte-identical when OFF so ruleset-v1 history/replays are preserved.",
+  "base": "ruleset-v1.json"
+}

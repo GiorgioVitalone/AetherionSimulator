@@ -32,7 +32,7 @@
 // analysis .mjs), reuses the built dist's exported helpers, and forks the actor the
 // runner already owns. The default `heuristic` botPolicy path is untouched.
 
-import { createActor } from 'xstate';
+import { createActor, transition } from 'xstate';
 import {
   gameMachine,
   computeAvailableActions,
@@ -41,7 +41,16 @@ import {
   chooseReactiveAction,
   chooseChoiceResponse,
   shouldKeepHand,
+  enumerateConcretePlayerActions,
+  featurize,
 } from './dist/index.js';
+// Stage E — truncated-rollout leaf scoring via a value net. loadValueNet/forward
+// are pilot-value.mjs's sync JS MLP (schema + paritySamples validated at load).
+// NOTE: pilot-value.mjs imports hydratePersistedSnapshot/makeSnapshotFork back
+// from this module — a circular ESM import of function declarations only,
+// which Node resolves fine (function declarations are hoisted before either
+// module body runs).
+import { loadValueNet, forward } from './pilot-value.mjs';
 
 // mulberry32 — identical generator to the runner's, seeded per decision branch.
 function rngf(a) {
@@ -61,6 +70,16 @@ function rngf(a) {
 // AvailableActions option into a sendable PlayerAction. Crucially we ALSO include
 // the "stop" candidate (END_PHASE / pass), so holding back is itself searched and
 // chosen when acting is worse by outcome.
+//
+// candidateGen (T2) SCOPING: this function is the 'legacy' candidate source and
+// stays UNTOUCHED — every historical runHash depends on its exact output. The
+// 'full' candidateGen option instead sources candidates from the engine's
+// canonical `enumerateConcretePlayerActions(gs, 'full')` (see chooseAction below),
+// which enumerates EVERY legal (cardInstanceId, zone/target) pair per kind instead
+// of only the first. This ONLY changes CANDIDATE enumeration (what gets scored at
+// a decision point) — the separate `concreteActions` enumerator below, used
+// INSIDE random playouts, is intentionally left alone in both modes so changing
+// both at once can't confound the planned A/B between the two enumerators.
 function candidateActions(acts) {
   const out = [];
   for (const d of acts.canDeploy || []) {
@@ -72,6 +91,7 @@ function candidateActions(acts) {
   for (const a of acts.canActivateAbility || []) out.push({ type: 'activate_ability', cardInstanceId: a.cardInstanceId, abilityIndex: a.abilityIndex });
   for (const e of acts.canAttachEquipment || []) { const t = (e.validTargets || [])[0]; if (t) out.push({ type: 'attach_equipment', cardInstanceId: e.cardInstanceId, targetInstanceId: t }); }
   for (const m of acts.canMove || []) { const dst = (m.validDestinations || [])[0]; if (dst) out.push({ type: 'move', cardInstanceId: m.cardInstanceId, toZone: dst }); }
+  for (const id of acts.canTapReserve || []) out.push({ type: 'tap_reserve', cardInstanceId: id });
   if (acts.canTransform) out.push({ type: 'declare_transform' });
   // Attacks: one candidate per (attacker, target) so the search can choose face vs
   // trade vs hold per body — no pre-baked combat heuristic decides for it.
@@ -89,7 +109,13 @@ function candidateActions(acts) {
 // "random": uniform over legal concrete actions (no archetype prior — primary).
 // "heuristic": the engine's target-aware bot (used only for the cross-check pilot).
 const RANDOM_ACTION_PROB = 0.85;
+// Under fair pilot, the probability a random playout actually fires a worthwhile
+// counter (one the fair reactive bot would pick) — so counters matter inside playouts.
+const FAIR_COUNTER_PROB = 0.9;
 
+// Exported under an explicit alias for the T7 differential harness (which
+// drives base games with the exact playout-internal action surface).
+export { concreteActions as concretePlayoutActions };
 function concreteActions(acts) {
   const out = [];
   for (const d of acts.canDeploy || []) { const s = (d.validSlots || []).find(x => x.zone === 'frontline') || (d.validSlots || [])[0]; if (s && s.slots && s.slots.length) out.push({ type: 'deploy', cardInstanceId: d.cardInstanceId, zone: s.zone, slotIndex: s.slots[0] }); }
@@ -98,8 +124,40 @@ function concreteActions(acts) {
   for (const a of acts.canActivateAbility || []) out.push({ type: 'activate_ability', cardInstanceId: a.cardInstanceId, abilityIndex: a.abilityIndex });
   for (const e of acts.canAttachEquipment || []) { const t = (e.validTargets || [])[0]; if (t) out.push({ type: 'attach_equipment', cardInstanceId: e.cardInstanceId, targetInstanceId: t }); }
   for (const m of acts.canMove || []) { const d = (m.validDestinations || [])[0]; if (d) out.push({ type: 'move', cardInstanceId: m.cardInstanceId, toZone: d }); }
+  for (const id of acts.canTapReserve || []) out.push({ type: 'tap_reserve', cardInstanceId: id });
   if (acts.canTransform) out.push({ type: 'declare_transform' });
   return out;
+}
+
+// ── Playout stepping backends (T7) ───────────────────────────────────────────
+// `playout()` only needs `send(event)` + `getSnapshot()`, so the stepping
+// machinery is swappable. 'actor' (default) forks a live XState actor per
+// playout — the historical path, byte-untouched. 'snapshot' steps purely via
+// xstate's `transition()` from ONE hydrated snapshot per decision (shared,
+// never cloned — `transition()` does not mutate its input; spike-verified over
+// 1204 paired playouts). A harness dimension like WORKERS: hash-exempt, both
+// backends must produce identical runHashes (pinned in rollout-pin.test.ts).
+
+// `transition()` rejects getPersistedSnapshot() output — hydrate it into a live
+// snapshot first (createActor WITHOUT .start(): restoring does not re-run entry
+// actions, so this allocates one actor per DECISION instead of one per playout).
+export function hydratePersistedSnapshot(machine, persisted) {
+  return createActor(machine, { snapshot: persisted }).getSnapshot();
+}
+
+// A pure drop-in for the actor fork: same send/getSnapshot/stop surface.
+// Exceptions from `transition()` (e.g. an illegal action's assign throwing)
+// propagate synchronously exactly like actor `.send()` — the differential
+// harness pins this parity with an illegal-action fixture.
+export function makeSnapshotFork(machine, startSnapshot) {
+  let snap = startSnapshot;
+  return {
+    send(event) {
+      [snap] = transition(machine, snap, event);
+    },
+    getSnapshot: () => snap,
+    stop() {},
+  };
 }
 
 // Drive a forked actor forward with the chosen playout policy until a terminal
@@ -107,7 +165,7 @@ function concreteActions(acts) {
 // the final GameState. `rnd` is the seeded RNG. `horizonTurn` (absolute turn number)
 // caps how far we simulate; beyond it we stop and the leaf is scored by LP-diff —
 // still archetype-neutral. horizonTurn === Infinity means roll to game end.
-function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall = false) {
+export function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall = false, fairPilot = false) {
   let steps = 0;
   let gs;
   while (steps++ < stepCap) {
@@ -126,8 +184,21 @@ function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHan
         if (playoutPolicy === 'heuristic') {
           react = heuristicReactive(gs);
         } else {
-          const opts = computeReactiveActions(gs, gs.pendingPriority.toRespondPlayerId);
-          if (opts.length && rnd() < RANDOM_ACTION_PROB) react = { type: 'cast_spell', cardInstanceId: opts[0].cardInstanceId };
+          const ropts = computeReactiveActions(gs, gs.pendingPriority.toRespondPlayerId);
+          if (ropts.length) {
+            if (fairPilot) {
+              // Threat-aware: fire the counter the fair reactive bot would pick (it
+              // reads gs.config.fairPilot), so control's counters matter in playouts.
+              const wants = chooseReactiveAction(gs);
+              if (wants) {
+                if (rnd() < FAIR_COUNTER_PROB) react = wants;
+              } else if (rnd() < RANDOM_ACTION_PROB * 0.2) {
+                react = { type: 'cast_spell', cardInstanceId: ropts[0].cardInstanceId };
+              }
+            } else if (rnd() < RANDOM_ACTION_PROB) {
+              react = { type: 'cast_spell', cardInstanceId: ropts[0].cardInstanceId };
+            }
+          }
         }
         if (react == null) fork.send({ type: 'PRIORITY_PASS' });
         else fork.send({ type: 'REACTIVE_ACTION', action: react });
@@ -223,6 +294,30 @@ function outcomeScore(fin, meSeat, turnCap, closingReward = false) {
   return base + 0.5 * Math.max(-1, Math.min(1, diff));
 }
 
+// Stage E — score a TRUNCATED (non-terminal) rollout leaf with a value net's
+// win-probability instead of the LP-diff heuristic in outcomeScore. The net
+// predicts P(featurize(leafState).activePlayerIndex wins); when the leaf's
+// active player differs from `meSeat` we invert. Mapped onto outcomeScore's
+// decided-result scale ([-1, 1]) via 2*meWin-1 so a truncated leaf is directly
+// comparable to a terminal +1/-1. TERMINAL leaves (winner set) never call this
+// — they keep outcomeScore's +1/-1 unchanged. Exported for direct math tests.
+export function valueLeafScore(net, leafState, meSeat) {
+  const p = forward(net.layers, featurize(leafState));
+  const meWin = leafState.activePlayerIndex === meSeat ? p : 1 - p;
+  return 2 * meWin - 1;
+}
+
+// Per-leaf score selection (Stage E): a DECIDED leaf (fin.winner set) ALWAYS
+// uses outcomeScore's +1/-1 — the net is never consulted for a real terminal
+// result, net configured or not. Only a TRUNCATED leaf (fin.winner == null)
+// AND a configured net uses valueLeafScore instead. Exported for direct
+// selection tests.
+export function scoreLeaf(fin, meSeat, turnCap, closingReward, valueLeafNet) {
+  return valueLeafNet && fin.winner == null
+    ? valueLeafScore(valueLeafNet, fin, meSeat)
+    : outcomeScore(fin, meSeat, turnCap, closingReward);
+}
+
 // ── The pilot: choose one action by rollout outcome, or null to END_PHASE ─────
 // `actor` is the LIVE runner actor at a decision point; `gs` its current state.
 // Returns a PlayerAction or null (END_PHASE). Pure w.r.t. the live actor: it only
@@ -232,31 +327,86 @@ export function makeRolloutPilot(opts = {}) {
   const playoutPolicy = opts.playoutPolicy ?? 'random';
   const stepCap = opts.stepCap ?? 8000;
   const maxCandidates = opts.maxCandidates ?? 12; // cap branching for feasibility
-  const perKindCap = opts.perKindCap ?? 4;   // cap candidates kept per action kind
+  // candidateGen (T2): 'legacy' (default) runs the untouched candidateActions()
+  // path below — byte-identical to every historical run. 'full' sources
+  // candidates from the engine's canonical enumerateConcretePlayerActions(gs,
+  // 'full') instead, then flows through the SAME downstream pipeline (ordering,
+  // per-kind caps, maxCandidates, scoring). Candidate enumeration only — playout-
+  // internal enumeration (concreteActions) is unaffected in both modes.
+  const candidateGen = opts.candidateGen ?? 'legacy';
+  // candidateKindCaps (T2): explicit per-kind candidate-survivor cap, keyed by
+  // PlayerAction['type']. Defaults to DEFAULT_CANDIDATE_KIND_CAPS (every kind
+  // capped at 4 — the prior hardcoded `perKindCap` value), so an unset run is
+  // byte-identical to the v10 baseline.
+  const candidateKindCaps = opts.candidateKindCaps ?? DEFAULT_CANDIDATE_KIND_CAPS;
+  // seedMode (T3): 'index' (default) derives each branch's playout stream from
+  // the candidate's POSITION — mix(gameSeed, di, ci, r), byte-identical to every
+  // historical run. 'actionKey' derives it from WHAT the action is (FNV-1a of
+  // its stable keyOf string; the END_PHASE option uses 'end_phase'), so a
+  // coverage A/B (candidateGen legacy vs full) keeps identical streams for the
+  // candidates both modes share — position shifts no longer reseed everything.
+  const seedMode = opts.seedMode ?? 'index';
+  // T7 — playout stepping backend. 'actor' = historical per-playout actor fork
+  // (default, byte-identical); 'snapshot' = pure transition() stepping from one
+  // hydrated snapshot per decision. Hash-exempt harness dimension (see
+  // sim-runner.mjs computeRunHash): equal hashes across backends ARE the
+  // equivalence claim.
+  const playoutBackend = opts.playoutBackend ?? 'actor';
   const search = opts.search ?? 'flat';      // 'flat' | 'ucb' budget allocation
+  const fairPilot = opts.fairPilot ?? false; // control/value-aware fairness (depth=0 + threat-aware counters)
   // Turn-depth horizon: simulate at most this many of the deciding player's future
-  // turns before scoring the leaf by LP-diff. 0 / undefined => roll to game end.
-  const depth = opts.depth ?? 3;
+  // turns before scoring the leaf by LP-diff. 0 / undefined => roll to game end. Under
+  // fair pilot DEFAULT to 0 (truest win/loss signal — control's late game isn't penalized).
+  const depth = opts.depth ?? (fairPilot ? 0 : 3);
   const closingReward = opts.closingReward ?? true; // reward decided+fast wins, penalize stalls
   const fixHandSizeStall = opts.fixHandSizeStall ?? false; // gated end-phase discard fix in playouts
+  // Stage E — truncated-rollout leaf scored by a value net instead of the
+  // LP-diff heuristic. Unset (the default) ⇒ byte-identical: outcomeScore is
+  // called exactly as before for every leaf, terminal or truncated. Loaded
+  // (and parity-checked) ONCE here at construction — a bad model file throws
+  // immediately rather than mid-game, same discipline as pilot-value.mjs.
+  const valueLeafModelPath = opts.valueLeafModelPath ?? null;
+  const valueLeafNet = valueLeafModelPath ? loadValueNet(valueLeafModelPath) : null;
+  // Opt-in decision logging — the foundation for pilotability analysis + policy-net
+  // distillation. Unset (the default) ⇒ byte-identical: chooseAction never builds or
+  // pushes a record, so it cannot perturb the rollout's RNG/decisionIndex or the
+  // chosen action. Same discipline as collectTrainingData in sim-runner.mjs.
+  const collectDecisionLog = opts.collectDecisionLog ?? false;
 
   // A per-decision counter folded into the rollout seed for determinism. Reset by
   // the runner at game start via reset().
   let decisionIndex = 0;
+  // Pruning telemetry (hash-exempt; see sim-runner.mjs computeRunHash, which never
+  // reads result/summary fields like this one). Accumulated across every decision
+  // in this pilot's game: raw = pre-cap enumerated candidates, retained = post
+  // per-kind-cap + maxCandidates survivors, prunedByKind = per-kind drop counts.
+  const diag = { raw: 0, retained: 0, prunedByKind: {} };
+  // Decision-log buffer (hash-exempt; opt-in via collectDecisionLog). One record
+  // per decision: the candidates weighed, their rollout values, and which was
+  // chosen. Accumulated across every decision in this pilot's game.
+  const decisionLog = [];
 
-  function reset() { decisionIndex = 0; }
+  function reset() {
+    decisionIndex = 0;
+    diag.raw = 0; diag.retained = 0; diag.prunedByKind = {};
+    decisionLog.length = 0;
+  }
 
   function chooseAction(actor, gs, gameSeed, turnCap) {
     const di = decisionIndex++;
     const acts = computeAvailableActions(gs, gs.activePlayerIndex);
-    const cands = candidateActions(acts);
+    const cands = candidateGen === 'full'
+      ? enumerateConcretePlayerActions(gs, 'full')
+      : candidateActions(acts);
     if (cands.length === 0) return null; // nothing to do but end the phase
     // Deterministic candidate order (stable across runs); cap branching factor.
     // Per-kind cap keeps any single action kind (e.g. many deploys) from crowding
     // out the rest before the global maxCandidates slice — purely a branching
     // budget, not a value ranking; every kept candidate is still scored by outcome.
-    const ordered = capPerKind(orderCandidates(cands), perKindCap);
-    let limited = ordered.slice(0, maxCandidates);
+    const orderedAll = orderCandidates(cands);
+    const cappedByKind = capPerKind(orderedAll, candidateKindCaps);
+    let limited = cappedByKind.slice(0, maxCandidates);
+    recordPruning(diag, orderedAll, limited);
     // ALWAYS-INCLUDE the high_ground reach move (mirrors src/bot/heuristic.ts
     // chooseMove ~:366): promoting a ready, non-summoning-sick attacker from the
     // frontline to High Ground is the only way to threaten the enemy Hero, so it
@@ -266,23 +416,45 @@ export function makeRolloutPilot(opts = {}) {
     }
     // The "stop" candidate (END_PHASE) is always evaluated: holding is a real option.
     const options = [...limited.map(a => ({ action: a })), { action: null }];
+    // seedMode 'actionKey' (T3): precompute each option's seed slot from its
+    // stable identity. null (index mode) keeps the historical `ci` argument.
+    const seedSlots = seedMode === 'actionKey'
+      ? options.map(o => hashActionKey(o.action ? seedKeyOf(o.action) : 'end_phase'))
+      : null;
 
     const persisted = actor.getPersistedSnapshot();
+    // 'snapshot' backend: hydrate ONCE per decision; every playout's pure fork
+    // starts from this same live snapshot (transition() never mutates it).
+    const hydrated = playoutBackend === 'snapshot' ? hydratePersistedSnapshot(gameMachine, persisted) : null;
     const meSeat = gs.activePlayerIndex;
     const horizonTurn = depth > 0 ? gs.turnNumber + depth : Infinity;
 
     // One rollout of candidate `ci` with the deterministic per-branch seed.
     const oneRollout = (ci, r) => {
       const cand = options[ci].action;
-      const rnd = rngf(mix(gameSeed, di, ci, r));
-      const fork = createActor(gameMachine, { snapshot: persisted });
-      fork.start();
+      const rnd = rngf(mix(gameSeed, di, seedSlots ? seedSlots[ci] : ci, r));
+      let fork;
+      if (hydrated != null) {
+        fork = makeSnapshotFork(gameMachine, hydrated);
+      } else {
+        fork = createActor(gameMachine, { snapshot: persisted });
+        fork.start();
+      }
       try {
         if (cand != null) fork.send({ type: 'PLAYER_ACTION', action: cand });
         else fork.send({ type: 'END_PHASE' });
-      } catch { /* illegal in this fork: treat as a pass-equivalent rollout */ }
-      const fin = playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall);
-      const score = outcomeScore(fin, meSeat, turnCap, closingReward);
+      } catch {
+        // illegal in this fork: treat as a pass-equivalent rollout.
+        // Investigated (playout-backend-differential.test.ts): the makeSnapshotFork
+        // (transition()) path DOES throw synchronously here on a malformed action, but
+        // xstate v5's Actor.send() never does — internal transition errors are swallowed
+        // into `snapshot.status: 'error'` and reported asynchronously via setTimeout, by
+        // the library's own design, so this catch was not proven reachable for the actor
+        // backend with any input tried. Left in place for the transition() path (proven
+        // reachable there) and for any pre-transition send failure.
+      }
+      const fin = playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall, fairPilot);
+      const score = scoreLeaf(fin, meSeat, turnCap, closingReward, valueLeafNet);
       fork.stop();
       return score;
     };
@@ -300,10 +472,28 @@ export function makeRolloutPilot(opts = {}) {
       // when it is at least as good — biasing toward action, not idleness.
       if (best == null || mean > best.mean + 1e-12) best = { action: options[ci].action, mean, ci };
     }
+    if (collectDecisionLog) {
+      const heuristicAction = heuristicChooseAction(gs);
+      const heuristicIdx = options.findIndex(o => actionsEqual(o.action, heuristicAction));
+      const passIdx = options.findIndex(o => o.action === null);
+      decisionLog.push({
+        turn: gs.turnNumber,
+        mover: gs.activePlayerIndex,
+        features: Array.from(featurize(gs)),
+        candidates: options.map((o, i) => ({
+          action: o.action,
+          value: stats[i].n ? stats[i].sum / stats[i].n : null,
+          playouts: stats[i].n,
+        })),
+        chosenIdx: best.ci,
+        heuristicIdx,
+        passIdx,
+      });
+    }
     return best ? best.action : null;
   }
 
-  return { chooseAction, reset, meta: { rollouts, playoutPolicy, maxCandidates, perKindCap, depth, closingReward, search, fixHandSizeStall } };
+  return { chooseAction, reset, diag, decisionLog, meta: { rollouts, playoutPolicy, maxCandidates, candidateGen, candidateKindCaps, seedMode, playoutBackend, depth, closingReward, search, fixHandSizeStall, fairPilot, valueLeafModelPath, collectDecisionLog } };
 }
 
 // ── Budget allocators (flat default; UCB1 optional behind opts.search==="ucb") ─
@@ -345,17 +535,53 @@ function evalUcb(nOptions, rollouts, oneRollout) {
   return stats;
 }
 
+// T2 — the per-kind survivor cap `capPerKind` applied uniformly (4 per kind) via
+// makeRolloutPilot's default `perKindCap`. Lifted into an explicit, overridable
+// map (`candidateKindCaps` on makeRolloutPilot) so callers can shape branching
+// per kind; unset ⇒ every kind capped at 4, byte-identical to the prior default.
+export const DEFAULT_CANDIDATE_KIND_CAPS = {
+  declare_attack: 4,
+  cast_spell: 4,
+  deploy: 4,
+  move: 4,
+  activate_ability: 4,
+  attach_equipment: 4,
+  declare_transform: 4,
+  tap_reserve: 4,
+  discard_for_energy: 4,
+};
+
 // Cap how many candidates of each action kind survive into the search (applied
 // AFTER orderCandidates, so the kept ones are the stable-ordered first `cap`).
-function capPerKind(ordered, cap) {
+// `kindCaps` is an object keyed by action kind; a kind absent from it falls back
+// to DEFAULT_CANDIDATE_KIND_CAPS' value for that kind (or 4 if wholly unknown).
+function capPerKind(ordered, kindCaps) {
   const seen = {};
   const out = [];
   for (const c of ordered) {
     const k = c.type;
     seen[k] = (seen[k] ?? 0) + 1;
+    const cap = kindCaps[k] ?? DEFAULT_CANDIDATE_KIND_CAPS[k] ?? 4;
     if (seen[k] <= cap) out.push(c);
   }
   return out;
+}
+
+// Pruning telemetry bookkeeping (Deliverable 3) — folds one decision's raw
+// (pre-cap, ordered) candidate list and its post-cap survivors into the running
+// `diag` accumulator, in place. Purely additive reporting; never read by
+// computeRunHash or the search itself.
+function recordPruning(diag, orderedAll, limited) {
+  diag.raw += orderedAll.length;
+  diag.retained += limited.length;
+  const rawByKind = {};
+  for (const c of orderedAll) rawByKind[c.type] = (rawByKind[c.type] ?? 0) + 1;
+  const retainedByKind = {};
+  for (const c of limited) retainedByKind[c.type] = (retainedByKind[c.type] ?? 0) + 1;
+  for (const k of Object.keys(rawByKind)) {
+    const pruned = rawByKind[k] - (retainedByKind[k] ?? 0);
+    if (pruned > 0) diag.prunedByKind[k] = (diag.prunedByKind[k] ?? 0) + pruned;
+  }
 }
 
 // High_ground reach moves, mirroring src/bot/heuristic.ts chooseMove: a ready,
@@ -388,6 +614,33 @@ function sameCandidate(a, b) {
   return a.type === b.type && keyOf(a) === keyOf(b);
 }
 
+// actionsEqual — decision-log-only identity check between a heuristic action
+// (src/bot/heuristic.ts chooseAction, or null for END_PHASE) and a rollout
+// candidate's action, so heuristicIdx can locate the heuristic's pick among
+// this decision's enumerated `options`. null <-> null is a match (both mean
+// "end the phase"); null <-> non-null is never a match. Otherwise: same
+// `type`, plus every identifying field the PlayerAction union carries
+// (state-machine/types.ts), compared only where present on either side.
+const ACTION_ID_FIELDS = [
+  'cardInstanceId', 'attackerInstanceId', 'targetId', 'targetInstanceId',
+  'toZone', 'zone', 'slotIndex', 'abilityIndex', 'xValue',
+  'selectedTargetIds', 'equipmentInstanceId',
+];
+function actionsEqual(a, b) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  if (a.type !== b.type) return false;
+  return ACTION_ID_FIELDS.every(f => fieldEqual(a[f], b[f]));
+}
+function fieldEqual(x, y) {
+  if (Array.isArray(x) || Array.isArray(y)) {
+    const xa = x ?? [];
+    const ya = y ?? [];
+    return xa.length === ya.length && xa.every((v, i) => v === ya[i]);
+  }
+  return x === y;
+}
+
 // Stable candidate ordering: attacks first (most outcome-relevant), then deploys,
 // spells, abilities, equip, move, transform; ties broken by a stable string key.
 // This is ORDER only (for the branching cap + determinism), not a value ranking —
@@ -410,6 +663,43 @@ function keyOf(a) {
     case 'cast_spell': return a.cardInstanceId;
     default: return a.type;
   }
+}
+
+// seedKeyOf (T4) — used ONLY for the 'actionKey' seed-slot computation, never
+// for orderCandidates/sameCandidate. keyOf's `default: return a.type` collapses
+// EVERY candidate of a kind it doesn't special-case (tap_reserve,
+// discard_for_energy) onto one bare string, so under candidateGen:'full' +
+// seedMode:'actionKey' distinct tap_reserve/discard_for_energy candidates share
+// one seed stream. seedKeyOf fixes that by keying on cardInstanceId for those
+// two kinds, and is identical to keyOf for every kind keyOf already
+// distinguishes. Do NOT fold this into keyOf itself: keyOf also drives
+// orderCandidates' tie-break sort, and extending it would re-sort legacy
+// same-kind candidates and break the pinned legacy hash (rollout-pin.test.ts
+// PINNED_HASH). Nothing pins actionKey-mode hashes yet (the full-mode test
+// only asserts inequality), so this change is safe to make now.
+export function seedKeyOf(a) {
+  switch (a.type) {
+    case 'tap_reserve': return `tap:${a.cardInstanceId}`;
+    case 'discard_for_energy': return `dfe:${a.cardInstanceId}`;
+    default: return keyOf(a);
+  }
+}
+
+// FNV-1a 32-bit over an action's stable key string — the 'actionKey' seed slot
+// (T3). Exported for the position-independence tests in rollout-pin.test.ts.
+export function hashActionKey(key) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+// The branch-seed derivation, exported for tests: 'index' mode passes the
+// candidate index as `slot`, 'actionKey' mode passes hashActionKey(keyOf(a)).
+export function rolloutBranchSeed(gameSeed, di, slot, r) {
+  return mix(gameSeed, di, slot, r);
 }
 
 // Deterministic seed mix for a rollout branch (no Math.random).

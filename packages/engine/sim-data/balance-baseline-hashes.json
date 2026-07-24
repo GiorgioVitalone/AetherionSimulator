@@ -1,0 +1,7 @@
+{
+  "smoke": {
+    "runHash": "d0be4d5f4460b378",
+    "note": "heuristic all-pairs GPP=8 under ruleset-v1 + real official starter decks (deck-loader's committed fixture, sim-data/aetherion-decks.json — hermetic, no Docker/Postgres); bump ONLY with a cited full-panel ledger run id in the commit message",
+    "provenance": "repinned 2026-07-16 (round-7 V1 fix): Radiant Shield id66's oncePerTurn:true shield now prices as SHIELD_INSTANCES_PER_TURN x1 (throttled — matches replacement-handler.ts's runtime oncePerTurn gate), not x2 (the round-5 pin's unthrottled default, which had ignored oncePerTurn entirely); Shieldbearer Paladin id48 (no oncePerTurn) is unaffected, still x2. Value-pilot deploy scoring for id66 changed under locked rules; rollout verdict tier unaffected. Prior pin (2026-07-16, round-5 T1 per-instance-default fix) superseded."
+  }
+}

@@ -23,7 +23,8 @@ export type PlayerAction =
   | ActivateAbilityAction
   | DeclareAttackAction
   | DiscardForEnergyAction
-  | DeclareTransformAction;
+  | DeclareTransformAction
+  | TapReserveAction;
 
 export interface DeployAction {
   readonly type: 'deploy';
@@ -96,6 +97,15 @@ export interface DiscardForEnergyAction {
 
 export interface DeclareTransformAction {
   readonly type: 'declare_transform';
+}
+
+/** Exhaust a ready Reserve character for +1 temporary resource of its type
+ * (Rulebook 8 step 4 — a CHOICE; offered only under `config.reserveTapChoice`).
+ * All the character's abilities are disabled until next Upkeep; under
+ * `reserveTapStrain` it also suffers 1 direct damage. */
+export interface TapReserveAction {
+  readonly type: 'tap_reserve';
+  readonly cardInstanceId: string;
 }
 
 // ── Machine Events ──────────────────────────────────────────────────────────

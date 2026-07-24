@@ -1,0 +1,2615 @@
+{
+ "generatedFrom": "balance-verify.mjs",
+ "pool": {
+  "path": "/Users/gvitalone/Projects/personal/AetherionSimulator/packages/engine/generated-pools/aetherion-CURRENT-plus-ht2b2-payload.json",
+  "sha256_16": "34cf3a286ea726f6"
+ },
+ "focus": null,
+ "config": {
+  "GPP_MATRIX": 1000,
+  "RL_GPP": 600,
+  "RH_GPP": 400,
+  "RX_GPP": 400,
+  "heurRamp": false
+ },
+ "ruleset": {
+  "firstPlayer": "alternating",
+  "fixHandSizeStall": true,
+  "termination": "tiebreak",
+  "abilitiesOn": true,
+  "turnCap": 80,
+  "seedBase": 12345,
+  "armFirstInstanceOnly": true,
+  "terminationMode": "resource_deck_empty_transform",
+  "costFloor": true,
+  "reserveTapChoice": true,
+  "reserveTapStrain": true,
+  "resourceDeckSize": 12,
+  "firstPlayerCompensation": "card",
+  "exileDiscardForEnergy": true
+ },
+ "ruleOff": null,
+ "pilots": [
+  {
+   "label": "random",
+   "kind": "matrix",
+   "marg": {
+    "Onyx": {
+     "w": 1196,
+     "n": 3000,
+     "wilson": [
+      38.12860232245644,
+      39.86666666666667,
+      41.63064996301695
+     ]
+    },
+    "Radiant": {
+     "w": 2364,
+     "n": 3000,
+     "wilson": [
+      77.30103629490131,
+      78.8,
+      80.22529931480594
+     ]
+    },
+    "Sapphire": {
+     "w": 688,
+     "n": 3000,
+     "wilson": [
+      21.46411609152889,
+      22.933333333333334,
+      24.47178146045921
+     ]
+    },
+    "Verdant": {
+     "w": 1752,
+     "n": 3000,
+     "wilson": [
+      56.62655602832704,
+      58.4,
+      60.151958524504245
+     ]
+    }
+   },
+   "spread": 55.86666666666666,
+   "matrix": {
+    "Onyx": {
+     "Radiant": {
+      "w": 164,
+      "n": 1000
+     },
+     "Sapphire": {
+      "w": 714,
+      "n": 1000
+     },
+     "Verdant": {
+      "w": 318,
+      "n": 1000
+     }
+    },
+    "Radiant": {
+     "Onyx": {
+      "w": 836,
+      "n": 1000
+     },
+     "Sapphire": {
+      "w": 824,
+      "n": 1000
+     },
+     "Verdant": {
+      "w": 704,
+      "n": 1000
+     }
+    },
+    "Sapphire": {
+     "Onyx": {
+      "w": 286,
+      "n": 1000
+     },
+     "Radiant": {
+      "w": 176,
+      "n": 1000
+     },
+     "Verdant": {
+      "w": 226,
+      "n": 1000
+     }
+    },
+    "Verdant": {
+     "Onyx": {
+      "w": 682,
+      "n": 1000
+     },
+     "Radiant": {
+      "w": 296,
+      "n": 1000
+     },
+     "Sapphire": {
+      "w": 774,
+      "n": 1000
+     }
+    }
+   },
+   "worst": {
+    "dev": 33.6,
+    "A": "Onyx",
+    "B": "Radiant",
+    "wp": 16.4,
+    "n": 1000
+   },
+   "mirrorFp": 59.025,
+   "mirrorDecided": 4000,
+   "decidedPct": 100,
+   "timeoutPct": 0,
+   "avgTurns": 44.52,
+   "games": 10000,
+   "matchupDetail": {
+    "Onyx|Onyx": {
+     "fA": "Onyx",
+     "fB": "Onyx",
+     "n": 1000,
+     "wA": 424,
+     "wB": 576,
+     "draws": 0,
+     "aWinPct": 42.4,
+     "firstPlayerWinPct": 66.6,
+     "turnsP": {
+      "p25": 45,
+      "p50": 50,
+      "p75": 52,
+      "p90": 54
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 663,
+      "overturned": 273,
+      "pct": 41.2
+     },
+     "winnerLpMedian": 21
+    },
+    "Onyx|Radiant": {
+     "fA": "Onyx",
+     "fB": "Radiant",
+     "n": 1000,
+     "wA": 164,
+     "wB": 836,
+     "draws": 0,
+     "aWinPct": 16.4,
+     "firstPlayerWinPct": 48.4,
+     "turnsP": {
+      "p25": 42,
+      "p50": 51,
+      "p75": 54,
+      "p90": 56
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 610,
+      "overturned": 404,
+      "pct": 66.2
+     },
+     "winnerLpMedian": 24
+    },
+    "Onyx|Sapphire": {
+     "fA": "Onyx",
+     "fB": "Sapphire",
+     "n": 1000,
+     "wA": 714,
+     "wB": 286,
+     "draws": 0,
+     "aWinPct": 71.4,
+     "firstPlayerWinPct": 52.2,
+     "turnsP": {
+      "p25": 33,
+      "p50": 40,
+      "p75": 52,
+      "p90": 56
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 652,
+      "overturned": 256,
+      "pct": 39.3
+     },
+     "winnerLpMedian": 23
+    },
+    "Onyx|Verdant": {
+     "fA": "Onyx",
+     "fB": "Verdant",
+     "n": 1000,
+     "wA": 318,
+     "wB": 682,
+     "draws": 0,
+     "aWinPct": 31.8,
+     "firstPlayerWinPct": 56.2,
+     "turnsP": {
+      "p25": 44,
+      "p50": 51,
+      "p75": 54,
+      "p90": 55
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 644,
+      "overturned": 355,
+      "pct": 55.1
+     },
+     "winnerLpMedian": 20
+    },
+    "Radiant|Radiant": {
+     "fA": "Radiant",
+     "fB": "Radiant",
+     "n": 1000,
+     "wA": 495,
+     "wB": 505,
+     "draws": 0,
+     "aWinPct": 49.5,
+     "firstPlayerWinPct": 57.5,
+     "turnsP": {
+      "p25": 34,
+      "p50": 46,
+      "p75": 65,
+      "p90": 70
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 438,
+      "overturned": 236,
+      "pct": 53.9
+     },
+     "winnerLpMedian": 30
+    },
+    "Radiant|Sapphire": {
+     "fA": "Radiant",
+     "fB": "Sapphire",
+     "n": 1000,
+     "wA": 824,
+     "wB": 176,
+     "draws": 0,
+     "aWinPct": 82.4,
+     "firstPlayerWinPct": 50.4,
+     "turnsP": {
+      "p25": 31,
+      "p50": 37,
+      "p75": 47,
+      "p90": 59
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 497,
+      "overturned": 238,
+      "pct": 47.9
+     },
+     "winnerLpMedian": 28
+    },
+    "Radiant|Verdant": {
+     "fA": "Radiant",
+     "fB": "Verdant",
+     "n": 1000,
+     "wA": 704,
+     "wB": 296,
+     "draws": 0,
+     "aWinPct": 70.4,
+     "firstPlayerWinPct": 44.4,
+     "turnsP": {
+      "p25": 39,
+      "p50": 52,
+      "p75": 58,
+      "p90": 61
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 471,
+      "overturned": 239,
+      "pct": 50.7
+     },
+     "winnerLpMedian": 27
+    },
+    "Sapphire|Sapphire": {
+     "fA": "Sapphire",
+     "fB": "Sapphire",
+     "n": 1000,
+     "wA": 495,
+     "wB": 505,
+     "draws": 0,
+     "aWinPct": 49.5,
+     "firstPlayerWinPct": 49.7,
+     "turnsP": {
+      "p25": 30,
+      "p50": 34,
+      "p75": 39,
+      "p90": 45
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 505,
+      "overturned": 231,
+      "pct": 45.7
+     },
+     "winnerLpMedian": 25
+    },
+    "Sapphire|Verdant": {
+     "fA": "Sapphire",
+     "fB": "Verdant",
+     "n": 1000,
+     "wA": 226,
+     "wB": 774,
+     "draws": 0,
+     "aWinPct": 22.6,
+     "firstPlayerWinPct": 50,
+     "turnsP": {
+      "p25": 33,
+      "p50": 39,
+      "p75": 49,
+      "p90": 59
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 511,
+      "overturned": 234,
+      "pct": 45.8
+     },
+     "winnerLpMedian": 23
+    },
+    "Verdant|Verdant": {
+     "fA": "Verdant",
+     "fB": "Verdant",
+     "n": 1000,
+     "wA": 519,
+     "wB": 481,
+     "draws": 0,
+     "aWinPct": 51.9,
+     "firstPlayerWinPct": 62.3,
+     "turnsP": {
+      "p25": 40,
+      "p50": 54,
+      "p75": 57,
+      "p90": 58
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 469,
+      "overturned": 230,
+      "pct": 49
+     },
+     "winnerLpMedian": 23.5
+    }
+   },
+   "factionDetail": {
+    "Onyx": {
+     "games": 5000,
+     "transformPct": 95.2,
+     "transformAvgTurn": 27.3,
+     "winPctWhenTransformed": 44,
+     "winPctWhenNot": 42,
+     "avgLpAtFlip": 23.4,
+     "avgTurnsAfterFlip": 19.8,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 3.32,
+      "postFlip": 3.51
+     },
+     "postFlipUsesByIndex": {
+      "0": 13487,
+      "2": 3231
+     },
+     "resourcesByTurn": {
+      "t5": 2.53,
+      "t10": 5.27,
+      "t15": 8.23
+     },
+     "deploysPerGame": 20.79,
+     "earlyDeploysPerGame": 1.71,
+     "earlySpellsPerGame": 0.85,
+     "discardsPerGame": 1.47
+    },
+    "Radiant": {
+     "games": 5000,
+     "transformPct": 92.6,
+     "transformAvgTurn": 27.2,
+     "winPctWhenTransformed": 67.8,
+     "winPctWhenNot": 61.2,
+     "avgLpAtFlip": 25,
+     "avgTurnsAfterFlip": 20.8,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 5.91,
+      "postFlip": 3.25
+     },
+     "postFlipUsesByIndex": {
+      "1": 11574,
+      "2": 3496
+     },
+     "resourcesByTurn": {
+      "t5": 2.54,
+      "t10": 5.41,
+      "t15": 8.66
+     },
+     "deploysPerGame": 17.6,
+     "earlyDeploysPerGame": 1.13,
+     "earlySpellsPerGame": 0.58,
+     "discardsPerGame": 0
+    },
+    "Sapphire": {
+     "games": 5000,
+     "transformPct": 90.6,
+     "transformAvgTurn": 27.5,
+     "winPctWhenTransformed": 33.7,
+     "winPctWhenNot": 34.7,
+     "avgLpAtFlip": 23.9,
+     "avgTurnsAfterFlip": 12.5,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 0,
+      "postFlip": 1.77
+     },
+     "postFlipUsesByIndex": {
+      "4": 8040
+     },
+     "resourcesByTurn": {
+      "t5": 2.65,
+      "t10": 5.55,
+      "t15": 8.67
+     },
+     "deploysPerGame": 16.58,
+     "earlyDeploysPerGame": 1,
+     "earlySpellsPerGame": 1.41,
+     "discardsPerGame": 2.58
+    },
+    "Verdant": {
+     "games": 5000,
+     "transformPct": 94.1,
+     "transformAvgTurn": 27.1,
+     "winPctWhenTransformed": 54.8,
+     "winPctWhenNot": 59.6,
+     "avgLpAtFlip": 23.8,
+     "avgTurnsAfterFlip": 20.9,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 1.56,
+      "postFlip": 4.22
+     },
+     "postFlipUsesByIndex": {
+      "0": 16265,
+      "2": 3594
+     },
+     "resourcesByTurn": {
+      "t5": 2.64,
+      "t10": 5.97,
+      "t15": 9.56
+     },
+     "deploysPerGame": 20.83,
+     "earlyDeploysPerGame": 1.56,
+     "earlySpellsPerGame": 0.46,
+     "discardsPerGame": 0
+    }
+   }
+  },
+  {
+   "label": "heuristic",
+   "kind": "matrix",
+   "marg": {
+    "Onyx": {
+     "w": 962,
+     "n": 3000,
+     "wilson": [
+      30.42033023876694,
+      32.06666666666666,
+      33.758872819077396
+     ]
+    },
+    "Radiant": {
+     "w": 1694,
+     "n": 3000,
+     "wilson": [
+      54.685312443027556,
+      56.46666666666667,
+      58.23148050637431
+     ]
+    },
+    "Sapphire": {
+     "w": 1462,
+     "n": 3000,
+     "wilson": [
+      46.94744386390735,
+      48.733333333333334,
+      50.522462671776836
+     ]
+    },
+    "Verdant": {
+     "w": 1882,
+     "n": 3000,
+     "wilson": [
+      60.98784456208596,
+      62.73333333333333,
+      64.44625289498369
+     ]
+    }
+   },
+   "spread": 30.666666666666664,
+   "matrix": {
+    "Onyx": {
+     "Radiant": {
+      "w": 228,
+      "n": 1000
+     },
+     "Sapphire": {
+      "w": 468,
+      "n": 1000
+     },
+     "Verdant": {
+      "w": 266,
+      "n": 1000
+     }
+    },
+    "Radiant": {
+     "Onyx": {
+      "w": 772,
+      "n": 1000
+     },
+     "Sapphire": {
+      "w": 531,
+      "n": 1000
+     },
+     "Verdant": {
+      "w": 391,
+      "n": 1000
+     }
+    },
+    "Sapphire": {
+     "Onyx": {
+      "w": 532,
+      "n": 1000
+     },
+     "Radiant": {
+      "w": 469,
+      "n": 1000
+     },
+     "Verdant": {
+      "w": 461,
+      "n": 1000
+     }
+    },
+    "Verdant": {
+     "Onyx": {
+      "w": 734,
+      "n": 1000
+     },
+     "Radiant": {
+      "w": 609,
+      "n": 1000
+     },
+     "Sapphire": {
+      "w": 539,
+      "n": 1000
+     }
+    }
+   },
+   "worst": {
+    "dev": 27.200000000000003,
+    "A": "Radiant",
+    "B": "Onyx",
+    "wp": 77.2,
+    "n": 1000
+   },
+   "mirrorFp": 51.625,
+   "mirrorDecided": 4000,
+   "decidedPct": 100,
+   "timeoutPct": 0,
+   "avgTurns": 27.02,
+   "games": 10000,
+   "matchupDetail": {
+    "Onyx|Onyx": {
+     "fA": "Onyx",
+     "fB": "Onyx",
+     "n": 1000,
+     "wA": 409,
+     "wB": 591,
+     "draws": 0,
+     "aWinPct": 40.9,
+     "firstPlayerWinPct": 54.9,
+     "turnsP": {
+      "p25": 27,
+      "p50": 31,
+      "p75": 36,
+      "p90": 40
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 898,
+      "overturned": 398,
+      "pct": 44.3
+     },
+     "winnerLpMedian": 12
+    },
+    "Onyx|Radiant": {
+     "fA": "Onyx",
+     "fB": "Radiant",
+     "n": 1000,
+     "wA": 228,
+     "wB": 772,
+     "draws": 0,
+     "aWinPct": 22.8,
+     "firstPlayerWinPct": 50.4,
+     "turnsP": {
+      "p25": 21,
+      "p50": 26,
+      "p75": 36,
+      "p90": 43
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 839,
+      "overturned": 451,
+      "pct": 53.8
+     },
+     "winnerLpMedian": 23
+    },
+    "Onyx|Sapphire": {
+     "fA": "Onyx",
+     "fB": "Sapphire",
+     "n": 1000,
+     "wA": 468,
+     "wB": 532,
+     "draws": 0,
+     "aWinPct": 46.8,
+     "firstPlayerWinPct": 52.6,
+     "turnsP": {
+      "p25": 25,
+      "p50": 28,
+      "p75": 31,
+      "p90": 33
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 891,
+      "overturned": 407,
+      "pct": 45.7
+     },
+     "winnerLpMedian": 16
+    },
+    "Onyx|Verdant": {
+     "fA": "Onyx",
+     "fB": "Verdant",
+     "n": 1000,
+     "wA": 266,
+     "wB": 734,
+     "draws": 0,
+     "aWinPct": 26.6,
+     "firstPlayerWinPct": 46.6,
+     "turnsP": {
+      "p25": 21,
+      "p50": 25,
+      "p75": 30,
+      "p90": 34
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 893,
+      "overturned": 523,
+      "pct": 58.6
+     },
+     "winnerLpMedian": 17
+    },
+    "Radiant|Radiant": {
+     "fA": "Radiant",
+     "fB": "Radiant",
+     "n": 1000,
+     "wA": 470,
+     "wB": 530,
+     "draws": 0,
+     "aWinPct": 47,
+     "firstPlayerWinPct": 51.8,
+     "turnsP": {
+      "p25": 21,
+      "p50": 24,
+      "p75": 29,
+      "p90": 36
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 652,
+      "overturned": 330,
+      "pct": 50.6
+     },
+     "winnerLpMedian": 28
+    },
+    "Radiant|Sapphire": {
+     "fA": "Radiant",
+     "fB": "Sapphire",
+     "n": 1000,
+     "wA": 531,
+     "wB": 469,
+     "draws": 0,
+     "aWinPct": 53.1,
+     "firstPlayerWinPct": 54.1,
+     "turnsP": {
+      "p25": 25,
+      "p50": 28,
+      "p75": 30,
+      "p90": 33
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 731,
+      "overturned": 328,
+      "pct": 44.9
+     },
+     "winnerLpMedian": 22
+    },
+    "Radiant|Verdant": {
+     "fA": "Radiant",
+     "fB": "Verdant",
+     "n": 1000,
+     "wA": 391,
+     "wB": 609,
+     "draws": 0,
+     "aWinPct": 39.1,
+     "firstPlayerWinPct": 45.5,
+     "turnsP": {
+      "p25": 21,
+      "p50": 24,
+      "p75": 28,
+      "p90": 34
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 841,
+      "overturned": 486,
+      "pct": 57.8
+     },
+     "winnerLpMedian": 25
+    },
+    "Sapphire|Sapphire": {
+     "fA": "Sapphire",
+     "fB": "Sapphire",
+     "n": 1000,
+     "wA": 497,
+     "wB": 503,
+     "draws": 0,
+     "aWinPct": 49.7,
+     "firstPlayerWinPct": 55.9,
+     "turnsP": {
+      "p25": 23,
+      "p50": 25,
+      "p75": 27,
+      "p90": 29
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 747,
+      "overturned": 329,
+      "pct": 44
+     },
+     "winnerLpMedian": 20
+    },
+    "Sapphire|Verdant": {
+     "fA": "Sapphire",
+     "fB": "Verdant",
+     "n": 1000,
+     "wA": 461,
+     "wB": 539,
+     "draws": 0,
+     "aWinPct": 46.1,
+     "firstPlayerWinPct": 52.7,
+     "turnsP": {
+      "p25": 25,
+      "p50": 27,
+      "p75": 30,
+      "p90": 33
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 792,
+      "overturned": 363,
+      "pct": 45.8
+     },
+     "winnerLpMedian": 18
+    },
+    "Verdant|Verdant": {
+     "fA": "Verdant",
+     "fB": "Verdant",
+     "n": 1000,
+     "wA": 509,
+     "wB": 491,
+     "draws": 0,
+     "aWinPct": 50.9,
+     "firstPlayerWinPct": 43.9,
+     "turnsP": {
+      "p25": 21,
+      "p50": 24,
+      "p75": 27,
+      "p90": 30
+     },
+     "winMethod": {
+      "kill": 1000,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 882,
+      "overturned": 389,
+      "pct": 44.1
+     },
+     "winnerLpMedian": 20
+    }
+   },
+   "factionDetail": {
+    "Onyx": {
+     "games": 5000,
+     "transformPct": 89.9,
+     "transformAvgTurn": 22.8,
+     "winPctWhenTransformed": 38.4,
+     "winPctWhenNot": 46.7,
+     "avgLpAtFlip": 10.4,
+     "avgTurnsAfterFlip": 7.1,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 3.29,
+      "postFlip": 2.62
+     },
+     "postFlipUsesByIndex": {
+      "0": 9330,
+      "2": 2452
+     },
+     "resourcesByTurn": {
+      "t5": 2.5,
+      "t10": 5,
+      "t15": 7.79
+     },
+     "deploysPerGame": 16.38,
+     "earlyDeploysPerGame": 2.97,
+     "earlySpellsPerGame": 0.18,
+     "discardsPerGame": 2.6
+    },
+    "Radiant": {
+     "games": 5000,
+     "transformPct": 67.6,
+     "transformAvgTurn": 23.8,
+     "winPctWhenTransformed": 40.1,
+     "winPctWhenNot": 82.6,
+     "avgLpAtFlip": 14.8,
+     "avgTurnsAfterFlip": 5.9,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 10.82,
+      "postFlip": 2.28
+     },
+     "postFlipUsesByIndex": {
+      "1": 4760,
+      "2": 2934
+     },
+     "resourcesByTurn": {
+      "t5": 2.5,
+      "t10": 5,
+      "t15": 7.5
+     },
+     "deploysPerGame": 12.2,
+     "earlyDeploysPerGame": 1.62,
+     "earlySpellsPerGame": 0.23,
+     "discardsPerGame": 1.51
+    },
+    "Sapphire": {
+     "games": 5000,
+     "transformPct": 67.7,
+     "transformAvgTurn": 24.6,
+     "winPctWhenTransformed": 47.6,
+     "winPctWhenNot": 52.6,
+     "avgLpAtFlip": 17.1,
+     "avgTurnsAfterFlip": 3.9,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 0.01,
+      "postFlip": 1.45
+     },
+     "postFlipUsesByIndex": {
+      "4": 4927
+     },
+     "resourcesByTurn": {
+      "t5": 2.5,
+      "t10": 5,
+      "t15": 7.5
+     },
+     "deploysPerGame": 16.55,
+     "earlyDeploysPerGame": 1.99,
+     "earlySpellsPerGame": 0.95,
+     "discardsPerGame": 5.19
+    },
+    "Verdant": {
+     "games": 5000,
+     "transformPct": 68.5,
+     "transformAvgTurn": 23.5,
+     "winPctWhenTransformed": 42.3,
+     "winPctWhenNot": 91,
+     "avgLpAtFlip": 12.7,
+     "avgTurnsAfterFlip": 4.1,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 1.57,
+      "postFlip": 2.4
+     },
+     "postFlipUsesByIndex": {
+      "0": 5254,
+      "2": 2974
+     },
+     "resourcesByTurn": {
+      "t5": 2.5,
+      "t10": 5.06,
+      "t15": 7.8
+     },
+     "deploysPerGame": 13.84,
+     "earlyDeploysPerGame": 2.13,
+     "earlySpellsPerGame": 0.12,
+     "discardsPerGame": 1.03
+    }
+   }
+  },
+  {
+   "label": "rollout-low (r4 d2 c5)",
+   "kind": "agg",
+   "marg": {
+    "Onyx": {
+     "w": 866,
+     "n": 1800,
+     "wilson": [
+      45.80935625390826,
+      48.11111111111111,
+      50.420911414827174
+     ]
+    },
+    "Radiant": {
+     "w": 947,
+     "n": 1800,
+     "wilson": [
+      50.301270890513415,
+      52.61111111111111,
+      54.90982968505818
+     ]
+    },
+    "Sapphire": {
+     "w": 884,
+     "n": 1800,
+     "wilson": [
+      46.80594684957276,
+      49.111111111111114,
+      51.420061465126274
+     ]
+    },
+    "Verdant": {
+     "w": 903,
+     "n": 1800,
+     "wilson": [
+      47.858903322791576,
+      50.16666666666667,
+      52.47372011820236
+     ]
+    }
+   },
+   "spread": 4.5,
+   "mirrorFp": 51.3,
+   "decidedPct": 100,
+   "timeoutPct": 0,
+   "avgTurns": 34.1,
+   "games": 6000,
+   "runHash": "0dd5ceb697887b31",
+   "matchupDetail": {
+    "Onyx|Onyx": {
+     "fA": "Onyx",
+     "fB": "Onyx",
+     "n": 600,
+     "wA": 240,
+     "wB": 360,
+     "draws": 0,
+     "aWinPct": 40,
+     "firstPlayerWinPct": 57.7,
+     "turnsP": {
+      "p25": 29,
+      "p50": 37,
+      "p75": 47,
+      "p90": 52
+     },
+     "winMethod": {
+      "kill": 600,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 567,
+      "overturned": 233,
+      "pct": 41.1
+     },
+     "winnerLpMedian": 17
+    },
+    "Onyx|Radiant": {
+     "fA": "Onyx",
+     "fB": "Radiant",
+     "n": 600,
+     "wA": 271,
+     "wB": 329,
+     "draws": 0,
+     "aWinPct": 45.2,
+     "firstPlayerWinPct": 48.2,
+     "turnsP": {
+      "p25": 25,
+      "p50": 32,
+      "p75": 43,
+      "p90": 53
+     },
+     "winMethod": {
+      "kill": 600,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 538,
+      "overturned": 280,
+      "pct": 52
+     },
+     "winnerLpMedian": 24
+    },
+    "Onyx|Sapphire": {
+     "fA": "Onyx",
+     "fB": "Sapphire",
+     "n": 600,
+     "wA": 255,
+     "wB": 345,
+     "draws": 0,
+     "aWinPct": 42.5,
+     "firstPlayerWinPct": 56.2,
+     "turnsP": {
+      "p25": 29,
+      "p50": 34,
+      "p75": 41,
+      "p90": 48
+     },
+     "winMethod": {
+      "kill": 600,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 539,
+      "overturned": 295,
+      "pct": 54.7
+     },
+     "winnerLpMedian": 19
+    },
+    "Onyx|Verdant": {
+     "fA": "Onyx",
+     "fB": "Verdant",
+     "n": 600,
+     "wA": 340,
+     "wB": 260,
+     "draws": 0,
+     "aWinPct": 56.7,
+     "firstPlayerWinPct": 50.7,
+     "turnsP": {
+      "p25": 29,
+      "p50": 34,
+      "p75": 44,
+      "p90": 52
+     },
+     "winMethod": {
+      "kill": 600,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 554,
+      "overturned": 238,
+      "pct": 43
+     },
+     "winnerLpMedian": 18
+    },
+    "Radiant|Radiant": {
+     "fA": "Radiant",
+     "fB": "Radiant",
+     "n": 600,
+     "wA": 284,
+     "wB": 316,
+     "draws": 0,
+     "aWinPct": 47.3,
+     "firstPlayerWinPct": 44.7,
+     "turnsP": {
+      "p25": 23,
+      "p50": 28,
+      "p75": 35,
+      "p90": 43
+     },
+     "winMethod": {
+      "kill": 600,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 401,
+      "overturned": 201,
+      "pct": 50.1
+     },
+     "winnerLpMedian": 29
+    },
+    "Radiant|Sapphire": {
+     "fA": "Radiant",
+     "fB": "Sapphire",
+     "n": 600,
+     "wA": 374,
+     "wB": 226,
+     "draws": 0,
+     "aWinPct": 62.3,
+     "firstPlayerWinPct": 51.3,
+     "turnsP": {
+      "p25": 26,
+      "p50": 32,
+      "p75": 37,
+      "p90": 44
+     },
+     "winMethod": {
+      "kill": 600,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 494,
+      "overturned": 221,
+      "pct": 44.7
+     },
+     "winnerLpMedian": 26
+    },
+    "Radiant|Verdant": {
+     "fA": "Radiant",
+     "fB": "Verdant",
+     "n": 600,
+     "wA": 244,
+     "wB": 356,
+     "draws": 0,
+     "aWinPct": 40.7,
+     "firstPlayerWinPct": 45,
+     "turnsP": {
+      "p25": 26,
+      "p50": 31,
+      "p75": 39,
+      "p90": 50
+     },
+     "winMethod": {
+      "kill": 600,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 460,
+      "overturned": 266,
+      "pct": 57.8
+     },
+     "winnerLpMedian": 27
+    },
+    "Sapphire|Sapphire": {
+     "fA": "Sapphire",
+     "fB": "Sapphire",
+     "n": 600,
+     "wA": 270,
+     "wB": 330,
+     "draws": 0,
+     "aWinPct": 45,
+     "firstPlayerWinPct": 56,
+     "turnsP": {
+      "p25": 29,
+      "p50": 33,
+      "p75": 37,
+      "p90": 42
+     },
+     "winMethod": {
+      "kill": 600,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 486,
+      "overturned": 210,
+      "pct": 43.2
+     },
+     "winnerLpMedian": 20
+    },
+    "Sapphire|Verdant": {
+     "fA": "Sapphire",
+     "fB": "Verdant",
+     "n": 600,
+     "wA": 313,
+     "wB": 287,
+     "draws": 0,
+     "aWinPct": 52.2,
+     "firstPlayerWinPct": 53.5,
+     "turnsP": {
+      "p25": 29,
+      "p50": 33,
+      "p75": 37,
+      "p90": 43
+     },
+     "winMethod": {
+      "kill": 600,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 496,
+      "overturned": 234,
+      "pct": 47.2
+     },
+     "winnerLpMedian": 20
+    },
+    "Verdant|Verdant": {
+     "fA": "Verdant",
+     "fB": "Verdant",
+     "n": 600,
+     "wA": 316,
+     "wB": 284,
+     "draws": 0,
+     "aWinPct": 52.7,
+     "firstPlayerWinPct": 46.7,
+     "turnsP": {
+      "p25": 26,
+      "p50": 32,
+      "p75": 41,
+      "p90": 52
+     },
+     "winMethod": {
+      "kill": 600,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 489,
+      "overturned": 249,
+      "pct": 50.9
+     },
+     "winnerLpMedian": 22
+    }
+   },
+   "factionDetail": {
+    "Onyx": {
+     "games": 3000,
+     "transformPct": 80.4,
+     "transformAvgTurn": 26.1,
+     "winPctWhenTransformed": 51.1,
+     "winPctWhenNot": 39.7,
+     "avgLpAtFlip": 17.3,
+     "avgTurnsAfterFlip": 13.1,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 3.29,
+      "postFlip": 2.54
+     },
+     "postFlipUsesByIndex": {
+      "0": 4536,
+      "2": 1594
+     },
+     "resourcesByTurn": {
+      "t5": 2.5,
+      "t10": 5.07,
+      "t15": 7.71
+     },
+     "deploysPerGame": 19.05,
+     "earlyDeploysPerGame": 1.78,
+     "earlySpellsPerGame": 0.53,
+     "discardsPerGame": 1.19,
+     "raw": {
+      "games": 3000,
+      "transforms": 2411,
+      "transformTurnSum": 62995,
+      "transformTurnN": 2411,
+      "winsT": 1232,
+      "decT": 2411,
+      "winsN": 234,
+      "decN": 589,
+      "res5": 7508,
+      "res10": 15201,
+      "res15": 23117,
+      "deploys": 57149,
+      "deploysEarly": 5341,
+      "spellsEarly": 1591,
+      "discards": 3571,
+      "flipLpSum": 41717,
+      "flipLpN": 2411,
+      "flipSurvSum": 31570,
+      "flipSurvN": 2411,
+      "heroPre": 9865,
+      "heroPost": 6130,
+      "heroPostIdx": {
+       "0": 4536,
+       "2": 1594
+      }
+     }
+    },
+    "Radiant": {
+     "games": 3000,
+     "transformPct": 66.9,
+     "transformAvgTurn": 25.8,
+     "winPctWhenTransformed": 40.9,
+     "winPctWhenNot": 73,
+     "avgLpAtFlip": 20.8,
+     "avgTurnsAfterFlip": 10.6,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 4.69,
+      "postFlip": 2.21
+     },
+     "postFlipUsesByIndex": {
+      "1": 2897,
+      "2": 1536
+     },
+     "resourcesByTurn": {
+      "t5": 2.51,
+      "t10": 5.11,
+      "t15": 7.98
+     },
+     "deploysPerGame": 14.39,
+     "earlyDeploysPerGame": 1.53,
+     "earlySpellsPerGame": 0.77,
+     "discardsPerGame": 0,
+     "raw": {
+      "games": 3000,
+      "transforms": 2006,
+      "transformTurnSum": 51759,
+      "transformTurnN": 2006,
+      "winsT": 821,
+      "decT": 2006,
+      "winsN": 726,
+      "decN": 994,
+      "res5": 7543,
+      "res10": 15344,
+      "res15": 23931,
+      "deploys": 43165,
+      "deploysEarly": 4604,
+      "spellsEarly": 2321,
+      "discards": 0,
+      "flipLpSum": 41710,
+      "flipLpN": 2006,
+      "flipSurvSum": 21287,
+      "flipSurvN": 2006,
+      "heroPre": 14060,
+      "heroPost": 4433,
+      "heroPostIdx": {
+       "1": 2897,
+       "2": 1536
+      }
+     }
+    },
+    "Sapphire": {
+     "games": 3000,
+     "transformPct": 82,
+     "transformAvgTurn": 27.1,
+     "winPctWhenTransformed": 56.4,
+     "winPctWhenNot": 17.8,
+     "avgLpAtFlip": 18.7,
+     "avgTurnsAfterFlip": 8.5,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 0,
+      "postFlip": 1.03
+     },
+     "postFlipUsesByIndex": {
+      "4": 2529
+     },
+     "resourcesByTurn": {
+      "t5": 2.53,
+      "t10": 5.13,
+      "t15": 7.81
+     },
+     "deploysPerGame": 17.05,
+     "earlyDeploysPerGame": 1.11,
+     "earlySpellsPerGame": 1.3,
+     "discardsPerGame": 2.41,
+     "raw": {
+      "games": 3000,
+      "transforms": 2461,
+      "transformTurnSum": 66643,
+      "transformTurnN": 2461,
+      "winsT": 1388,
+      "decT": 2461,
+      "winsN": 96,
+      "decN": 539,
+      "res5": 7586,
+      "res10": 15377,
+      "res15": 23442,
+      "deploys": 51146,
+      "deploysEarly": 3332,
+      "spellsEarly": 3915,
+      "discards": 7225,
+      "flipLpSum": 46046,
+      "flipLpN": 2461,
+      "flipSurvSum": 20799,
+      "flipSurvN": 2461,
+      "heroPre": 0,
+      "heroPost": 2529,
+      "heroPostIdx": {
+       "4": 2529
+      }
+     }
+    },
+    "Verdant": {
+     "games": 3000,
+     "transformPct": 71.3,
+     "transformAvgTurn": 27.2,
+     "winPctWhenTransformed": 42.8,
+     "winPctWhenNot": 68.2,
+     "avgLpAtFlip": 17.7,
+     "avgTurnsAfterFlip": 10.6,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 1.21,
+      "postFlip": 2.38
+     },
+     "postFlipUsesByIndex": {
+      "0": 3672,
+      "2": 1411
+     },
+     "resourcesByTurn": {
+      "t5": 2.57,
+      "t10": 5.56,
+      "t15": 8.83
+     },
+     "deploysPerGame": 18.16,
+     "earlyDeploysPerGame": 1.74,
+     "earlySpellsPerGame": 0.44,
+     "discardsPerGame": 0,
+     "raw": {
+      "games": 3000,
+      "transforms": 2139,
+      "transformTurnSum": 58183,
+      "transformTurnN": 2139,
+      "winsT": 916,
+      "decT": 2139,
+      "winsN": 587,
+      "decN": 861,
+      "res5": 7704,
+      "res10": 16677,
+      "res15": 26487,
+      "deploys": 54481,
+      "deploysEarly": 5221,
+      "spellsEarly": 1324,
+      "discards": 0,
+      "flipLpSum": 37758,
+      "flipLpN": 2139,
+      "flipSurvSum": 22740,
+      "flipSurvN": 2139,
+      "heroPre": 3616,
+      "heroPost": 5083,
+      "heroPostIdx": {
+       "0": 3672,
+       "2": 1411
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "rollout-high (r8 d3 c8)",
+   "kind": "agg",
+   "marg": {
+    "Onyx": {
+     "w": 616,
+     "n": 1200,
+     "wilson": [
+      48.50558089852355,
+      51.33333333333333,
+      54.15257612146978
+     ]
+    },
+    "Radiant": {
+     "w": 525,
+     "n": 1200,
+     "wilson": [
+      40.967527935896975,
+      43.75,
+      46.57236103288429
+     ]
+    },
+    "Sapphire": {
+     "w": 599,
+     "n": 1200,
+     "wilson": [
+      47.0924376530636,
+      49.916666666666664,
+      52.741427533186815
+     ]
+    },
+    "Verdant": {
+     "w": 660,
+     "n": 1200,
+     "wilson": [
+      52.17365824694631,
+      55.00000000000001,
+      57.79443057802869
+     ]
+    }
+   },
+   "spread": 11.250000000000007,
+   "mirrorFp": 49.8,
+   "decidedPct": 100,
+   "timeoutPct": 0,
+   "avgTurns": 34.5,
+   "games": 4000,
+   "runHash": "01775d1f144ea70e",
+   "matchupDetail": {
+    "Onyx|Onyx": {
+     "fA": "Onyx",
+     "fB": "Onyx",
+     "n": 400,
+     "wA": 152,
+     "wB": 248,
+     "draws": 0,
+     "aWinPct": 38,
+     "firstPlayerWinPct": 59.5,
+     "turnsP": {
+      "p25": 29,
+      "p50": 37,
+      "p75": 47,
+      "p90": 52
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 365,
+      "overturned": 142,
+      "pct": 38.9
+     },
+     "winnerLpMedian": 18
+    },
+    "Onyx|Radiant": {
+     "fA": "Onyx",
+     "fB": "Radiant",
+     "n": 400,
+     "wA": 208,
+     "wB": 192,
+     "draws": 0,
+     "aWinPct": 52,
+     "firstPlayerWinPct": 47,
+     "turnsP": {
+      "p25": 25,
+      "p50": 33,
+      "p75": 42,
+      "p90": 52
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 351,
+      "overturned": 173,
+      "pct": 49.3
+     },
+     "winnerLpMedian": 24
+    },
+    "Onyx|Sapphire": {
+     "fA": "Onyx",
+     "fB": "Sapphire",
+     "n": 400,
+     "wA": 201,
+     "wB": 199,
+     "draws": 0,
+     "aWinPct": 50.3,
+     "firstPlayerWinPct": 52.3,
+     "turnsP": {
+      "p25": 32,
+      "p50": 37,
+      "p75": 45,
+      "p90": 54
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 371,
+      "overturned": 178,
+      "pct": 48
+     },
+     "winnerLpMedian": 18.5
+    },
+    "Onyx|Verdant": {
+     "fA": "Onyx",
+     "fB": "Verdant",
+     "n": 400,
+     "wA": 207,
+     "wB": 193,
+     "draws": 0,
+     "aWinPct": 51.8,
+     "firstPlayerWinPct": 50.8,
+     "turnsP": {
+      "p25": 28,
+      "p50": 35,
+      "p75": 46,
+      "p90": 52
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 371,
+      "overturned": 168,
+      "pct": 45.3
+     },
+     "winnerLpMedian": 16
+    },
+    "Radiant|Radiant": {
+     "fA": "Radiant",
+     "fB": "Radiant",
+     "n": 400,
+     "wA": 191,
+     "wB": 209,
+     "draws": 0,
+     "aWinPct": 47.8,
+     "firstPlayerWinPct": 42.3,
+     "turnsP": {
+      "p25": 22,
+      "p50": 26,
+      "p75": 32,
+      "p90": 42
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 258,
+      "overturned": 128,
+      "pct": 49.6
+     },
+     "winnerLpMedian": 29
+    },
+    "Radiant|Sapphire": {
+     "fA": "Radiant",
+     "fB": "Sapphire",
+     "n": 400,
+     "wA": 210,
+     "wB": 190,
+     "draws": 0,
+     "aWinPct": 52.5,
+     "firstPlayerWinPct": 51,
+     "turnsP": {
+      "p25": 28,
+      "p50": 32,
+      "p75": 38,
+      "p90": 45
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 298,
+      "overturned": 129,
+      "pct": 43.3
+     },
+     "winnerLpMedian": 24.5
+    },
+    "Radiant|Verdant": {
+     "fA": "Radiant",
+     "fB": "Verdant",
+     "n": 400,
+     "wA": 123,
+     "wB": 277,
+     "draws": 0,
+     "aWinPct": 30.8,
+     "firstPlayerWinPct": 42.8,
+     "turnsP": {
+      "p25": 25,
+      "p50": 29,
+      "p75": 35,
+      "p90": 44
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 308,
+      "overturned": 178,
+      "pct": 57.8
+     },
+     "winnerLpMedian": 27
+    },
+    "Sapphire|Sapphire": {
+     "fA": "Sapphire",
+     "fB": "Sapphire",
+     "n": 400,
+     "wA": 175,
+     "wB": 225,
+     "draws": 0,
+     "aWinPct": 43.8,
+     "firstPlayerWinPct": 55.8,
+     "turnsP": {
+      "p25": 31,
+      "p50": 35,
+      "p75": 39,
+      "p90": 46
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 330,
+      "overturned": 141,
+      "pct": 42.7
+     },
+     "winnerLpMedian": 20
+    },
+    "Sapphire|Verdant": {
+     "fA": "Sapphire",
+     "fB": "Verdant",
+     "n": 400,
+     "wA": 210,
+     "wB": 190,
+     "draws": 0,
+     "aWinPct": 52.5,
+     "firstPlayerWinPct": 51.5,
+     "turnsP": {
+      "p25": 29,
+      "p50": 33,
+      "p75": 38,
+      "p90": 45
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 331,
+      "overturned": 154,
+      "pct": 46.5
+     },
+     "winnerLpMedian": 20
+    },
+    "Verdant|Verdant": {
+     "fA": "Verdant",
+     "fB": "Verdant",
+     "n": 400,
+     "wA": 208,
+     "wB": 192,
+     "draws": 0,
+     "aWinPct": 52,
+     "firstPlayerWinPct": 41.5,
+     "turnsP": {
+      "p25": 26,
+      "p50": 32,
+      "p75": 39,
+      "p90": 50
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 324,
+      "overturned": 174,
+      "pct": 53.7
+     },
+     "winnerLpMedian": 22
+    }
+   },
+   "factionDetail": {
+    "Onyx": {
+     "games": 2000,
+     "transformPct": 84.8,
+     "transformAvgTurn": 25.6,
+     "winPctWhenTransformed": 51.1,
+     "winPctWhenNot": 48.8,
+     "avgLpAtFlip": 17,
+     "avgTurnsAfterFlip": 13.8,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 3.34,
+      "postFlip": 2.8
+     },
+     "postFlipUsesByIndex": {
+      "0": 3479,
+      "2": 1270
+     },
+     "resourcesByTurn": {
+      "t5": 2.5,
+      "t10": 5.08,
+      "t15": 7.8
+     },
+     "deploysPerGame": 20.1,
+     "earlyDeploysPerGame": 1.83,
+     "earlySpellsPerGame": 0.39,
+     "discardsPerGame": 1.15,
+     "raw": {
+      "games": 2000,
+      "transforms": 1697,
+      "transformTurnSum": 43464,
+      "transformTurnN": 1697,
+      "winsT": 868,
+      "decT": 1697,
+      "winsN": 148,
+      "decN": 303,
+      "res5": 5003,
+      "res10": 10165,
+      "res15": 15605,
+      "deploys": 40193,
+      "deploysEarly": 3651,
+      "spellsEarly": 776,
+      "discards": 2303,
+      "flipLpSum": 28792,
+      "flipLpN": 1697,
+      "flipSurvSum": 23438,
+      "flipSurvN": 1697,
+      "heroPre": 6684,
+      "heroPost": 4749,
+      "heroPostIdx": {
+       "0": 3479,
+       "2": 1270
+      }
+     }
+    },
+    "Radiant": {
+     "games": 2000,
+     "transformPct": 68.5,
+     "transformAvgTurn": 25.4,
+     "winPctWhenTransformed": 36.2,
+     "winPctWhenNot": 68,
+     "avgLpAtFlip": 18.9,
+     "avgTurnsAfterFlip": 10,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 4.6,
+      "postFlip": 2.13
+     },
+     "postFlipUsesByIndex": {
+      "1": 1800,
+      "2": 1114
+     },
+     "resourcesByTurn": {
+      "t5": 2.51,
+      "t10": 5.15,
+      "t15": 8.12
+     },
+     "deploysPerGame": 14.35,
+     "earlyDeploysPerGame": 1.63,
+     "earlySpellsPerGame": 0.67,
+     "discardsPerGame": 0,
+     "raw": {
+      "games": 2000,
+      "transforms": 1369,
+      "transformTurnSum": 34771,
+      "transformTurnN": 1369,
+      "winsT": 496,
+      "decT": 1369,
+      "winsN": 429,
+      "decN": 631,
+      "res5": 5021,
+      "res10": 10300,
+      "res15": 16233,
+      "deploys": 28696,
+      "deploysEarly": 3258,
+      "spellsEarly": 1338,
+      "discards": 0,
+      "flipLpSum": 25888,
+      "flipLpN": 1369,
+      "flipSurvSum": 13629,
+      "flipSurvN": 1369,
+      "heroPre": 9198,
+      "heroPost": 2914,
+      "heroPostIdx": {
+       "1": 1800,
+       "2": 1114
+      }
+     }
+    },
+    "Sapphire": {
+     "games": 2000,
+     "transformPct": 85.2,
+     "transformAvgTurn": 27.4,
+     "winPctWhenTransformed": 56.2,
+     "winPctWhenNot": 14.1,
+     "avgLpAtFlip": 18,
+     "avgTurnsAfterFlip": 9.4,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 0,
+      "postFlip": 1.19
+     },
+     "postFlipUsesByIndex": {
+      "4": 2023
+     },
+     "resourcesByTurn": {
+      "t5": 2.53,
+      "t10": 5.15,
+      "t15": 7.97
+     },
+     "deploysPerGame": 18.52,
+     "earlyDeploysPerGame": 1.25,
+     "earlySpellsPerGame": 0.94,
+     "discardsPerGame": 2.14,
+     "raw": {
+      "games": 2000,
+      "transforms": 1703,
+      "transformTurnSum": 46720,
+      "transformTurnN": 1703,
+      "winsT": 957,
+      "decT": 1703,
+      "winsN": 42,
+      "decN": 297,
+      "res5": 5054,
+      "res10": 10309,
+      "res15": 15948,
+      "deploys": 37037,
+      "deploysEarly": 2502,
+      "spellsEarly": 1878,
+      "discards": 4275,
+      "flipLpSum": 30651,
+      "flipLpN": 1703,
+      "flipSurvSum": 16074,
+      "flipSurvN": 1703,
+      "heroPre": 0,
+      "heroPost": 2023,
+      "heroPostIdx": {
+       "4": 2023
+      }
+     }
+    },
+    "Verdant": {
+     "games": 2000,
+     "transformPct": 70.1,
+     "transformAvgTurn": 27,
+     "winPctWhenTransformed": 46.2,
+     "winPctWhenNot": 68.9,
+     "avgLpAtFlip": 17.6,
+     "avgTurnsAfterFlip": 10.6,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 1.18,
+      "postFlip": 2.29
+     },
+     "postFlipUsesByIndex": {
+      "0": 2282,
+      "2": 923
+     },
+     "resourcesByTurn": {
+      "t5": 2.58,
+      "t10": 5.52,
+      "t15": 8.63
+     },
+     "deploysPerGame": 18.08,
+     "earlyDeploysPerGame": 1.75,
+     "earlySpellsPerGame": 0.35,
+     "discardsPerGame": 0,
+     "raw": {
+      "games": 2000,
+      "transforms": 1402,
+      "transformTurnSum": 37822,
+      "transformTurnN": 1402,
+      "winsT": 648,
+      "decT": 1402,
+      "winsN": 412,
+      "decN": 598,
+      "res5": 5169,
+      "res10": 11034,
+      "res15": 17262,
+      "deploys": 36153,
+      "deploysEarly": 3498,
+      "spellsEarly": 695,
+      "discards": 0,
+      "flipLpSum": 24619,
+      "flipLpN": 1402,
+      "flipSurvSum": 14863,
+      "flipSurvN": 1402,
+      "heroPre": 2363,
+      "heroPost": 3205,
+      "heroPostIdx": {
+       "0": 2282,
+       "2": 923
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "rollout-max (r12 d3 c8)",
+   "kind": "agg",
+   "marg": {
+    "Onyx": {
+     "w": 642,
+     "n": 1200,
+     "wilson": [
+      50.67123862150472,
+      53.5,
+      56.30642355597778
+     ]
+    },
+    "Radiant": {
+     "w": 537,
+     "n": 1200,
+     "wilson": [
+      41.957817757908394,
+      44.75,
+      47.57568897586786
+     ]
+    },
+    "Sapphire": {
+     "w": 562,
+     "n": 1200,
+     "wilson": [
+      44.02459195650946,
+      46.833333333333336,
+      49.66228512100636
+     ]
+    },
+    "Verdant": {
+     "w": 659,
+     "n": 1200,
+     "wilson": [
+      52.090123205038296,
+      54.91666666666667,
+      57.711830806187116
+     ]
+    }
+   },
+   "spread": 10.166666666666671,
+   "mirrorFp": 51.6,
+   "decidedPct": 100,
+   "timeoutPct": 0,
+   "avgTurns": 34.2,
+   "games": 4000,
+   "runHash": "6999cb60d71f6951",
+   "matchupDetail": {
+    "Onyx|Onyx": {
+     "fA": "Onyx",
+     "fB": "Onyx",
+     "n": 400,
+     "wA": 148,
+     "wB": 252,
+     "draws": 0,
+     "aWinPct": 37,
+     "firstPlayerWinPct": 63.5,
+     "turnsP": {
+      "p25": 29,
+      "p50": 38,
+      "p75": 47,
+      "p90": 52
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 369,
+      "overturned": 130,
+      "pct": 35.2
+     },
+     "winnerLpMedian": 18
+    },
+    "Onyx|Radiant": {
+     "fA": "Onyx",
+     "fB": "Radiant",
+     "n": 400,
+     "wA": 230,
+     "wB": 170,
+     "draws": 0,
+     "aWinPct": 57.5,
+     "firstPlayerWinPct": 48,
+     "turnsP": {
+      "p25": 25,
+      "p50": 32,
+      "p75": 42,
+      "p90": 52
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 347,
+      "overturned": 157,
+      "pct": 45.2
+     },
+     "winnerLpMedian": 24
+    },
+    "Onyx|Sapphire": {
+     "fA": "Onyx",
+     "fB": "Sapphire",
+     "n": 400,
+     "wA": 204,
+     "wB": 196,
+     "draws": 0,
+     "aWinPct": 51,
+     "firstPlayerWinPct": 56,
+     "turnsP": {
+      "p25": 31,
+      "p50": 36,
+      "p75": 43,
+      "p90": 52
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 358,
+      "overturned": 169,
+      "pct": 47.2
+     },
+     "winnerLpMedian": 19
+    },
+    "Onyx|Verdant": {
+     "fA": "Onyx",
+     "fB": "Verdant",
+     "n": 400,
+     "wA": 208,
+     "wB": 192,
+     "draws": 0,
+     "aWinPct": 52,
+     "firstPlayerWinPct": 47.5,
+     "turnsP": {
+      "p25": 28,
+      "p50": 35,
+      "p75": 44,
+      "p90": 52
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 370,
+      "overturned": 174,
+      "pct": 47
+     },
+     "winnerLpMedian": 17
+    },
+    "Radiant|Radiant": {
+     "fA": "Radiant",
+     "fB": "Radiant",
+     "n": 400,
+     "wA": 195,
+     "wB": 205,
+     "draws": 0,
+     "aWinPct": 48.8,
+     "firstPlayerWinPct": 46.8,
+     "turnsP": {
+      "p25": 21,
+      "p50": 25,
+      "p75": 31,
+      "p90": 40
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 251,
+      "overturned": 131,
+      "pct": 52.2
+     },
+     "winnerLpMedian": 29
+    },
+    "Radiant|Sapphire": {
+     "fA": "Radiant",
+     "fB": "Sapphire",
+     "n": 400,
+     "wA": 227,
+     "wB": 173,
+     "draws": 0,
+     "aWinPct": 56.8,
+     "firstPlayerWinPct": 51.8,
+     "turnsP": {
+      "p25": 28,
+      "p50": 32,
+      "p75": 38,
+      "p90": 45
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 301,
+      "overturned": 150,
+      "pct": 49.8
+     },
+     "winnerLpMedian": 25
+    },
+    "Radiant|Verdant": {
+     "fA": "Radiant",
+     "fB": "Verdant",
+     "n": 400,
+     "wA": 140,
+     "wB": 260,
+     "draws": 0,
+     "aWinPct": 35,
+     "firstPlayerWinPct": 45,
+     "turnsP": {
+      "p25": 24,
+      "p50": 29,
+      "p75": 36,
+      "p90": 44
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 313,
+      "overturned": 169,
+      "pct": 54
+     },
+     "winnerLpMedian": 27
+    },
+    "Sapphire|Sapphire": {
+     "fA": "Sapphire",
+     "fB": "Sapphire",
+     "n": 400,
+     "wA": 178,
+     "wB": 222,
+     "draws": 0,
+     "aWinPct": 44.5,
+     "firstPlayerWinPct": 55.5,
+     "turnsP": {
+      "p25": 31,
+      "p50": 35,
+      "p75": 40,
+      "p90": 46
+     },
+     "winMethod": {
+      "kill": 399,
+      "tiebreak": 1,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 331,
+      "overturned": 173,
+      "pct": 52.3
+     },
+     "winnerLpMedian": 20
+    },
+    "Sapphire|Verdant": {
+     "fA": "Sapphire",
+     "fB": "Verdant",
+     "n": 400,
+     "wA": 193,
+     "wB": 207,
+     "draws": 0,
+     "aWinPct": 48.3,
+     "firstPlayerWinPct": 51.8,
+     "turnsP": {
+      "p25": 29,
+      "p50": 33,
+      "p75": 38,
+      "p90": 45
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 325,
+      "overturned": 149,
+      "pct": 45.8
+     },
+     "winnerLpMedian": 20.5
+    },
+    "Verdant|Verdant": {
+     "fA": "Verdant",
+     "fB": "Verdant",
+     "n": 400,
+     "wA": 198,
+     "wB": 202,
+     "draws": 0,
+     "aWinPct": 49.5,
+     "firstPlayerWinPct": 40.5,
+     "turnsP": {
+      "p25": 26,
+      "p50": 31,
+      "p75": 40,
+      "p90": 49
+     },
+     "winMethod": {
+      "kill": 400,
+      "tiebreak": 0,
+      "undecided": 0
+     },
+     "comeback": {
+      "n": 326,
+      "overturned": 165,
+      "pct": 50.6
+     },
+     "winnerLpMedian": 22
+    }
+   },
+   "factionDetail": {
+    "Onyx": {
+     "games": 2000,
+     "transformPct": 84.3,
+     "transformAvgTurn": 25.6,
+     "winPctWhenTransformed": 52.3,
+     "winPctWhenNot": 50.8,
+     "avgLpAtFlip": 16.3,
+     "avgTurnsAfterFlip": 13.6,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 3.36,
+      "postFlip": 2.75
+     },
+     "postFlipUsesByIndex": {
+      "0": 3380,
+      "2": 1259
+     },
+     "resourcesByTurn": {
+      "t5": 2.5,
+      "t10": 5.08,
+      "t15": 7.81
+     },
+     "deploysPerGame": 19.78,
+     "earlyDeploysPerGame": 1.81,
+     "earlySpellsPerGame": 0.38,
+     "discardsPerGame": 1.14,
+     "raw": {
+      "games": 2000,
+      "transforms": 1685,
+      "transformTurnSum": 43077,
+      "transformTurnN": 1685,
+      "winsT": 882,
+      "decT": 1685,
+      "winsN": 160,
+      "decN": 315,
+      "res5": 5003,
+      "res10": 10160,
+      "res15": 15617,
+      "deploys": 39557,
+      "deploysEarly": 3618,
+      "spellsEarly": 764,
+      "discards": 2276,
+      "flipLpSum": 27526,
+      "flipLpN": 1685,
+      "flipSurvSum": 22893,
+      "flipSurvN": 1685,
+      "heroPre": 6715,
+      "heroPost": 4639,
+      "heroPostIdx": {
+       "0": 3380,
+       "2": 1259
+      }
+     }
+    },
+    "Radiant": {
+     "games": 2000,
+     "transformPct": 66.5,
+     "transformAvgTurn": 25.2,
+     "winPctWhenTransformed": 35.2,
+     "winPctWhenNot": 70,
+     "avgLpAtFlip": 19.2,
+     "avgTurnsAfterFlip": 9.8,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 4.21,
+      "postFlip": 2.07
+     },
+     "postFlipUsesByIndex": {
+      "1": 1669,
+      "2": 1086
+     },
+     "resourcesByTurn": {
+      "t5": 2.51,
+      "t10": 5.14,
+      "t15": 8.04
+     },
+     "deploysPerGame": 14.19,
+     "earlyDeploysPerGame": 1.65,
+     "earlySpellsPerGame": 0.65,
+     "discardsPerGame": 0,
+     "raw": {
+      "games": 2000,
+      "transforms": 1331,
+      "transformTurnSum": 33566,
+      "transformTurnN": 1331,
+      "winsT": 469,
+      "decT": 1331,
+      "winsN": 468,
+      "decN": 669,
+      "res5": 5020,
+      "res10": 10285,
+      "res15": 16087,
+      "deploys": 28383,
+      "deploysEarly": 3309,
+      "spellsEarly": 1308,
+      "discards": 0,
+      "flipLpSum": 25501,
+      "flipLpN": 1331,
+      "flipSurvSum": 13048,
+      "flipSurvN": 1331,
+      "heroPre": 8416,
+      "heroPost": 2755,
+      "heroPostIdx": {
+       "1": 1669,
+       "2": 1086
+      }
+     }
+    },
+    "Sapphire": {
+     "games": 2000,
+     "transformPct": 81.3,
+     "transformAvgTurn": 27.5,
+     "winPctWhenTransformed": 55.5,
+     "winPctWhenNot": 15.8,
+     "avgLpAtFlip": 17.6,
+     "avgTurnsAfterFlip": 9.8,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 0,
+      "postFlip": 1.2
+     },
+     "postFlipUsesByIndex": {
+      "4": 1948
+     },
+     "resourcesByTurn": {
+      "t5": 2.52,
+      "t10": 5.15,
+      "t15": 7.96
+     },
+     "deploysPerGame": 18.51,
+     "earlyDeploysPerGame": 1.28,
+     "earlySpellsPerGame": 0.87,
+     "discardsPerGame": 2,
+     "raw": {
+      "games": 2000,
+      "transforms": 1626,
+      "transformTurnSum": 44682,
+      "transformTurnN": 1626,
+      "winsT": 903,
+      "decT": 1626,
+      "winsN": 59,
+      "decN": 374,
+      "res5": 5043,
+      "res10": 10291,
+      "res15": 15924,
+      "deploys": 37017,
+      "deploysEarly": 2554,
+      "spellsEarly": 1746,
+      "discards": 4000,
+      "flipLpSum": 28541,
+      "flipLpN": 1626,
+      "flipSurvSum": 15924,
+      "flipSurvN": 1626,
+      "heroPre": 0,
+      "heroPost": 1948,
+      "heroPostIdx": {
+       "4": 1948
+      }
+     }
+    },
+    "Verdant": {
+     "games": 2000,
+     "transformPct": 68.5,
+     "transformAvgTurn": 27,
+     "winPctWhenTransformed": 46.8,
+     "winPctWhenNot": 66.5,
+     "avgLpAtFlip": 17,
+     "avgTurnsAfterFlip": 10.2,
+     "heroAbilityUsesPerGame": {
+      "preFlip": 1.12,
+      "postFlip": 2.15
+     },
+     "postFlipUsesByIndex": {
+      "0": 2059,
+      "2": 891
+     },
+     "resourcesByTurn": {
+      "t5": 2.59,
+      "t10": 5.46,
+      "t15": 8.51
+     },
+     "deploysPerGame": 17.7,
+     "earlyDeploysPerGame": 1.77,
+     "earlySpellsPerGame": 0.32,
+     "discardsPerGame": 0,
+     "raw": {
+      "games": 2000,
+      "transforms": 1371,
+      "transformTurnSum": 37016,
+      "transformTurnN": 1371,
+      "winsT": 641,
+      "decT": 1371,
+      "winsN": 418,
+      "decN": 629,
+      "res5": 5173,
+      "res10": 10923,
+      "res15": 17019,
+      "deploys": 35409,
+      "deploysEarly": 3538,
+      "spellsEarly": 646,
+      "discards": 0,
+      "flipLpSum": 23372,
+      "flipLpN": 1371,
+      "flipSurvSum": 14002,
+      "flipSurvN": 1371,
+      "heroPre": 2239,
+      "heroPost": 2950,
+      "heroPostIdx": {
+       "0": 2059,
+       "2": 891
+      }
+     }
+    }
+   }
+  }
+ ]
+}

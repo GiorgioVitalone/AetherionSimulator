@@ -57,7 +57,13 @@ describe('attach_as_equipment effect', () => {
     const attached = front[1];
     expect(attached?.equipment?.instanceId).toBe(source.instanceId);
     expect(result.events).toEqual([
-      { type: 'EQUIPMENT_ATTACHED', equipmentId: source.instanceId, targetId: ally.instanceId },
+      {
+        type: 'EQUIPMENT_ATTACHED',
+        equipmentId: source.instanceId,
+        targetId: ally.instanceId,
+        cardDefId: source.cardDefId,
+        playerId: source.owner,
+      },
     ]);
   });
 
@@ -83,11 +89,10 @@ describe('attach_as_equipment effect', () => {
       ],
     });
 
-    const result = executeEffect(
-      state,
-      attach(false),
-      { ...ctx('SRC'), selectedTargets: [ally.instanceId] },
-    );
+    const result = executeEffect(state, attach(false), {
+      ...ctx('SRC'),
+      selectedTargets: [ally.instanceId],
+    });
     const equip = result.newState.players[0].zones.frontline[1]?.equipment;
     expect(equip?.registeredTriggers).toHaveLength(0);
   });
@@ -110,11 +115,10 @@ describe('attach_as_equipment effect', () => {
       ],
     });
 
-    const result = executeEffect(
-      state,
-      attach(true),
-      { ...ctx('SRC'), selectedTargets: [ally.instanceId] },
-    );
+    const result = executeEffect(state, attach(true), {
+      ...ctx('SRC'),
+      selectedTargets: [ally.instanceId],
+    });
     const equip = result.newState.players[0].zones.frontline[1]?.equipment;
     expect(equip?.registeredTriggers).toHaveLength(1);
   });

@@ -21,6 +21,14 @@
 //   turnCap:         number  (hard turn limit before a game is force-ended; default 80)
 //   abilitiesOn:     boolean (hydrate card/hero abilities onto instances; default true)
 //   botPolicy:       "random" | "heuristic"  (both seats; default "heuristic")
+//   botPolicySeat:   { 0: "heuristic"|"random"|"rollout", 1: ... }  (optional;
+//                     lets seat 0 and seat 1 run DIFFERENT policies, for
+//                     bot-vs-bot head-to-heads. A spec where both seats name
+//                     the SAME policy folds into the monolithic `botPolicy`
+//                     field above and is omitted from the resolved/hashed
+//                     config — byte-identical to setting `botPolicy` alone.
+//                     Unset ⇒ omitted ⇒ the monolithic `botPolicy` path is
+//                     untouched.
 //   firstPlayerCompensation:
 //       "none"        — no compensation (engine default)
 //       "card"        — second player draws +1 card at game start
@@ -84,6 +92,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { isMainThread } from 'node:worker_threads';
 import { createActor } from 'xstate';
 import {
   createGame,
@@ -94,11 +103,16 @@ import {
   chooseReactiveAction,
   chooseChoiceResponse,
   shouldKeepHand,
+  applyMulligan,
+  featurize,
+  FEATURE_SCHEMA_VERSION,
+  RESOURCE_DECK_SIZE,
 } from './dist/index.js';
 import { gameplanFor } from './dist/bot/gameplan.js';
 import { summarizeStats } from './dist/sim/summarize-stats.js';
 import { getDeck } from './deck-loader.mjs';
 import { makeRolloutPilot } from './pilot-rollout.mjs';
+import { makeValuePilot, computeModelSha } from './pilot-value.mjs';
 
 const CARDS = process.env.AETHERION_CARDS
   ? process.env.AETHERION_CARDS
@@ -144,12 +158,18 @@ const energyR = rCards.find(c => /energy/i.test(c.name)) || rCards[rCards.length
 // Target a LEGAL, REALISTIC 40-card main deck with a sensible type mix that
 // guarantees Equipment + Spells + Characters. Quotas (~24 C / ~10 S / ~6 E) are
 // clamped to each faction's copy-limited pool; any shortfall is backfilled from a
-// global round-robin. Copy limits (3 / 1-Legendary) are never exceeded.
+// global round-robin. Copy limits (3 / 2-Ethereal / 2-Mythic / 1-Legendary) are never exceeded.
 // Deterministic: stable pool order, round-robin pass order — no Math.random.
 const DECK_SIZE = 40;
 const TYPE_QUOTA = { C: 24, S: 10, E: 6 };
 
-function copyLimit(c) { return c.rarity === 'Legendary' ? 1 : 3; }
+// Mirror deck-legality.ts's copyLimitFor (Rulebook is authoritative): Legendary 1,
+// Ethereal 2, Mythic 2, Common 3.
+function copyLimit(c) {
+  if (c.rarity === 'Legendary') return 1;
+  if (c.rarity === 'Ethereal' || c.rarity === 'Mythic') return 2;
+  return 3;
+}
 
 // Round-robin copies of a type's cards into `main` up to `quota` (and the deck cap),
 // tracking per-card copies used so far. Returns number of cards added.
@@ -179,7 +199,7 @@ function buildDeck(f) {
   for (const t of ['C', 'S', 'E']) fillType(main, byType[t], TYPE_QUOTA[t], used);
   if (main.length < DECK_SIZE) fillType(main, pool, DECK_SIZE, used);
   const rid = ENERGY_FACTIONS.has(f) ? energyR.id : manaR.id;
-  return { heroDefId: hero.id, mainDeckDefIds: main.slice(0, DECK_SIZE), resourceDeckDefIds: Array.from({ length: 15 }, () => rid) };
+  return { heroDefId: hero.id, mainDeckDefIds: main.slice(0, DECK_SIZE), resourceDeckDefIds: Array.from({ length: RESOURCE_DECK_SIZE }, () => rid) };
 }
 const decks = Object.fromEntries(FACTIONS.map(f => [f, buildDeck(f)]));
 
@@ -295,6 +315,7 @@ function concreteActions(acts) {
   for (const a of (acts.canActivateAbility || [])) out.push({ type: 'activate_ability', cardInstanceId: a.cardInstanceId, abilityIndex: a.abilityIndex });
   for (const e of (acts.canAttachEquipment || [])) { const t = (e.validTargets || [])[0]; if (t) out.push({ type: 'attach_equipment', cardInstanceId: e.cardInstanceId, targetInstanceId: t }); }
   for (const m of (acts.canMove || [])) { const d = (m.validDestinations || [])[0]; if (d) out.push({ type: 'move', cardInstanceId: m.cardInstanceId, toZone: d }); }
+  for (const id of (acts.canTapReserve || [])) out.push({ type: 'tap_reserve', cardInstanceId: id });
   if (acts.canTransform) out.push({ type: 'declare_transform' });
   return out;
 }
@@ -303,7 +324,7 @@ function concreteActions(acts) {
 // Applied at game start to the SECOND player (the one not active on turn 1).
 
 let compInstanceCounter = 0;
-function applyCompensation(gs, mode, faction) {
+export function applyCompensation(gs, mode, faction) {
   if (mode === 'none' || mode === 'reserveT1') return gs;
   const second = gs.activePlayerIndex === 0 ? 1 : 0;
   const wantCard = mode === 'card' || mode === 'both' || mode === 'play_or_draw';
@@ -323,6 +344,24 @@ function applyCompensation(gs, mode, faction) {
     return np;
   });
   return { ...gs, players };
+}
+
+// RULES-ACCURACY FIX (config.firstPlayerCompAfterMulligan, harness-only):
+// pre-resolves BOTH players' opening-hand mulligan decisions via the engine's
+// pure `applyMulligan`, mirroring the main loop's own mulligan-decision policy
+// exactly (see the `pc.type === 'mulligan'` branch further below). Used only so
+// `applyCompensation` can run strictly AFTER mulligans resolve (Rulebook: "after
+// any mulligans") instead of before. Only called when the flag is ON.
+export function resolveMulligans(gs, policyForSeat) {
+  let state = gs;
+  while (state.pendingChoice && state.pendingChoice.type === 'mulligan') {
+    const pc = state.pendingChoice;
+    const pcPolicy = policyForSeat(pc.playerId);
+    const competent = pcPolicy === 'heuristic' || pcPolicy === 'rollout' || pcPolicy === 'valueGreedy';
+    const keep = competent ? shouldKeepHand(state, pc.playerId) : true;
+    state = applyMulligan(state, pc.playerId, keep);
+  }
+  return state;
 }
 
 // ── First-player control (diagnostic ablation) ────────────────────────────────
@@ -548,8 +587,131 @@ function applyZoneCapacity(gs, frontlineSlots, highGroundSlots) {
 
 // ── Single game ──────────────────────────────────────────────────────────────
 
+// ── Per-game diagnostics (reporting only) ─────────────────────────────────────
+// One post-game walk over the final state's event log. Runs AFTER the game ends
+// and writes only result fields computeRunHash never reads — provably unable to
+// change outcomes or hashes. Powers the per-matchup/per-faction mechanism evidence
+// (§12: win method, transform usage, resource curves, tempo) so verdicts rest on
+// in-game data, not marginal win rates alone.
+function gameDiagnostics(fin, winner, decided, timedOut) {
+  let turn = 0;
+  let active = 0;
+  const resAt = [[0, 0, 0], [0, 0, 0]]; // cumulative RESOURCE_GAINED by turn ≤5 / ≤10 / ≤15
+  const deploys = [0, 0], deploysEarly = [0, 0], spellsEarly = [0, 0], discards = [0, 0];
+  const transformTurn = [null, null];
+  // §13b transform autopsy: hero-ability USAGE per side of the flip (counts of
+  // hero_* ABILITY_ACTIVATED per ability index, pre vs post transform) plus the
+  // hero's LP when the flip happened — distinguishes "kits are weak" from "bots
+  // never press the buttons" from "flipped while already dead".
+  const heroUsesPre = [{}, {}], heroUsesPost = [{}, {}];
+  const lpDelta = [0, 0]; // cumulative heals−damage; LP ≈ maxLp + delta
+  const lpAtFlip = [null, null];
+  for (const e of fin.log) {
+    switch (e.type) {
+      case 'TURN_START':
+        turn = e.turnNumber; active = e.playerId; break;
+      case 'RESOURCE_GAINED':
+        if (turn <= 5) resAt[e.playerId][0] += e.amount;
+        if (turn <= 10) resAt[e.playerId][1] += e.amount;
+        if (turn <= 15) resAt[e.playerId][2] += e.amount;
+        break;
+      case 'CARD_DEPLOYED':
+        deploys[e.playerId]++; if (turn <= 6) deploysEarly[e.playerId]++; break;
+      case 'SPELL_CAST':
+        if (turn <= 6) spellsEarly[e.playerId]++; break;
+      case 'CARD_DISCARDED':
+        // NOTE: hand-size, effect, and discard-for-energy pitches all share this
+        // event — total discards, not valve uses (the valve has no distinct event).
+        discards[e.playerId]++; break;
+      case 'HERO_DAMAGED':
+        lpDelta[e.playerId] -= e.amount; break;
+      case 'HERO_HEALED':
+        lpDelta[e.playerId] += e.amount; break;
+      case 'ABILITY_ACTIVATED': {
+        if (typeof e.cardInstanceId !== 'string' || !e.cardInstanceId.startsWith('hero_')) break;
+        // Hero transform is the only abilityIndex:-1 hero_* activation (see
+        // executeDeclareTransform); it happens on the transformer's own turn.
+        if (e.abilityIndex === -1) {
+          if (transformTurn[active] === null) {
+            transformTurn[active] = turn;
+            lpAtFlip[active] = fin.players[active].hero.maxLp + lpDelta[active];
+          }
+          break;
+        }
+        const bucket = transformTurn[active] === null ? heroUsesPre : heroUsesPost;
+        bucket[active][e.abilityIndex] = (bucket[active][e.abilityIndex] || 0) + 1;
+        break;
+      }
+    }
+  }
+  return {
+    winMethod: timedOut ? (decided ? 'tiebreak' : 'draw') : 'kill',
+    winnerLp: decided ? fin.players[winner].hero.currentLp : null,
+    transformed: [fin.players[0].hero.transformed, fin.players[1].hero.transformed],
+    transformTurn,
+    lpAtFlip,
+    survivedAfterFlip: [
+      transformTurn[0] !== null ? fin.turnNumber - transformTurn[0] : null,
+      transformTurn[1] !== null ? fin.turnNumber - transformTurn[1] : null,
+    ],
+    heroUsesPre,
+    heroUsesPost,
+    resAt,
+    deploys,
+    deploysEarly,
+    spellsEarly,
+    discards,
+  };
+}
+
+// SEAT ALTERNATION support: when a game's physical seats are swapped (deckB in
+// seat 0, deckA in seat 1) so playGame's internal per-seat logic (hero LP
+// override, gameplan, compensation — all keyed by the fA/fB param passed to
+// THAT call) stays correct, playGame's raw return labels itself from the seat-0
+// deck's point of view — the OPPOSITE of the pairing's true (deck-oriented) A/B.
+// This flips every seat-indexed field back so the caller always sees results
+// keyed to the pairing's true fA/fB, never a physical seat. `r.dx`'s fields are
+// ALL either scalar (winMethod, winnerLp — no seat encoding) or exactly
+// length-2 seat-indexed arrays, so a generic array swap is safe and exhaustive.
+// Exported for the unit test in tests/sim/seat-fix-knobs.test.ts: runHash does
+// not cover dx/spellsCast, so a remap regression on telemetry fields would be
+// invisible to the hash-based knob tests; the unit test closes that class.
+export function remapSeatSwap(r, trueFA, trueFB) {
+  const flip = (v) => (v === 0 ? 1 : v === 1 ? 0 : v); // 'draw'/'tie'/null pass through
+  const dx = r.dx
+    ? Object.fromEntries(
+        Object.entries(r.dx).map(([k, v]) =>
+          Array.isArray(v) && v.length === 2 ? [k, [v[1], v[0]]] : [k, v],
+        ),
+      )
+    : r.dx;
+  return {
+    ...r,
+    fA: trueFA,
+    fB: trueFB,
+    winner: flip(r.winner),
+    firstPlayer: flip(r.firstPlayer),
+    leaderAt10: flip(r.leaderAt10),
+    spellsCastA: r.spellsCastB,
+    spellsCastB: r.spellsCastA,
+    dx,
+    // trainingRows.mover is stored in PHYSICAL-seat space; remap to true-deck space so
+    // the downstream faction stamp (finalize: mover===0?fA:fB) is correct for swapped
+    // games. y is already the swap-invariant "side-to-move won" bit — leave it untouched.
+    ...(r.trainingRows
+      ? { trainingRows: r.trainingRows.map((row) => ({ ...row, mover: flip(row.mover) })) }
+      : {}),
+    // decisionLog.mover is stored in PHYSICAL-seat space, same as trainingRows.mover
+    // above; remap to true-deck space so the downstream faction stamp is correct.
+    ...(r.decisionLog
+      ? { decisionLog: r.decisionLog.map((row) => ({ ...row, mover: flip(row.mover) })) }
+      : {}),
+  };
+}
+
 function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
-  let gs = createGame(deckA, deckB, registry, seed);
+  let gs = createGame(deckA, deckB, registry, seed,
+    config.resourceDeckSize ? { resourceDeckSize: config.resourceDeckSize } : undefined);
   if (config.abilitiesOn) gs = hydrate(gs);
   gs = applyFirstPlayer(gs, config.firstPlayer, gameIndex);
   gs = applyZoneCapacity(gs, config.frontlineSlots, config.highGroundSlots);
@@ -574,7 +736,17 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     ? { 0: gameplanFor(fA), 1: gameplanFor(fB) }
     : undefined;
   const secondFaction = gs.activePlayerIndex === 0 ? fB : fA;
-  gs = applyCompensation(gs, config.firstPlayerCompensation, secondFaction);
+  const policyForSeat = (seatIdx) => (config.botPolicySeat ? config.botPolicySeat[seatIdx] : config.botPolicy);
+  // RULES-ACCURACY FIX (config.firstPlayerCompAfterMulligan, harness-only): the
+  // book applies the second-player compensation "after any mulligans" — pre-
+  // resolve both players' mulligan decisions (mirroring the main loop's own
+  // policy below) via the engine's pure applyMulligan BEFORE compensation, so a
+  // mulliganing second player still keeps the bonus. Absent/false ⇒
+  // byte-identical no-op — compensation runs before the actor (and its
+  // MULLIGAN_DECISION-driven mulligan flow) exactly as before.
+  gs = config.firstPlayerCompAfterMulligan
+    ? applyCompensation(resolveMulligans(gs, policyForSeat), config.firstPlayerCompensation, secondFaction)
+    : applyCompensation(gs, config.firstPlayerCompensation, secondFaction);
   // Thread the termination + ablation knobs onto GameState so the engine's
   // transform gate, the heuristic bot, and the effect interpreter all see them.
   // A per-game `diag` (from the collector) is a mutable accumulator; it is NOT in
@@ -609,6 +781,46 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       ...(config.directHighGroundDeploy ? { directHighGroundDeploy: true } : {}),
       ...(disableHeroReachBySeat ? { disableHeroReachBySeat } : {}),
       ...(botGameplan ? { botGameplan } : {}),
+      ...(config.fairPilot ? { fairPilot: true } : {}),
+      ...(config.reachDiscard ? { reachDiscard: true } : {}),
+      ...(config.exileDiscardForEnergy ? { exileDiscardForEnergy: true } : {}),
+      ...(config.valuePilot ? { valuePilot: true } : {}),
+      ...(config.rampPilot ? { rampPilot: true } : {}),
+      ...(config.disableDiscardForEnergy ? { disableDiscardForEnergy: true } : {}),
+      // COST FLOOR — rule guard: discounts never take effective cost below 1
+      // unless printed 0 (kills the §12c Echoes×Robe 0-cost loop class). ON-only hashed.
+      ...(config.costFloor ? { costFloor: true } : {}),
+      // RESERVE TAP PACKAGE (§13m): choice = Rulebook 8 step 4's "may" (tap is a
+      // player action, not automatic); strain = tapping costs 1 HP, 1-HP bodies
+      // can't tap. ON-only hashed; both absent ⇒ byte-identical.
+      ...(config.reserveTapChoice ? { reserveTapChoice: true } : {}),
+      ...(config.reserveTapStrain ? { reserveTapStrain: true } : {}),
+      // RESOURCE DECK SIZE (§13o): truncate each player's Resource Deck post-shuffle.
+      ...(config.resourceDeckSize ? { resourceDeckSize: config.resourceDeckSize } : {}),
+      // APNAP ANY-ORDER FIX (§13q): side:'any' target resolution returns
+      // [activePlayer, nonActivePlayer] instead of seat order. ON-only hashed;
+      // absent ⇒ byte-identical.
+      ...(config.apnapAnyOrderFix ? { apnapAnyOrderFix: true } : {}),
+      // FIRST-PLAYER COMPENSATION CANDIDATES (§13r): alternatives to the locked
+      // firstPlayerCompensation:'card' rule, under evaluation. ON-only hashed;
+      // absent ⇒ byte-identical.
+      ...(config.firstPlayerSkipsFirstResource ? { firstPlayerSkipsFirstResource: true } : {}),
+      ...(config.firstPlayerDrawsNormally ? { firstPlayerDrawsNormally: true } : {}),
+      // RULES-ACCURACY FIXES — book-order/timing corrections under evaluation for
+      // ruleset-v2. ON-only hashed; absent ⇒ byte-identical.
+      ...(config.endPhaseOrderFix ? { endPhaseOrderFix: true } : {}),
+      ...(config.startOfTurnTriggerAfterReserve ? { startOfTurnTriggerAfterReserve: true } : {}),
+      ...(config.transformAtStartOfTurn ? { transformAtStartOfTurn: true } : {}),
+      ...(config.heroAbilitiesOncePerTurn ? { heroAbilitiesOncePerTurn: true } : {}),
+      // ENGINE CODE TICKET — Tier 3: Flash usable at-will (Action Phase too) +
+      // battlefield/Hero Counter/Flash reactions. ON-only hashed; absent ⇒
+      // byte-identical no-op (see game-state.ts's GameConfig doc comments).
+      ...(config.flashAtWill ? { flashAtWill: true } : {}),
+      ...(config.boardReactions ? { boardReactions: true } : {}),
+      // ENGINE CODE TICKET — Tier 4: response windows on ALL actions (attack/
+      // ability/equip/move), not just casts. ON-only hashed & threaded; absent
+      // ⇒ byte-identical no-op (see game-state.ts's GameConfig doc comment).
+      ...(config.responseWindowsOnAllActions ? { responseWindowsOnAllActions: true } : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -621,9 +833,31 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   // Outcome-driven rollout pilot (botPolicy === 'rollout'): one instance per game,
   // forking THIS actor at each active-player decision point. Deterministic — its
   // rollout seeds derive purely from `seed`. Heuristic/random paths never touch it.
-  const rolloutPilot = config.botPolicy === 'rollout'
-    ? makeRolloutPilot({ rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall })
+  // config.botPolicySeat is only ever present (see resolveConfig) for a GENUINE
+  // per-seat split, so a monolithic run allocates exactly ONE shared pilot here
+  // (its decisionIndex counts every decision of the game, exactly as before) —
+  // byte-identical to the v10 baseline. A split allocates one pilot PER SEAT that
+  // needs it, each counting only that seat's own decisions.
+  const rolloutOpts = { rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps, seedMode: config.rolloutSeedMode, playoutBackend: config.playoutBackend, valueLeafModelPath: config.valueLeafModelPath, collectDecisionLog: config.collectDecisionLog };
+  const rolloutPilot = !config.botPolicySeat && config.botPolicy === 'rollout' ? makeRolloutPilot(rolloutOpts) : null;
+  // Neural value-net greedy pilot (botPolicy === 'valueGreedy'): same one-
+  // instance-per-monolithic-run / one-per-split-seat allocation discipline as
+  // the rollout pilot above, sharing `valueModelPath` from the resolved config.
+  const valueOpts = { modelPath: config.valueModelPath };
+  const valuePilot = !config.botPolicySeat && config.botPolicy === 'valueGreedy' ? makeValuePilot(valueOpts) : null;
+  const botPilotsBySeat = config.botPolicySeat
+    ? {
+        0: config.botPolicySeat[0] === 'rollout' ? makeRolloutPilot(rolloutOpts)
+          : config.botPolicySeat[0] === 'valueGreedy' ? makeValuePilot(valueOpts)
+          : null,
+        1: config.botPolicySeat[1] === 'rollout' ? makeRolloutPilot(rolloutOpts)
+          : config.botPolicySeat[1] === 'valueGreedy' ? makeValuePilot(valueOpts)
+          : null,
+      }
     : null;
+  // Resolve seat 0/1's effective pilot for this decision point (policyForSeat
+  // is defined earlier, before compensation/mulligan resolution, for reuse there).
+  const pilotForSeat = (seatIdx) => (config.botPolicySeat ? botPilotsBySeat[seatIdx] : (rolloutPilot ?? valuePilot));
 
   let leaderAt10 = null; // 0|1|'tie' — side ahead on LP at SNOWBALL_TURN
   let equipPlayed = 0;   // count of attach_equipment actions actually dispatched
@@ -631,10 +865,27 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   let spellsCastB = 0;   // cast_spell actions dispatched by seat 1 (faction fB)
   let spellsCounters = 0; // reactive Counter/Flash casts (REACTIVE_ACTION) dispatched
   let steps = 0;
+  let lastTurn = -1;
+  let trainingRowsLastTurn = -1;
+  const trainingRows = [];
+  const actionCounts = {};
   while (steps++ < STEP_CAP) {
     const snap = actor.getSnapshot();
     if (snap.status === 'done') break;
     gs = snap.context.gameState;
+    // Per-turn telemetry (gated; read-only; fires once at the start of each turn).
+    if (config.__trace && gs.turnNumber !== lastTurn) {
+      lastTurn = gs.turnNumber;
+      config.__trace.onTurn(gs, { spellsCastA, spellsCastB, equipPlayed, spellsCounters, actionCounts });
+    }
+    // Value-net training-data collection (opt-in, parallel-safe): buffer one
+    // featurized row per turn start; labeled + attached to the plain result
+    // object at game end below (rides back across worker boundaries — unlike
+    // __trace, which is a function hook and cannot cross workers).
+    if (config.collectTrainingData && gs.turnNumber !== trainingRowsLastTurn) {
+      trainingRowsLastTurn = gs.turnNumber;
+      trainingRows.push({ f: Array.from(featurize(gs)), turn: gs.turnNumber, mover: gs.activePlayerIndex });
+    }
     if (gs.winner != null) break;
     if (gs.turnNumber > config.turnCap) break;
 
@@ -665,7 +916,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     if (gs.pendingPriority != null) {
       try {
         let react = null;
-        if (config.botPolicy === 'heuristic' || config.botPolicy === 'rollout') {
+        const reactPolicy = policyForSeat(gs.pendingPriority.toRespondPlayerId);
+        if (reactPolicy === 'heuristic' || reactPolicy === 'rollout' || reactPolicy === 'valueGreedy') {
           // Minor decision (scarce reactive cards): both the heuristic and the
           // outcome-driven pilot use the engine's sensible, archetype-neutral
           // reactive policy. The pilot's archetype-neutral SEARCH is on the main
@@ -686,7 +938,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     const pc = gs.pendingChoice;
     try {
       if (pc) {
-        const competent = config.botPolicy === 'heuristic' || config.botPolicy === 'rollout';
+        const pcPolicy = policyForSeat(pc.playerId);
+        const competent = pcPolicy === 'heuristic' || pcPolicy === 'rollout' || pcPolicy === 'valueGreedy';
         if (pc.type === 'mulligan') {
           const keep = competent ? shouldKeepHand(gs, pc.playerId) : true;
           actor.send({ type: 'MULLIGAN_DECISION', playerId: pc.playerId, keep });
@@ -699,12 +952,15 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
         continue;
       }
       let action;
-      if (config.botPolicy === 'heuristic') {
+      const actPolicy = policyForSeat(gs.activePlayerIndex);
+      if (actPolicy === 'heuristic') {
         action = chooseAction(gs);
-      } else if (config.botPolicy === 'rollout') {
-        // OUTCOME-DRIVEN pilot: fork this actor, roll each candidate out, pick by
-        // game outcome (win-rate, LP-diff tiebreak) — no archetype/board prior.
-        action = rolloutPilot.chooseAction(actor, gs, seed, config.turnCap);
+      } else if (actPolicy === 'rollout' || actPolicy === 'valueGreedy') {
+        // OUTCOME-DRIVEN rollout pilot: fork this actor, roll each candidate out,
+        // pick by game outcome (win-rate, LP-diff tiebreak) — no archetype/board
+        // prior. NEURAL value-net pilot: one-ply search over each candidate's
+        // afterstate, scored by the value net — see pilot-value.mjs.
+        action = pilotForSeat(gs.activePlayerIndex).chooseAction(actor, gs, seed, config.turnCap);
       } else {
         const choices = concreteActions(computeAvailableActions(gs, gs.activePlayerIndex));
         action = choices.length && rnd() < RANDOM_ACTION_PROB ? choices[Math.floor(rnd() * choices.length)] : null;
@@ -713,6 +969,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       else {
         if (action.type === 'attach_equipment') equipPlayed++;
         if (action.type === 'cast_spell') { if (gs.activePlayerIndex === 0) spellsCastA++; else spellsCastB++; }
+        actionCounts[action.type] = (actionCounts[action.type] || 0) + 1;
+        if (config.__trace && config.__trace.onAction) config.__trace.onAction(action.type, gs.turnNumber, gs.activePlayerIndex);
         actor.send({ type: 'PLAYER_ACTION', action });
       }
     } catch {
@@ -750,6 +1008,25 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     spellsCastA,
     spellsCastB,
     spellsCounters,
+    // Post-game diagnostics — computeRunHash never reads this field (hash-exempt).
+    dx: gameDiagnostics(fin, winner, decided, timedOut),
+    // Candidate-generation pruning telemetry (T2, rollout only) — computeRunHash
+    // never reads this field either (same hash-exemption as dx/__diag/__trace).
+    ...(rolloutPilot ? { candidatePruning: rolloutPilot.diag } : {}),
+    // Value-net training rows (opt-in via config.collectTrainingData) — labeled
+    // here from the resolved winner and attached to the plain result object so
+    // they ride back across worker boundaries. Draws/timeouts (winner not 0|1)
+    // yield clean binary labels only, so nothing is attached for them.
+    ...(config.collectTrainingData && decided
+      ? { trainingRows: trainingRows.map(row => ({ ...row, y: row.mover === winner ? 1 : 0 })) }
+      : {}),
+    // Decision log (opt-in via config.collectDecisionLog) — the foundation for
+    // pilotability analysis + policy-net distillation. computeRunHash never reads
+    // this field (same hash-exemption as dx/__diag/__trace/trainingRows). Only
+    // attached when the game actually decided, mirroring trainingRows above.
+    ...(config.collectDecisionLog && rolloutPilot && decided
+      ? { decisionLog: rolloutPilot.decisionLog }
+      : {}),
   };
 }
 
@@ -835,30 +1112,134 @@ export function normalizeCardStatOverride(map) {
   return Object.keys(out).length ? out : null;
 }
 
+const BOT_POLICIES = ['heuristic', 'random', 'rollout', 'valueGreedy'];
+
+// Normalize a botPolicySeat spec ({ 0: policy, 1: policy }) to a genuine
+// per-seat split, or null when it's absent, malformed, or both seats name the
+// SAME policy (a "split" that isn't actually one — folds into the monolithic
+// botPolicy field instead, see resolveConfig). Pure.
+function normalizeBotPolicySeat(spec) {
+  if (!spec || typeof spec !== 'object') return null;
+  const p0 = spec[0], p1 = spec[1];
+  if (!BOT_POLICIES.includes(p0) || !BOT_POLICIES.includes(p1)) return null;
+  if (p0 === p1) return null;
+  return { 0: p0, 1: p1 };
+}
+
 function resolveConfig(config = {}) {
+  const botPolicySeat = normalizeBotPolicySeat(config.botPolicySeat);
+  // A uniform (non-split) botPolicySeat spec resolves the monolithic botPolicy
+  // to that seat's policy instead — so { 0: 'rollout', 1: 'rollout' } replays
+  // byte-identical (same runHash) to plain botPolicy: 'rollout'.
+  const uniformSeatPolicy = !botPolicySeat && config.botPolicySeat && typeof config.botPolicySeat === 'object'
+    && BOT_POLICIES.includes(config.botPolicySeat[0]) && config.botPolicySeat[0] === config.botPolicySeat[1]
+    ? config.botPolicySeat[0]
+    : undefined;
+  const resolvedBotPolicy = uniformSeatPolicy ?? (config.botPolicy ?? 'heuristic');
+  const rolloutActive = resolvedBotPolicy === 'rollout'
+    || (botPolicySeat != null && (botPolicySeat[0] === 'rollout' || botPolicySeat[1] === 'rollout'));
+  const valueGreedyActive = resolvedBotPolicy === 'valueGreedy'
+    || (botPolicySeat != null && (botPolicySeat[0] === 'valueGreedy' || botPolicySeat[1] === 'valueGreedy'));
   return {
     matchups: config.matchups ?? 'all-pairs',
     gamesPerPairing: config.gamesPerPairing ?? 60,
     turnCap: config.turnCap ?? 80,
     abilitiesOn: config.abilitiesOn ?? true,
-    botPolicy: config.botPolicy ?? 'heuristic',
+    botPolicy: resolvedBotPolicy,
+    // Per-seat policy split (see the doc header + normalizeBotPolicySeat). Only
+    // emitted (and hashed) for a GENUINE split — a uniform spec folds into
+    // `botPolicy` above and never reaches here, so a default/monolithic run
+    // (or a uniform per-seat spec) is byte-identical to the v10 baseline.
+    ...(botPolicySeat ? { botPolicySeat } : {}),
     // Outcome-driven rollout pilot knobs. ONLY emitted (and hashed) when the
-    // rollout policy is selected, so any heuristic/random run is byte-identical to
-    // the v10 baseline. `rollouts` = playouts per candidate; `rolloutPlayout` =
-    // the default policy inside a playout ('random' = archetype-neutral, primary;
-    // 'heuristic' = the value-bot cross-check); `maxCandidates` caps branching.
-    ...(config.botPolicy === 'rollout'
+    // rollout policy is active on at least one seat, so any heuristic/random run
+    // is byte-identical to the v10 baseline. `rollouts` = playouts per candidate;
+    // `rolloutPlayout` = the default policy inside a playout ('random' =
+    // archetype-neutral, primary; 'heuristic' = the value-bot cross-check);
+    // `maxCandidates` caps branching.
+    ...(rolloutActive
       ? {
           rollouts: config.rollouts ?? 16,
           rolloutPlayout: config.rolloutPlayout ?? 'random',
           maxCandidates: config.maxCandidates ?? 12,
           // Turn-depth horizon for each playout (0 = roll to game end). A positive
           // depth scores the leaf by LP-differential — faster, still archetype-neutral.
-          rolloutDepth: config.rolloutDepth ?? 3,
+          // Fair pilot defaults the horizon to 0 (roll to game end) so control's
+          // late-game inevitability is not penalized; recorded in the hashed config.
+          rolloutDepth: config.rolloutDepth ?? (config.fairPilot ? 0 : 3),
           // T-A2 — reward decided+fast wins / penalize stalls in the outcome score.
           // Default true to match pilot-rollout; emitted (and hashed) ONLY under the
           // rollout policy, so heuristic/random runs stay byte-identical to v10.
           rolloutClosing: config.rolloutClosing ?? true,
+          // T2 — candidateGen: NEW candidate-enumeration dimension for the pilot's
+          // CANDIDATE search only (not the separate playout-internal enumerator —
+          // see CONFIG.md). Emitted (and hashed) ONLY when explicitly set to a
+          // non-'legacy' value, so an unset (or explicit 'legacy') run stays
+          // byte-identical to every historical runHash.
+          ...(config.candidateGen && config.candidateGen !== 'legacy'
+            ? { candidateGen: config.candidateGen }
+            : {}),
+          // T2 — candidateKindCaps: explicit per-kind candidate-survivor caps.
+          // Emitted (and hashed) ONLY when the caller supplies an override; the
+          // default (4 per kind, internal to pilot-rollout.mjs) is a byte-identical
+          // no-op.
+          ...(config.candidateKindCaps && typeof config.candidateKindCaps === 'object'
+            ? { candidateKindCaps: config.candidateKindCaps }
+            : {}),
+          // T3 — rolloutSeedMode: 'actionKey' keys each candidate's playout
+          // streams by its stable action identity instead of its position, so a
+          // coverage A/B (candidateGen legacy vs full) shares streams for common
+          // candidates. Emitted (and hashed) ONLY when explicitly set to a
+          // non-'index' value ⇒ unset/'index' runs stay byte-identical to every
+          // historical runHash.
+          ...(config.rolloutSeedMode && config.rolloutSeedMode !== 'index'
+            ? { rolloutSeedMode: config.rolloutSeedMode }
+            : {}),
+          // T7 — playoutBackend: 'snapshot' steps playouts purely (no actor
+          // forking). A HARNESS dimension like WORKERS, not a rules dimension:
+          // carried in the resolved config for provenance (results/ledger show
+          // which backend produced a run) but STRIPPED from the hash by
+          // computeRunHash — identical hashes across backends are the
+          // equivalence claim (pinned in rollout-pin.test.ts). Emitted only
+          // when explicitly set to a non-'actor' value.
+          ...(config.playoutBackend && config.playoutBackend !== 'actor'
+            ? { playoutBackend: config.playoutBackend }
+            : {}),
+          // Stage E — valueLeafModelPath: when set, a TRUNCATED (non-terminal)
+          // rollout leaf is scored by this value net's win-probability instead
+          // of the LP-diff heuristic; terminal leaves are unaffected. A real
+          // rules dimension (a different net picks different games), so it is
+          // deliberately NOT stripped by computeRunHash. The model's own
+          // content hash (`valueLeafModelSha`) and the featurizer's schema
+          // version are hashed alongside it, same discipline as valueModelPath
+          // above. Emitted (and hashed) ONLY when set ⇒ an unset run stays
+          // byte-identical to every historical runHash.
+          ...(config.valueLeafModelPath
+            ? {
+                valueLeafModelPath: config.valueLeafModelPath,
+                ...(computeModelSha(config.valueLeafModelPath)
+                  ? { valueLeafModelSha: computeModelSha(config.valueLeafModelPath) }
+                  : {}),
+                valueLeafFeatureSchemaVersion: FEATURE_SCHEMA_VERSION,
+              }
+            : {}),
+        }
+      : {}),
+    // Neural value-net greedy pilot (botPolicy 'valueGreedy'). ONLY emitted (and
+    // hashed) when the policy is active on at least one seat, so any
+    // heuristic/random/rollout run is byte-identical to before. `valueModelPath`
+    // is a real rules dimension — a different net picks different games — so it
+    // is deliberately NOT stripped by computeRunHash. The model's own content
+    // hash (`valueModelSha`) and the featurizer's schema version are hashed
+    // alongside it: two configs naming the same path but a DIFFERENT model file
+    // (or a stale featurizer) must not collide on runHash.
+    ...(valueGreedyActive
+      ? {
+          valueModelPath: config.valueModelPath ?? null,
+          ...(config.valueModelPath && computeModelSha(config.valueModelPath)
+            ? { valueModelSha: computeModelSha(config.valueModelPath) }
+            : {}),
+          valueFeatureSchemaVersion: FEATURE_SCHEMA_VERSION,
         }
       : {}),
     // STALL-FIX knob: resolve the end-of-turn hand-size discard choice (which the
@@ -976,6 +1357,55 @@ function resolveConfig(config = {}) {
     // constants. Only emitted (and hashed) when ENABLED ⇒ a default run is
     // byte-identical to the v10 baseline (absent ⇒ NEUTRAL ⇒ no-op).
     ...(config.botGameplan ? { botGameplan: true } : {}),
+    // FAIR-PILOT — opt-in heuristic/rollout fairness for control/value/recursion decks.
+    // Only emitted (and hashed) when ENABLED ⇒ a default run is byte-identical to baseline.
+    ...(config.fairPilot ? { fairPilot: true } : {}),
+    // REACH-DISCARD — opt-in bot policy: discard only to fund a one-resource-short play.
+    // Read only by the heuristic; emitted (and hashed) only when ON ⇒ default is no-op.
+    ...(config.reachDiscard ? { reachDiscard: true } : {}),
+    // EXILE-DISCARD — rule variant: discard_for_energy exiles instead of binning.
+    // Emitted (and hashed) only when ON ⇒ default is byte-identical.
+    ...(config.exileDiscardForEnergy ? { exileDiscardForEnergy: true } : {}),
+    // VALUE-PILOT — opt-in bot policy: rank deploy/keep by the card-power+synergy engine.
+    // Read only by the heuristic; emitted (and hashed) only when ON ⇒ default is no-op.
+    ...(config.valuePilot ? { valuePilot: true } : {}),
+    // RAMP-PILOT — opt-in bot policy on top of valuePilot: early-game deploy bonus for
+    // ramp signals (the cost-free score's blind spot). Heuristic-only; ON-only hashed.
+    ...(config.rampPilot ? { rampPilot: true } : {}),
+    // DISCARD-FOR-ENERGY ABLATION — diagnostic rule probe: remove the action entirely
+    // (a universal rule only the pool's Energy faction can exploit). ON-only hashed.
+    ...(config.disableDiscardForEnergy ? { disableDiscardForEnergy: true } : {}),
+    // COST FLOOR — rule guard: discounts never take effective cost below 1 unless
+    // printed 0 (kills the §12c Echoes×Robe 0-cost loop class). ON-only hashed.
+    ...(config.costFloor ? { costFloor: true } : {}),
+    ...(config.reserveTapChoice ? { reserveTapChoice: true } : {}),
+    ...(config.reserveTapStrain ? { reserveTapStrain: true } : {}),
+    ...(config.resourceDeckSize ? { resourceDeckSize: config.resourceDeckSize } : {}),
+    // APNAP ANY-ORDER FIX (§13q) — see game-state.ts. ON-only hashed.
+    ...(config.apnapAnyOrderFix ? { apnapAnyOrderFix: true } : {}),
+    // FIRST-PLAYER COMPENSATION CANDIDATES (§13r) — see game-state.ts. ON-only hashed.
+    ...(config.firstPlayerSkipsFirstResource ? { firstPlayerSkipsFirstResource: true } : {}),
+    ...(config.firstPlayerDrawsNormally ? { firstPlayerDrawsNormally: true } : {}),
+    // RULES-ACCURACY FIXES — book-order/timing corrections under evaluation for
+    // ruleset-v2 (endPhaseOrderFix/startOfTurnTriggerAfterReserve/
+    // transformAtStartOfTurn are engine GameConfig flags — see game-state.ts;
+    // firstPlayerCompAfterMulligan is harness-only, see playGame/resolveMulligans
+    // above). All ON-only hashed; absent ⇒ byte-identical.
+    ...(config.endPhaseOrderFix ? { endPhaseOrderFix: true } : {}),
+    ...(config.startOfTurnTriggerAfterReserve ? { startOfTurnTriggerAfterReserve: true } : {}),
+    ...(config.transformAtStartOfTurn ? { transformAtStartOfTurn: true } : {}),
+    ...(config.heroAbilitiesOncePerTurn ? { heroAbilitiesOncePerTurn: true } : {}),
+    // ENGINE CODE TICKET — Tier 3 (see game-state.ts's GameConfig doc comments).
+    // ON-only hashed; absent ⇒ byte-identical.
+    ...(config.flashAtWill ? { flashAtWill: true } : {}),
+    ...(config.boardReactions ? { boardReactions: true } : {}),
+    // ENGINE CODE TICKET — Tier 4 (see game-state.ts's GameConfig doc comment).
+    // ON-only hashed; absent ⇒ byte-identical.
+    ...(config.responseWindowsOnAllActions ? { responseWindowsOnAllActions: true } : {}),
+    ...(config.firstPlayerCompAfterMulligan ? { firstPlayerCompAfterMulligan: true } : {}),
+    // MEASUREMENT-HARNESS KNOB — seat-neutral panels (see playPairing). NOT a rule;
+    // affects only which seat each deck sits in per game, hashed so ON runs differ.
+    ...(config.seatAlternation ? { seatAlternation: true } : {}),
     // RAW-POWER DECOMP — hero-LP head-start override: pin ONE faction's Hero
     // starting+max LP to a fixed value ({ faction, lp }). Only emitted (and hashed)
     // when a valid spec is given ⇒ default run is byte-identical to the v10 baseline.
@@ -1005,6 +1435,16 @@ function resolveConfig(config = {}) {
     // Diagnostic accounting collector (read-only side-channel). Stripped from the
     // hashed config in computeRunHash so attaching it keeps runHash byte-identical.
     ...(config.__diag !== undefined ? { __diag: config.__diag } : {}),
+    // Per-turn telemetry collector (read-only side-channel; same hash-strip as __diag).
+    ...(config.__trace !== undefined ? { __trace: config.__trace } : {}),
+    // Value-net training-data collection (opt-in harness knob; read-only
+    // side-channel). Stripped from the hashed config in computeRunHash, so
+    // attaching it keeps runHash byte-identical to a run without it set.
+    ...(config.collectTrainingData ? { collectTrainingData: true } : {}),
+    // Decision-log collection (opt-in harness knob; read-only side-channel, rollout
+    // policy only). Stripped from the hashed config in computeRunHash, so attaching
+    // it keeps runHash byte-identical to a run without it set.
+    ...(config.collectDecisionLog ? { collectDecisionLog: true } : {}),
   };
 }
 
@@ -1090,6 +1530,129 @@ function summarize(results, config) {
   const totalCounters = results.reduce((a, r) => a + (r.spellsCounters || 0), 0);
   const reactiveCastsPerGame = +(totalCounters / Math.max(games, 1)).toFixed(3);
 
+  // ── Mechanism diagnostics (reporting only; nothing here is hashed) ──────────
+  // Per ordered matchup cell: enough to judge each pairing on evidence, not just
+  // a marginal — win split, first-player split, length percentiles, HOW games end,
+  // comeback rate (turn-10 leader overturned), victory margin.
+  const cells = {};
+  for (const r of results) {
+    const c = (cells[`${r.fA}|${r.fB}`] ??= {
+      fA: r.fA, fB: r.fB, n: 0, wA: 0, wB: 0, draws: 0,
+      fpDecided: 0, fpWon: 0, turns: [], kill: 0, tiebreak: 0, undecided: 0,
+      snapN: 0, comebacks: 0, winnerLps: [],
+    });
+    c.n++;
+    if (r.winner === 0) c.wA++; else if (r.winner === 1) c.wB++; else c.draws++;
+    if (r.decided) { c.fpDecided++; if (r.firstPlayerWon) c.fpWon++; }
+    c.turns.push(r.turns);
+    const m = r.dx?.winMethod;
+    if (m === 'kill') c.kill++; else if (m === 'tiebreak') c.tiebreak++; else c.undecided++;
+    if (r.decided && (r.leaderAt10 === 0 || r.leaderAt10 === 1)) {
+      c.snapN++; if (r.winner !== r.leaderAt10) c.comebacks++;
+    }
+    if (r.dx && r.dx.winnerLp != null) c.winnerLps.push(r.dx.winnerLp);
+  }
+  const pct1 = (w, n) => +(100 * w / Math.max(n, 1)).toFixed(1);
+  const matchupDetail = {};
+  for (const [k, c] of Object.entries(cells)) {
+    c.turns.sort((a, b) => a - b);
+    const pTurn = (q) => c.turns[Math.min(c.turns.length - 1, Math.floor(q * c.turns.length))] ?? 0;
+    matchupDetail[k] = {
+      fA: c.fA, fB: c.fB, n: c.n, wA: c.wA, wB: c.wB, draws: c.draws,
+      aWinPct: pct1(c.wA, c.wA + c.wB),
+      firstPlayerWinPct: pct1(c.fpWon, c.fpDecided),
+      turnsP: { p25: pTurn(0.25), p50: pTurn(0.5), p75: pTurn(0.75), p90: pTurn(0.9) },
+      winMethod: { kill: c.kill, tiebreak: c.tiebreak, undecided: c.undecided },
+      comeback: { n: c.snapN, overturned: c.comebacks, pct: pct1(c.comebacks, c.snapN) },
+      winnerLpMedian: median(c.winnerLps.sort((a, b) => a - b)),
+    };
+  }
+
+  // Per faction (both seats): the mechanism evidence — transform usage + payoff,
+  // resource-development curve (upkeep + reserve + ramp effects), tempo curve.
+  // `raw` keeps mergeable sums so multi-run drivers can pool without re-deriving.
+  const fdet = {};
+  for (const r of results) {
+    for (const seat of [0, 1]) {
+      const f = seat === 0 ? r.fA : r.fB;
+      const d = (fdet[f] ??= {
+        games: 0, transforms: 0, transformTurnSum: 0, transformTurnN: 0,
+        winsT: 0, decT: 0, winsN: 0, decN: 0,
+        res5: 0, res10: 0, res15: 0, deploys: 0, deploysEarly: 0, spellsEarly: 0, discards: 0,
+        flipLpSum: 0, flipLpN: 0, flipSurvSum: 0, flipSurvN: 0, heroPre: 0, heroPost: 0,
+        heroPostIdx: {},
+      });
+      d.games++;
+      const dx = r.dx;
+      if (!dx) continue;
+      const t = dx.transformed[seat] === true;
+      if (t) {
+        d.transforms++;
+        if (dx.transformTurn[seat] != null) { d.transformTurnSum += dx.transformTurn[seat]; d.transformTurnN++; }
+        if (dx.lpAtFlip?.[seat] != null) { d.flipLpSum += dx.lpAtFlip[seat]; d.flipLpN++; }
+        if (dx.survivedAfterFlip?.[seat] != null) { d.flipSurvSum += dx.survivedAfterFlip[seat]; d.flipSurvN++; }
+      }
+      for (const [idx, n] of Object.entries(dx.heroUsesPre?.[seat] || {})) { d.heroPre += n; void idx; }
+      for (const [idx, n] of Object.entries(dx.heroUsesPost?.[seat] || {})) {
+        d.heroPost += n;
+        d.heroPostIdx[idx] = (d.heroPostIdx[idx] || 0) + n;
+      }
+      if (r.decided) {
+        const won = r.winner === seat;
+        if (t) { d.decT++; if (won) d.winsT++; }
+        else { d.decN++; if (won) d.winsN++; }
+      }
+      d.res5 += dx.resAt[seat][0]; d.res10 += dx.resAt[seat][1]; d.res15 += dx.resAt[seat][2];
+      d.deploys += dx.deploys[seat]; d.deploysEarly += dx.deploysEarly[seat];
+      d.spellsEarly += dx.spellsEarly[seat]; d.discards += dx.discards[seat];
+    }
+  }
+  const factionDetail = {};
+  for (const [f, d] of Object.entries(fdet)) {
+    factionDetail[f] = {
+      games: d.games,
+      transformPct: pct1(d.transforms, d.games),
+      transformAvgTurn: d.transformTurnN ? +(d.transformTurnSum / d.transformTurnN).toFixed(1) : null,
+      winPctWhenTransformed: d.decT ? pct1(d.winsT, d.decT) : null,
+      winPctWhenNot: d.decN ? pct1(d.winsN, d.decN) : null,
+      // §13b transform autopsy: how dead was the hero at flip time, how long did
+      // it live after, and were the (base/transformed) kit buttons ever pressed?
+      avgLpAtFlip: d.flipLpN ? +(d.flipLpSum / d.flipLpN).toFixed(1) : null,
+      avgTurnsAfterFlip: d.flipSurvN ? +(d.flipSurvSum / d.flipSurvN).toFixed(1) : null,
+      heroAbilityUsesPerGame: {
+        preFlip: +(d.heroPre / d.games).toFixed(2),
+        postFlip: d.transforms ? +(d.heroPost / d.transforms).toFixed(2) : null,
+      },
+      postFlipUsesByIndex: d.heroPostIdx,
+      resourcesByTurn: {
+        t5: +(d.res5 / d.games).toFixed(2),
+        t10: +(d.res10 / d.games).toFixed(2),
+        t15: +(d.res15 / d.games).toFixed(2),
+      },
+      deploysPerGame: +(d.deploys / d.games).toFixed(2),
+      earlyDeploysPerGame: +(d.deploysEarly / d.games).toFixed(2),
+      earlySpellsPerGame: +(d.spellsEarly / d.games).toFixed(2),
+      discardsPerGame: +(d.discards / d.games).toFixed(2),
+      raw: d,
+    };
+  }
+
+  // Candidate-generation pruning telemetry (T2, rollout only) — sums each game's
+  // hash-exempt `candidatePruning` (see playGame) across the whole run. Absent
+  // for non-rollout runs; never read by computeRunHash.
+  let candidatePruning;
+  if (config.botPolicy === 'rollout') {
+    const acc = { raw: 0, retained: 0, prunedByKind: {} };
+    for (const r of results) {
+      const cp = r.candidatePruning;
+      if (!cp) continue;
+      acc.raw += cp.raw;
+      acc.retained += cp.retained;
+      for (const [k, n] of Object.entries(cp.prunedByKind)) acc.prunedByKind[k] = (acc.prunedByKind[k] ?? 0) + n;
+    }
+    candidatePruning = acc;
+  }
+
   return {
     factionWinPct,
     paritySpread,
@@ -1103,6 +1666,7 @@ function summarize(results, config) {
     gamesWithEquipPct,
     spellsCastPerGame,
     reactiveCastsPerGame,
+    ...(candidatePruning ? { candidatePruning } : {}),
     // ADDITIVE balance-read output (NOT hashed; computed from the same non-mirror
     // decided games as factionWinPct). `factionCounts` surfaces the raw {w,n} per
     // faction (previously discarded); `stats` is the inferential summary (G-test
@@ -1110,6 +1674,9 @@ function summarize(results, config) {
     // CIs, worst-offender z). Reporting only ⇒ cannot perturb runHash.
     factionCounts: fc,
     stats: summarizeStats(fc),
+    // Mechanism diagnostics (§12) — per-cell + per-faction evidence, hash-exempt.
+    matchupDetail,
+    factionDetail,
     games,
     config,
   };
@@ -1122,29 +1689,154 @@ function computeRunHash(results, config, deckLabels = []) {
   // Decks used are part of the run's identity: fold their stable labels in so two
   // runs that differ only by deck selection produce different hashes. The diagnostic
   // accounting collector (__diag) is a read-only side-channel and is excluded.
-  const { __diag, ...hashedConfig } = config;
+  // playoutBackend is a harness dimension (like WORKERS): both stepping
+  // backends must hash identically — that equality IS the T7 equivalence
+  // claim. Stripping an absent key is a no-op, so historical hashes are
+  // untouched. Pinned in rollout-pin.test.ts.
+  // collectTrainingData is a harness-only data-collection knob (like __diag):
+  // it changes nothing about gameplay, so it must strip out identically to a
+  // run without it set. result.trainingRows is a result field computeRunHash
+  // never reads (rows array above builds hashes from fA/fB/seed/winner/
+  // firstPlayer/turns/timedOut/leaderAt10 only), so it needs no handling here.
+  // collectDecisionLog is the same discipline: a harness-only data-collection
+  // knob (result.decisionLog is never read here either).
+  const { __diag, __trace, playoutBackend, collectTrainingData, collectDecisionLog, ...hashedConfig } = config;
   void __diag;
+  void __trace;
+  void playoutBackend;
+  void collectTrainingData;
+  void collectDecisionLog;
   const payload = JSON.stringify(hashedConfig) + '\n' + deckLabels.join(',') + '\n' + rows.join('\n');
   return createHash('sha256').update(payload).digest('hex').slice(0, 16);
 }
 
 // ── Public: runSim ───────────────────────────────────────────────────────────
 
-export function runSim(rawConfig = {}) {
-  const config = resolveConfig(rawConfig);
-  const plan = buildPairingPlan(config);
+// Play the per-game results for `plan`. When `shard = {index, count}` is given,
+// only games whose GLOBAL index ≡ index (mod count) are actually played. Because
+// each seed is a pure function of (seedBase, pairing p, game g), any shard produces
+// byte-identical games to the serial run for its slice — and every result carries
+// __gi (its global index) so a parallel driver can restore exact serial order.
+function generateResults(plan, config, shard = null) {
   const results = [];
-  // Seed is a pure function of (seedBase, pairing index, game index): deterministic.
+  let gi = 0;
   for (let p = 0; p < plan.length; p++) {
     const { fA, fB, deckA, deckB } = plan[p];
     for (let g = 0; g < config.gamesPerPairing; g++) {
-      const seed = (config.seedBase + p * 100003 + g * 7919) >>> 0;
-      results.push(playGame(fA, fB, seed, config, deckA, deckB, g));
+      if (!shard || gi % shard.count === shard.index) {
+        const seed = (config.seedBase + p * 100003 + g * 7919) >>> 0;
+        // SEAT ALTERNATION (measurement-harness knob, not a rule): swap which deck
+        // sits in seat 0 on a 4-phase cycle vs firstPlayer's g%2 alternation, so the
+        // two axes stay UNCORRELATED — games 0,1 normal seats, 2,3 swapped, both
+        // first-player phases occur within each seat phase. playGame is called with
+        // fA/fB/deckA/deckB swapped together (so its internal per-seat faction logic
+        // stays correct for whichever seat each deck physically occupies); its raw
+        // return is then remapped back to the pairing's true (deck-oriented) fA/fB
+        // via remapSeatSwap so results never depend on physical seat. gamesPerPairing
+        // should be a multiple of 4 for exact seat/first-player neutrality (true of
+        // all presets; not enforced here). Default OFF ⇒ byte-identical to the
+        // unswapped call below.
+        const swapSeats = config.seatAlternation === true && (g >> 1) % 2 === 1;
+        const r = swapSeats
+          ? remapSeatSwap(playGame(fB, fA, seed, config, deckB, deckA, g), fA, fB)
+          : playGame(fA, fB, seed, config, deckA, deckB, g);
+        r.__gi = gi; // ignored by summarize + computeRunHash; used only for reassembly
+        results.push(r);
+      }
+      gi++;
     }
   }
+  return results;
+}
+
+// Reduce a full, serial-ORDERED results array to the public summary + runHash.
+function finalize(results, config, plan) {
   const summary = summarize(results, config);
   const deckLabels = plan.map(p => p.label);
-  return { ...summary, deckLabels, runHash: computeRunHash(results, config, deckLabels) };
+  return {
+    ...summary,
+    deckLabels,
+    runHash: computeRunHash(results, config, deckLabels),
+    // Value-net training rows (opt-in via config.collectTrainingData): the
+    // summary object above never retains raw per-game results, so flatten each
+    // game's labeled rows here — stamped with the mover's faction (fA if it
+    // moved as seat 0, fB if seat 1) — for callers like neural-datagen.mjs.
+    // Hash-exempt: computeRunHash above is computed from `results` directly and
+    // never reads this field.
+    ...(config.collectTrainingData
+      ? {
+          trainingRows: results.flatMap((r, gi) =>
+            (r.trainingRows || []).map(row => ({ ...row, game: gi, faction: row.mover === 0 ? r.fA : r.fB })),
+          ),
+        }
+      : {}),
+    // Decision-log rows (opt-in via config.collectDecisionLog): flattened the same
+    // way as trainingRows above, stamped with a unique game id + the mover's
+    // faction. Hash-exempt: computeRunHash above never reads this field.
+    ...(config.collectDecisionLog
+      ? {
+          decisionLog: results.flatMap((r, gi) =>
+            (r.decisionLog || []).map(row => ({ ...row, game: gi, faction: row.mover === 0 ? r.fA : r.fB })),
+          ),
+        }
+      : {}),
+  };
+}
+
+export function runSim(rawConfig = {}) {
+  const config = resolveConfig(rawConfig);
+  const plan = buildPairingPlan(config);
+  return finalize(generateResults(plan, config, null), config, plan);
+}
+
+// ── Parallel building blocks (orchestrated by sim-parallel.mjs) ───────────────
+// A worker runs ONE shard via runSimShard and returns its partial results (each
+// tagged __gi); the driver concatenates all shards, sorts by __gi to restore
+// serial order, then calls finalizeResults — yielding a result byte-identical to
+// runSim (same runHash). That identity is the whole point: parallelism must never
+// change a number. Verified by scratch-verify-parallel + the CLI --parallel path.
+export function runSimShard(rawConfig, shardIndex, shardCount) {
+  const config = resolveConfig(rawConfig);
+  const plan = buildPairingPlan(config);
+  return generateResults(plan, config, { index: shardIndex, count: shardCount });
+}
+
+// Dynamic work-stealing variant: instead of a fixed 1/N slice, every worker shares
+// one atomic counter (an Int32Array over a SharedArrayBuffer) and pulls the NEXT
+// global game index until the pool is exhausted. This keeps all cores busy to the
+// end even when games/worker is small and per-game cost varies wildly (the rollout
+// pilots) — static sharding leaves fast workers idle waiting on the slowest slice.
+// gi maps to (pairing p, game g) exactly as the serial loop: p = gi/G, g = gi%G, so
+// each game keeps its serial seed and the merged runHash is unchanged.
+export function runSimQueue(rawConfig, counterBuffer) {
+  const config = resolveConfig(rawConfig);
+  const plan = buildPairingPlan(config);
+  const G = config.gamesPerPairing;
+  const total = plan.length * G;
+  const counter = new Int32Array(counterBuffer);
+  const results = [];
+  let gi;
+  while ((gi = Atomics.add(counter, 0, 1)) < total) {
+    const p = Math.floor(gi / G);
+    const g = gi - p * G;
+    const { fA, fB, deckA, deckB } = plan[p];
+    const seed = (config.seedBase + p * 100003 + g * 7919) >>> 0;
+    // SEAT ALTERNATION — see the matching comment in generateResults; kept in sync
+    // so parallel (work-stealing) runs stay byte-identical to the serial run.
+    const swapSeats = config.seatAlternation === true && (g >> 1) % 2 === 1;
+    const r = swapSeats
+      ? remapSeatSwap(playGame(fB, fA, seed, config, deckB, deckA, g), fA, fB)
+      : playGame(fA, fB, seed, config, deckA, deckB, g);
+    r.__gi = gi;
+    results.push(r);
+  }
+  return results;
+}
+
+export function finalizeResults(rawConfig, results) {
+  const config = resolveConfig(rawConfig);
+  const plan = buildPairingPlan(config);
+  return finalize(results, config, plan);
 }
 
 // ── Thin CLI ─────────────────────────────────────────────────────────────────
@@ -1160,7 +1852,8 @@ function parseCliConfig(argv) {
     // for every faction in the run (per-faction override for all 4 factions).
     if (key === 'realDecks') { cfg.decks = Object.fromEntries(FACTIONS.map(f => [f, f])); continue; }
     const val = argv[i + 1]; i++;
-    if (['gamesPerPairing', 'turnCap', 'seedBase', 'lpScale', 'healScale', 'defenderForceCap', 'damageScale', 'frontlineSlots', 'highGroundSlots', 'equalizeHeroLp', 'atkBonus', 'startingCardBonus', 'resourceRampBonus'].includes(key)) cfg[key] = Number(val);
+    if (key === 'parallel') { cfg.__parallel = Number(val); continue; } // driver-only; not part of the sim config/hash
+    if (['gamesPerPairing', 'turnCap', 'seedBase', 'lpScale', 'healScale', 'defenderForceCap', 'damageScale', 'frontlineSlots', 'highGroundSlots', 'equalizeHeroLp', 'atkBonus', 'startingCardBonus', 'resourceRampBonus', 'resourceDeckSize'].includes(key)) cfg[key] = Number(val);
     else if (key === 'abilitiesOn') cfg[key] = val !== 'false';
     else if (key === 'armBuffsTakeMax') cfg[key] = val === 'true';
     else if (key === 'armFirstInstanceOnly') cfg[key] = val === 'true';
@@ -1171,7 +1864,23 @@ function parseCliConfig(argv) {
     else if (key === 'directHighGroundDeploy') cfg[key] = val === 'true';
     else if (key === 'armOneTimeAbsolute') cfg[key] = val === 'true';
     else if (key === 'armChargeAbsorb') cfg[key] = val === 'true';
+    else if (key === 'rampPilot') cfg[key] = val === 'true';
+    else if (key === 'costFloor') cfg[key] = val === 'true';
+    else if (key === 'reserveTapChoice') cfg[key] = val === 'true';
+    else if (key === 'reserveTapStrain') cfg[key] = val === 'true';
+    else if (key === 'disableDiscardForEnergy') cfg[key] = val === 'true';
+    else if (key === 'apnapAnyOrderFix') cfg[key] = val === 'true';
+    else if (key === 'firstPlayerSkipsFirstResource') cfg[key] = val === 'true';
+    else if (key === 'firstPlayerDrawsNormally') cfg[key] = val === 'true';
+    else if (key === 'seatAlternation') cfg[key] = val === 'true';
+    else if (key === 'flashAtWill') cfg[key] = val === 'true';
+    else if (key === 'boardReactions') cfg[key] = val === 'true';
+    else if (key === 'responseWindowsOnAllActions') cfg[key] = val === 'true';
     else if (key === 'disableFactionHeroReach') cfg[key] = { faction: val };
+    else if (key === 'botPolicySeat0' || key === 'botPolicySeat1') {
+      cfg.botPolicySeat = cfg.botPolicySeat || {};
+      cfg.botPolicySeat[key === 'botPolicySeat0' ? 0 : 1] = val;
+    }
     else if (key === 'factions') cfg.matchups = val.split(',');
     else if (key === 'disableEffectTypes') cfg[key] = val.split(',').filter(Boolean);
     else cfg[key] = val;
@@ -1180,19 +1889,30 @@ function parseCliConfig(argv) {
 }
 
 function isMain() {
-  return import.meta.url === `file://${process.argv[1]}`;
+  // isMainThread guards against worker threads (sim-worker.mjs) inheriting the
+  // main thread's process.argv and re-running the CLI block on import.
+  return isMainThread && import.meta.url === `file://${process.argv[1]}`;
 }
 
-if (isMain()) {
+// NOT top-level await: kicking off an async runCli() lets THIS module finish
+// evaluating before runCli dynamically imports sim-parallel.mjs (which imports
+// this module back). A top-level await here would freeze sim-runner mid-eval and
+// deadlock that circular import.
+async function runCli() {
   const cfg = parseCliConfig(process.argv.slice(2));
-  if (cfg.__verify) {
-    delete cfg.__verify;
-    const a = runSim(cfg), b = runSim(cfg);
+  // __parallel / __verify are DRIVER flags, not sim config — strip them so they
+  // never reach runSim (and so a parallel run hashes identically to a serial one).
+  const { __parallel, __verify, ...simCfg } = cfg;
+  if (__verify) {
+    const a = runSim(simCfg), b = runSim(simCfg);
     const ok = a.runHash === b.runHash;
     console.log(`determinism: ${ok ? 'PASS' : 'FAIL'} (hash ${a.runHash} vs ${b.runHash})`);
     process.exit(ok ? 0 : 1);
   }
-  const res = runSim(cfg);
+  const res =
+    __parallel > 1
+      ? await (await import('./sim-parallel.mjs')).runSimParallel(simCfg, __parallel)
+      : runSim(simCfg);
   if (process.env.AETHERION_SIM_OUT) {
     writeFileSync(process.env.AETHERION_SIM_OUT, JSON.stringify(res, null, 1));
   }
@@ -1200,4 +1920,11 @@ if (isMain()) {
   console.log(`firstPlayer ${res.firstPlayerPct}% | mirrorFP ${res.mirrorFirstPlayerPct}% | decided ${res.decidedPct}% | timeout ${res.timeoutPct}% | avgTurns ${res.gameLength.avg} (median ${res.gameLength.median})`);
   console.log(`snowball leader@10 ${res.snowball.leaderAtTurn10WinPct}% | comeback ${res.snowball.comebackPct}%`);
   console.log(`equipmentPlayed/game ${res.equipmentPlayedPerGame} | gamesWithEquip ${res.gamesWithEquipPct}%`);
+}
+
+if (isMain()) {
+  runCli().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
 }
