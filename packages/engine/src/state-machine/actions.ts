@@ -370,14 +370,19 @@ function activateBoardReaction(
   // Once-per-window guard (Hero Counter/Flash): a source may react at most once per
   // priority window. Board cards enforce this via exhaustion; the Hero has no board card
   // to exhaust, so gate it explicitly — otherwise a free-cost Hero Counter/Flash could
-  // fire every window all game. Block if this source already reacted this window: scan
-  // back to the last chain-advancing event (a SPELL_CAST pushes a new link / TURN_START
-  // bounds the scan); a prior ABILITY_ACTIVATED by this source within the window blocks.
-  if (state.pendingPriority != null) {
+  // fire every window all game. Block if this source already reacted to THIS window
+  // (keyed on the window's baseStackItemId — not the last SPELL_CAST, which non-spell
+  // windows never emit, so those must not extend the block across distinct windows).
+  const currentWindowId = state.pendingPriority?.baseStackItemId;
+  if (currentWindowId != null) {
     for (let i = state.log.length - 1; i >= 0; i--) {
       const e = state.log[i]!;
-      if (e.type === 'TURN_START' || e.type === 'SPELL_CAST') break;
-      if (e.type === 'ABILITY_ACTIVATED' && e.cardInstanceId === action.cardInstanceId)
+      if (e.type === 'TURN_START') break;
+      if (
+        e.type === 'ABILITY_ACTIVATED' &&
+        e.cardInstanceId === action.cardInstanceId &&
+        (e as { windowId?: string }).windowId === currentWindowId
+      )
         return { state, events: [] };
     }
   }
@@ -403,7 +408,9 @@ function activateBoardReaction(
     type: 'ABILITY_ACTIVATED',
     cardInstanceId: action.cardInstanceId,
     abilityIndex: action.abilityIndex,
-  };
+    // Tag with the window it answered so the once-per-window guard can key on it.
+    ...(currentWindowId != null ? { windowId: currentWindowId } : {}),
+  } as GameEvent;
   const ran = runAbilityEffects(
     payState,
     action.cardInstanceId,
