@@ -13,3 +13,10 @@ rather than re-deriving it.
 
 New candidate pools are still DERIVED live in `make-pools.mjs` — those change as
 the formula improves, and their notes say so.
+
+`aetherion-BALANCED-v2-frozen.json` (sha256/16 `1af8b32ccb5e285c`) is the
+**v2-balanced pool**: the raw baseline + the `docs/patches/cards-balance-v2.sql`
+edit set (30 cards; spread 36 → 2.3 under ruleset-v2). It matches the live
+CustomTCG DB as patched on 2026-07-24. The base `sim-data/aetherion-cards.json`
+deliberately stays RAW — every §7–§13 replay, pin, and ledger sha depends on it.
+Point new balanced-pool measurements at this frozen file instead.

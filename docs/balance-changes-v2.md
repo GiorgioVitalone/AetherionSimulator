@@ -65,3 +65,9 @@ values (safe against the raw baseline, idempotent). The fixture patch
 (`aetherion-cards.fixture.patch`) applies the same changes to the committed test fixture. Both were
 cross-checked: patched fixture == the confirmed balanced pool, 0 mismatches. Apply deliberately;
 re-measure after applying to confirm the DB now matches the validated pool.
+
+**Applied 2026-07-24.** The SQL landed on the live CustomTCG DB (table adapted to lowercase
+`cards`; 34 UPDATEs × 1 row + an 18-row resource trim to 12). The fixture patch was NOT applied to
+`sim-data/aetherion-cards.json` — that file must stay raw (every §7–§13 replay, pin, and ledger sha
+depends on it). The balanced pool ships instead as
+`sim-data/pools/aetherion-BALANCED-v2-frozen.json` (`1af8b32ccb5e285c`).
