@@ -39,7 +39,7 @@ describe('test-oracle classification', () => {
       readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
     ) as { scripts: Record<string, string> };
     expect(packageJson.scripts['test:correctness']).toContain(
-      '--exclude tests/legacy/**',
+      "--exclude 'tests/legacy/**'",
     );
     expect(packageJson.scripts['test:legacy']).toBe(
       'vitest run tests/legacy',

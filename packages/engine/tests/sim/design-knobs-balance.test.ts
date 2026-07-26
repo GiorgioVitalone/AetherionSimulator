@@ -264,5 +264,5 @@ ds('design knobs: byte-identical no-op + determinism (runSim)', () => {
       expect(h, JSON.stringify(o)).not.toBe(off);
       expect(runSim({ ...base, ...o }).runHash, JSON.stringify(o)).toBe(h);
     }
-  }, 30000);
+  }, 90000);
 });

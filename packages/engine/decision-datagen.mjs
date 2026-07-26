@@ -37,12 +37,20 @@ const RULES = {
   reachDiscard: true, termination: 'tiebreak',
   firstPlayer: 'alternating', seatAlternation: true, turnCap: 80,
 };
+// DATAGEN_CONFIG_OVERRIDE (JSON, merged last): the real teacher config below is
+// ~10 pairings of deep rollouts and runs many minutes — far past any smoke-test
+// budget — so the CI smoke shrinks it (fewer decks, shallow rollouts) without
+// forking the tool. Unset = the real teacher config, unchanged.
+const override = process.env.DATAGEN_CONFIG_OVERRIDE
+  ? JSON.parse(process.env.DATAGEN_CONFIG_OVERRIDE)
+  : {};
 const baseConfig = {
   ...RULES,
   botPolicy: 'rollout', rollouts: 8, rolloutDepth: 3, maxCandidates: 8,
   candidateGen: 'full', playoutBackend: 'snapshot', rolloutPlayout: 'heuristic',
   collectDecisionLog: true,
   decks: { Radiant: 'Radiant', Verdant: 'Verdant', Onyx: 'Onyx', Sapphire: 'Sapphire' },
+  ...override,
 };
 
 // Header line (truncates any prior file).

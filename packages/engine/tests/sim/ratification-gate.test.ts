@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   evaluateRatification,
@@ -14,10 +16,7 @@ import {
 
 const manifest = validateExternalReviewManifest(
   JSON.parse(
-    readFileSync(
-      new URL('../../sim-data/external-review-manifest.json', import.meta.url),
-      'utf8',
-    ),
+    readFileSync(new URL('../../sim-data/external-review-manifest.json', import.meta.url), 'utf8'),
   ),
 );
 const roles: ExternalReviewRole[] = [
@@ -31,23 +30,30 @@ const roles: ExternalReviewRole[] = [
 
 describe('external ratification gate', () => {
   it('reports every real current blocker and never fabricates approval', () => {
+    // The dirty-checkout blocker depends on where the test runs (a CI checkout
+    // is clean; a dev checkout usually is not), so assert the gate MIRRORS the
+    // real git state in both directions instead of pinning one environment.
+    const actuallyDirty =
+      execFileSync('git', ['status', '--porcelain'], {
+        cwd: fileURLToPath(new URL('.', import.meta.url)),
+        encoding: 'utf8',
+      }).trim().length > 0;
     const report = currentRatificationStatus();
     expect(report.gate.releaseEligible).toBe(false);
-    expect(report.gate.reasons).toContain('checkout_dirty');
+    expect(report.evidence.cleanCheckout).toBe(!actuallyDirty);
+    if (actuallyDirty) {
+      expect(report.gate.reasons).toContain('checkout_dirty');
+    } else {
+      expect(report.gate.reasons).not.toContain('checkout_dirty');
+    }
     expect(report.gate.reasons).toContain('finding_ledger_open');
     expect(report.gate.reasons).toContain('critical_summaries_open');
     expect(report.evidence.unresolvedRulesDecisions).toBe(0);
     expect(
-      report.gate.reasons.some((reason) =>
-        reason.startsWith('unresolved_rules_decisions:'),
-      ),
+      report.gate.reasons.some((reason) => reason.startsWith('unresolved_rules_decisions:')),
     ).toBe(false);
-    expect(report.gate.reasons).toContain(
-      'rules_artifact_status:diagnostic',
-    );
-    expect(report.gate.reasons).toContain(
-      'rule_oracle_status:awaiting_independent_rules_review',
-    );
+    expect(report.gate.reasons).toContain('rules_artifact_status:diagnostic');
+    expect(report.gate.reasons).toContain('rule_oracle_status:awaiting_independent_rules_review');
     expect(report.gate.reasons).toContain(
       'expert_corpus_status:awaiting_independent_expert_labels',
     );
@@ -110,10 +116,7 @@ describe('external ratification gate', () => {
       ),
       commands: commandIds.map((id) => ({
         id,
-        command:
-          REQUIRED_GATE_COMMANDS[
-            id as keyof typeof REQUIRED_GATE_COMMANDS
-          ],
+        command: REQUIRED_GATE_COMMANDS[id as keyof typeof REQUIRED_GATE_COMMANDS],
         exitCode: 0,
         outputHash: 'a'.repeat(64),
       })),
@@ -157,9 +160,7 @@ describe('external ratification gate', () => {
         {
           ...fullGateEvidence,
           commands: fullGateEvidence.commands.map((command) =>
-            command.id === 'root_build'
-              ? { ...command, command: 'echo passed' }
-              : command,
+            command.id === 'root_build' ? { ...command, command: 'echo passed' } : command,
           ),
         },
         {
@@ -174,9 +175,7 @@ describe('external ratification gate', () => {
   it('rejects weakened checklists and non-independent reviewers', () => {
     const weakened = structuredClone(manifest) as Record<string, any>;
     weakened.requiredChecks.fullGateEvidence = false;
-    expect(() => validateExternalReviewManifest(weakened)).toThrow(
-      /must be required/,
-    );
+    expect(() => validateExternalReviewManifest(weakened)).toThrow(/must be required/);
 
     const duplicate = {
       ...manifest,
@@ -215,21 +214,15 @@ describe('external ratification gate', () => {
   });
 
   it('validates every external-review manifest boundary', () => {
-    expect(() => validateExternalReviewManifest(null)).toThrow(
-      /must be an object/,
-    );
-    for (const patch of [
-      { schemaVersion: 2 },
-      { candidateId: 42 },
-      { status: 'self_approved' },
-    ]) {
-      expect(() =>
-        validateExternalReviewManifest({ ...manifest, ...patch }),
-      ).toThrow(/identity\/status/);
+    expect(() => validateExternalReviewManifest(null)).toThrow(/must be an object/);
+    for (const patch of [{ schemaVersion: 2 }, { candidateId: 42 }, { status: 'self_approved' }]) {
+      expect(() => validateExternalReviewManifest({ ...manifest, ...patch })).toThrow(
+        /identity\/status/,
+      );
     }
-    expect(() =>
-      validateExternalReviewManifest({ ...manifest, findings: 'all' }),
-    ).toThrow(/finding scope/);
+    expect(() => validateExternalReviewManifest({ ...manifest, findings: 'all' })).toThrow(
+      /finding scope/,
+    );
     expect(() =>
       validateExternalReviewManifest({
         ...manifest,
@@ -268,9 +261,7 @@ describe('external ratification gate', () => {
     ).toThrow(/evidence sources must be an object/);
     const unboundCardPool = structuredClone(manifest) as Record<string, any>;
     delete unboundCardPool.evidenceSources.cardPool;
-    expect(() => validateExternalReviewManifest(unboundCardPool)).toThrow(
-      /every decisive input/,
-    );
+    expect(() => validateExternalReviewManifest(unboundCardPool)).toThrow(/every decisive input/);
   });
 
   it('rejects malformed approval identity, binding, evidence, and attestation', () => {
@@ -341,10 +332,7 @@ describe('external ratification gate', () => {
         ]),
       ) as Record<ExternalReviewRole, ExternalApproval>;
       expect(
-        evaluateRatification(
-          { ...manifest, requiredApprovals: approvals },
-          evidence,
-        ).reasons,
+        evaluateRatification({ ...manifest, requiredApprovals: approvals }, evidence).reasons,
       ).toContain(reason);
     }
     const invalidEvidence = evaluateRatification(
@@ -369,8 +357,6 @@ describe('external ratification gate', () => {
     );
     expect(invalidEvidence.reasons).toContain('candidate_commit_invalid');
     expect(invalidEvidence.reasons).toContain('full_gate_evidence_missing');
-    expect(invalidEvidence.reasons).toContain(
-      'rule_oracle_author_reviewer_not_independent',
-    );
+    expect(invalidEvidence.reasons).toContain('rule_oracle_author_reviewer_not_independent');
   });
 });

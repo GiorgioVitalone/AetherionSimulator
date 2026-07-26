@@ -6,10 +6,7 @@ import {
   summarizePolicySensitivity,
   validatePolicyCalibrationManifest,
 } from '../../src/sim/policy-calibration.js';
-import {
-  runPolicyCalibration,
-  verifyPolicyCalibration,
-} from '../../policy-calibration.mjs';
+import { runPolicyCalibration, verifyPolicyCalibration } from '../../policy-calibration.mjs';
 
 const manifest = validatePolicyCalibrationManifest(
   JSON.parse(
@@ -115,47 +112,33 @@ describe('current policy calibration', () => {
   it('measures actual current-engine heuristic/rollout disagreement without overclaiming human skill', () => {
     const report = runPolicyCalibration();
     expect(verifyPolicyCalibration(report)).toEqual([]);
-    expect(report.corpus.decisions).toBeGreaterThanOrEqual(
-      manifest.corpus.minimumDecisions,
-    );
-    expect(report.corpus.observedFamilies).toEqual(
-      [...manifest.corpus.requiredFamilies].sort(),
-    );
+    expect(report.corpus.decisions).toBeGreaterThanOrEqual(manifest.corpus.minimumDecisions);
+    expect(report.corpus.observedFamilies).toEqual([...manifest.corpus.requiredFamilies].sort());
     expect(report.corpus.missingFamilies).toEqual([]);
-    expect(report.decisionCalibration.byFamily.reaction?.decisions).toBeGreaterThan(
-      0,
-    );
-    expect(
-      report.decisionCalibration.byFamily.transform?.decisions,
-    ).toBeGreaterThan(0);
+    expect(report.decisionCalibration.byFamily.reaction?.decisions).toBeGreaterThan(0);
+    expect(report.decisionCalibration.byFamily.transform?.decisions).toBeGreaterThan(0);
     expect(report.decisionCalibration.overall.agreementRate).toBeLessThan(1);
     expect(report.decisionCalibration.overall.regretInterval95).not.toBeNull();
     expect(report.policySensitivity.interval95).toBeDefined();
     expect(report.gate.releaseEligible).toBe(false);
-    expect(report.claimLimitations.join(' ')).toMatch(
-      /not expert or human truth/i,
-    );
-  });
+    expect(report.claimLimitations.join(' ')).toMatch(/not expert or human truth/i);
+    // Real sims; the 5s default testTimeout is too tight once V8 coverage
+    // instrumentation is on (ci:correctness).
+  }, 60000);
 
   it('rejects weakened or post-hoc calibration manifests', () => {
     const weakened = structuredClone(manifest) as Record<string, any>;
     weakened.engineGate.requiredRulesArtifactStatus = 'diagnostic';
-    expect(() => validatePolicyCalibrationManifest(weakened)).toThrow(
-      /engine gate is weakened/,
-    );
+    expect(() => validatePolicyCalibrationManifest(weakened)).toThrow(/engine gate is weakened/);
 
     const overclaim = structuredClone(manifest) as Record<string, any>;
     overclaim.claimScope.humanSkillEquivalence = 'allowed';
-    expect(() => validatePolicyCalibrationManifest(overclaim)).toThrow(
-      /claim scope/,
-    );
+    expect(() => validatePolicyCalibrationManifest(overclaim)).toThrow(/claim scope/);
 
     const postHoc = {
       ...structuredClone(manifest),
       preferredResult: 'heuristic',
     };
-    expect(() => validatePolicyCalibrationManifest(postHoc)).toThrow(
-      /unknown field/,
-    );
+    expect(() => validatePolicyCalibrationManifest(postHoc)).toThrow(/unknown field/);
   });
 });
