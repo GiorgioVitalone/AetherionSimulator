@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { gTestUniform, chiSquareUniform } from '../../src/stats/gtest.js';
-import { chiSquareUpperP } from '../../src/stats/normal.js';
+import {
+  chiSquareUpperP,
+  normalLogSurvival,
+  normalSurvival,
+  normalTwoSidedP,
+} from '../../src/stats/normal.js';
 
 describe('chiSquareUpperP', () => {
   it('matches known critical-value tail probabilities', () => {
@@ -9,9 +14,26 @@ describe('chiSquareUpperP', () => {
     expect(chiSquareUpperP(11.345, 3)).toBeCloseTo(0.01, 3);
   });
 
-  it('returns 1 for a zero statistic or non-positive df', () => {
+  it('returns 1 for a zero statistic and rejects invalid domains', () => {
     expect(chiSquareUpperP(0, 3)).toBe(1);
-    expect(chiSquareUpperP(5, 0)).toBe(1);
+    expect(() => chiSquareUpperP(5, 0)).toThrow(RangeError);
+    expect(() => chiSquareUpperP(-1, 2)).toThrow(RangeError);
+  });
+});
+
+describe('stable normal tails', () => {
+  it('matches high-precision references without cancellation to zero', () => {
+    const sf8 = 6.22096057427178e-16;
+    const sf10 = 7.61985302416047e-24;
+    expect(normalSurvival(8) / sf8).toBeCloseTo(1, 7);
+    expect(normalSurvival(10) / sf10).toBeCloseTo(1, 7);
+    expect(normalTwoSidedP(10)).toBeGreaterThan(0);
+    expect(normalLogSurvival(10)).toBeCloseTo(-53.2312851505125, 7);
+  });
+
+  it('keeps a finite log tail when the probability itself underflows', () => {
+    expect(Number.isFinite(normalLogSurvival(40))).toBe(true);
+    expect(normalLogSurvival(40)).toBeLessThan(-800);
   });
 });
 

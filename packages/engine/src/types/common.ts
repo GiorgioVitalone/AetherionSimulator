@@ -67,7 +67,12 @@ export interface StatModifier {
 export type DynamicStatSource =
   | { readonly type: 'per_count'; readonly stat: Stat; readonly counting: CountingExpr; readonly valuePerCount: number }
   | { readonly type: 'equals_stat'; readonly stat: Stat; readonly sourceRef: Stat }
-  | { readonly type: 'multiply'; readonly factor: number }
+  | {
+      readonly type: 'multiply';
+      readonly factor: number;
+      /** Exact printed axes to multiply. Omitting this would silently multiply ARM. */
+      readonly stats: readonly Stat[];
+    }
   | { readonly type: 'x_cost'; readonly stat: Stat; readonly resource: ResourceType };
 
 export interface TokenDef {

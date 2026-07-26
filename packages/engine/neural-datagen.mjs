@@ -28,10 +28,9 @@ const BASE_SEED = 700000;
 
 // Standard rule flags (copied from t2-gate.mjs's RULES block).
 const RULES = {
-  reachDiscard: true, exileDiscardForEnergy: true, termination: 'tiebreak',
-  firstPlayer: 'alternating', seatAlternation: true, fixHandSizeStall: true,
-  armFirstInstanceOnly: true, terminationMode: 'resource_deck_empty_transform',
-  costFloor: true, reserveTapChoice: true, reserveTapStrain: true, turnCap: 80,
+  rulesProfile: 'current',
+  reachDiscard: true, termination: 'tiebreak',
+  firstPlayer: 'alternating', seatAlternation: true, turnCap: 80,
 };
 const baseConfig = {
   ...RULES,

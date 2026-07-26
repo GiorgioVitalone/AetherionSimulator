@@ -6,12 +6,46 @@
 
 /** Standard-normal cumulative distribution function Φ(z). */
 export function normalCdf(z: number): number {
-  return 0.5 * (1 + erf(z / Math.SQRT2));
+  assertFinite(z, 'z');
+  return z < 0 ? normalSurvival(-z) : 1 - normalSurvival(z);
+}
+
+/** Numerically stable upper-tail probability P(Z >= z). */
+export function normalSurvival(z: number): number {
+  assertFinite(z, 'z');
+  if (z < 0) return normalCdf(-z);
+  if (z >= 8) return Math.exp(normalLogSurvival(z));
+  return 0.5 * erfc(z / Math.SQRT2);
+}
+
+/** Log upper-tail probability, stable well beyond ordinary double tail range. */
+export function normalLogSurvival(z: number): number {
+  assertFinite(z, 'z');
+  if (z < 0) return Math.log(normalCdf(-z));
+  if (z < 8) return Math.log(normalSurvival(z));
+  const inverseSquare = 1 / (z * z);
+  const millsSeries =
+    1 -
+    inverseSquare +
+    3 * inverseSquare ** 2 -
+    15 * inverseSquare ** 3 +
+    105 * inverseSquare ** 4 -
+    945 * inverseSquare ** 5 +
+    10_395 * inverseSquare ** 6 -
+    135_135 * inverseSquare ** 7 +
+    2_027_025 * inverseSquare ** 8;
+  return (
+    -0.5 * z * z -
+    Math.log(z) -
+    0.5 * Math.log(2 * Math.PI) +
+    Math.log(millsSeries)
+  );
 }
 
 /** Two-sided standard-normal tail probability: P(|Z| >= |z|). */
 export function normalTwoSidedP(z: number): number {
-  return 2 * (1 - normalCdf(Math.abs(z)));
+  assertFinite(z, 'z');
+  return Math.min(1, 2 * normalSurvival(Math.abs(z)));
 }
 
 /**
@@ -19,24 +53,28 @@ export function normalTwoSidedP(z: number): number {
  * degrees of freedom. Uses the regularized upper incomplete gamma Q(df/2, x/2).
  */
 export function chiSquareUpperP(x: number, df: number): number {
-  if (df <= 0) return 1;
+  if (!Number.isFinite(x) || x < 0 || !Number.isSafeInteger(df) || df <= 0) {
+    throw new RangeError('x must be finite/nonnegative and df must be a positive safe integer');
+  }
   if (x <= 0) return 1;
   return gammaincUpper(df / 2, x / 2);
 }
 
-/** Abramowitz & Stegun 7.1.26 error function (|error| < 1.5e-7). */
-function erf(x: number): number {
-  const sign = x < 0 ? -1 : 1;
-  const ax = Math.abs(x);
-  const t = 1 / (1 + 0.3275911 * ax);
-  const y =
-    1 -
-    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) *
-      t +
-      0.254829592) *
-      t *
-      Math.exp(-ax * ax);
-  return sign * y;
+/** Numerical Recipes erfc approximation; stable because it never subtracts from 1. */
+function erfc(x: number): number {
+  const z = Math.abs(x);
+  const t = 1 / (1 + 0.5 * z);
+  let polynomial = 0.17087277;
+  polynomial = -0.82215223 + t * polynomial;
+  polynomial = 1.48851587 + t * polynomial;
+  polynomial = -1.13520398 + t * polynomial;
+  polynomial = 0.27886807 + t * polynomial;
+  polynomial = -0.18628806 + t * polynomial;
+  polynomial = 0.09678418 + t * polynomial;
+  polynomial = 0.37409196 + t * polynomial;
+  polynomial = 1.00002368 + t * polynomial;
+  const ans = t * Math.exp(-z * z - 1.26551223 + t * polynomial);
+  return x >= 0 ? ans : 2 - ans;
 }
 
 /**
@@ -88,6 +126,9 @@ function gcf(s: number, x: number, lng: number): number {
 
 /** Lanczos approximation of ln Γ(z). */
 export function lnGamma(z: number): number {
+  if (!Number.isFinite(z) || z <= 0) {
+    throw new RangeError('z must be finite and positive');
+  }
   const g = [
     76.18009172947146, -86.50532032941677, 24.01409824083091,
     -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5,
@@ -101,4 +142,10 @@ export function lnGamma(z: number): number {
     ser += (g[j] ?? 0) / x;
   }
   return -tmp + Math.log((2.5066282746310005 * ser) / z);
+}
+
+function assertFinite(value: number, name: string): void {
+  if (!Number.isFinite(value)) {
+    throw new RangeError(`${name} must be finite`);
+  }
 }

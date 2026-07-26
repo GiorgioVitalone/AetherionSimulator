@@ -3,12 +3,15 @@
  */
 import type { GameState, PendingChoice, PlayerResponse } from '../types/game-state.js';
 import type { ZoneType } from '../types/common.js';
+import type { TransitionResult } from '../transitions/types.js';
 
 // ── Machine Context ─────────────────────────────────────────────────────────
 
 export interface GameMachineContext {
   readonly gameState: GameState;
   readonly pendingChoice: PendingChoice | null;
+  /** Most recent authoritative command result, observable by harness callers. */
+  readonly lastTransition: TransitionResult | null;
 }
 
 // ── Player Actions ──────────────────────────────────────────────────────────
@@ -113,7 +116,12 @@ export interface TapReserveAction {
 export type GameMachineEvent =
   | { readonly type: 'MULLIGAN_DECISION'; readonly playerId: 0 | 1; readonly keep: boolean }
   | { readonly type: 'PLAYER_ACTION'; readonly action: PlayerAction }
-  | { readonly type: 'PLAYER_RESPONSE'; readonly response: PlayerResponse }
+  | {
+      readonly type: 'PLAYER_RESPONSE';
+      readonly interactionId?: string;
+      readonly playerId?: 0 | 1;
+      readonly response: PlayerResponse;
+    }
   | { readonly type: 'REACTIVE_ACTION'; readonly action: PlayerAction }
   | { readonly type: 'PRIORITY_PASS' }
   | { readonly type: 'END_PHASE' }

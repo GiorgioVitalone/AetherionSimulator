@@ -5,7 +5,7 @@
  * `activated` is consumed by computeActivateOptions), not by the event matcher.
  */
 import type { GameState, PlayerState, CardInstance } from '../types/game-state.js';
-import type { ResourceCost } from '../types/common.js';
+import type { ResourceCost, ResourceType } from '../types/common.js';
 import type { AbilityDSL } from '../types/ability.js';
 import { canAfford, effectiveCost } from './cost-checker.js';
 import { getAllCards } from '../zones/zone-manager.js';
@@ -22,6 +22,8 @@ export interface ReactiveOption {
   /** Ability index on the board source that carries the on_counter/on_flash
    * trigger. Present only when `source === 'board'`. */
   readonly abilityIndex?: number;
+  /** Concrete legal X declarations for a typed X-cost card or ability. */
+  readonly xValues?: readonly number[];
 }
 
 const ZERO_COST: ResourceCost = { mana: 0, energy: 0, flexible: 0 };
@@ -76,11 +78,19 @@ export function computeReactiveActions(
     if (kind === null) continue;
     if (kind === 'counter' && !hasEnemySpell) continue;
     if (!canAfford(player, effectiveCost(player, card, state.config))) continue;
-    options.push({ cardInstanceId: card.instanceId, kind, cost: card.cost });
+    const baseCost = effectiveCost(player, card, state.config);
+    options.push({
+      cardInstanceId: card.instanceId,
+      kind,
+      cost: card.cost,
+      ...(card.xCostResource !== undefined
+        ? { xValues: legalReactiveXValues(player, baseCost, card.xCostResource) }
+        : {}),
+    });
   }
   // BOARD REACTIONS (config.boardReactions): a battlefield character or the Hero
   // may also carry an on_counter/on_flash ability (Rulebook: Counter/Flash are
-  // not restricted to spells). Absent/false ⇒ byte-identical no-op — this scan
+  // not restricted to spells). Absent/false ⇒ semantically invariant no-op — this scan
   // never runs. See game-state.ts's GameConfig.boardReactions.
   if (state.config?.boardReactions === true) {
     options.push(...computeBoardReactiveOptions(player, hasEnemySpell));
@@ -128,8 +138,33 @@ function computeBoardReactiveOptions(
       if (kind === 'counter' && !hasEnemySpell) continue;
       const cost = trigger.cost ?? ZERO_COST;
       if (!canAfford(player, cost)) continue;
-      options.push({ cardInstanceId: src.id, kind, cost, source: 'board', abilityIndex: i });
+      options.push({
+        cardInstanceId: src.id,
+        kind,
+        cost,
+        source: 'board',
+        abilityIndex: i,
+        ...(ability.xCostResource !== undefined
+          ? { xValues: legalReactiveXValues(player, cost, ability.xCostResource) }
+          : {}),
+      });
     }
   }
   return options;
+}
+
+function legalReactiveXValues(
+  player: PlayerState,
+  baseCost: ResourceCost,
+  resource: ResourceType,
+): readonly number[] {
+  const available = player.resourceBank.filter(
+    (card) => !card.exhausted && card.resourceType === resource,
+  ).length;
+  const values: number[] = [];
+  for (let x = 0; x <= available; x++) {
+    const cost = { ...baseCost, [resource]: baseCost[resource] + x };
+    if (canAfford(player, cost)) values.push(x);
+  }
+  return values;
 }

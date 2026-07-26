@@ -1,0 +1,1782 @@
+{
+  "schemaVersion": 1,
+  "sourceReview": "docs/simulation-engine-deep-review-2026-07-26.md",
+  "sourceLedger": "docs/simulation-engine-remediation-plan-2026-07-26.md",
+  "defaultStatus": "planned",
+  "criticalSummaries": {
+    "C-01": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/transitions/transition.test.ts",
+        "packages/engine/tests/actions/enumerate-actions.test.ts"
+      ]
+    },
+    "C-02": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/effects/effect-choice-sequence.test.ts",
+        "packages/engine/tests/sim/every-card-execution.test.ts"
+      ]
+    },
+    "C-03": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/state-machine/turn-boundary-remediation.test.ts",
+        "packages/engine/tests/events/register-printed-triggers.test.ts"
+      ]
+    },
+    "C-04": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/state-machine/turn-boundary-expiry.test.ts",
+        "packages/engine/tests/effects/status-duration-remediation.test.ts"
+      ]
+    },
+    "C-05": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/transitions/transition.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ]
+    },
+    "C-06": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts",
+        "packages/engine/tests/effects/hexproof-targeting.test.ts"
+      ]
+    },
+    "C-07": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/effects/draw-service.test.ts",
+        "packages/engine/tests/sim/every-card-execution.test.ts"
+      ]
+    },
+    "C-08": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/runtime/apnap-trigger-order.test.ts",
+        "packages/engine/tests/events/trigger-granularity.test.ts"
+      ]
+    },
+    "C-09": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/sim/summarize-stats.test.ts",
+        "packages/engine/tests/sim/study-manifest.test.ts"
+      ]
+    },
+    "C-10": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/rules/manifest.test.ts",
+        "packages/engine/tests/sim/ratification-gate.test.ts"
+      ]
+    },
+    "C-11": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts",
+        "packages/engine/tests/invariants/game-state-invariants.test.ts"
+      ]
+    },
+    "C-12": {
+      "status": "rules/quant review",
+      "tests": [
+        "packages/engine/tests/state-machine/transactional-attack.test.ts",
+        "packages/engine/tests/effects/stack-resolver-failure.test.ts"
+      ]
+    }
+  },
+  "records": {
+    "RULE-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-06",
+      "tests": ["packages/engine/tests/effects/draw-service.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/effects/draw-service.ts",
+        "packages/engine/src/effects/interpreter.ts",
+        "packages/engine/src/state-machine/actions.ts"
+      ]
+    },
+    "RULE-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-01/WP-02",
+      "tests": ["packages/engine/tests/transitions/transition.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/transitions/validation.ts",
+        "packages/engine/src/transitions/transition.ts"
+      ]
+    },
+    "RULE-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-02/WP-14",
+      "tests": [
+        "packages/engine/tests/transitions/transition.test.ts",
+        "packages/engine/tests/actions/enumerate-actions.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/actions/enumerate-actions.ts"
+      ]
+    },
+    "RULE-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-02/WP-11",
+      "tests": [
+        "packages/engine/tests/effects/equipment-wave8.test.ts",
+        "packages/engine/tests/actions/enumerate-actions.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/state-machine/actions.ts"
+      ]
+    },
+    "RULE-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-06",
+      "tests": [
+        "packages/engine/tests/effects/hexproof-targeting.test.ts",
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/effects/interpreter.ts",
+        "packages/engine/src/effects/target-resolver.ts"
+      ]
+    },
+    "RULE-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-08",
+      "tests": ["packages/engine/tests/effects/status-duration-remediation.test.ts"],
+      "implementationChanges": ["packages/engine/src/effects/interpreter.ts"]
+    },
+    "RULE-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-08",
+      "tests": [
+        "packages/engine/tests/effects/status-duration-remediation.test.ts",
+        "packages/engine/tests/runtime/status-tick.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/runtime/status-tick.ts",
+        "packages/engine/src/state-machine/actions.ts"
+      ]
+    },
+    "RULE-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-08",
+      "tests": [
+        "packages/engine/tests/effects/status-duration-remediation.test.ts",
+        "packages/engine/tests/effects/equipment-wave8.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/effects/interpreter.ts",
+        "packages/engine/src/runtime/modifier-expiry.ts"
+      ]
+    },
+    "RULE-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-11",
+      "tests": ["packages/engine/tests/state-machine/transform.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/transitions/validation.ts"
+      ]
+    },
+    "RULE-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-04/WP-05",
+      "tests": [
+        "packages/engine/tests/state-machine/turn-boundary-remediation.test.ts",
+        "packages/engine/tests/state-machine/turn-boundary-expiry.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/transitions/transition.ts"
+      ]
+    },
+    "RULE-11": {
+      "status": "evidence-green",
+      "workPackage": "WP-05",
+      "tests": ["packages/engine/tests/runtime/apnap-trigger-order.test.ts"],
+      "implementationChanges": ["packages/engine/src/runtime/dispatch.ts"]
+    },
+    "RULE-12": {
+      "status": "evidence-green",
+      "workPackage": "WP-11",
+      "tests": ["packages/engine/tests/effects/equipment-wave8.test.ts"],
+      "implementationChanges": ["packages/engine/src/state-machine/actions.ts"]
+    },
+    "RULE-13": {
+      "status": "evidence-green",
+      "workPackage": "WP-07",
+      "tests": ["packages/engine/tests/state-machine/transactional-attack.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/effects/stack-resolver.ts"
+      ]
+    },
+    "RULE-14": {
+      "status": "evidence-green",
+      "workPackage": "WP-00",
+      "tests": ["packages/engine/tests/rules/manifest.test.ts"],
+      "implementationChanges": ["packages/engine/src/rules/manifest.ts"]
+    },
+    "ARCH-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-03",
+      "tests": ["packages/engine/tests/transitions/transition.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/types/game-state.ts",
+        "packages/engine/src/state-machine/game-machine.ts"
+      ]
+    },
+    "ARCH-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-05",
+      "tests": [
+        "packages/engine/tests/runtime/apnap-trigger-order.test.ts",
+        "packages/engine/tests/setup/rng.test.ts"
+      ],
+      "implementationChanges": ["packages/engine/src/events/trigger-registry.ts"]
+    },
+    "ARCH-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-01",
+      "tests": ["packages/engine/tests/transitions/transition.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/transitions/types.ts",
+        "packages/engine/src/transitions/transition.ts"
+      ]
+    },
+    "ARCH-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-00",
+      "tests": ["packages/engine/tests/rules/manifest.test.ts"],
+      "implementationChanges": ["packages/engine/src/rules/manifest.ts"]
+    },
+    "LEGAL-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-01",
+      "tests": ["packages/engine/tests/transitions/transition.test.ts"],
+      "implementationChanges": ["packages/engine/src/transitions/validation.ts"]
+    },
+    "LEGAL-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-02",
+      "tests": ["packages/engine/tests/transitions/transition.test.ts"],
+      "implementationChanges": ["packages/engine/src/transitions/validation.ts"]
+    },
+    "LEGAL-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-02",
+      "tests": ["packages/engine/tests/transitions/transition.test.ts"],
+      "implementationChanges": ["packages/engine/src/transitions/validation.ts"]
+    },
+    "LEGAL-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-02/WP-11",
+      "tests": [
+        "packages/engine/tests/transitions/transition.test.ts",
+        "packages/engine/tests/effects/equipment-wave8.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/transitions/validation.ts",
+        "packages/engine/src/actions/equip-eligibility.ts"
+      ]
+    },
+    "LEGAL-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-02",
+      "tests": [
+        "packages/engine/tests/actions/available-actions.test.ts",
+        "packages/engine/tests/actions/enumerate-actions.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/transitions/validation.ts"
+      ]
+    },
+    "LEGAL-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-02",
+      "tests": [
+        "packages/engine/tests/actions/cooldown-gating.test.ts",
+        "packages/engine/tests/actions/summoning-sick-activate.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/transitions/validation.ts"
+      ]
+    },
+    "LEGAL-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-02/WP-11",
+      "tests": [
+        "packages/engine/tests/actions/discard-for-energy.test.ts",
+        "packages/engine/tests/transitions/transition.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/transitions/validation.ts"
+      ]
+    },
+    "LEGAL-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-02/WP-11",
+      "tests": ["packages/engine/tests/state-machine/transform.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/transitions/validation.ts"
+      ]
+    },
+    "LEGAL-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-03",
+      "tests": ["packages/engine/tests/transitions/transition.test.ts"],
+      "implementationChanges": ["packages/engine/src/transitions/transition.ts"]
+    },
+    "LEGAL-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-01/WP-02",
+      "tests": ["packages/engine/tests/transitions/transition.test.ts"],
+      "implementationChanges": ["packages/engine/src/transitions/validation.ts"]
+    },
+    "LEGAL-11": {
+      "status": "evidence-green",
+      "workPackage": "WP-01/WP-13",
+      "tests": [
+        "packages/engine/tests/transitions/transition.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/transitions/types.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "DSL-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-03",
+      "tests": [
+        "packages/engine/tests/effects/interpreter.test.ts",
+        "packages/engine/tests/transitions/transition.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/effects/effect-runner.ts",
+        "packages/engine/src/effects/interpreter.ts"
+      ]
+    },
+    "DSL-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-03/WP-09",
+      "tests": ["packages/engine/tests/transitions/transition.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/transitions/transition.ts",
+        "packages/engine/src/effects/effect-runner.ts"
+      ]
+    },
+    "DSL-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-03",
+      "tests": ["packages/engine/tests/effects/effect-choice-sequence.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/effects/effect-runner.ts",
+        "packages/engine/src/types/game-state.ts"
+      ]
+    },
+    "DSL-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-03",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/effects/effect-runner.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "DSL-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-06",
+      "tests": ["packages/engine/tests/runtime/state-based-stabilization.test.ts"],
+      "implementationChanges": ["packages/engine/src/effects/interpreter.ts"]
+    },
+    "DSL-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-06",
+      "tests": ["packages/engine/tests/effects/draw-service.test.ts"],
+      "implementationChanges": ["packages/engine/src/effects/draw-service.ts"]
+    },
+    "DSL-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-08",
+      "tests": [
+        "packages/engine/tests/effects/status-duration-remediation.test.ts",
+        "packages/engine/tests/state-machine/turn-boundary-expiry.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/types/durations.ts",
+        "packages/engine/src/runtime/modifier-expiry.ts"
+      ]
+    },
+    "DSL-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-09",
+      "tests": [
+        "packages/engine/tests/zones/keyword-resolution.test.ts",
+        "packages/engine/tests/effects/verdant-card-semantics.test.ts"
+      ],
+      "implementationChanges": ["packages/engine/src/selectors/card-semantics.ts"]
+    },
+    "DSL-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-12",
+      "tests": [
+        "packages/engine/tests/effects/dsl-stubs.test.ts",
+        "packages/engine/tests/sim/card-data-validator.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/effects/condition-evaluator.ts",
+        "packages/engine/src/sim/card-data-validator.ts"
+      ]
+    },
+    "DSL-11": {
+      "status": "evidence-green",
+      "workPackage": "WP-09/WP-12",
+      "tests": [
+        "packages/engine/tests/effects/verdant-card-semantics.test.ts",
+        "packages/engine/tests/sim/card-data-validator.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/effects/interpreter.ts",
+        "packages/engine/src/sim/card-data-validator.ts"
+      ]
+    },
+    "TIME-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-04",
+      "tests": ["packages/engine/tests/state-machine/turn-boundary-remediation.test.ts"],
+      "implementationChanges": ["packages/engine/src/state-machine/actions.ts"]
+    },
+    "TIME-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-07",
+      "tests": ["packages/engine/tests/state-machine/transactional-attack.test.ts"],
+      "implementationChanges": ["packages/engine/src/state-machine/actions.ts"]
+    },
+    "TIME-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-07/WP-11",
+      "tests": ["packages/engine/tests/state-machine/transactional-attack.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/effects/stack-resolver.ts"
+      ]
+    },
+    "TIME-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-07",
+      "tests": [
+        "packages/engine/tests/state-machine/counter-chain-lifo.test.ts",
+        "packages/engine/tests/state-machine/response-windows-all-actions.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/effects/stack-resolver.ts"
+      ]
+    },
+    "TIME-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-07",
+      "tests": ["packages/engine/tests/state-machine/transactional-attack.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/effects/stack-resolver.ts"
+      ]
+    },
+    "TIME-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-05",
+      "tests": [
+        "packages/engine/tests/events/trigger-matcher.test.ts",
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/selectors/card-semantics.ts",
+        "packages/engine/src/events/trigger-matcher.ts"
+      ]
+    },
+    "TIME-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-05",
+      "tests": ["packages/engine/tests/events/trigger-granularity.test.ts"],
+      "implementationChanges": ["packages/engine/src/runtime/dispatch.ts"]
+    },
+    "TIME-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-05",
+      "tests": ["packages/engine/tests/runtime/state-based-stabilization.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/runtime/dispatch.ts",
+        "packages/engine/src/runtime/state-based-stabilizer.ts"
+      ]
+    },
+    "TIME-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-05",
+      "tests": ["packages/engine/tests/runtime/apnap-trigger-order.test.ts"],
+      "implementationChanges": ["packages/engine/src/runtime/dispatch.ts"]
+    },
+    "TIME-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-05/WP-13",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/errors/engine-errors.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "TIME-11": {
+      "status": "evidence-green",
+      "workPackage": "WP-04/WP-08/WP-10",
+      "tests": [
+        "packages/engine/tests/effects/replacement.test.ts",
+        "packages/engine/tests/runtime/aura-nonstat.test.ts"
+      ],
+      "implementationChanges": ["packages/engine/src/runtime/aura-recompute.ts"]
+    },
+    "TIME-12": {
+      "status": "evidence-green",
+      "workPackage": "WP-06/WP-08",
+      "tests": [
+        "packages/engine/tests/effects/status-duration-remediation.test.ts",
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/runtime/status-tick.ts",
+        "packages/engine/src/effects/replacement-handler.ts"
+      ]
+    },
+    "COMBAT-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-08",
+      "tests": ["packages/engine/tests/effects/status-duration-remediation.test.ts"],
+      "implementationChanges": ["packages/engine/src/effects/interpreter.ts"]
+    },
+    "COMBAT-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-08",
+      "tests": ["packages/engine/tests/effects/status-duration-remediation.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/runtime/status-tick.ts",
+        "packages/engine/src/state-machine/actions.ts"
+      ]
+    },
+    "COMBAT-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-10",
+      "tests": ["packages/engine/tests/runtime/state-based-stabilization.test.ts"],
+      "implementationChanges": ["packages/engine/src/runtime/aura-recompute.ts"]
+    },
+    "COMBAT-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-06",
+      "tests": ["packages/engine/tests/effects/hexproof-targeting.test.ts"],
+      "implementationChanges": ["packages/engine/src/effects/target-resolver.ts"]
+    },
+    "COMBAT-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-09",
+      "tests": [
+        "packages/engine/tests/zones/keyword-resolution.test.ts",
+        "packages/engine/tests/combat/combat-resolver.test.ts"
+      ],
+      "implementationChanges": ["packages/engine/src/selectors/card-semantics.ts"]
+    },
+    "COMBAT-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-06",
+      "tests": [
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts",
+        "packages/engine/tests/effects/status-duration-remediation.test.ts",
+        "packages/engine/tests/combat/combat-replacement.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/runtime/state-based-stabilizer.ts",
+        "packages/engine/src/effects/replacement-handler.ts"
+      ]
+    },
+    "COMBAT-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-08/WP-00",
+      "tests": [
+        "packages/engine/tests/rules/manifest.test.ts",
+        "packages/engine/tests/combat/arm-first-instance.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/rules/manifest.ts",
+        "packages/engine/src/combat/combat-resolver.ts"
+      ]
+    },
+    "COMBAT-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-01/WP-02",
+      "tests": ["packages/engine/tests/actions/enumerate-actions.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/transitions/validation.ts"
+      ]
+    },
+    "ECON-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-11",
+      "tests": [
+        "packages/engine/tests/transitions/transition.test.ts",
+        "packages/engine/tests/state-machine/x-cost-threading.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/types/game-state.ts"
+      ]
+    },
+    "ECON-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-11/WP-14",
+      "tests": ["packages/engine/tests/actions/enumerate-actions.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/actions/enumerate-actions.ts"
+      ]
+    },
+    "ECON-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-11/WP-12",
+      "tests": ["packages/engine/tests/sim/card-data-validator.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/sim/card-data-validator.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "ECON-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-11",
+      "tests": ["packages/engine/tests/actions/cost-checker.test.ts"],
+      "implementationChanges": ["packages/engine/src/actions/cost-checker.ts"]
+    },
+    "ECON-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-08/WP-11",
+      "tests": [
+        "packages/engine/tests/actions/cost-floor.test.ts",
+        "packages/engine/tests/rules/manifest.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/cost-checker.ts",
+        "packages/engine/src/rules/manifest.ts"
+      ]
+    },
+    "ECON-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-07/WP-11",
+      "tests": ["packages/engine/tests/state-machine/transactional-attack.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/effects/stack-resolver.ts"
+      ]
+    },
+    "ECON-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-02/WP-11",
+      "tests": [
+        "packages/engine/tests/effects/equipment-wave8.test.ts",
+        "packages/engine/tests/invariants/game-state-invariants.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/equip-eligibility.ts",
+        "packages/engine/src/invariants/game-state-invariants.ts"
+      ]
+    },
+    "ECON-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-11",
+      "tests": ["packages/engine/tests/effects/equipment-wave8.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/actions/cost-checker.ts",
+        "packages/engine/src/state-machine/actions.ts"
+      ]
+    },
+    "ECON-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-11",
+      "tests": ["packages/engine/tests/effects/equipment-wave8.test.ts"],
+      "implementationChanges": ["packages/engine/src/state-machine/actions.ts"]
+    },
+    "ECON-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-02/WP-11",
+      "tests": ["packages/engine/tests/state-machine/transform.test.ts"],
+      "implementationChanges": ["packages/engine/src/transitions/validation.ts"]
+    },
+    "ECON-11": {
+      "status": "evidence-green",
+      "workPackage": "WP-11",
+      "tests": ["packages/engine/tests/state-machine/transform.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/types/game-state.ts",
+        "packages/engine/src/actions/available-actions.ts"
+      ]
+    },
+    "FID-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-12",
+      "tests": [
+        "packages/engine/tests/sim/card-data-validator.test.ts",
+        "packages/engine/tests/effects/verdant-card-semantics.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/card-data-validator.ts",
+        "packages/engine/sim-data/card-semantic-exceptions.json"
+      ]
+    },
+    "FID-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-09/WP-12",
+      "tests": [
+        "packages/engine/tests/sim/card-data-validator.test.ts",
+        "packages/engine/tests/effects/verdant-card-semantics.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/card-data-validator.ts",
+        "packages/engine/sim-data/aetherion-cards.json"
+      ]
+    },
+    "FID-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-10",
+      "tests": [
+        "packages/engine/tests/sim/card-data-validator.test.ts",
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/card-data-validator.ts",
+        "packages/engine/src/runtime/aura-recompute.ts"
+      ]
+    },
+    "FID-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-09",
+      "tests": [
+        "packages/engine/tests/zones/keyword-resolution.test.ts",
+        "packages/engine/tests/combat/combat-resolver.test.ts"
+      ],
+      "implementationChanges": ["packages/engine/src/selectors/card-semantics.ts"]
+    },
+    "FID-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-09",
+      "tests": ["packages/engine/tests/effects/target-resolver.test.ts"],
+      "implementationChanges": ["packages/engine/src/selectors/hero-identity.ts"]
+    },
+    "FID-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-09",
+      "tests": ["packages/engine/tests/effects/target-resolver.test.ts"],
+      "implementationChanges": ["packages/engine/src/effects/target-resolver.ts"]
+    },
+    "FID-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-09",
+      "tests": [
+        "packages/engine/tests/actions/discard-for-energy.test.ts",
+        "packages/engine/tests/combat/volatile-exile.test.ts",
+        "packages/engine/tests/invariants/game-state-invariants.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/types/game-state.ts",
+        "packages/engine/src/effects/state-helpers.ts"
+      ]
+    },
+    "FID-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-12",
+      "tests": ["packages/engine/tests/sim/card-data-validator.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/sim/card-data-validator.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "FID-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-13",
+      "tests": [
+        "packages/engine/tests/rules/manifest.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/rules/manifest.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "DATA-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-12",
+      "tests": ["packages/engine/tests/sim/card-data-validator.test.ts"],
+      "implementationChanges": ["packages/engine/src/sim/card-data-validator.ts"]
+    },
+    "DATA-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-12/WP-17",
+      "tests": [
+        "packages/engine/tests/sim/card-scenario-inventory.test.ts",
+        "packages/engine/tests/sim/every-card-execution.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/card-scenario-inventory.ts",
+        "packages/engine/src/effects/effect-runner.ts"
+      ]
+    },
+    "DATA-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-12",
+      "tests": ["packages/engine/tests/sim/card-data-validator.test.ts"],
+      "implementationChanges": ["packages/engine/src/sim/card-data-validator.ts"]
+    },
+    "DATA-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-12/WP-18",
+      "tests": ["packages/engine/tests/sim/card-data-validator.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/sim/card-data-validator.ts",
+        "packages/engine/sim-data/card-semantic-exceptions.json"
+      ]
+    },
+    "DATA-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-08/WP-12",
+      "tests": ["packages/engine/tests/sim/card-data-validator.test.ts"],
+      "implementationChanges": ["packages/engine/src/sim/card-data-validator.ts"]
+    },
+    "DATA-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-12/WP-17",
+      "tests": [
+        "packages/engine/tests/sim/card-data-validator.test.ts",
+        "packages/engine/tests/sim/card-scenario-inventory.test.ts"
+      ],
+      "implementationChanges": ["packages/engine/src/sim/card-data-validator.ts"]
+    },
+    "DATA-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-12",
+      "tests": ["packages/engine/tests/sim/card-data-validator.test.ts"],
+      "implementationChanges": ["packages/engine/src/sim/card-data-validator.ts"]
+    },
+    "DATA-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-12",
+      "tests": ["packages/engine/tests/sim/card-data-validator.test.ts"],
+      "implementationChanges": ["packages/engine/src/sim/card-data-validator.ts"]
+    },
+    "DATA-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-12",
+      "tests": ["packages/engine/tests/sim/card-data-validator.test.ts"],
+      "implementationChanges": ["packages/engine/src/sim/card-data-validator.ts"]
+    },
+    "DATA-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-12/WP-13",
+      "tests": [
+        "packages/engine/tests/sim/card-data-validator.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/card-data-validator.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "TEST-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-12/WP-17",
+      "tests": [
+        "packages/engine/tests/sim/card-scenario-inventory.test.ts",
+        "packages/engine/tests/sim/every-card-execution.test.ts"
+      ],
+      "implementationChanges": ["packages/engine/src/sim/card-scenario-inventory.ts"]
+    },
+    "MATH-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-16",
+      "tests": ["packages/engine/tests/sim/summarize-stats.test.ts"],
+      "implementationChanges": ["packages/engine/src/sim/summarize-stats.ts"]
+    },
+    "MATH-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-16",
+      "tests": ["packages/engine/tests/sim/summarize-stats.test.ts"],
+      "implementationChanges": ["packages/engine/src/sim/summarize-stats.ts"]
+    },
+    "MATH-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-16",
+      "tests": ["packages/engine/tests/sim/summarize-stats.test.ts"],
+      "implementationChanges": ["packages/engine/src/sim/summarize-stats.ts"]
+    },
+    "MATH-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-16",
+      "tests": ["packages/engine/tests/sim/summarize-stats.test.ts"],
+      "implementationChanges": ["packages/engine/src/sim/summarize-stats.ts"]
+    },
+    "MATH-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-13/WP-16",
+      "tests": ["packages/engine/tests/sim/summarize-stats.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/sim/summarize-stats.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "MATH-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-16",
+      "tests": ["packages/engine/tests/stats/binomTest.test.ts"],
+      "implementationChanges": ["packages/engine/src/stats/normal.ts"]
+    },
+    "MATH-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-16",
+      "tests": ["packages/engine/tests/stats/tinterval.test.ts"],
+      "implementationChanges": ["packages/engine/src/stats/tinterval.ts"]
+    },
+    "MATH-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-16",
+      "tests": [
+        "packages/engine/tests/stats/binomTest.test.ts",
+        "packages/engine/tests/stats/bootstrap.test.ts",
+        "packages/engine/tests/stats/gtest.test.ts",
+        "packages/engine/tests/stats/tinterval.test.ts",
+        "packages/engine/tests/stats/wilson.test.ts"
+      ],
+      "implementationChanges": ["packages/engine/src/stats"]
+    },
+    "MATH-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-16",
+      "tests": ["packages/engine/tests/balance/card-power.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/balance/types.ts",
+        "packages/engine/src/balance/card-power.ts",
+        "docs/balance-valuation.md"
+      ]
+    },
+    "MATH-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-16/WP-19",
+      "tests": [
+        "packages/engine/tests/sim/summarize-stats.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/summarize-stats.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "PLAY-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-14",
+      "tests": ["packages/engine/tests/bot/reactive-policy.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/bot/heuristic.ts",
+        "packages/engine/src/bot/spell-eval.ts"
+      ]
+    },
+    "PLAY-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-03/WP-14",
+      "tests": [
+        "packages/engine/tests/effects/effect-choice-sequence.test.ts",
+        "packages/engine/tests/bot/heuristic.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/effects/effect-runner.ts",
+        "packages/engine/src/bot/heuristic.ts"
+      ]
+    },
+    "PLAY-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-02/WP-11/WP-14",
+      "tests": ["packages/engine/tests/actions/enumerate-actions.test.ts"],
+      "implementationChanges": ["packages/engine/src/actions/enumerate-actions.ts"]
+    },
+    "PLAY-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-03/WP-14",
+      "tests": ["packages/engine/tests/bot/heuristic.test.ts"],
+      "implementationChanges": ["packages/engine/src/bot/heuristic.ts"]
+    },
+    "PLAY-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-13",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": ["packages/engine/sim-runner.mjs"]
+    },
+    "BOT-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-02/WP-14",
+      "tests": [
+        "packages/engine/tests/bot/heuristic.test.ts",
+        "packages/engine/tests/bot/heuristic-vs-random.test.ts"
+      ],
+      "implementationChanges": ["packages/engine/src/bot/heuristic.ts"]
+    },
+    "BOT-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-11/WP-14",
+      "tests": [
+        "packages/engine/tests/actions/enumerate-actions.test.ts",
+        "packages/engine/tests/bot/heuristic.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/enumerate-actions.ts",
+        "packages/engine/src/bot/heuristic.ts"
+      ]
+    },
+    "BOT-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-11/WP-14",
+      "tests": [
+        "packages/engine/tests/actions/enumerate-actions.test.ts",
+        "packages/engine/tests/bot/heuristic.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/enumerate-actions.ts",
+        "packages/engine/src/bot/heuristic.ts",
+        "packages/engine/src/bot/spell-eval.ts"
+      ]
+    },
+    "BOT-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-14",
+      "tests": ["packages/engine/tests/actions/enumerate-actions.test.ts"],
+      "implementationChanges": ["packages/engine/src/actions/enumerate-actions.ts"]
+    },
+    "BOT-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-07/WP-14",
+      "tests": ["packages/engine/tests/bot/reactive-policy.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/bot/heuristic.ts",
+        "packages/engine/src/bot/spell-eval.ts"
+      ]
+    },
+    "BOT-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-03/WP-14",
+      "tests": ["packages/engine/tests/bot/heuristic.test.ts"],
+      "implementationChanges": ["packages/engine/src/bot/heuristic.ts"]
+    },
+    "BOT-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-14/WP-15",
+      "tests": [
+        "packages/engine/tests/actions/enumerate-actions.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/enumerate-actions.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "BOT-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-14",
+      "tests": [
+        "packages/engine/tests/actions/enumerate-actions.test.ts",
+        "packages/engine/tests/bot/heuristic.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/enumerate-actions.ts",
+        "packages/engine/src/bot/heuristic.ts"
+      ]
+    },
+    "COMBAT-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-06/WP-10",
+      "tests": ["packages/engine/tests/runtime/state-based-stabilization.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/runtime/aura-recompute.ts",
+        "packages/engine/src/runtime/state-based-stabilizer.ts"
+      ]
+    },
+    "COMBAT-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-06",
+      "tests": [
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts",
+        "packages/engine/tests/state-machine/turn-boundary-expiry.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/runtime/state-based-stabilizer.ts",
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/transitions/transition.ts"
+      ]
+    },
+    "DSL-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-06",
+      "tests": [
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts",
+        "packages/engine/tests/state-machine/turn-boundary-expiry.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/runtime/state-based-stabilizer.ts",
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/state-machine/game-machine.ts"
+      ]
+    },
+    "REPRO-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-13",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": ["packages/engine/sim-runner.mjs"]
+    },
+    "REPRO-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-13",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": [
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/replay-game.mjs"
+      ]
+    },
+    "REPRO-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-05/WP-13",
+      "tests": [
+        "packages/engine/tests/runtime/apnap-trigger-order.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/events/trigger-registry.ts",
+        "packages/engine/src/runtime/dispatch.ts"
+      ]
+    },
+    "REPRO-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-01/WP-13",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": ["packages/engine/sim-runner.mjs"]
+    },
+    "EXP-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-13/WP-15",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": ["packages/engine/sim-runner.mjs"]
+    },
+    "EXP-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-13/WP-15",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": ["packages/engine/sim-runner.mjs"]
+    },
+    "EXP-14": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-16/WP-19",
+      "tests": ["packages/engine/tests/sim/summarize-stats.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/sim/summarize-stats.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "EXP-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-13",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/transitions/types.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "EXP-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-15/WP-16",
+      "tests": [
+        "packages/engine/tests/sim/current-simulation-contract.test.ts",
+        "packages/engine/tests/sim/summarize-stats.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/src/sim/summarize-stats.ts"
+      ]
+    },
+    "EXP-11": {
+      "status": "evidence-green",
+      "workPackage": "WP-01/WP-13",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": ["packages/engine/sim-runner.mjs"]
+    },
+    "EXP-12": {
+      "status": "evidence-green",
+      "workPackage": "WP-16",
+      "tests": [
+        "packages/engine/tests/sim/study-manifest.test.ts",
+        "packages/engine/tests/sim/summarize-stats.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/sim-data/current-study-manifest.json",
+        "packages/engine/src/sim/study-manifest.ts",
+        "packages/engine/src/sim/summarize-stats.ts"
+      ]
+    },
+    "EXP-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-13/WP-15",
+      "tests": [
+        "packages/engine/tests/sim/study-manifest.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/sim-data/current-study-manifest.json",
+        "packages/engine/src/sim/study-manifest.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "ARCH-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-01",
+      "tests": [
+        "packages/engine/tests/transitions/transition.test.ts",
+        "packages/engine/tests/transitions/public-api.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/transitions/transition.ts",
+        "packages/engine/src/index.ts",
+        "packages/engine/src/state-machine/game-machine.ts"
+      ]
+    },
+    "DSL-12": {
+      "status": "evidence-green",
+      "workPackage": "WP-01",
+      "tests": ["packages/engine/tests/transitions/public-api.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/index.ts",
+        "packages/engine/package.json"
+      ]
+    },
+    "TEST-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-17",
+      "tests": [
+        "packages/engine/tests/rules/manifest.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/rules/manifest.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "EXP-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-13",
+      "tests": ["packages/engine/tests/sim/simulation-entrypoints.test.ts"],
+      "implementationChanges": [
+        "packages/engine/sim-data/simulation-entrypoints.json",
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/balance-verify.mjs"
+      ]
+    },
+    "OPS-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-13",
+      "tests": ["packages/engine/tests/sim/simulation-entrypoints.test.ts"],
+      "implementationChanges": [
+        "packages/engine/sim-data/simulation-entrypoints.json",
+        "packages/engine/balance-verify.mjs",
+        "packages/engine/decision-datagen.mjs",
+        "packages/engine/neural-datagen.mjs"
+      ]
+    },
+    "REPRO-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-13",
+      "tests": [
+        "packages/engine/tests/sim/simulation-entrypoints.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/sim-data/simulation-entrypoints.json",
+        "packages/engine/sim-data/ruleset-current.json",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "PLAY-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-01/WP-13",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": [
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/src/transitions/transition.ts"
+      ]
+    },
+    "FID-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-03/WP-04/WP-05/WP-12",
+      "tests": [
+        "packages/engine/tests/sim/every-card-execution.test.ts",
+        "packages/engine/tests/events/register-printed-triggers.test.ts",
+        "packages/engine/tests/events/equipment-triggers.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/effects/effect-runner.ts",
+        "packages/engine/src/effects/scry-handler.ts",
+        "packages/engine/src/effects/state-helpers.ts"
+      ]
+    },
+    "TEST-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-17",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/invariants/game-state-invariants.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "OPS-10": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-13/WP-19",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": [
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/sim-data/ruleset-current.json",
+        "packages/engine/sim-data/current-study-manifest.json"
+      ]
+    },
+    "EXP-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-15",
+      "tests": [
+        "packages/engine/tests/sim/study-manifest.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/sim-data/current-study-manifest.json",
+        "packages/engine/src/sim/study-manifest.ts",
+        "packages/engine/src/sim/summarize-stats.ts"
+      ]
+    },
+    "EXP-13": {
+      "status": "evidence-green",
+      "workPackage": "WP-16",
+      "tests": [
+        "packages/engine/tests/sim/study-manifest.test.ts",
+        "packages/engine/tests/sim/summarize-stats.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/sim-data/current-study-manifest.json",
+        "packages/engine/src/sim/study-manifest.ts"
+      ]
+    },
+    "PLAY-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-15",
+      "tests": [
+        "packages/engine/tests/sim/deck-sampler.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts",
+        "packages/engine/tests/sim/study-manifest.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/deck-sampler.mjs",
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/sim-data/current-study-manifest.json"
+      ]
+    },
+    "EXP-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-15",
+      "tests": [
+        "packages/engine/tests/sim/deck-sampler.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/deck-sampler.mjs",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "EXP-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-15",
+      "tests": [
+        "packages/engine/tests/sim/study-manifest.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/study-manifest.ts",
+        "packages/engine/sim-data/current-study-manifest.json",
+        "packages/engine/sim-runner.mjs"
+      ],
+      "evidenceArtifacts": [
+        "packages/engine/sim-data/current-study-manifest.json"
+      ],
+      "manifestVersions": [
+        "aetherion-current-four-faction-v1"
+      ]
+    },
+    "REPRO-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-13",
+      "tests": [
+        "packages/engine/tests/sim/current-simulation-contract.test.ts",
+        "packages/engine/tests/sim/simulation-entrypoints.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/balance-deck-panel.mjs"
+      ],
+      "invariants": [
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "ARCH-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-10",
+      "tests": [
+        "packages/engine/tests/invariants/game-state-invariants.test.ts",
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts",
+        "packages/engine/tests/runtime/aura-cost-reduction.test.ts",
+        "packages/engine/tests/runtime/aura-nonstat.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/runtime/aura-derivation.ts",
+        "packages/engine/src/runtime/aura-recompute.ts",
+        "packages/engine/src/invariants/game-state-invariants.ts",
+        "packages/engine/src/types/game-state.ts"
+      ],
+      "invariants": [
+        "packages/engine/src/invariants/game-state-invariants.ts"
+      ]
+    },
+    "ARCH-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-18",
+      "tests": [
+        "packages/engine/tests/architecture/lifecycle-boundaries.test.ts",
+        "packages/engine/tests/transitions/public-api.test.ts",
+        "packages/engine/tests/state-machine/turn-boundary-remediation.test.ts",
+        "packages/engine/tests/state-machine/turn-boundary-expiry.test.ts",
+        "packages/engine/tests/runtime/state-based-stabilization.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/state-machine/turn-boundary.ts",
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/state-machine/game-machine.ts",
+        "packages/engine/src/transitions/validation.ts",
+        "packages/engine/src/transitions/transition.ts",
+        "packages/engine/src/runtime/state-based-stabilizer.ts",
+        "packages/engine/src/runtime/aura-derivation.ts"
+      ],
+      "invariants": [
+        "packages/engine/src/state-machine/turn-boundary.ts"
+      ]
+    },
+    "TEST-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-17",
+      "tests": [
+        "packages/engine/tests/architecture/test-oracle-classification.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts",
+        "packages/engine/tests/legacy/ruleset-v1-lock.test.ts",
+        "packages/engine/tests/legacy/rollout-pin.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/package.json",
+        ".github/workflows/ci.yml",
+        "packages/engine/tests/legacy"
+      ],
+      "invariants": [
+        "packages/engine/tests/architecture/test-oracle-classification.test.ts"
+      ]
+    },
+    "TEST-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-17",
+      "tests": [
+        "packages/engine/tests/sim/coverage-gate.test.ts",
+        "packages/engine/tests/effects/stack-resolver-failure.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/vitest.config.ts",
+        "packages/engine/check-changed-coverage.mjs",
+        "packages/engine/sim-data/coverage-exceptions.json",
+        "packages/engine/package.json",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    "ECON-12": {
+      "status": "evidence-green",
+      "workPackage": "WP-11/WP-13",
+      "tests": [
+        "packages/engine/tests/state-machine/transform.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/types/game-state.ts",
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "TEST-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-01/WP-02/WP-17",
+      "tests": ["packages/engine/tests/transitions/transition.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/transitions/validation.ts",
+        "packages/engine/src/transitions/transition.ts"
+      ]
+    },
+    "TEST-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-04/WP-05/WP-17",
+      "tests": ["packages/engine/tests/state-machine/turn-boundary-remediation.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/state-machine/game-machine.ts",
+        "packages/engine/src/state-machine/actions.ts"
+      ]
+    },
+    "TEST-04": {
+      "status": "evidence-green",
+      "workPackage": "WP-13/WP-17",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": [
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/replay-game.mjs"
+      ]
+    },
+    "OPS-06": {
+      "status": "evidence-green",
+      "workPackage": "WP-01/WP-13",
+      "tests": [
+        "packages/engine/tests/transitions/transition.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/transitions/types.ts",
+        "packages/engine/src/transitions/transition.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "OPS-01": {
+      "status": "evidence-green",
+      "workPackage": "WP-00",
+      "tests": [
+        "packages/engine/tests/rules/manifest.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/rules/manifest.ts",
+        "packages/engine/src/setup/game-setup.ts"
+      ]
+    },
+    "OPS-02": {
+      "status": "evidence-green",
+      "workPackage": "WP-00",
+      "tests": [
+        "packages/engine/tests/rules/manifest.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/setup/game-setup.ts",
+        "packages/engine/src/index.ts"
+      ]
+    },
+    "OPS-03": {
+      "status": "evidence-green",
+      "workPackage": "WP-00/WP-13",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": [
+        "packages/engine/src/rules/manifest.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
+    },
+    "OPS-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-13",
+      "tests": ["packages/engine/tests/sim/current-simulation-contract.test.ts"],
+      "implementationChanges": [
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/replay-game.mjs"
+      ]
+    },
+    "TEST-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-17",
+      "tests": ["packages/engine/tests/sim/unhandled-error-gate.test.ts"],
+      "implementationChanges": ["packages/engine/vitest.config.ts"]
+    },
+    "OPS-09": {
+      "status": "evidence-green",
+      "workPackage": "WP-10/WP-18",
+      "tests": [
+        "packages/engine/tests/sim/performance-budgets.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/benchmark-engine.mjs",
+        "packages/engine/sim-data/performance-budgets.json",
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/package.json",
+        ".github/workflows/ci.yml"
+      ],
+      "evidenceArtifacts": [
+        "packages/engine/sim-data/performance-budgets.json"
+      ]
+    },
+    "OPS-05": {
+      "status": "evidence-green",
+      "workPackage": "WP-18",
+      "tests": [
+        "packages/engine/tests/architecture/documentation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "docs/architecture.md",
+        "docs/dsl-spec.md",
+        "docs/card-effect-system.md",
+        "docs/game-rules-summary.md",
+        "docs/simulator-roadmap.md",
+        "docs/adr/README.md"
+      ],
+      "evidenceArtifacts": [
+        "docs/adr/001-authoritative-validation.md",
+        "docs/adr/002-explicit-choice-continuation.md",
+        "docs/adr/003-event-envelope-lki.md",
+        "docs/adr/004-simultaneous-state-based-processing.md",
+        "docs/adr/005-transactional-stack.md",
+        "docs/adr/006-current-legacy-manifests.md",
+        "docs/adr/007-replay-provenance.md",
+        "docs/adr/008-statistical-estimands.md"
+      ]
+    },
+    "OPS-08": {
+      "status": "evidence-green",
+      "workPackage": "WP-18",
+      "tests": [
+        "packages/engine/tests/architecture/documentation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "docs/legacy-simulation-compatibility.md",
+        "packages/engine/src/types/gameplan.ts",
+        "packages/engine/src/types/game-state.ts",
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/effects/interpreter.ts"
+      ],
+      "invariants": [
+        "packages/engine/tests/architecture/documentation-contract.test.ts"
+      ]
+    },
+    "PLAY-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-14/WP-15",
+      "tests": [
+        "packages/engine/tests/bot/policy-calibration.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/policy-calibration.ts",
+        "packages/engine/policy-calibration.mjs",
+        "packages/engine/sim-data/policy-calibration-manifest.json",
+        "packages/engine/sim-runner.mjs"
+      ],
+      "evidenceArtifacts": [
+        "packages/engine/sim-data/policy-calibration-manifest.json"
+      ]
+    },
+    "BOT-07": {
+      "status": "evidence-green",
+      "workPackage": "WP-14/WP-19",
+      "tests": [
+        "packages/engine/tests/bot/policy-calibration.test.ts",
+        "packages/engine/tests/sim/study-manifest.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/policy-calibration.ts",
+        "packages/engine/src/sim/study-manifest.ts",
+        "packages/engine/sim-data/current-study-manifest.json",
+        "packages/engine/sim-data/policy-calibration-manifest.json"
+      ],
+      "invariants": [
+        "packages/engine/sim-data/policy-calibration-manifest.json"
+      ]
+    },
+    "REPRO-07": {
+      "status": "rules/quant review",
+      "workPackage": "WP-00/WP-19",
+      "tests": [
+        "packages/engine/tests/sim/ratification-gate.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/ratification-status.mjs",
+        "packages/engine/src/sim/ratification.ts",
+        "packages/engine/sim-data/external-review-manifest.json"
+      ],
+      "evidenceArtifacts": [
+        "packages/engine/sim-data/ruleset-current.json",
+        "packages/engine/sim-data/current-study-manifest.json"
+      ]
+    },
+    "BOT-10": {
+      "status": "rules/quant review",
+      "workPackage": "WP-14/WP-15",
+      "tests": [
+        "packages/engine/tests/bot/policy-calibration.test.ts",
+        "packages/engine/tests/sim/ratification-gate.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/policy-calibration.ts",
+        "packages/engine/policy-calibration.mjs",
+        "packages/engine/pilot-rollout.mjs",
+        "packages/engine/sim-runner.mjs",
+        "packages/engine/src/sim/ratification.ts",
+        "packages/engine/sim-data/expert-policy-corpus-template.json"
+      ],
+      "evidenceArtifacts": [
+        "packages/engine/sim-data/policy-calibration-manifest.json",
+        "packages/engine/sim-data/expert-policy-corpus-template.json",
+        "packages/engine/sim-data/external-review-manifest.json"
+      ]
+    },
+    "EXP-03": {
+      "status": "rules/quant review",
+      "workPackage": "WP-19",
+      "tests": [
+        "packages/engine/tests/sim/ratification-gate.test.ts",
+        "packages/engine/tests/rules/manifest.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/sim/ratification.ts",
+        "packages/engine/ratification-status.mjs",
+        "packages/engine/sim-data/external-review-manifest.json"
+      ],
+      "evidenceArtifacts": [
+        "packages/engine/sim-data/ruleset-current.json",
+        "packages/engine/sim-data/current-study-manifest.json"
+      ]
+    },
+    "TEST-07": {
+      "status": "rules/quant review",
+      "workPackage": "WP-17",
+      "tests": [
+        "packages/engine/tests/rules/differential-oracle.test.ts",
+        "packages/engine/tests/sim/ratification-gate.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/sim-data/independent-rule-oracle-candidate.json",
+        "packages/engine/src/sim/ratification.ts"
+      ],
+      "evidenceArtifacts": [
+        "packages/engine/sim-data/independent-rule-oracle-candidate.json",
+        "packages/engine/sim-data/external-review-manifest.json"
+      ]
+    }
+  }
+}

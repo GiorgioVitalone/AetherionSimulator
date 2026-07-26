@@ -3,7 +3,8 @@
  */
 import type { Condition } from '../types/conditions.js';
 import type { GameState, EffectContext, CardInstance } from '../types/game-state.js';
-import { findCard, getAllCards, getCardsInZone } from '../zones/zone-manager.js';
+import { findCard, getAllCards, getCardsInZone, getZoneArray } from '../zones/zone-manager.js';
+import { hasEffectiveTag, hasEffectiveTrait } from '../selectors/card-semantics.js';
 
 export function evaluateCondition(
   state: GameState,
@@ -19,6 +20,8 @@ export function evaluateCondition(
       return evaluateCardCount(state, condition, context);
     case 'zone_is':
       return evaluateZoneIs(state, condition, context);
+    case 'zone_full':
+      return evaluateZoneFull(state, condition, context);
     case 'has_trait':
       return evaluateHasTrait(state, condition, context);
     case 'cost_check':
@@ -69,19 +72,15 @@ function evaluateEventContext(
 }
 
 /**
- * Compare the triggering card's cost (threaded onto the context by dispatch) to the
- * reference. `relativeTo: triggering_spell` references the spell whose cast fired the
- * ability — which IS the triggering card — so the comparison is against itself; the
- * net effect is that the ability is gated only on a triggering card being present
- * (Lyria Archmage Arcane Convergence: previously a permanent-false stub). Returns
- * false when no triggering card is known.
+ * Compare the triggering card's cost (threaded onto the context by dispatch) to
+ * an explicit authored threshold. Returns false when no triggering card is known.
  */
 function evaluateTriggeringCardCost(
   cond: Extract<Condition, { type: 'triggering_card_cost' }>,
   context: EffectContext,
 ): boolean {
   if (context.triggeringCardCost === undefined) return false;
-  return compare(context.triggeringCardCost, cond.comparison, context.triggeringCardCost);
+  return compare(context.triggeringCardCost, cond.comparison, cond.value);
 }
 
 function compare(
@@ -141,13 +140,13 @@ function evaluateCardCount(
     // Tag-filtered counting — iterate cards instead of using .length
     switch (cond.zone) {
       case 'hand':
-        count = player.hand.filter(c => c.tags.includes(cond.tag!)).length;
+        count = player.hand.filter(c => hasEffectiveTag(c, cond.tag!)).length;
         break;
       case 'discard':
-        count = player.discardPile.filter(c => c.tags.includes(cond.tag!)).length;
+        count = player.discardPile.filter(c => hasEffectiveTag(c, cond.tag!)).length;
         break;
       case 'battlefield':
-        count = getAllCards(player.zones).filter(c => c.tags.includes(cond.tag!)).length;
+        count = getAllCards(player.zones).filter(c => hasEffectiveTag(c, cond.tag!)).length;
         break;
       case 'resource_bank':
         count = player.resourceBank.length; // Resources don't have tags
@@ -176,6 +175,19 @@ function evaluateZoneIs(
   return false;
 }
 
+function evaluateZoneFull(
+  state: GameState,
+  cond: Extract<Condition, { type: 'zone_full' }>,
+  context: EffectContext,
+): boolean {
+  const playerId =
+    cond.side === 'enemy'
+      ? (context.controllerId === 0 ? 1 : 0)
+      : context.controllerId;
+  const zones = state.players[playerId].zones;
+  return getCardsInZone(zones, cond.zone).length === getZoneArray(zones, cond.zone).length;
+}
+
 function evaluateHasTrait(
   state: GameState,
   cond: Extract<Condition, { type: 'has_trait' }>,
@@ -183,8 +195,7 @@ function evaluateHasTrait(
 ): boolean {
   const card = getSourceCard(state, context);
   if (card === null) return false;
-  return card.traits.includes(cond.trait) ||
-    card.grantedTraits.some(g => g.trait === cond.trait);
+  return hasEffectiveTrait(card, cond.trait);
 }
 
 function evaluateCostCheck(
@@ -274,8 +285,8 @@ function evaluateControlsCharacter(
     : getAllCards(player.zones);
 
   return cards.some(c => {
-    if (cond.trait !== undefined && !c.traits.includes(cond.trait)) return false;
-    if (cond.tag !== undefined && !c.tags.includes(cond.tag)) return false;
+    if (cond.trait !== undefined && !hasEffectiveTrait(c, cond.trait)) return false;
+    if (cond.tag !== undefined && !hasEffectiveTag(c, cond.tag)) return false;
     return true;
   });
 }

@@ -11,7 +11,7 @@ import type {
   CardDefinitionRegistry,
 } from '../../src/setup/game-setup.js';
 
-function createTestRegistry(): CardDefinitionRegistry {
+function createTestRegistry(explicitResourceTypes = false): CardDefinitionRegistry {
   const cards = new Map<number, CardDefinition>();
   const heroes = new Map<number, HeroDefinition>();
   for (let i = 1; i <= 40; i++) {
@@ -32,6 +32,9 @@ function createTestRegistry(): CardDefinitionRegistry {
       name: i <= 110 ? `Mana Crystal ${String(i)}` : `Energy Cell ${String(i)}`,
       cardType: 'R',
       cost: { mana: 0, energy: 0, flexible: 0 },
+      ...(explicitResourceTypes
+        ? { resourceType: i <= 110 ? ('mana' as const) : ('energy' as const) }
+        : {}),
     });
   }
   heroes.set(200, { id: 200, name: 'Hero 200', lp: 25, alignment: ['Onyx'] });
@@ -74,5 +77,18 @@ describe('§13o — resourceDeckSize', () => {
     resetSetupInstanceCounter();
     const cut = createGame(deck, deck2, createTestRegistry(), 9, { resourceDeckSize: 12 });
     expect(cut.players[0].resourceDeck).toEqual(full.players[0].resourceDeck.slice(0, 12));
+  });
+
+  it('fails closed for missing resourceType in strict current setup', () => {
+    expect(() =>
+      createGame(deck, deck2, createTestRegistry(), 42, {
+        strictResourceTypes: true,
+      }),
+    ).toThrow(/missing explicit resourceType/);
+    expect(() =>
+      createGame(deck, deck2, createTestRegistry(true), 42, {
+        strictResourceTypes: true,
+      }),
+    ).not.toThrow();
   });
 });

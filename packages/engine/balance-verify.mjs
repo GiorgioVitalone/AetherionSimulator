@@ -23,6 +23,10 @@ import { availableParallelism } from 'node:os';
 import { createHash } from 'node:crypto';
 import { runSim } from './sim-runner.mjs';
 import { runSimParallel } from './sim-parallel.mjs';
+import {
+  CURRENT_GAME_CONFIG,
+  CURRENT_RULES_MANIFEST,
+} from './dist/index.js';
 
 // Pool provenance, embedded in header + output JSON so every run self-certifies
 // which card bytes it ran on (same digest as make-pools.mjs: sha256/16 of the
@@ -41,31 +45,6 @@ const POOL_SHA = createHash('sha256')
 // this JSON wins (see the file's own $comment).
 const TARGETS_PATH = new URL('./sim-data/balance-targets.json', import.meta.url);
 const T = JSON.parse(readFileSync(TARGETS_PATH, 'utf8')).thresholds;
-
-// Locked ruleset manifest (sim-data/ruleset-v1.json) — the CONSUMED source of
-// truth for the 9 locked rule flags (docs/balance-framework.md §1: v1 never
-// mutates). This BASE no longer hardcodes those flags; it loads them from the
-// manifest. Missing manifest means a pre-lock checkout — fall back to the
-// pre-lock hardcoded defaults (RD/COMP absent, i.e. engine defaults) so old
-// worktrees keep working, with a loud warning.
-const MANIFEST_PATH = new URL('./sim-data/ruleset-v1.json', import.meta.url);
-const PRE_LOCK_FALLBACK_RULES = {
-  armFirstInstanceOnly: true,
-  terminationMode: 'resource_deck_empty_transform',
-  costFloor: true,
-  reserveTapChoice: true,
-  reserveTapStrain: true,
-  exileDiscardForEnergy: true,
-  apnapAnyOrderFix: true,
-};
-let manifest = null;
-let manifestRules = PRE_LOCK_FALLBACK_RULES;
-try {
-  manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
-  manifestRules = manifest.rules;
-} catch {
-  console.warn(`WARNING: manifest not found at ${MANIFEST_PATH} — using pre-lock hardcoded BASE (this checkout predates the ruleset-v1 lock).`);
-}
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f])); // faction name -> real official deck
@@ -151,13 +130,12 @@ const run = (cfg) => (WORKERS > 1 ? runSimParallel(cfg, WORKERS) : Promise.resol
 // Measurement fields (not rule flags — not in the manifest) stay local; the 9
 // locked rule flags come from manifestRules above.
 const BASE = {
+  rulesProfile: 'current',
   firstPlayer: 'alternating',
-  fixHandSizeStall: true,
   termination: 'tiebreak',
   abilitiesOn: true,
   turnCap: 80,
   seedBase: SEED_BASE,
-  ...manifestRules,
   // §13q seat-asymmetry fix (2026-07-10): side:'any' target resolution now returns
   // APNAP order (active player first) instead of seat order, and the harness
   // alternates seats per pairing so a matchup's win rate no longer depends on
@@ -171,10 +149,14 @@ const BASE = {
 // manifest's.
 const ruleOverrides = [];
 function override(key, effectiveValue) {
-  const manifestValue = manifestRules[key] ?? null;
+  const manifestValue = CURRENT_GAME_CONFIG[key] ?? null;
   if (manifestValue !== effectiveValue) {
     console.log(`RULE OVERRIDE (experiment): ${key} ${JSON.stringify(manifestValue)} -> ${JSON.stringify(effectiveValue)} — not the locked ruleset`);
     ruleOverrides.push({ rule: key, manifestValue, effectiveValue });
+    if (BASE.rulesProfile === 'current') {
+      BASE.rulesProfile = 'custom-diagnostic';
+      Object.assign(BASE, CURRENT_GAME_CONFIG);
+    }
   }
   BASE[key] = effectiveValue;
 }
@@ -196,8 +178,12 @@ if (RULE_OFF) {
     console.error(`RULE_OFF=${RULE_OFF} is not an adopted rule flag (allowed: ${RULE_OFF_ALLOWED.join(', ')})`);
     process.exit(1);
   }
-  if (RULE_OFF in BASE) {
-    const manifestValue = manifestRules[RULE_OFF] ?? null;
+  if (RULE_OFF in BASE || RULE_OFF in CURRENT_GAME_CONFIG) {
+    if (BASE.rulesProfile === 'current') {
+      BASE.rulesProfile = 'custom-diagnostic';
+      Object.assign(BASE, CURRENT_GAME_CONFIG);
+    }
+    const manifestValue = CURRENT_GAME_CONFIG[RULE_OFF] ?? null;
     delete BASE[RULE_OFF];
     console.log(`RULE OVERRIDE (experiment): ${RULE_OFF} ${JSON.stringify(manifestValue)} -> off (removed) — not the locked ruleset`);
     ruleOverrides.push({ rule: RULE_OFF, manifestValue, effectiveValue: null });
@@ -471,7 +457,7 @@ function report(p) {
 // ── Run the panel ────────────────────────────────────────────────────────────
 console.log(`Config: GPP_MATRIX=${GPP_MATRIX}  RL_GPP=${RL_GPP}  RH_GPP=${RH_GPP}  RX_GPP=${RX_GPP}  RXX_GPP=${RXX_GPP}  heurRamp=${process.env.HEUR_RAMP === '1'}  skipRollout=${SKIP_ROLLOUT}${FOCUS ? `  FOCUS=${FOCUS}` : ''}${CAND_GEN !== undefined ? `  CAND_GEN=${CAND_GEN}` : ''}${SEED_MODE !== undefined ? `  SEED_MODE=${SEED_MODE}` : ''}${ROLLOUT_MAXC !== undefined ? `  ROLLOUT_MAXC=${ROLLOUT_MAXC}` : ''}`);
 console.log(`Pool: ${POOL_PATH}  sha256/16 ${POOL_SHA}`);
-console.log(`Ruleset: ${manifest ? `manifest v${manifest.version} (locked)` : 'pre-lock hardcoded fallback'}${ruleOverrides.length ? ` — ${ruleOverrides.length} override(s) in effect` : ''}`);
+console.log(`Ruleset: ${CURRENT_RULES_MANIFEST.semanticVersion} (${CURRENT_RULES_MANIFEST.status})${ruleOverrides.length ? ` — ${ruleOverrides.length} diagnostic override(s) in effect` : ''}`);
 if (FOCUS) console.log(`FOCUS mode: only ${FOCUS}-involving pairings run — non-${FOCUS} marginals/grades are vs-${FOCUS} cells only; combine with the reference panel's pack-internal counts for full marginals.`);
 // exileDiscardForEnergy (discard_for_energy exiles instead of binning) applies
 // to every pilot via BASE. reachDiscard/valuePilot are HEURISTIC bot policies

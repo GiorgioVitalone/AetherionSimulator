@@ -83,6 +83,18 @@ describe('Game Flow Integration', () => {
     return { states };
   }
 
+  function keepBothOpeningHands(states: GameState[]): void {
+    for (let decision = 0; decision < 2; decision++) {
+      const choice = states[states.length - 1]?.pendingChoice;
+      expect(choice?.type).toBe('mulligan');
+      controller!.dispatch({
+        type: 'mulligan_decision',
+        playerId: choice!.playerId,
+        keep: true,
+      });
+    }
+  }
+
   it('initializes a game in mulligan phase with two players', () => {
     const { states } = startGame();
 
@@ -109,19 +121,9 @@ describe('Game Flow Integration', () => {
   it('processes mulligan decisions and transitions to playing', () => {
     const { states } = startGame();
 
-    // Player 0 keeps
-    controller!.dispatch({
-      type: 'mulligan_decision',
-      playerId: 0,
-      keep: true,
-    });
-
-    // Player 1 keeps
-    controller!.dispatch({
-      type: 'mulligan_decision',
-      playerId: 1,
-      keep: true,
-    });
+    // The authoritative interaction decides which player responds first; it is
+    // seed/first-player dependent rather than hard-coded as player 0 then 1.
+    keepBothOpeningHands(states);
 
     const latest = states[states.length - 1]!;
 
@@ -133,9 +135,10 @@ describe('Game Flow Integration', () => {
   it('transitions through phases with end_phase', () => {
     const { states } = startGame();
 
-    // Both players keep
-    controller!.dispatch({ type: 'mulligan_decision', playerId: 0, keep: true });
-    controller!.dispatch({ type: 'mulligan_decision', playerId: 1, keep: true });
+    keepBothOpeningHands(states);
+
+    // Current rules expose the start-of-turn transform window before Strategy.
+    controller!.dispatch({ type: 'end_phase' });
 
     // End strategy phase → should go to action phase
     controller!.dispatch({ type: 'end_phase' });
@@ -154,9 +157,7 @@ describe('Game Flow Integration', () => {
   it('handles concede correctly', () => {
     const { states } = startGame();
 
-    // Both players keep
-    controller!.dispatch({ type: 'mulligan_decision', playerId: 0, keep: true });
-    controller!.dispatch({ type: 'mulligan_decision', playerId: 1, keep: true });
+    keepBothOpeningHands(states);
 
     // Player 0 concedes
     controller!.dispatch({ type: 'concede', playerId: 0 });

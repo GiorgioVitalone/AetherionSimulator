@@ -187,6 +187,7 @@ function printGradeTable(ledgerId, grades, pass) {
 
 // ── Tiny deterministic config for the two lock pins ─────────────────────────
 const TINY_BASE = {
+  rulesProfile: 'custom-diagnostic',
   firstPlayer: 'alternating',
   fixHandSizeStall: true,
   termination: 'tiebreak',

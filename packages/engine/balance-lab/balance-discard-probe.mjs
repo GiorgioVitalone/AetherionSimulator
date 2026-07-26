@@ -25,6 +25,7 @@ const trace = {
 };
 
 runSim({
+  rulesProfile: 'custom-diagnostic',
   decks, matchups: 'all-pairs', firstPlayer: 'alternating', fixHandSizeStall: true,
   termination: 'tiebreak', terminationMode: 'turn_cap', abilitiesOn: true, turnCap: 80,
   seedBase: 12345, botPolicy: 'heuristic', fairPilot: true, gamesPerPairing: GPP, __trace: trace,

@@ -18,6 +18,7 @@ import { updateCardInState } from './state-helpers.js';
 import { executeEffect } from './interpreter.js';
 import { deployToZone, firstOpenSlot } from '../zones/zone-manager.js';
 import { shuffle } from '../setup/rng.js';
+import { registerCardTriggers } from '../events/trigger-registry.js';
 
 const DEPLOY_ZONES: readonly ZoneType[] = ['frontline', 'reserve', 'high_ground'];
 
@@ -25,6 +26,15 @@ function setPlayer(state: GameState, playerId: 0 | 1, player: PlayerState): Game
   const players = [...state.players] as [PlayerState, PlayerState];
   players[playerId] = player;
   return { ...state, players };
+}
+
+/** BUG FIX (config.registerPrintedTriggers): a card entering the battlefield from
+ * a pile registers its printed triggered abilities so dispatch can see them (see
+ * GameConfig.registerPrintedTriggers). Absent/false ⇒ no-op. */
+function maybeRegisterPrintedTriggers(state: GameState, cardInstanceId: string): GameState {
+  return state.config?.registerPrintedTriggers === true
+    ? registerCardTriggers(state, cardInstanceId)
+    : state;
 }
 
 /** Reset a card pulled out of a pile so it enters play/hand with clean runtime state. */
@@ -100,7 +110,10 @@ function returnOne(
       zone,
       playerId,
     });
-    return setPlayer(state, playerId, { ...player, discardPile, zones });
+    return maybeRegisterPrintedTriggers(
+      setPlayer(state, playerId, { ...player, discardPile, zones }),
+      card.instanceId,
+    );
   }
   return state;
 }
@@ -119,6 +132,7 @@ export function executeSearchDeck(
   let currentState = state;
   let working = player;
 
+  let deployedInstanceId: string | undefined;
   if (matches.length > 0) {
     const found = matches[0]!;
     const remaining = working.mainDeck.filter((c) => c.instanceId !== found.instanceId);
@@ -140,9 +154,17 @@ export function executeSearchDeck(
           zone,
           playerId,
         });
+        deployedInstanceId = found.instanceId;
       }
     }
     currentState = setPlayer(currentState, playerId, working);
+    if (deployedInstanceId !== undefined) {
+      currentState = maybeRegisterPrintedTriggers(currentState, deployedInstanceId);
+      // Refresh `working` from the registered state: the final setPlayer below spreads
+      // `working`, so a stale copy would clobber `zones` and silently drop the
+      // registration a tutored-to-battlefield card just received.
+      working = currentState.players[playerId]!;
+    }
 
     if (effect.destination === 'hand' && shouldCastFree(effect, found)) {
       const cast = castFoundForFree(currentState, found, playerId);
@@ -288,7 +310,10 @@ export function executeDeployFromDeck(
   const found = matches[0]!;
   const remaining = player.mainDeck.filter((c) => c.instanceId !== found.instanceId);
   const zones = deployToZone(player.zones, freshFromPile(found), zone);
-  const next = setPlayer(state, playerId, { ...player, mainDeck: remaining, zones });
+  const next = maybeRegisterPrintedTriggers(
+    setPlayer(state, playerId, { ...player, mainDeck: remaining, zones }),
+    found.instanceId,
+  );
   return {
     newState: next,
     events: [

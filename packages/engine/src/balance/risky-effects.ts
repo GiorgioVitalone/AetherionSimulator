@@ -72,6 +72,7 @@ function classifyEffect(e: Effect): readonly PowerFlag[] {
     case 'scry':
     case 'deploy_token':
     case 'destroy':
+    case 'exile':
     case 'sacrifice':
     case 'bounce':
     case 'discard':

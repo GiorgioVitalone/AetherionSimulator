@@ -43,6 +43,8 @@ export interface SimCard {
   readonly id: number;
   readonly name: string;
   readonly cardType: CardTypeCode;
+  /** Required for Resource cards; absent for every other card type. */
+  readonly resourceType?: 'mana' | 'energy';
   readonly rarity: Rarity;
   readonly alignment: readonly Alignment[];
   readonly cost: Cost;

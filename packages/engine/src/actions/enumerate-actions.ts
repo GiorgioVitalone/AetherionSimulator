@@ -29,14 +29,11 @@
  *   pitch, so the hand IS the option set; see `computeCanDiscardForEnergy`).
  * - tap_reserve: one action per instanceId in `AvailableActions.canTapReserve`.
  * - declare_transform: a single action when `AvailableActions.canTransform`.
- * - xValue: NOT enumerated on any kind — the option shapes (`DeployOption`,
- *   `CastSpellOption`, `EquipOption`, `ActivateOption`) expose no X-range
- *   information, so `xValue` is left `undefined` and the engine applies its
- *   default. Intentional exclusion, not an oversight.
- * - remove_equipment / transfer_equipment: EXCLUDED. `AvailableActions` has no
- *   `canRemoveEquipment` / `canTransferEquipment` fields — there is no legality
- *   surface to enumerate from. This is an engine API gap (see task report),
- *   not a decision made by this enumerator.
+ * - xValue: full mode expands every legal value exposed by `xValues` on deploy,
+ *   cast, equip, and activation options. Legacy mode preserves the historical
+ *   omitted-X concretizer behavior.
+ * - remove_equipment / transfer_equipment: excluded in legacy mode. Full mode
+ *   enumerates the complete authoritative remove/transfer surface.
  *
  * ── 'legacy' mode ─────────────────────────────────────────────────────────────
  * Byte-for-byte reproduction of the selection behavior of the existing
@@ -130,7 +127,15 @@ function fullActions(acts: AvailableActions, state: GameState): PlayerAction[] {
   for (const d of acts.canDeploy) {
     for (const group of d.validSlots) {
       for (const slotIndex of group.slots) {
-        out.push({ type: 'deploy', cardInstanceId: d.cardInstanceId, zone: group.zone, slotIndex });
+        for (const xValue of candidateXValues(d.xValues)) {
+          out.push({
+            type: 'deploy',
+            cardInstanceId: d.cardInstanceId,
+            zone: group.zone,
+            slotIndex,
+            ...(xValue !== undefined ? { xValue } : {}),
+          });
+        }
       }
     }
   }
@@ -144,11 +149,39 @@ function fullActions(acts: AvailableActions, state: GameState): PlayerAction[] {
     }
   }
   for (const c of acts.canCastSpell) {
-    out.push({ type: 'cast_spell', cardInstanceId: c.cardInstanceId });
+    for (const xValue of candidateXValues(c.xValues)) {
+      out.push({
+        type: 'cast_spell',
+        cardInstanceId: c.cardInstanceId,
+        ...(xValue !== undefined ? { xValue } : {}),
+      });
+    }
   }
   for (const e of acts.canAttachEquipment) {
     for (const targetInstanceId of e.validTargets) {
-      out.push({ type: 'attach_equipment', cardInstanceId: e.cardInstanceId, targetInstanceId });
+      for (const xValue of candidateXValues(e.xValues)) {
+        out.push({
+          type: 'attach_equipment',
+          cardInstanceId: e.cardInstanceId,
+          targetInstanceId,
+          ...(xValue !== undefined ? { xValue } : {}),
+        });
+      }
+    }
+  }
+  for (const option of acts.canRemoveEquipment) {
+    out.push({
+      type: 'remove_equipment',
+      equipmentInstanceId: option.equipmentInstanceId,
+    });
+  }
+  for (const option of acts.canTransferEquipment) {
+    for (const targetInstanceId of option.validTargets) {
+      out.push({
+        type: 'transfer_equipment',
+        equipmentInstanceId: option.equipmentInstanceId,
+        targetInstanceId,
+      });
     }
   }
   for (const m of acts.canMove) {
@@ -157,11 +190,14 @@ function fullActions(acts: AvailableActions, state: GameState): PlayerAction[] {
     }
   }
   for (const a of acts.canActivateAbility) {
-    out.push({
-      type: 'activate_ability',
-      cardInstanceId: a.cardInstanceId,
-      abilityIndex: a.abilityIndex,
-    });
+    for (const xValue of candidateXValues(a.xValues)) {
+      out.push({
+        type: 'activate_ability',
+        cardInstanceId: a.cardInstanceId,
+        abilityIndex: a.abilityIndex,
+        ...(xValue !== undefined ? { xValue } : {}),
+      });
+    }
   }
   if (acts.canDiscardForEnergy) {
     const player = state.players[state.activePlayerIndex];
@@ -175,6 +211,10 @@ function fullActions(acts: AvailableActions, state: GameState): PlayerAction[] {
   if (acts.canTransform) out.push({ type: 'declare_transform' });
 
   return out;
+}
+
+function candidateXValues(values: readonly number[] | undefined): readonly (number | undefined)[] {
+  return values ?? [undefined];
 }
 
 function firstTargetId(targets: AvailableActions['canAttack'][number]['validTargets']): string {
@@ -203,19 +243,20 @@ const KIND_ORDER: Record<PlayerAction['type'], number> = {
  * `keyOf` (~423-433), extended for kinds it never saw. Used both for the
  * ordering comparator and (by callers/tests) for duplicate detection. */
 export function keyOfPlayerAction(a: PlayerAction): string {
+  const xSuffix = 'xValue' in a && a.xValue !== undefined ? `:x${String(a.xValue)}` : '';
   switch (a.type) {
     case 'declare_attack':
       return `${a.attackerInstanceId}>${a.targetId}`;
     case 'deploy':
-      return `${a.cardInstanceId}@${a.zone}:${String(a.slotIndex)}`;
+      return `${a.cardInstanceId}@${a.zone}:${String(a.slotIndex)}${xSuffix}`;
     case 'attach_equipment':
-      return `${a.cardInstanceId}->${a.targetInstanceId}`;
+      return `${a.cardInstanceId}->${a.targetInstanceId}${xSuffix}`;
     case 'activate_ability':
-      return `${a.cardInstanceId}#${String(a.abilityIndex)}`;
+      return `${a.cardInstanceId}#${String(a.abilityIndex)}${xSuffix}`;
     case 'move':
       return `${a.cardInstanceId}->${a.toZone}`;
     case 'cast_spell':
-      return a.cardInstanceId;
+      return `${a.cardInstanceId}${xSuffix}`;
     case 'discard_for_energy':
       return a.cardInstanceId;
     case 'tap_reserve':

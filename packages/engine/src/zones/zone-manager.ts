@@ -192,6 +192,23 @@ export function moveCard(
   return setZoneSlot(cleared, toZone, targetSlot, movedCard);
 }
 
+/** Relocate a move whose exhaustion/free-move commitment was already paid. */
+export function resolveCommittedMove(
+  zones: ZoneState,
+  instanceId: string,
+  toZone: ZoneType,
+): ZoneState {
+  const location = findCard(zones, instanceId);
+  if (location === null) throw new Error(`Card ${instanceId} not found in any zone`);
+  if (!isAdjacentZone(location.zone, toZone)) {
+    throw new Error(`Cannot move directly from ${location.zone} to ${toZone}`);
+  }
+  const targetSlot = firstOpenSlot(zones, toZone);
+  if (targetSlot === -1) throw new Error(`No open slot in ${toZone}`);
+  const cleared = setZoneSlot(zones, location.zone, location.slotIndex, null);
+  return setZoneSlot(cleared, toZone, targetSlot, location.card);
+}
+
 // ── Empty Zone State Factory ─────────────────────────────────────────────────
 
 export function createEmptyZoneState(): ZoneState {

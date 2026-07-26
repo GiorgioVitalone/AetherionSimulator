@@ -12,6 +12,7 @@ const realDecks = Object.fromEntries(FACTIONS.map((f) => [f, f]));
 const HGPP = +(process.env.HGPP || 400);
 const RGPP = +(process.env.RGPP || 10);
 const BASE = {
+  rulesProfile: 'custom-diagnostic',
   decks: realDecks, matchups: 'all-pairs', firstPlayer: 'alternating',
   fixHandSizeStall: true, termination: 'tiebreak', abilitiesOn: true, turnCap: +(process.env.TURNCAP || 80), seedBase: 12345,
 };

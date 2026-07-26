@@ -82,4 +82,58 @@ describe('A7 — Reserve Energy Generation', () => {
     expect(card?.exhausted).toBe(false);
     expect(getAllRegisteredTriggers(refreshed)).toHaveLength(1);
   });
+
+  it('recomputes continuous auras when refresh re-enables a Reserve source', () => {
+    const aura: AbilityDSL = {
+      type: 'aura',
+      effects: [{
+        type: 'modify_stats',
+        target: { type: 'all_characters', side: 'allied' },
+        modifier: { atk: 1 },
+        duration: { type: 'while_in_play' },
+      }],
+    };
+    const source = mockCard({
+      instanceId: 'reserve-aura',
+      abilities: [aura],
+      reserveEnergyExhausted: true,
+      exhausted: true,
+    });
+    const ally = mockCard({
+      instanceId: 'frontline-ally',
+      baseAtk: 2,
+      currentAtk: 2,
+    });
+    const state = mockGameState({
+      phase: 'upkeep',
+      config: {
+        terminationMode: 'turn_cap',
+        authoritativeTransitions: true,
+        stateBasedActions: true,
+      },
+      players: [
+        mockPlayerState(0, {
+          zones: zonesWithCards({
+            reserve: [source, null],
+            frontline: [ally, null, null],
+          }),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+    expect(state.auraDerivation?.sourceKeys).toEqual([]);
+
+    const refreshed = refreshCards(state);
+
+    expect(
+      findCard(refreshed.players[0].zones, source.instanceId)?.card.reserveEnergyExhausted,
+    ).toBe(false);
+    expect(findCard(refreshed.players[0].zones, ally.instanceId)?.card.currentAtk).toBe(3);
+    expect(refreshed.auraDerivation?.sourceKeys).toEqual(['0:reserve-aura:0']);
+    expect(
+      refreshed.auraDerivation?.contributionKeys.some((key) =>
+        key.includes('frontline-ally:aura_reserve-aura_0:1:0:0'),
+      ),
+    ).toBe(true);
+  });
 });

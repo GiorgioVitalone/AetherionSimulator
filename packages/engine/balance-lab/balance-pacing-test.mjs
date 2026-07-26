@@ -17,6 +17,7 @@ const realDecks = Object.fromEntries(FACTIONS.map((f) => [f, f]));
 const GPP = +(process.env.GPP || 12);
 const OUT = process.env.OUT || '/tmp/balance-pacing-result.json';
 const BASE = {
+  rulesProfile: 'custom-diagnostic',
   decks: realDecks, matchups: 'all-pairs', firstPlayer: 'alternating', fixHandSizeStall: true,
   termination: 'tiebreak', abilitiesOn: true, turnCap: 80, seedBase: 12345,
   botPolicy: 'rollout', rollouts: 4, maxCandidates: 5, rolloutDepth: 3, fairPilot: true, gamesPerPairing: GPP,

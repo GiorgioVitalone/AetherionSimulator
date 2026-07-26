@@ -1,7 +1,7 @@
 /**
  * Deterministic bootstrap resampling. Randomness comes solely from a seeded
  * mulberry32 stream (the same generator the .mjs harnesses use), so a given
- * (data, seed, resamples) triple always yields byte-identical bounds.
+ * (data, seed, resamples) triple always yields semantically invariant bounds.
  */
 
 /** A percentile bootstrap confidence interval on a statistic. */
@@ -45,11 +45,27 @@ export function bootstrapCI(
   resamples = 2000,
   seed = 0x9e3779b9,
 ): BootstrapResult {
+  if (
+    !Number.isFinite(conf) ||
+    conf <= 0 ||
+    conf >= 1 ||
+    !Number.isSafeInteger(resamples) ||
+    resamples <= 0 ||
+    !Number.isSafeInteger(seed) ||
+    data.some((value) => !Number.isFinite(value))
+  ) {
+    throw new RangeError(
+      'Bootstrap requires finite data, 0 < confidence < 1, positive integer resamples, and an integer seed',
+    );
+  }
   const n = data.length;
-  if (n === 0 || resamples <= 0) {
+  if (n === 0) {
     return { point: 0, lo: 0, hi: 0, mean: 0, resamples: 0 };
   }
   const point = statistic(data);
+  if (!Number.isFinite(point)) {
+    throw new RangeError('Bootstrap statistic returned a non-finite point estimate');
+  }
   const rand = mulberry32(seed);
   const reps = new Array<number>(resamples);
   const buf = new Array<number>(n);
@@ -59,6 +75,9 @@ export function bootstrapCI(
       buf[i] = data[idx] ?? 0;
     }
     reps[r] = statistic(buf);
+    if (!Number.isFinite(reps[r])) {
+      throw new RangeError('Bootstrap statistic returned a non-finite replicate');
+    }
   }
   reps.sort((x, y) => x - y);
   const alpha = (1 - conf) / 2;

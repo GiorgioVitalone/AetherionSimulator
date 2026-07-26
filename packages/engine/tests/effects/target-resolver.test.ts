@@ -8,6 +8,7 @@ import {
   mockPlayerState,
   resetInstanceCounter,
 } from '../helpers/card-factory.js';
+import { CURRENT_GAME_CONFIG } from '../../src/rules/manifest.js';
 
 function ctx(controllerId: 0 | 1 = 0): EffectContext {
   return { sourceInstanceId: 'SRC', controllerId, triggerDepth: 0 };
@@ -83,5 +84,26 @@ describe('resolveTargets — target_card_in_discard', () => {
     if (r1.resolved || r2.resolved) throw new Error('expected pendingChoice');
     expect(r1.pendingChoice.options).toEqual(r2.pendingChoice.options);
     expect(r1.pendingChoice.options.map(o => o.id)).toEqual([a.instanceId, b.instanceId]);
+  });
+});
+
+describe('current hero target identity', () => {
+  it('uses a seat namespace disjoint from hero ability source IDs', () => {
+    const state = mockGameState({ config: CURRENT_GAME_CONFIG });
+    const allied = resolveTargets(
+      state,
+      { type: 'hero', side: 'allied' },
+      ctx(0),
+    );
+    const any = resolveTargets(state, { type: 'hero', side: 'any' }, ctx(0));
+    expect(allied).toEqual({ resolved: true, targetIds: ['hero_player_0'] });
+    if (any.resolved) throw new Error('expected hero choice');
+    expect(any.pendingChoice.options.map((option) => option.id)).toEqual([
+      'hero_player_0',
+      'hero_player_1',
+    ]);
+    expect(any.pendingChoice.options.map((option) => option.id)).not.toContain(
+      `hero_${String(state.players[0].hero.cardDefId)}`,
+    );
   });
 });

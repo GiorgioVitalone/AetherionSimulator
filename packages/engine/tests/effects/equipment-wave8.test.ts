@@ -138,9 +138,11 @@ describe('Wave 8 — voluntary removal & transfer (Rulebook 13)', () => {
     });
     expect(result.state.players[0]!.zones.frontline[0]!.equipment).toBeNull();
     expect(result.state.players[0]!.discardPile.map(c => c.instanceId)).toContain(equip.instanceId);
-    expect(result.events.some(
-      e => e.type === 'CARD_DESTROYED' && e.cardInstanceId === equip.instanceId,
-    )).toBe(true);
+    expect(result.events.some(e => e.type === 'CARD_DESTROYED')).toBe(false);
+    expect(result.events.map((event) => event.type)).toEqual([
+      'EQUIPMENT_DETACHED',
+      'EQUIPMENT_DISCARDED',
+    ]);
   });
 
   it('transfer moves equipment to an empty eligible character, paying its cost', () => {
@@ -160,6 +162,46 @@ describe('Wave 8 — voluntary removal & transfer (Rulebook 13)', () => {
     expect(fl.find(c => c?.instanceId === from.instanceId)!.equipment).toBeNull();
     expect(fl.find(c => c?.instanceId === to.instanceId)!.equipment!.instanceId).toBe(equip.instanceId);
     expect(result.state.players[0]!.resourceBank.every(r => r.exhausted)).toBe(true);
+    expect(result.events.map((event) => event.type)).toEqual([
+      'EQUIPMENT_DETACHED',
+      'EQUIPMENT_TRANSFERRED',
+      'EQUIPMENT_ATTACHED',
+    ]);
+  });
+
+  it('transfer consumes a matching first-per-turn reduction', () => {
+    const equip = mockCard({
+      cardType: 'E',
+      owner: 0,
+      cost: { mana: 0, energy: 0, flexible: 1 },
+    });
+    const from = mockCard({ cardType: 'C', owner: 0, equipment: equip });
+    const to = mockCard({ cardType: 'C', owner: 0 });
+    let zones = deployToZone(emptyZones(), from, 'frontline');
+    zones = deployToZone(zones, to, 'frontline');
+    const state = mockGameState({
+      phase: 'strategy',
+      players: [
+        mockPlayerState(0, {
+          zones,
+          costReductions: [
+            {
+              id: 'first-equip',
+              reduction: 1,
+              appliesTo: { cardType: 'E', firstPerTurn: true },
+              usedThisTurn: false,
+            },
+          ],
+        }),
+        mockPlayerState(1),
+      ],
+    });
+    const result = executePlayerAction(state, {
+      type: 'transfer_equipment',
+      equipmentInstanceId: equip.instanceId,
+      targetInstanceId: to.instanceId,
+    });
+    expect(result.state.players[0].costReductions?.[0]?.usedThisTurn).toBe(true);
   });
 
   it('transfer is blocked a second time in the same turn', () => {
@@ -217,6 +259,62 @@ describe('Wave 8 — equipment follows destroyed holder to discard (Rulebook 13)
     )).toBe(true);
   });
 
+  it('current rules distinguish holder destruction from equipment destruction', () => {
+    const equip = mockCard({
+      cardType: 'E',
+      owner: 0,
+      name: 'Sword',
+      holderInstanceId: 'holder',
+    });
+    const holder = mockCard({
+      instanceId: 'holder',
+      cardType: 'C',
+      owner: 0,
+      equipment: equip,
+      currentHp: 3,
+    });
+    const zones = deployToZone(emptyZones(), holder, 'frontline');
+    const state = mockGameState({
+      config: {
+        terminationMode: 'resource_deck_empty_transform',
+        authoritativeTransitions: true,
+      },
+      players: [mockPlayerState(0, { zones }), mockPlayerState(1)],
+    });
+    const result = executeEffect(
+      state,
+      { type: 'destroy', target: { type: 'self' } },
+      ctx(holder.instanceId, 0),
+    );
+
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'CARD_DESTROYED',
+          cardInstanceId: holder.instanceId,
+        }),
+        expect.objectContaining({
+          type: 'EQUIPMENT_DESTROYED',
+          equipmentId: equip.instanceId,
+          holderId: holder.instanceId,
+          reason: 'holder_destroyed',
+        }),
+      ]),
+    );
+    expect(
+      result.events.some(
+        (event) =>
+          event.type === 'CARD_DESTROYED' &&
+          event.cardInstanceId === equip.instanceId,
+      ),
+    ).toBe(false);
+    expect(
+      result.newState.players[0].discardPile.find(
+        (card) => card.instanceId === equip.instanceId,
+      )?.holderInstanceId,
+    ).toBeUndefined();
+  });
+
   it('combat: a destroyed equipped defender sends its equipment to discard', () => {
     const equip = mockCard({ cardType: 'E', owner: 1, name: 'Sword' });
     const attacker = mockCard({ owner: 0, currentAtk: 5, currentHp: 5 });
@@ -249,6 +347,8 @@ describe('Wave 8 — equipment follows destroyed holder to discard (Rulebook 13)
     // Holder exiled (not in discard); equipment still follows to discard.
     expect(discard.some(c => c.instanceId === defender.instanceId)).toBe(false);
     expect(discard.map(c => c.instanceId)).toEqual([equip.instanceId]);
+    expect(result.newState.players[1].exile).toHaveLength(1);
+    expect(result.newState.players[1].exile?.[0]?.card.equipment).toBeNull();
   });
 });
 
@@ -276,7 +376,7 @@ describe('Wave 8 — grant_trait honors non-permanent durations (Rulebook 16)', 
     expect(expired.players[0]!.zones.frontline[0]!.grantedTraits).toHaveLength(0);
   });
 
-  it('for_combat collapses to until_end_of_turn (nearest expiring boundary)', () => {
+  it('records an exact for_combat scope', () => {
     const target = mockCard({ owner: 0 });
     const zones = deployToZone(emptyZones(), target, 'frontline');
     const state = mockGameState({
@@ -290,7 +390,7 @@ describe('Wave 8 — grant_trait honors non-permanent durations (Rulebook 16)', 
     };
     const granted = executeEffect(state, effect, ctx(target.instanceId, 0));
     expect(granted.newState.players[0]!.zones.frontline[0]!.grantedTraits[0]!.duration.type)
-      .toBe('until_end_of_turn');
+      .toBe('for_combat');
   });
 
   it('permanent grant survives the expiry boundary', () => {

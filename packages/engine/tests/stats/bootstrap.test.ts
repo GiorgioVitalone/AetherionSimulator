@@ -61,4 +61,13 @@ describe('bootstrapCI', () => {
     expect(r.lo).toBeCloseTo(0.5, 10);
     expect(r.hi).toBeCloseTo(0.5, 10);
   });
+
+  it('rejects invalid confidence, resample, data, and statistic domains', () => {
+    expect(() => bootstrapCI(data, mean, 1)).toThrow(RangeError);
+    expect(() => bootstrapCI(data, mean, 0.95, 0)).toThrow(RangeError);
+    expect(() => bootstrapCI([Number.NaN], mean)).toThrow(RangeError);
+    expect(() => bootstrapCI(data, () => Number.POSITIVE_INFINITY)).toThrow(
+      RangeError,
+    );
+  });
 });

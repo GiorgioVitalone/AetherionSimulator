@@ -3,10 +3,12 @@
  * Returns a PendingChoice when player must select targets.
  */
 import type { TargetExpr } from '../types/targets.js';
-import type { ZoneType } from '../types/common.js';
+import type { Trait, ZoneType } from '../types/common.js';
 import type { GameState, EffectContext, PendingChoice, CardInstance } from '../types/game-state.js';
 import { getAllCards, getCardsInZone, findCard } from '../zones/zone-manager.js';
 import { evaluateAmount } from './amount-evaluator.js';
+import { hasEffectiveTag, hasEffectiveTrait } from '../selectors/card-semantics.js';
+import { heroTargetId } from '../selectors/hero-identity.js';
 
 export type ResolvedTargets =
   | { readonly resolved: true; readonly targetIds: readonly string[] }
@@ -27,10 +29,10 @@ export function resolveTargets(
       return { resolved: true, targetIds: [context.sourceInstanceId] };
 
     case 'owner_hero':
-      return { resolved: true, targetIds: [`hero_${String(context.controllerId)}`] };
+      return { resolved: true, targetIds: [heroTargetId(state, context.controllerId)] };
 
     case 'hero':
-      return resolveHeroTarget(target, context);
+      return resolveHeroTarget(state, target, context);
 
     case 'equipped_character':
       return resolveEquippedCharacter(state, context);
@@ -51,10 +53,13 @@ export function resolveTargets(
       return resolveUpTo(state, target, context);
 
     case 'each_player':
-      return { resolved: true, targetIds: ['hero_0', 'hero_1'] };
+      return {
+        resolved: true,
+        targetIds: [heroTargetId(state, 0), heroTargetId(state, 1)],
+      };
 
     case 'player':
-      return resolvePlayerTarget(target, context);
+      return resolvePlayerTarget(state, target, context);
 
     case 'target_card_in_discard':
       return resolveCardInDiscard(state, target, context);
@@ -181,15 +186,16 @@ function resolveCardInDiscard(
 }
 
 function resolveHeroTarget(
+  state: GameState,
   target: Extract<TargetExpr, { type: 'hero' }>,
   context: EffectContext,
 ): ResolvedTargets {
-  const id =
+  if (target.side === 'any') return resolveAnyHeroChoice(state, context);
+  const playerId =
     target.side === 'allied'
-      ? `hero_${String(context.controllerId)}`
-      : target.side === 'enemy'
-        ? `hero_${String(context.controllerId === 0 ? 1 : 0)}`
-        : `hero_${String(context.controllerId)}`;
+      ? context.controllerId
+      : context.controllerId === 0 ? 1 : 0;
+  const id = heroTargetId(state, playerId);
   return { resolved: true, targetIds: [id] };
 }
 
@@ -211,7 +217,12 @@ function resolveAllCharacters(
   target: Extract<TargetExpr, { type: 'all_characters' }>,
   context: EffectContext,
 ): ResolvedTargets {
-  const cards = getCardsBySide(state, target.side, context);
+  const cards =
+    state.config?.simultaneousAllEffects === true
+      ? getPlayersBySide(state, target.side, context).flatMap((player) =>
+          getAllCards(player.zones),
+        )
+      : getCardsBySide(state, target.side, context);
   const filtered = applyFilter(cards, target.filter);
   return { resolved: true, targetIds: filtered.map((c) => c.instanceId) };
 }
@@ -223,7 +234,10 @@ function resolveAllInZone(
 ): ResolvedTargets {
   const players = getPlayersBySide(state, target.side, context);
   const inZone = players.flatMap((p) => getCardsInZone(p.zones, target.zone));
-  const cards = excludeUntargetable(inZone, context.controllerId);
+  const cards =
+    state.config?.simultaneousAllEffects === true
+      ? inZone
+      : excludeUntargetable(inZone, context.controllerId);
   const filtered = applyFilter(cards, target.filter);
   return { resolved: true, targetIds: filtered.map((c) => c.instanceId) };
 }
@@ -277,16 +291,34 @@ function resolveUpTo(
 }
 
 function resolvePlayerTarget(
+  state: GameState,
   target: Extract<TargetExpr, { type: 'player' }>,
   context: EffectContext,
 ): ResolvedTargets {
-  const id =
+  if (target.side === 'any') return resolveAnyHeroChoice(state, context);
+  const playerId =
     target.side === 'allied'
-      ? `hero_${String(context.controllerId)}`
-      : target.side === 'enemy'
-        ? `hero_${String(context.controllerId === 0 ? 1 : 0)}`
-        : `hero_${String(context.controllerId)}`;
+      ? context.controllerId
+      : context.controllerId === 0 ? 1 : 0;
+  const id = heroTargetId(state, playerId);
   return { resolved: true, targetIds: [id] };
+}
+
+function resolveAnyHeroChoice(state: GameState, context: EffectContext): ResolvedTargets {
+  return {
+    resolved: false,
+    pendingChoice: {
+      type: 'select_targets',
+      playerId: context.controllerId,
+      options: [
+        { id: heroTargetId(state, 0), label: 'Player 1 Hero' },
+        { id: heroTargetId(state, 1), label: 'Player 2 Hero' },
+      ],
+      minSelections: 1,
+      maxSelections: 1,
+      context: 'Choose a Hero',
+    },
+  };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -322,8 +354,7 @@ export function excludeUntargetable(
 
 function isUntargetableByOpponent(card: CardInstance): boolean {
   if (card.statusEffects.some((s) => s.statusType === 'hexproof')) return true;
-  const hasStealth =
-    card.traits.includes('stealth') || card.grantedTraits.some((g) => g.trait === 'stealth');
+  const hasStealth = hasEffectiveTrait(card, 'stealth');
   return hasStealth && card.hasActed !== true;
 }
 
@@ -383,8 +414,13 @@ export function applyFilter(
       c.instanceId === context.sourceInstanceId
     )
       return false;
-    if (filter.trait !== undefined && !c.traits.includes(filter.trait as never)) return false;
-    if (filter.tag !== undefined && !c.tags.includes(filter.tag)) return false;
+    if (
+      filter.trait !== undefined &&
+      !hasEffectiveTrait(c, filter.trait as Trait)
+    ) {
+      return false;
+    }
+    if (filter.tag !== undefined && !hasEffectiveTag(c, filter.tag)) return false;
     if (filter.cardType !== undefined && c.cardType !== filter.cardType) return false;
     const totalCost = c.cost.mana + c.cost.energy + c.cost.flexible;
     if (filter.maxCost !== undefined && totalCost > filter.maxCost) return false;

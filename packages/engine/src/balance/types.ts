@@ -59,7 +59,7 @@ export interface EffectValue {
   readonly isRemoval: boolean;
 }
 
-// ── §S3: power uncertainty intervals + context flags ─────────────────────────
+// ── §S3: heuristic power scenario bands + context flags ──────────────────────
 /** Which scores to distrust — additive to the scalar `power`, never changes it. */
 export type PowerFlag =
   | 'conditional' // value depends on an untracked condition (ifTrue/ifFalse spread)
@@ -137,6 +137,9 @@ export interface CardPowerBreakdown {
   readonly power: number; // final scalar = base * synergyMultiplier — UNCHANGED by §S3
   readonly powerLow: number; // §S3: conservative low bound (vanilla bodies: === power)
   readonly powerHigh: number; // §S3: conservative high bound (vanilla bodies: === power)
+  /** Explicitly non-inferential: authored valuation scenarios, not a
+   * confidence/credible interval and carrying no coverage probability. */
+  readonly powerBandInterpretation: 'heuristic_scenario_band';
   readonly flags: readonly PowerFlag[]; // §S3: which of the above scores to distrust
   readonly statBase: number; // atk*Wa + hp*Wh + arm*Warm (0 for non-characters)
   readonly traitValue: number; // sum of trait stat-scaling contributions

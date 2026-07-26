@@ -94,6 +94,7 @@ ds('§13q seat-fix knobs: byte-identical no-op + determinism (runSim)', () => {
       runSim: (c: unknown) => { runHash: string };
     };
     const base = {
+      rulesProfile: 'custom-diagnostic',
       matchups: 'all-pairs',
       gamesPerPairing: 3,
       seedBase: 4242,

@@ -10,6 +10,7 @@
  * (the caller emits CARD_DESTROYED). This module only governs the destination.
  */
 import type { CardInstance } from '../types/game-state.js';
+import { hasEffectiveTrait } from '../selectors/card-semantics.js';
 
 /** A Volatile non-token card is exiled (removed from game) on destruction. */
 export function isExiledOnDestruction(card: CardInstance): boolean {
@@ -18,10 +19,7 @@ export function isExiledOnDestruction(card: CardInstance): boolean {
 }
 
 function cardHasVolatile(card: CardInstance): boolean {
-  return (
-    card.traits.includes('volatile') ||
-    card.grantedTraits.some(g => g.trait === 'volatile')
-  );
+  return hasEffectiveTrait(card, 'volatile');
 }
 
 /**
@@ -41,6 +39,7 @@ export function detachEquipmentForDiscard(
     holder: { ...holder, equipment: null },
     equipment: {
       ...equip,
+      holderInstanceId: undefined,
       currentHp: equip.baseHp,
       currentAtk: equip.baseAtk,
       currentArm: equip.baseArm,

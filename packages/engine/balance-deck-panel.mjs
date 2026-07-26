@@ -3,20 +3,10 @@
 // an explicit pairing list, and report per-pairing + per-DECK (not just
 // per-faction) results plus a per-card usage table.
 //
-// WHY SERIAL PER-PAIRING, NOT runSimParallel: the card-usage collector needs
-// sim-runner's __diag.onGame hook (sim-runner.mjs:884-886), which is a live JS
-// function. worker_threads' workerData uses the structured-clone algorithm,
-// which cannot carry functions (verified empirically — `new Worker(...,
-// {workerData:{fn}})` throws "could not be cloned"). runSimParallel
-// (sim-parallel.mjs) posts config straight into workerData, so __diag can
-// never cross that boundary. The one existing precedent in this repo for
-// __diag usage (balance-lab/balance-transform-test.mjs) makes the same call:
-// plain `runSim`, never `runSimParallel`. This tool follows that precedent —
-// one `runSim` call PER PAIRING (see below for why that also solves the
-// matchupDetail collision). PARALLELISM HERE IS THEREFORE PROCESS-LEVEL, NOT
-// worker_threads: `--workers N` shards the pairing list across N child
-// `node balance-deck-panel.mjs --internal-shard ...` processes (see bottom of
-// file), each running its own serial __diag-based loop.
+// The simulator returns detached final-state observations as ordinary data.
+// Card-usage accounting consumes those immutable snapshots after each run, so
+// no callback or mutable collector can influence gameplay. Pair-level process
+// sharding remains useful because this report emits one row per deck pairing.
 //
 // WHY ONE runSim CALL PER PAIRING, NOT ONE COMBINED CALL: sim-runner's
 // matchupDetail is keyed by `${fA}|${fB}` FACTION names, which collide for two
@@ -142,9 +132,6 @@ const { getDeck } = await import('./deck-loader.mjs');
 const { indexFromRaw } = await import('./balance-data.mjs');
 const { index: cardIndex } = indexFromRaw(JSON.parse(poolRaw));
 
-const manifest = JSON.parse(readFileSync(new URL('./sim-data/ruleset-v1.json', import.meta.url), 'utf8'));
-if (!manifest.rules) { console.error('balance-deck-panel: sim-data/ruleset-v1.json has no .rules — the ruleset is not locked.'); process.exit(1); }
-
 // ── Deck-side identity helpers (side = a set-deck object OR a starter faction string) ─
 const isStarter = (side) => typeof side === 'string';
 const deckKeyOf = (side) => (isStarter(side) ? `starter:${side}` : side.deckKey);
@@ -215,7 +202,7 @@ function wilson(w, n, z = 1.96) {
   return [100 * (c - h), 100 * p, 100 * (c + h)];
 }
 
-// ── Card-usage + per-deck accumulators (filled by the __diag hook below) ────
+// ── Card-usage + per-deck accumulators (filled from final observations) ─────
 const usage = new Map();   // deckKey -> Map(cardDefId -> {deployed,cast,discarded,destroyed})
 const gamesByDeck = new Map(); // deckKey -> games played
 const coverageByDeck = new Map(); // deckKey -> Map(kind -> {resolved, uncovered})
@@ -233,7 +220,7 @@ function bumpCoverage(deckKey, kind, resolved) {
   c[resolved ? 'resolved' : 'uncovered']++;
 }
 
-// Build the __diag collector for ONE pairing call. `gpp` = that call's
+// Build the observation reducer for ONE pairing call. `gpp` = that call's
 // gamesPerPairing, `seatAlt` = whether seatAlternation is on (both constant
 // across the whole panel here). Because this call has exactly one pairing
 // (plan index p=0 in sim-runner's generateResults loop), the local per-call
@@ -244,16 +231,6 @@ function diagFor(aSide, bSide, gpp, seatAlt) {
   const aKey = deckKeyOf(aSide), bKey = deckKeyOf(bSide);
   const aFaction = factionOf(aSide), bFaction = factionOf(bSide);
   return {
-    // The engine writes real per-game combat counters through gs.config.diag
-    // (combat-resolver.ts / interpreter.ts / aura-recompute.ts read
-    // state.config?.diag and index into its arrays on EVERY combat resolution,
-    // including every hypothetical rollout-pilot playout, not just the real
-    // path — thousands of writes per real game at rung8+). An empty `{}` here
-    // throws on the first write and, at that call volume, the exception
-    // storm alone adds well over a minute per game (measured). Match the
-    // shape balance-lab/balance-transform-test.mjs's collector uses — a
-    // valid, ignored DiagCounters — so those writes are cheap no-ops.
-    begin: () => ({ shieldFires: [0, 0], shieldPrevented: [0, 0], armAbsorbedBase: [0, 0], armAbsorbedBulwark: [0, 0] }),
     onGame: (fin) => {
       const swapSeats = seatAlt && (g >> 1) % 2 === 1;
       g++;
@@ -317,7 +294,7 @@ const STRONGER_KNOBS = {
 };
 
 // ── Run one runSim call per pairing ──────────────────────────────────────────
-const BASE = { ...manifest.rules, firstPlayer: 'alternating', seatAlternation: true, fixHandSizeStall: true, termination: 'tiebreak', abilitiesOn: true, turnCap: 80, botPolicy: 'rollout', ...RUNG_PARAMS, ...STRONGER_KNOBS, gamesPerPairing: GPP };
+const BASE = { rulesProfile: 'current', firstPlayer: 'alternating', seatAlternation: true, termination: 'tiebreak', abilitiesOn: true, turnCap: 80, botPolicy: 'rollout', ...RUNG_PARAMS, ...STRONGER_KNOBS, gamesPerPairing: GPP };
 if (!IS_SHARD_CHILD) {
   console.log(`Pool: ${poolAbsPath}  sha256/16 ${poolSha}  set ${deckSet.version}  pairings ${pairings.length}  gpp ${GPP}  rung r${RUNG}`);
 }
@@ -327,8 +304,17 @@ const deckStats = new Map(); // deckKey -> {label, faction, wins, games}
 const cellsForPacing = [];
 
 function runPairing(a, b, seedBase) {
-  const cfg = { ...BASE, seedBase, matchups: [{ p0Deck: a, p1Deck: b }], __diag: diagFor(a, b, GPP, BASE.seatAlternation) };
+  const reducer = diagFor(a, b, GPP, BASE.seatAlternation);
+  const cfg = {
+    ...BASE,
+    seedBase,
+    matchups: [{ p0Deck: a, p1Deck: b }],
+    observation: { finalState: true },
+  };
   const r = runSim(cfg);
+  for (const row of r.observations) {
+    reducer.onGame(row.observation.finalState);
+  }
   const cell = Object.values(r.matchupDetail)[0];
 
   const aKey = deckKeyOf(a), bKey = deckKeyOf(b);

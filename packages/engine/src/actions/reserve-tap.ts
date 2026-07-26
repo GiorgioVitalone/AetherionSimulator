@@ -1,4 +1,5 @@
 import type { CardInstance, GameState } from '../types/game-state.js';
+import { hasEffectiveTrait } from '../selectors/card-semantics.js';
 
 /** Damage a character suffers per Reserve Energy Generation under
  * `reserveTapStrain` (§13m rules change): direct HP wear — no ARM mitigation,
@@ -16,7 +17,7 @@ export const RESERVE_TAP_STRAIN_DAMAGE = 1;
 export function isReserveTapEligible(card: CardInstance, config: GameState['config']): boolean {
   if (card.cardType !== 'C') return false;
   if (card.exhausted || card.summoningSick) return false;
-  if (card.traits.includes('sniper') || card.grantedTraits.some((g) => g.trait === 'sniper')) {
+  if (hasEffectiveTrait(card, 'sniper')) {
     return false;
   }
   if (config?.reserveTapStrain === true && card.currentHp <= RESERVE_TAP_STRAIN_DAMAGE) {

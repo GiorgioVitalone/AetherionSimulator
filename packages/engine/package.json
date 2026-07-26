@@ -11,9 +11,24 @@
     }
   },
   "scripts": {
-    "build": "tsc --build",
+    "build": "tsc --build && node validate-cards.mjs",
     "test": "vitest run",
+    "test:correctness": "vitest run --exclude tests/legacy/**",
+    "test:legacy": "vitest run tests/legacy",
+    "test:coverage": "vitest run --exclude tests/legacy/** --coverage",
+    "coverage:changed": "node check-changed-coverage.mjs",
+    "ci:correctness": "vitest run --exclude tests/legacy/** --coverage && node check-changed-coverage.mjs",
+    "benchmark:verify": "node benchmark-engine.mjs --verify",
+    "calibrate:policy": "node policy-calibration.mjs --verify",
+    "certify:campaigns:smoke": "node certification-campaigns.mjs --smoke",
+    "certify:campaigns:full": "node certification-campaigns.mjs --full",
+    "ratification:status": "node ratification-status.mjs",
+    "ratification:require-approved": "node ratification-status.mjs --require-approved",
     "lint": "eslint src/",
+    "validate": "node validate-cards.mjs",
+    "audit:findings": "node audit-findings.mjs",
+    "audit:findings:report": "node audit-findings.mjs --markdown",
+    "audit:findings:closed": "node audit-findings.mjs --require-closed",
     "balance": "node balance-cli.mjs"
   },
   "dependencies": {
@@ -21,6 +36,7 @@
   },
   "devDependencies": {
     "@aetherion-sim/config": "workspace:*",
+    "@vitest/coverage-v8": "3.2.4",
     "eslint": "^9.28.0",
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.33.0",

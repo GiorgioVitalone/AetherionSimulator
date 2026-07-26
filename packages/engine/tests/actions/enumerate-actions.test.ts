@@ -202,8 +202,15 @@ function isLegal(a: PlayerAction, acts: AvailableActions): boolean {
     case 'declare_transform':
       return acts.canTransform;
     case 'remove_equipment':
-    case 'transfer_equipment':
-      return false; // never produced — no legality surface (documented gap)
+      return acts.canRemoveEquipment.some(
+        (option) => option.equipmentInstanceId === a.equipmentInstanceId,
+      );
+    case 'transfer_equipment': {
+      const option = acts.canTransferEquipment.find(
+        (candidate) => candidate.equipmentInstanceId === a.equipmentInstanceId,
+      );
+      return option !== undefined && option.validTargets.includes(a.targetInstanceId);
+    }
   }
 }
 
@@ -246,6 +253,10 @@ describe('enumerateConcretePlayerActions', () => {
         0,
       );
       const expectedMove = acts.canMove.reduce((sum, m) => sum + m.validDestinations.length, 0);
+      const expectedTransfer = acts.canTransferEquipment.reduce(
+        (sum, option) => sum + option.validTargets.length,
+        0,
+      );
       const player = state.players[state.activePlayerIndex]!;
       const expectedDiscard = acts.canDiscardForEnergy ? player.hand.length : 0;
 
@@ -253,6 +264,8 @@ describe('enumerateConcretePlayerActions', () => {
       expect(countOf('declare_attack')).toBe(expectedAttack);
       expect(countOf('attach_equipment')).toBe(expectedEquip);
       expect(countOf('move')).toBe(expectedMove);
+      expect(countOf('remove_equipment')).toBe(acts.canRemoveEquipment.length);
+      expect(countOf('transfer_equipment')).toBe(expectedTransfer);
       expect(countOf('cast_spell')).toBe(acts.canCastSpell.length);
       expect(countOf('activate_ability')).toBe(acts.canActivateAbility.length);
       expect(countOf('tap_reserve')).toBe(acts.canTapReserve.length);

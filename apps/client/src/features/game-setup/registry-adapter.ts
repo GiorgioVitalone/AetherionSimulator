@@ -63,6 +63,9 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
         id: card.id,
         name: card.name,
         cardType: card.cardType,
+        ...(card.cardType === 'R'
+          ? { resourceType: requireResourceType(card) }
+          : {}),
         cost: toResourceCost(card.cost),
         stats: card.stats ?? undefined,
         traits: card.traits,
@@ -83,4 +86,13 @@ export function createRegistry(cards: readonly SimCard[]): RegistryWithAbilities
     getAbilities: (cardDefId: number) => abilityMap.get(cardDefId) ?? [],
     getHeroAbilities: (cardDefId: number) => heroAbilityMap.get(cardDefId) ?? [],
   };
+}
+
+function requireResourceType(card: SimCard): 'mana' | 'energy' {
+  if (card.resourceType === 'mana' || card.resourceType === 'energy') {
+    return card.resourceType;
+  }
+  throw new Error(
+    `Resource definition ${String(card.id)} is missing explicit resourceType`,
+  );
 }

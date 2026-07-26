@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "currentManifest": "packages/engine/sim-data/ruleset-current.json",
+  "entrypoints": [
+    { "path": "packages/engine/balance-ab-candidates.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/balance-deck-panel.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/balance-fp-probe.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/balance-verify.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/decision-datagen.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/diag-sapphire.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/neural-datagen.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/paired-compare.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/skill-ladder.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/stage-d-gate.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/stage-e-gate.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/t2-gate.mjs", "defaultProfile": "current" },
+    { "path": "packages/engine/balance-lab/balance-standard-sim.mjs", "defaultProfile": "current" },
+
+    { "path": "packages/engine/balance-lock.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-diagnose-fair.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-diagnose-rollout.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-diagnose.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-diagnose2.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-discard-probe.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-fair-ab.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-gauntlet.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-matrix.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-matrix2.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-pacing-test.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-probe-denergy.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-resim.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-trace.mjs", "defaultProfile": "custom-diagnostic" },
+    { "path": "packages/engine/balance-lab/balance-transform-test.mjs", "defaultProfile": "custom-diagnostic" },
+
+    { "path": "packages/engine/tie-audit.mjs", "defaultProfile": "legacy-v3" },
+    { "path": "packages/engine/trace-game.mjs", "defaultProfile": "explicit-legacy" }
+  ]
+}

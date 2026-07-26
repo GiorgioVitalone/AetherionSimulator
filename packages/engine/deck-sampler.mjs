@@ -48,7 +48,7 @@ const poolByFaction = {};
 for (const f of FACTIONS) {
   poolByFaction[f] = raw.filter(
     (c) => (c.cardType === 'C' || c.cardType === 'S' || c.cardType === 'E') && factionOf(c) === f,
-  );
+  ).sort((left, right) => left.id - right.id);
 }
 
 // ── cardIndex (the CardIndex shape dist/sim/deck-legality.js validates against) ──

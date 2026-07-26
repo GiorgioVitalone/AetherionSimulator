@@ -22,7 +22,8 @@ import { pathToFileURL } from 'node:url';
 import { FEATURE_SCHEMA_VERSION, FEATURE_LENGTH } from './dist/index.js';
 
 const ENGINE = new URL('.', import.meta.url).pathname;
-process.env.AETHERION_CARDS = process.env.AETHERION_CARDS || ENGINE + 'generated-pools/aetherion-CURRENT.json';
+// The simulator's canonical current corpus is the only implicit input. Alternate
+// pools must be explicitly supplied and pass the same fail-closed validator.
 const { runSimParallel } = await import(pathToFileURL(ENGINE + 'sim-parallel.mjs').href);
 
 const totalGpp = +(process.argv[2] || 4);
@@ -32,10 +33,9 @@ const BASE_SEED = 800000;
 
 // Standard rule flags (copied from t2-gate.mjs's RULES block).
 const RULES = {
-  reachDiscard: true, exileDiscardForEnergy: true, termination: 'tiebreak',
-  firstPlayer: 'alternating', seatAlternation: true, fixHandSizeStall: true,
-  armFirstInstanceOnly: true, terminationMode: 'resource_deck_empty_transform',
-  costFloor: true, reserveTapChoice: true, reserveTapStrain: true, turnCap: 80,
+  rulesProfile: 'current',
+  reachDiscard: true, termination: 'tiebreak',
+  firstPlayer: 'alternating', seatAlternation: true, turnCap: 80,
 };
 const baseConfig = {
   ...RULES,

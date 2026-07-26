@@ -73,6 +73,19 @@
 //   disableEffectTypes: string[] (default []) — Effect `type` strings to no-op
 //                 at resolution in the interpreter (e.g. ["return_from_discard"]
 //                 to neutralize Onyx recursion / value-loop mechanics by-data).
+//   registerPrintedTriggers: boolean (default false) — BUG FIX: register a
+//                 card's printed triggered abilities (on_destroy/Last Breath,
+//                 on_ally_destroyed, on_turn_end, on_spell_cast, etc. — anything
+//                 other than on_cast/on_deploy) the moment it enters play, and
+//                 the base Hero's printed abilities at hydration, so the
+//                 dispatch runtime can actually see and fire them (see
+//                 game-state.ts's GameConfig.registerPrintedTriggers).
+//   equipmentTriggers: boolean (default false) — BUG FIX: register an attached
+//                 equipment's own printed triggered abilities at attach time and
+//                 include them in the dispatch trigger pool, so on_turn_start/
+//                 on_turn_end/on_ally_deployed/on_spell_cast/on_gain_resource/
+//                 on_equipment_attached printed on an equipment card can
+//                 actually fire (see game-state.ts's GameConfig.equipmentTriggers).
 //   seedBase:     number (root seed; default 12345)
 // }
 //
@@ -90,14 +103,18 @@
 //   runHash: string                          // deterministic over per-game results
 // }
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isMainThread } from 'node:worker_threads';
 import { createActor } from 'xstate';
 import {
   createGame,
+  createCurrentGame,
   computeAvailableActions,
   computeReactiveActions,
+  enumerateConcretePlayerActions,
   gameMachine,
   chooseAction,
   chooseReactiveAction,
@@ -107,34 +124,276 @@ import {
   featurize,
   FEATURE_SCHEMA_VERSION,
   RESOURCE_DECK_SIZE,
+  registerHeroTriggers,
+  CURRENT_GAME_CONFIG,
+  CURRENT_RULES_MANIFEST,
+  validateGameStateInvariants,
+  recomputeAuras,
 } from './dist/index.js';
 import { gameplanFor } from './dist/bot/gameplan.js';
 import { summarizeStats } from './dist/sim/summarize-stats.js';
 import { getDeck } from './deck-loader.mjs';
+import { sampleFactionDecks } from './deck-sampler.mjs';
 import { makeRolloutPilot } from './pilot-rollout.mjs';
 import { makeValuePilot, computeModelSha } from './pilot-value.mjs';
+import { validateCardData } from './dist/sim/card-data-validator.js';
+import { validateDeck } from './dist/sim/deck-legality.js';
+import { validateStudyManifest } from './dist/sim/study-manifest.js';
+import { validatePolicyCalibrationManifest } from './dist/sim/policy-calibration.js';
 
 const CARDS = process.env.AETHERION_CARDS
   ? process.env.AETHERION_CARDS
   : new URL('./sim-data/aetherion-cards.json', import.meta.url);
+const USING_COMMITTED_CARD_POOL = process.env.AETHERION_CARDS === undefined;
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const ENERGY_FACTIONS = new Set(['Verdant']);
 const STEP_CAP = 8000;
 const RANDOM_ACTION_PROB = 0.85;
 const SNOWBALL_TURN = 10;
 
+export function canonicalJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value)
+      .filter(([, entry]) => entry !== undefined && typeof entry !== 'function')
+      .sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function canonicalHash(value) {
+  return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}
+
+function policyConfigHash(config) {
+  return canonicalHash({
+    botPolicy: config.botPolicy,
+    botPolicySeat: config.botPolicySeat,
+    rollouts: config.rollouts,
+    rolloutDepth: config.rolloutDepth,
+    rolloutClosing: config.rolloutClosing,
+    maxCandidates: config.maxCandidates,
+    candidateGen: config.candidateGen,
+    candidateKindCaps: config.candidateKindCaps,
+    rolloutPlayout: config.rolloutPlayout,
+    rolloutSeedMode: config.rolloutSeedMode,
+    rolloutInteractions: config.rolloutInteractions,
+    fairPilot: config.fairPilot,
+    valueLeafModelSha: config.valueLeafModelSha,
+    valueLeafFeatureSchemaVersion: config.valueLeafFeatureSchemaVersion,
+    valueModelSha: config.valueModelSha,
+    valueFeatureSchemaVersion: config.valueFeatureSchemaVersion,
+  });
+}
+
+function deepFreeze(value) {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const entry of Object.values(value)) deepFreeze(entry);
+  }
+  return value;
+}
+
+function immutableSnapshot(value) {
+  return deepFreeze(JSON.parse(
+    JSON.stringify(value, (key, entry) =>
+      key === 'diag' || typeof entry === 'function' ? undefined : entry,
+    ),
+  ));
+}
+
+function normalizeObservation(spec) {
+  if (spec === undefined || spec === null) return null;
+  if (typeof spec !== 'object' || Array.isArray(spec)) {
+    throw new TypeError('observation must be an object');
+  }
+  const allowed = new Set(['finalState', 'turnStates', 'actions']);
+  const unknown = Object.keys(spec).filter((key) => !allowed.has(key));
+  if (unknown.length > 0) {
+    throw new TypeError(`observation.${unknown[0]} is unknown`);
+  }
+  for (const key of allowed) {
+    if (spec[key] !== undefined && typeof spec[key] !== 'boolean') {
+      throw new TypeError(`observation.${key} must be boolean`);
+    }
+  }
+  const normalized = {
+    finalState: spec.finalState === true,
+    turnStates: spec.turnStates === true,
+    actions: spec.actions === true,
+  };
+  return Object.values(normalized).some(Boolean) ? Object.freeze(normalized) : null;
+}
+
+function listJavaScriptFiles(root, directory = root) {
+  return readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => {
+      const absolute = join(directory, entry.name);
+      if (entry.isDirectory()) return listJavaScriptFiles(root, absolute);
+      return entry.isFile() && entry.name.endsWith('.js')
+        ? [relative(root, absolute)]
+        : [];
+    })
+    .sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * Exact, content-addressed identity for the executable engine loaded by this
+ * runner. Timestamps and filesystem traversal order are deliberately excluded.
+ */
+export function computeEngineBuildHash() {
+  const root = fileURLToPath(new URL('./dist/', import.meta.url));
+  const hash = createHash('sha256');
+  for (const path of listJavaScriptFiles(root)) {
+    hash.update(path);
+    hash.update('\0');
+    hash.update(readFileSync(join(root, path)));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+function computePackageFileHash(paths) {
+  const packageRoot = fileURLToPath(new URL('./', import.meta.url));
+  const hash = createHash('sha256');
+  for (const path of [...paths].sort((left, right) => left.localeCompare(right))) {
+    hash.update(path);
+    hash.update('\0');
+    hash.update(readFileSync(join(packageRoot, path)));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+export function computeHarnessBuildHash() {
+  return computePackageFileHash([
+    'deck-loader.mjs',
+    'deck-sampler.mjs',
+    'pilot-rollout.mjs',
+    'pilot-value.mjs',
+    'sim-runner.mjs',
+  ]);
+}
+
+export function computeBotImplementationHash() {
+  const distRoot = fileURLToPath(new URL('./dist/', import.meta.url));
+  const compiledBotPaths = listJavaScriptFiles(
+    distRoot,
+    join(distRoot, 'bot'),
+  ).map((path) => `dist/${path}`);
+  return computePackageFileHash([
+    ...compiledBotPaths,
+    'pilot-rollout.mjs',
+    'pilot-value.mjs',
+    'sim-runner.mjs',
+  ]);
+}
+
 // ── Card data load (INPUT-ONLY) ──────────────────────────────────────────────
 
 const raw = JSON.parse(readFileSync(CARDS, 'utf8'));
-const fac = c => (Array.isArray(c.alignment) ? c.alignment[0] : c.alignment) || 'None';
-const cst = c => { const o = c.cost || {}; return { mana: o.mana || 0, energy: o.energy || 0, flexible: o.flexible || 0 }; };
-const stt = c => { const s = c.stats; return s ? { hp: s.hp || 0, atk: s.atk || 0, arm: s.arm || 0 } : undefined; };
+const CARD_POOL_HASH = createHash('sha256')
+  .update(JSON.stringify(raw))
+  .digest('hex');
+const ENGINE_PACKAGE = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+);
+const CURRENT_ENGINE_BUILD_HASH = computeEngineBuildHash();
+const CURRENT_HARNESS_BUILD_HASH = computeHarnessBuildHash();
+const CURRENT_BOT_IMPLEMENTATION_HASH = computeBotImplementationHash();
+const semanticExceptions = JSON.parse(
+  readFileSync(new URL('./sim-data/card-semantic-exceptions.json', import.meta.url), 'utf8'),
+);
+const POLICY_CALIBRATION_MANIFEST = validatePolicyCalibrationManifest(JSON.parse(
+  readFileSync(new URL('./sim-data/policy-calibration-manifest.json', import.meta.url), 'utf8'),
+));
+const POLICY_CALIBRATION_MANIFEST_HASH = canonicalHash(
+  POLICY_CALIBRATION_MANIFEST,
+);
+const CURRENT_STUDY_MANIFEST = validateStudyManifest(JSON.parse(
+  readFileSync(new URL('./sim-data/current-study-manifest.json', import.meta.url), 'utf8'),
+));
+const CURRENT_STUDY_MANIFEST_HASH = canonicalHash(CURRENT_STUDY_MANIFEST);
+const cardDataFindings = validateCardData(raw, { exceptions: semanticExceptions });
+const fatalCardDataFindings = cardDataFindings.filter(finding => finding.severity === 'error');
+if (fatalCardDataFindings.length > 0) {
+  const details = fatalCardDataFindings
+    .slice(0, 20)
+    .map(finding =>
+      `card ${finding.cardId} ability ${finding.abilityIndex ?? '-'} ${finding.path ?? '-'} [${finding.rule}] ${finding.message}`,
+    )
+    .join('\n');
+  throw new Error(
+    `Simulation card pool failed semantic validation (${fatalCardDataFindings.length} errors):\n${details}`,
+  );
+}
+const fac = c => c.alignment[0];
+const cst = c => ({ mana: c.cost.mana, energy: c.cost.energy, flexible: c.cost.flexible });
+const stt = c => c.stats === null
+  ? undefined
+  : { hp: c.stats.hp, atk: c.stats.atk, arm: c.stats.arm };
+const xResource = ability => ability?.cost?.xMana === true
+  ? 'mana'
+  : ability?.cost?.xEnergy === true
+    ? 'energy'
+    : undefined;
+const abilityKind = ability => {
+  switch (String(ability?.type || '').toLowerCase()) {
+    case 'ultimate': return 'ultimate';
+    case 'counter': return 'counter';
+    case 'flash': return 'flash';
+    case 'trigger': return 'trigger';
+    default: return undefined;
+  }
+};
+const LEGALITY_CARD_BY_ID = new Map(
+  raw
+    .filter((card) => card.cardType !== 'H' && card.cardType !== 'T')
+    .map((card) => [
+      card.id,
+      {
+        id: card.id,
+        cardType: card.cardType,
+        faction: card.alignment[0],
+        rarity: card.rarity,
+        ...(card.cardType === 'R'
+          ? { resourceType: card.resourceType }
+          : {}),
+      },
+    ]),
+);
+const LEGALITY_HERO_BY_ID = new Map(
+  raw
+    .filter((card) => card.cardType === 'H')
+    .map((hero) => [
+      hero.id,
+      {
+        id: hero.id,
+        faction: hero.alignment[0],
+        resourceType:
+          hero.cost?.energy > hero.cost?.mana ? 'energy' : 'mana',
+      },
+    ]),
+);
+const DECK_LEGALITY_INDEX = {
+  card: (id) => LEGALITY_CARD_BY_ID.get(id),
+  hero: (id) => LEGALITY_HERO_BY_ID.get(id),
+};
 
 const cardMap = new Map(), heroMap = new Map(), abilMap = new Map(), heroAbil = new Map(), transformMap = new Map();
 for (const c of raw) {
-  const dsls = (c.abilities || []).map(a => a.dsl).filter(Boolean);
+  const dsls = c.abilities.map(a => ({
+    ...a.dsl,
+    ...(abilityKind(a) ? { abilityKind: abilityKind(a) } : {}),
+    ...(xResource(a) ? { xCostResource: xResource(a) } : {}),
+  }));
   if (c.cardType === 'H') {
-    heroMap.set(c.id, { id: c.id, name: c.name, lp: (c.stats && c.stats.hp) || 30, alignment: c.alignment || [] });
+    heroMap.set(c.id, { id: c.id, name: c.name, lp: c.stats.hp, alignment: c.alignment });
     heroAbil.set(c.id, dsls);
   } else if (c.cardType === 'T') {
     if (c.originalHeroId != null) {
@@ -146,14 +405,18 @@ for (const c of raw) {
       });
     }
   } else {
-    cardMap.set(c.id, { id: c.id, name: c.name, cardType: c.cardType, cost: cst(c), stats: stt(c), traits: c.traits || [], tags: c.tags || [], alignment: c.alignment || [] });
+    const cardXResource = c.abilities.map(xResource).find(Boolean);
+    cardMap.set(c.id, { id: c.id, name: c.name, cardType: c.cardType, cost: cst(c), stats: stt(c), traits: c.traits, tags: c.tags, alignment: c.alignment, ...(c.resourceType ? { resourceType: c.resourceType } : {}), ...(cardXResource ? { xCostResource: cardXResource } : {}) });
     abilMap.set(c.id, dsls);
   }
 }
 const registry = { getCard: id => cardMap.get(id), getHero: id => heroMap.get(id) };
 const rCards = raw.filter(c => c.cardType === 'R');
-const manaR = rCards.find(c => /mana/i.test(c.name)) || rCards[0];
-const energyR = rCards.find(c => /energy/i.test(c.name)) || rCards[rCards.length - 1];
+const manaR = rCards.find(c => c.resourceType === 'mana');
+const energyR = rCards.find(c => c.resourceType === 'energy');
+if (!manaR || !energyR) {
+  throw new Error('Card data must define explicit mana and energy Resource cards');
+}
 
 // Target a LEGAL, REALISTIC 40-card main deck with a sensible type mix that
 // guarantees Equipment + Spells + Characters. Quotas (~24 C / ~10 S / ~6 E) are
@@ -202,6 +465,16 @@ function buildDeck(f) {
   return { heroDefId: hero.id, mainDeckDefIds: main.slice(0, DECK_SIZE), resourceDeckDefIds: Array.from({ length: RESOURCE_DECK_SIZE }, () => rid) };
 }
 const decks = Object.fromEntries(FACTIONS.map(f => [f, buildDeck(f)]));
+const STUDY_DECK_SEED = 20260726;
+const STUDY_DECKS_PER_FACTION = 5;
+
+export function buildCurrentStudyDeckPopulation() {
+  return FACTIONS.flatMap((faction) =>
+    sampleFactionDecks(faction, STUDY_DECKS_PER_FACTION, {
+      seed: STUDY_DECK_SEED,
+    }),
+  );
+}
 
 // ── Explicit-deck resolution (config.decks / matchup deck specs) ──────────────
 // A "deck spec" is one of:
@@ -229,12 +502,15 @@ function plainDeck(d) {
 
 // Resolve a deck spec against `fallbackFaction` (used when spec is null/auto).
 // Synchronous: relies on deck-loader being preloaded (see preloadDecksIfNeeded).
-function resolveDeckSpec(spec, fallbackFaction) {
+function resolveDeckSpec(spec, fallbackFaction, strict = false) {
   // null/undefined -> auto deck for the matchup faction
   if (spec == null) return { deck: decks[fallbackFaction], faction: fallbackFaction, label: `auto:${fallbackFaction}` };
 
   // explicit DeckSelection object
   if (isDeckSelection(spec)) {
+    if (strict && spec.faction !== undefined && !FACTIONS.includes(spec.faction)) {
+      throw new Error(`Unknown deck-selection faction ${JSON.stringify(spec.faction)}`);
+    }
     const faction = spec.faction && FACTIONS.includes(spec.faction) ? spec.faction : fallbackFaction;
     const id = spec.deckId != null ? `id${spec.deckId}` : `h${spec.heroDefId}`;
     return { deck: plainDeck(spec), faction, label: `sel:${id}` };
@@ -243,6 +519,9 @@ function resolveDeckSpec(spec, fallbackFaction) {
   // "auto:<Faction>"
   if (typeof spec === 'string' && spec.startsWith('auto:')) {
     const f = spec.slice(5);
+    if (strict && !FACTIONS.includes(f)) {
+      throw new Error(`Unknown auto-deck faction ${JSON.stringify(f)}`);
+    }
     const faction = FACTIONS.includes(f) ? f : fallbackFaction;
     return { deck: decks[faction], faction, label: `auto:${faction}` };
   }
@@ -251,7 +530,8 @@ function resolveDeckSpec(spec, fallbackFaction) {
   if (typeof spec === 'string' && FACTIONS.includes(spec)) {
     const d = getDeck(spec);
     if (d) return { deck: plainDeck(d), faction: d.faction || spec, label: `real:${d.deckId}` };
-    // loader unavailable: fall back to auto
+    if (strict) throw new Error(`Official deck for faction ${JSON.stringify(spec)} is unavailable`);
+    // Legacy diagnostic runs preserve the historical auto-deck fallback.
     return { deck: decks[spec], faction: spec, label: `auto:${spec}` };
   }
 
@@ -261,28 +541,38 @@ function resolveDeckSpec(spec, fallbackFaction) {
     const faction = d.faction && FACTIONS.includes(d.faction) ? d.faction : fallbackFaction;
     return { deck: plainDeck(d), faction, label: `real:${d.deckId}` };
   }
-  // unknown spec: degrade to auto rather than crash the whole sim.
+  if (strict) throw new Error(`Unknown deck specification ${JSON.stringify(spec)}`);
+  // Legacy diagnostic runs preserve the historical auto-deck fallback.
   return { deck: decks[fallbackFaction], faction: fallbackFaction, label: `auto:${fallbackFaction}` };
 }
 
 // ── Abilities hydration (mirrors sim-abilities.mjs) ──────────────────────────
 
 const hc = c => (c && abilMap.get(c.cardDefId)?.length ? { ...c, abilities: abilMap.get(c.cardDefId) } : c);
-function hydrate(s) {
+// BUG FIX (config.registerPrintedTriggers): the base Hero's printed triggered
+// abilities are hydrated onto `hero.abilities` here but were never registered
+// onto `hero.registeredTriggers`, so the dispatch runtime could never see them
+// (see GameConfig.registerPrintedTriggers). `registerTriggers` param default
+// false ⇒ byte-identical no-op.
+function hydrate(s, registerTriggers = false) {
   return {
     ...s,
-    players: s.players.map(p => ({
-      ...p,
-      hero: {
+    players: s.players.map((p, i) => {
+      let hero = {
         ...p.hero,
         ...(heroAbil.get(p.hero.cardDefId)?.length ? { abilities: heroAbil.get(p.hero.cardDefId) } : {}),
         ...(transformMap.get(p.hero.cardDefId) ? { transformData: transformMap.get(p.hero.cardDefId) } : {}),
-      },
-      hand: p.hand.map(hc),
-      mainDeck: p.mainDeck.map(hc),
-      discardPile: p.discardPile.map(hc),
-      zones: { reserve: p.zones.reserve.map(hc), frontline: p.zones.frontline.map(hc), highGround: p.zones.highGround.map(hc) },
-    })),
+      };
+      if (registerTriggers) hero = registerHeroTriggers(hero, i);
+      return {
+        ...p,
+        hero,
+        hand: p.hand.map(hc),
+        mainDeck: p.mainDeck.map(hc),
+        discardPile: p.discardPile.map(hc),
+        zones: { reserve: p.zones.reserve.map(hc), frontline: p.zones.frontline.map(hc), highGround: p.zones.highGround.map(hc) },
+      };
+    }),
   };
 }
 
@@ -318,6 +608,98 @@ function concreteActions(acts) {
   for (const id of (acts.canTapReserve || [])) out.push({ type: 'tap_reserve', cardInstanceId: id });
   if (acts.canTransform) out.push({ type: 'declare_transform' });
   return out;
+}
+
+export function enumerateChoiceResponses(choice) {
+  const optionIds = (choice.options ?? []).map((option) => option.id);
+  const min = Math.max(0, choice.minSelections ?? 0);
+  const max = Math.min(optionIds.length, choice.maxSelections ?? min);
+  const responses = [];
+  const build = (start, need, selected) => {
+    if (need === 0) {
+      responses.push([...selected]);
+      return;
+    }
+    for (let index = start; index <= optionIds.length - need; index++) {
+      selected.push(optionIds[index]);
+      build(index + 1, need - 1, selected);
+      selected.pop();
+    }
+  };
+  for (let count = min; count <= max; count++) build(0, count, []);
+  return responses;
+}
+
+const ACTION_LIFECYCLE_OUTCOMES = Object.freeze([
+  'attempted',
+  'declared',
+  'resolved',
+  'countered',
+  'fizzled',
+  'rejected',
+  'failed',
+  'pending',
+]);
+
+function emptyActionLifecycleCounts() {
+  return Object.fromEntries(
+    ACTION_LIFECYCLE_OUTCOMES.map((outcome) => [outcome, 0]),
+  );
+}
+
+/**
+ * Convert command-acceptance records plus the authoritative event log into
+ * mutually exclusive terminal action outcomes. `declared` is the accepted
+ * subset and therefore intentionally overlaps the terminal buckets; all other
+ * terminal buckets reconcile exactly to `attempted`.
+ */
+export function summarizeActionLifecycle(
+  records,
+  events,
+  pendingChoice = null,
+  pendingPriority = null,
+) {
+  const stackOutcome = new Map();
+  for (const event of events) {
+    if (event.type === 'STACK_ITEM_RESOLVED') {
+      stackOutcome.set(event.stackItemId, 'resolved');
+    } else if (event.type === 'STACK_ITEM_COUNTERED') {
+      stackOutcome.set(event.stackItemId, 'countered');
+    } else if (event.type === 'STACK_ITEM_FIZZLED') {
+      stackOutcome.set(event.stackItemId, 'fizzled');
+    }
+  }
+  const overall = emptyActionLifecycleCounts();
+  const byKind = {};
+  for (const record of records) {
+    const counts = byKind[record.kind] ??= emptyActionLifecycleCounts();
+    overall.attempted++;
+    counts.attempted++;
+    let outcome = record.outcome;
+    if (outcome === 'pending' && record.stackItemId !== null) {
+      outcome = stackOutcome.get(record.stackItemId) ?? 'pending';
+    } else if (outcome === 'pending' && record.interactionId !== null) {
+      outcome =
+        pendingChoice?.interactionId === record.interactionId
+          ? 'pending'
+          : 'resolved';
+    } else if (outcome === 'pending' && pendingPriority === null) {
+      outcome = 'resolved';
+    }
+    if (outcome !== 'rejected' && outcome !== 'failed') {
+      overall.declared++;
+      counts.declared++;
+    }
+    overall[outcome]++;
+    counts[outcome]++;
+  }
+  return { overall, byKind };
+}
+
+function uniformlyRandomChoiceResponse(choice, random) {
+  const responses = enumerateChoiceResponses(choice);
+  if (responses.length === 0) return [];
+  return responses[Math.floor(random() * responses.length)];
 }
 
 // ── First-player compensation ────────────────────────────────────────────────
@@ -587,13 +969,79 @@ function applyZoneCapacity(gs, frontlineSlots, highGroundSlots) {
 
 // ── Single game ──────────────────────────────────────────────────────────────
 
+export const LEADER_MODEL = Object.freeze({
+  id: 'multicomponent_leader_v1',
+  weights: Object.freeze({
+    heroLp: 1,
+    boardPower: 0.5,
+    availableResources: 0.75,
+    handSize: 0.5,
+    deckRemaining: 0.1,
+    transformed: 2,
+    readyFrontline: 1,
+  }),
+});
+
+/**
+ * Recomputable turn-snapshot leader model. Every component is directly
+ * observable in GameState; no eventual winner or post-snapshot information is
+ * used. The weights are predeclared in the study manifest.
+ */
+export function computeLeaderSnapshot(state) {
+  const components = state.players.map((player) => {
+    const bodies = [
+      ...player.zones.reserve,
+      ...player.zones.frontline,
+      ...player.zones.highGround,
+    ].filter((card) => card?.cardType === 'C');
+    return {
+      heroLp: player.hero.currentLp,
+      boardPower: bodies.reduce(
+        (sum, card) =>
+          sum + card.currentAtk + card.currentHp + card.currentArm,
+        0,
+      ),
+      availableResources:
+        player.resourceBank.filter((resource) => !resource.exhausted).length +
+        player.temporaryResources.reduce(
+          (sum, resource) => sum + resource.amount,
+          0,
+        ),
+      handSize: player.hand.length,
+      deckRemaining: player.mainDeck.length + player.resourceDeck.length,
+      transformed: player.hero.transformed ? 1 : 0,
+      readyFrontline: [
+        ...player.zones.frontline,
+        ...player.zones.highGround,
+      ].filter((card) => card?.cardType === 'C' && !card.exhausted).length,
+    };
+  });
+  const scores = components.map((component) =>
+    Object.entries(LEADER_MODEL.weights).reduce(
+      (score, [key, weight]) => score + component[key] * weight,
+      0,
+    ),
+  );
+  return {
+    modelId: LEADER_MODEL.id,
+    components,
+    scores,
+    leader:
+      Math.abs(scores[0] - scores[1]) < 1e-12
+        ? 'tie'
+        : scores[0] > scores[1]
+          ? 0
+          : 1,
+  };
+}
+
 // ── Per-game diagnostics (reporting only) ─────────────────────────────────────
 // One post-game walk over the final state's event log. Runs AFTER the game ends
 // and writes only result fields computeRunHash never reads — provably unable to
 // change outcomes or hashes. Powers the per-matchup/per-faction mechanism evidence
 // (§12: win method, transform usage, resource curves, tempo) so verdicts rest on
 // in-game data, not marginal win rates alone.
-function gameDiagnostics(fin, winner, decided, timedOut) {
+export function gameDiagnostics(fin, winner, decided, timedOut) {
   let turn = 0;
   let active = 0;
   const resAt = [[0, 0, 0], [0, 0, 0]]; // cumulative RESOURCE_GAINED by turn ≤5 / ≤10 / ≤15
@@ -606,6 +1054,7 @@ function gameDiagnostics(fin, winner, decided, timedOut) {
   const heroUsesPre = [{}, {}], heroUsesPost = [{}, {}];
   const lpDelta = [0, 0]; // cumulative heals−damage; LP ≈ maxLp + delta
   const lpAtFlip = [null, null];
+  const transformLpDelta = [null, null];
   for (const e of fin.log) {
     switch (e.type) {
       case 'TURN_START':
@@ -627,17 +1076,21 @@ function gameDiagnostics(fin, winner, decided, timedOut) {
         lpDelta[e.playerId] -= e.amount; break;
       case 'HERO_HEALED':
         lpDelta[e.playerId] += e.amount; break;
+      case 'HERO_TRANSFORMED':
+        if (transformTurn[e.playerId] === null) {
+          transformTurn[e.playerId] = turn;
+          lpAtFlip[e.playerId] = e.newCurrentLp ?? e.currentLp;
+          transformLpDelta[e.playerId] = {
+            maxLp: e.maxLpDelta ?? e.newMaxLp - e.previousMaxLp,
+            currentLp:
+              e.currentLpDelta ??
+              (e.newCurrentLp ?? e.currentLp) -
+                (e.previousCurrentLp ?? e.currentLp),
+          };
+        }
+        break;
       case 'ABILITY_ACTIVATED': {
         if (typeof e.cardInstanceId !== 'string' || !e.cardInstanceId.startsWith('hero_')) break;
-        // Hero transform is the only abilityIndex:-1 hero_* activation (see
-        // executeDeclareTransform); it happens on the transformer's own turn.
-        if (e.abilityIndex === -1) {
-          if (transformTurn[active] === null) {
-            transformTurn[active] = turn;
-            lpAtFlip[active] = fin.players[active].hero.maxLp + lpDelta[active];
-          }
-          break;
-        }
         const bucket = transformTurn[active] === null ? heroUsesPre : heroUsesPost;
         bucket[active][e.abilityIndex] = (bucket[active][e.abilityIndex] || 0) + 1;
         break;
@@ -650,6 +1103,7 @@ function gameDiagnostics(fin, winner, decided, timedOut) {
     transformed: [fin.players[0].hero.transformed, fin.players[1].hero.transformed],
     transformTurn,
     lpAtFlip,
+    transformLpDelta,
     survivedAfterFlip: [
       transformTurn[0] !== null ? fin.turnNumber - transformTurn[0] : null,
       transformTurn[1] !== null ? fin.turnNumber - transformTurn[1] : null,
@@ -678,6 +1132,20 @@ function gameDiagnostics(fin, winner, decided, timedOut) {
 // invisible to the hash-based knob tests; the unit test closes that class.
 export function remapSeatSwap(r, trueFA, trueFB) {
   const flip = (v) => (v === 0 ? 1 : v === 1 ? 0 : v); // 'draw'/'tie'/null pass through
+  const leaderAt10Snapshot = r.leaderAt10Snapshot
+    ? {
+        ...r.leaderAt10Snapshot,
+        components: [
+          r.leaderAt10Snapshot.components[1],
+          r.leaderAt10Snapshot.components[0],
+        ],
+        scores: [
+          r.leaderAt10Snapshot.scores[1],
+          r.leaderAt10Snapshot.scores[0],
+        ],
+        leader: flip(r.leaderAt10Snapshot.leader),
+      }
+    : r.leaderAt10Snapshot;
   const dx = r.dx
     ? Object.fromEntries(
         Object.entries(r.dx).map(([k, v]) =>
@@ -692,6 +1160,7 @@ export function remapSeatSwap(r, trueFA, trueFB) {
     winner: flip(r.winner),
     firstPlayer: flip(r.firstPlayer),
     leaderAt10: flip(r.leaderAt10),
+    leaderAt10Snapshot,
     spellsCastA: r.spellsCastB,
     spellsCastB: r.spellsCastA,
     dx,
@@ -710,9 +1179,20 @@ export function remapSeatSwap(r, trueFA, trueFB) {
 }
 
 function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
-  let gs = createGame(deckA, deckB, registry, seed,
-    config.resourceDeckSize ? { resourceDeckSize: config.resourceDeckSize } : undefined);
-  if (config.abilitiesOn) gs = hydrate(gs);
+  // Current simulations must enter through the same canonical constructor as
+  // production clients. In particular, the constructor stamps the opening
+  // mulligan interaction with the nonce/token required by the authoritative
+  // transition boundary. Building a legacy state and adding current flags
+  // afterwards leaves the machine unable to accept either mulligan.
+  let gs =
+    config.rulesProfile === 'current'
+      ? createCurrentGame(deckA, deckB, registry, seed)
+      : createGame(deckA, deckB, registry, seed, {
+          ...(config.resourceDeckSize
+            ? { resourceDeckSize: config.resourceDeckSize }
+            : {}),
+        });
+  if (config.abilitiesOn) gs = hydrate(gs, config.registerPrintedTriggers === true);
   gs = applyFirstPlayer(gs, config.firstPlayer, gameIndex);
   gs = applyZoneCapacity(gs, config.frontlineSlots, config.highGroundSlots);
   gs = applyLpScale(gs, config.lpScale);
@@ -749,8 +1229,9 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     : applyCompensation(gs, config.firstPlayerCompensation, secondFaction);
   // Thread the termination + ablation knobs onto GameState so the engine's
   // transform gate, the heuristic bot, and the effect interpreter all see them.
-  // A per-game `diag` (from the collector) is a mutable accumulator; it is NOT in
-  // the hashed config (see resolveConfig) so attaching it keeps runHash identical.
+  // Legacy/custom diagnostic profiles may still provide their archived mutable
+  // collector. Current rules reject those hooks and expose only detached,
+  // immutable observations in the result envelope.
   const diag = config.__diag ? config.__diag.begin() : undefined;
   gs = {
     ...gs,
@@ -821,9 +1302,53 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       // ability/equip/move), not just casts. ON-only hashed & threaded; absent
       // ⇒ byte-identical no-op (see game-state.ts's GameConfig doc comment).
       ...(config.responseWindowsOnAllActions ? { responseWindowsOnAllActions: true } : {}),
+      // BUG FIX: register a card's printed triggered abilities the moment it
+      // enters play (deploy/deploy_from_deck/return_from_discard/deploy_token)
+      // and register the base Hero's printed abilities at hydration, so
+      // on_destroy/on_ally_destroyed/etc. can actually fire. ON-only hashed;
+      // absent ⇒ byte-identical no-op (see game-state.ts's GameConfig doc comment).
+      ...(config.registerPrintedTriggers ? { registerPrintedTriggers: true } : {}),
+      // BUG FIX: an attached equipment's own printed triggers (on_turn_start,
+      // on_turn_end, on_ally_deployed, on_spell_cast, on_gain_resource,
+      // on_equipment_attached, ...) never fire. ON-only hashed; absent ⇒
+      // byte-identical no-op (see game-state.ts's GameConfig.equipmentTriggers
+      // doc comment).
+      ...(config.equipmentTriggers ? { equipmentTriggers: true } : {}),
+      // NEW ABILITY CATEGORY — [React]: event-driven, exhausts source on proc, cannot
+      // proc while source is exhausted. ON-only hashed; absent ⇒ byte-identical no-op
+      // (see game-state.ts's GameConfig.reactAbilities doc comment).
+      ...(config.reactAbilities ? { reactAbilities: true } : {}),
+      // BOT TEMPO FIX (see game-state.ts's GameConfig.dynamicDrawValue).
+      ...(config.dynamicDrawValue ? { dynamicDrawValue: true } : {}),
+      // BUG FIX: a Hero/Transformed-Hero `aura` ability (Seraphina's Holy Ward,
+      // Lyria's Knowledge Shield, Lyria-T's Supreme Intellect, ...) was never
+      // collected as an aura source. ON-only hashed; absent ⇒ byte-identical
+      // no-op (see game-state.ts's GameConfig.heroAuras doc comment).
+      ...(config.heroAuras ? { heroAuras: true } : {}),
+      ...(config.authoritativeTransitions ? { authoritativeTransitions: true } : {}),
+      ...(config.explicitEffectChoices ? { explicitEffectChoices: true } : {}),
+      ...(config.observableInteractions ? { observableInteractions: true } : {}),
+      ...(config.scopedTurnResets ? { scopedTurnResets: true } : {}),
+      ...(config.dispatchTurnBoundaryTriggers ? { dispatchTurnBoundaryTriggers: true } : {}),
+      ...(config.effectDrawDeckout ? { effectDrawDeckout: true } : {}),
+      ...(config.stateBasedActions ? { stateBasedActions: true } : {}),
+      ...(config.simultaneousAllEffects ? { simultaneousAllEffects: true } : {}),
+      ...(config.transactionalDeclarations ? { transactionalDeclarations: true } : {}),
+      // BOT TEMPO FIX (see game-state.ts's GameConfig.activateAfterDeploy).
+      ...(config.activateAfterDeploy ? { activateAfterDeploy: true } : {}),
       ...(diag ? { diag } : {}),
     },
   };
+  if (config.rulesProfile === 'current') gs = recomputeAuras(gs);
+  const replayInitialState =
+    config.collectReplay === true
+      ? JSON.parse(
+          JSON.stringify(gs, (key, value) =>
+            key === 'diag' || typeof value === 'function' ? undefined : value,
+          ),
+        )
+      : null;
+  const replayCommands = [];
 
   const rnd = rngf((seed ^ 0x9e3779b9) >>> 0);
   const firstPlayer = gs.activePlayerIndex;
@@ -838,7 +1363,9 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   // (its decisionIndex counts every decision of the game, exactly as before) —
   // byte-identical to the v10 baseline. A split allocates one pilot PER SEAT that
   // needs it, each counting only that seat's own decisions.
-  const rolloutOpts = { rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: config.fixHandSizeStall, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps, seedMode: config.rolloutSeedMode, playoutBackend: config.playoutBackend, valueLeafModelPath: config.valueLeafModelPath, collectDecisionLog: config.collectDecisionLog };
+  const legacyHandSizeBridge =
+    config.rulesProfile !== 'current' && config.fixHandSizeStall === true;
+  const rolloutOpts = { rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: legacyHandSizeBridge, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps, seedMode: config.rolloutSeedMode, playoutBackend: config.playoutBackend, valueLeafModelPath: config.valueLeafModelPath, collectDecisionLog: config.collectDecisionLog, rolloutInteractions: config.rolloutInteractions };
   const rolloutPilot = !config.botPolicySeat && config.botPolicy === 'rollout' ? makeRolloutPilot(rolloutOpts) : null;
   // Neural value-net greedy pilot (botPolicy === 'valueGreedy'): same one-
   // instance-per-monolithic-run / one-per-split-seat allocation discipline as
@@ -859,7 +1386,8 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   // is defined earlier, before compensation/mulligan resolution, for reuse there).
   const pilotForSeat = (seatIdx) => (config.botPolicySeat ? botPilotsBySeat[seatIdx] : (rolloutPilot ?? valuePilot));
 
-  let leaderAt10 = null; // 0|1|'tie' — side ahead on LP at SNOWBALL_TURN
+  let leaderAt10 = null;
+  let leaderAt10Snapshot = null;
   let equipPlayed = 0;   // count of attach_equipment actions actually dispatched
   let spellsCastA = 0;   // cast_spell actions dispatched by seat 0 (faction fA)
   let spellsCastB = 0;   // cast_spell actions dispatched by seat 1 (faction fB)
@@ -868,15 +1396,153 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   let lastTurn = -1;
   let trainingRowsLastTurn = -1;
   const trainingRows = [];
+  const observedTurns = [];
+  const observedActions = [];
   const actionCounts = {};
+  const choiceCounts = {};
+  const responseCounts = {};
+  const actionLifecycleRecords = [];
+  const xValuesSeen = new Set();
+  let terminalReason = null;
+  let failure = null;
+  const recordFailure = (reason, error, details = {}) => {
+    terminalReason = reason;
+    failure = {
+      code:
+        error && typeof error === 'object' && typeof error.code === 'string'
+          ? error.code
+          : reason,
+      message:
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : String(error ?? reason),
+      ...details,
+    };
+  };
+  // Test-only, hash-exempt fault seam used to prove that every infrastructure
+  // terminal class remains distinct and certification fails closed. It is never
+  // synthesized by presets or production entry points.
+  if (config.__faultInjection !== undefined) {
+    recordFailure(
+      config.__faultInjection,
+      `Injected simulator fault: ${config.__faultInjection}`,
+      { injected: true },
+    );
+  }
+  const sendActorEvent = (event, lifecycleKind = null) => {
+    const lifecycle =
+      lifecycleKind === null
+        ? null
+        : {
+            kind: lifecycleKind,
+            outcome: 'failed',
+            stackItemId: null,
+            interactionId: null,
+          };
+    if (lifecycle !== null) actionLifecycleRecords.push(lifecycle);
+    try {
+      actor.send(event);
+      if (lifecycle !== null && config.rulesProfile === 'current') {
+        const transitionResult = actor.getSnapshot().context.lastTransition;
+        if (transitionResult?.status === 'rejected') {
+          lifecycle.outcome = 'rejected';
+        } else if (transitionResult?.status === 'failed') {
+          lifecycle.outcome = 'failed';
+        } else if (transitionResult?.status === 'resolved') {
+          lifecycle.outcome = 'resolved';
+        } else if (transitionResult?.status === 'pending') {
+          const declaration = transitionResult.events.find(
+            (candidate) => candidate.type === 'STACK_ITEM_DECLARED',
+          );
+          lifecycle.outcome = 'pending';
+          lifecycle.stackItemId = declaration?.stackItemId ?? null;
+          lifecycle.interactionId =
+            transitionResult.interaction?.type === 'priority'
+              ? null
+              : transitionResult.interaction?.interactionId ?? null;
+        }
+      } else if (lifecycle !== null) {
+        lifecycle.outcome = 'resolved';
+      }
+      if (config.collectReplay === true) {
+        replayCommands.push(
+          JSON.parse(JSON.stringify(event)),
+        );
+      }
+      if (config.rulesProfile === 'current') {
+        const violations = validateGameStateInvariants(
+          actor.getSnapshot().context.gameState,
+        );
+        if (violations.length > 0) {
+          const error = new Error(
+            `Current state invariant failure: ${violations
+              .map((violation) => `${violation.code}@${violation.path}`)
+              .join('; ')}`,
+          );
+          error.code = 'invariant_failure';
+          recordFailure('engine_exception', error, { violations });
+          return false;
+        }
+      }
+      return true;
+    } catch (error) {
+      recordFailure('engine_exception', error, { submittedEventType: event.type });
+      return false;
+    }
+  };
   while (steps++ < STEP_CAP) {
+    if (terminalReason !== null) break;
     const snap = actor.getSnapshot();
     if (snap.status === 'done') break;
+    if (snap.status === 'error') {
+      recordFailure('engine_exception', snap.error);
+      break;
+    }
     gs = snap.context.gameState;
-    // Per-turn telemetry (gated; read-only; fires once at the start of each turn).
-    if (config.__trace && gs.turnNumber !== lastTurn) {
+    const lastTransition = snap.context.lastTransition;
+    if (lastTransition?.status === 'rejected') {
+      recordFailure(
+        'illegal_or_stale_action',
+        'The authoritative transition rejected a simulator-submitted command',
+        {
+          actionId: lastTransition.actionId,
+          violations: lastTransition.violations,
+        },
+      );
+      break;
+    }
+    if (lastTransition?.status === 'failed') {
+      const reason =
+        lastTransition.failure.code === 'guard_exhaustion'
+          ? 'guard_exhaustion'
+          : 'engine_exception';
+      recordFailure(reason, lastTransition.failure.message, {
+        actionId: lastTransition.actionId,
+        engineFailure: lastTransition.failure,
+      });
+      break;
+    }
+    // Observation is result data, never a callback into a running game. Each
+    // snapshot is detached and frozen before control returns to the caller.
+    if (
+      (config.observation?.turnStates === true || config.__trace) &&
+      gs.turnNumber !== lastTurn
+    ) {
       lastTurn = gs.turnNumber;
-      config.__trace.onTurn(gs, { spellsCastA, spellsCastB, equipPlayed, spellsCounters, actionCounts });
+      if (config.observation?.turnStates === true) {
+        observedTurns.push(immutableSnapshot(gs));
+      }
+      if (config.__trace) {
+        config.__trace.onTurn(gs, {
+          spellsCastA,
+          spellsCastB,
+          equipPlayed,
+          spellsCounters,
+          actionCounts,
+        });
+      }
     }
     // Value-net training-data collection (opt-in, parallel-safe): buffer one
     // featurized row per turn start; labeled + attached to the plain result
@@ -887,37 +1553,60 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       trainingRows.push({ f: Array.from(featurize(gs)), turn: gs.turnNumber, mover: gs.activePlayerIndex });
     }
     if (gs.winner != null) break;
-    if (gs.turnNumber > config.turnCap) break;
+    if (gs.turnNumber > config.turnCap) {
+      terminalReason =
+        config.termination === 'tiebreak'
+          ? 'turn_cap_tiebreak'
+          : 'turn_cap_draw';
+      break;
+    }
 
-    // STALL-FIX (gated, default OFF ⇒ byte-identical to v10): the end-of-turn
+    // Archived-profile compatibility bridge: legacy-v1 stored the end-of-turn
     // hand-size discard choice is set by the engine on context.pendingChoice but
     // NOT mirrored to context.gameState.pendingChoice, so the bot loop (which only
     // reads gameState.pendingChoice) never sees it and spins on END_PHASE until
     // STEP_CAP — surfacing as a bogus "timeout" with a noisy LP-tiebreak. When the
     // knob is ON, resolve that choice via the engine's own choice bot so the turn
-    // can actually pass. Only active under config.fixHandSizeStall.
-    if (config.fixHandSizeStall && gs.pendingChoice == null && snap.context.pendingChoice != null) {
+    // can actually pass. Current rules never enter this branch: the interaction
+    // is authoritative and mirrored directly in GameState.
+    if (legacyHandSizeBridge && gs.pendingChoice == null && snap.context.pendingChoice != null) {
       const cpc = snap.context.pendingChoice;
+      let ids;
       try {
-        const ids = chooseChoiceResponse({ ...gs, pendingChoice: cpc });
-        actor.send({ type: 'PLAYER_RESPONSE', response: { selectedOptionIds: ids } });
-      } catch { try { actor.send({ type: 'END_PHASE' }); } catch { break; } }
+        ids = chooseChoiceResponse({ ...gs, pendingChoice: cpc });
+      } catch (error) {
+        recordFailure('bot_exception', error, {
+          decisionKind: 'legacy_hand_limit_choice',
+        });
+        break;
+      }
+      if (!sendActorEvent({
+        type: 'PLAYER_RESPONSE',
+        response: { selectedOptionIds: ids },
+      })) break;
       continue;
     }
 
     if (leaderAt10 === null && gs.turnNumber >= SNOWBALL_TURN) {
-      const a = gs.players[0].hero.currentLp, b = gs.players[1].hero.currentLp;
-      leaderAt10 = a === b ? 'tie' : a > b ? 0 : 1;
+      leaderAt10Snapshot = computeLeaderSnapshot(gs);
+      leaderAt10 = leaderAt10Snapshot.leader;
     }
 
     // Reactive priority window (Rulebook 14): drive the responder before the
     // active player resumes. Heuristic uses chooseReactiveAction; random passes
     // unless it holds a reactive option (then casts it with prob RANDOM_ACTION_PROB).
     if (gs.pendingPriority != null) {
+      let react = null;
       try {
-        let react = null;
         const reactPolicy = policyForSeat(gs.pendingPriority.toRespondPlayerId);
-        if (reactPolicy === 'heuristic' || reactPolicy === 'rollout' || reactPolicy === 'valueGreedy') {
+        if (
+          reactPolicy === 'rollout' &&
+          config.rolloutInteractions === true
+        ) {
+          react = pilotForSeat(
+            gs.pendingPriority.toRespondPlayerId,
+          ).chooseInteractionReaction(actor, gs, seed, config.turnCap);
+        } else if (reactPolicy === 'heuristic' || reactPolicy === 'rollout' || reactPolicy === 'valueGreedy') {
           // Minor decision (scarce reactive cards): both the heuristic and the
           // outcome-driven pilot use the engine's sensible, archetype-neutral
           // reactive policy. The pilot's archetype-neutral SEARCH is on the main
@@ -925,33 +1614,113 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
           react = chooseReactiveAction(gs);
         } else {
           const opts = computeReactiveActions(gs, gs.pendingPriority.toRespondPlayerId);
-          if (opts.length && rnd() < RANDOM_ACTION_PROB) {
+          if (config.rulesProfile === 'current') {
+            const concrete = opts.flatMap((option) => {
+              const xValues = option.xValues ?? [undefined];
+              return xValues.map((xValue) =>
+                option.source === 'board'
+                  ? {
+                      type: 'activate_ability',
+                      cardInstanceId: option.cardInstanceId,
+                      abilityIndex: option.abilityIndex,
+                      ...(xValue !== undefined ? { xValue } : {}),
+                    }
+                  : {
+                      type: 'cast_spell',
+                      cardInstanceId: option.cardInstanceId,
+                      ...(xValue !== undefined ? { xValue } : {}),
+                    },
+              );
+            });
+            const uniform = [null, ...concrete];
+            react = uniform[Math.floor(rnd() * uniform.length)];
+          } else if (opts.length && rnd() < RANDOM_ACTION_PROB) {
             react = { type: 'cast_spell', cardInstanceId: opts[0].cardInstanceId };
           }
         }
-        if (react == null) actor.send({ type: 'PRIORITY_PASS' });
-        else { spellsCounters++; actor.send({ type: 'REACTIVE_ACTION', action: react }); }
-      } catch { try { actor.send({ type: 'PRIORITY_PASS' }); } catch { break; } }
+      } catch (error) {
+        recordFailure('bot_exception', error, {
+          decisionKind: 'reactive_action',
+          playerId: gs.pendingPriority.toRespondPlayerId,
+        });
+        break;
+      }
+      if (react == null) {
+        responseCounts.pass = (responseCounts.pass || 0) + 1;
+        if (!sendActorEvent({ type: 'PRIORITY_PASS' })) break;
+      } else {
+        spellsCounters++;
+        responseCounts[react.type] = (responseCounts[react.type] || 0) + 1;
+        if (react.xValue !== undefined) xValuesSeen.add(react.xValue);
+      if (!sendActorEvent(
+        { type: 'REACTIVE_ACTION', action: react },
+        `reactive:${react.type}`,
+      )) break;
+      }
       continue;
     }
 
     const pc = gs.pendingChoice;
-    try {
-      if (pc) {
+    if (pc) {
+      try {
+        choiceCounts[pc.type] = (choiceCounts[pc.type] || 0) + 1;
         const pcPolicy = policyForSeat(pc.playerId);
         const competent = pcPolicy === 'heuristic' || pcPolicy === 'rollout' || pcPolicy === 'valueGreedy';
         if (pc.type === 'mulligan') {
-          const keep = competent ? shouldKeepHand(gs, pc.playerId) : true;
-          actor.send({ type: 'MULLIGAN_DECISION', playerId: pc.playerId, keep });
+          const keep =
+            pcPolicy === 'rollout' && config.rolloutInteractions === true
+              ? pilotForSeat(pc.playerId).chooseInteractionMulligan(
+                  actor,
+                  gs,
+                  seed,
+                  config.turnCap,
+                )
+              : competent
+                ? shouldKeepHand(gs, pc.playerId)
+            : config.rulesProfile === 'current'
+              ? rnd() < 0.5
+              : true;
+          if (!sendActorEvent({
+            type: 'MULLIGAN_DECISION',
+            playerId: pc.playerId,
+            keep,
+          })) break;
         } else {
-          const ids = competent
-            ? chooseChoiceResponse(gs)
-            : (pc.options || []).map(o => o.instanceId ?? o.id).slice(0, Math.max(pc.minSelections || 0, 0));
-          actor.send({ type: 'PLAYER_RESPONSE', response: { selectedOptionIds: ids } });
+          const ids =
+            pcPolicy === 'rollout' && config.rolloutInteractions === true
+              ? pilotForSeat(pc.playerId).chooseInteractionChoice(
+                  actor,
+                  gs,
+                  seed,
+                  config.turnCap,
+                )
+              : competent
+                ? chooseChoiceResponse(gs)
+            : config.rulesProfile === 'current'
+              ? uniformlyRandomChoiceResponse(pc, rnd)
+              : (pc.options || [])
+                  .map(o => o.id)
+                  .slice(0, Math.max(pc.minSelections || 0, 0));
+          if (!sendActorEvent({
+            type: 'PLAYER_RESPONSE',
+            playerId: pc.playerId,
+            interactionId: pc.interactionId,
+            response: { selectedOptionIds: ids },
+          })) break;
         }
-        continue;
+      } catch (error) {
+        recordFailure('bot_exception', error, {
+          decisionKind: 'choice_response',
+          playerId: pc.playerId,
+          interactionId: pc.interactionId,
+        });
+        break;
       }
-      let action;
+      continue;
+    }
+
+    let action;
+    try {
       const actPolicy = policyForSeat(gs.activePlayerIndex);
       if (actPolicy === 'heuristic') {
         action = chooseAction(gs);
@@ -962,19 +1731,48 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
         // afterstate, scored by the value net — see pilot-value.mjs.
         action = pilotForSeat(gs.activePlayerIndex).chooseAction(actor, gs, seed, config.turnCap);
       } else {
-        const choices = concreteActions(computeAvailableActions(gs, gs.activePlayerIndex));
-        action = choices.length && rnd() < RANDOM_ACTION_PROB ? choices[Math.floor(rnd() * choices.length)] : null;
+        const choices =
+          config.rulesProfile === 'current'
+            ? enumerateConcretePlayerActions(gs, 'full')
+            : concreteActions(
+                computeAvailableActions(gs, gs.activePlayerIndex),
+              );
+        if (config.rulesProfile === 'current') {
+          // The current random baseline is uniform over the complete canonical
+          // action surface plus the legal pass/phase-advance choice.
+          const uniform = [null, ...choices];
+          action = uniform[Math.floor(rnd() * uniform.length)];
+        } else {
+          action =
+            choices.length && rnd() < RANDOM_ACTION_PROB
+              ? choices[Math.floor(rnd() * choices.length)]
+              : null;
+        }
       }
-      if (action == null) actor.send({ type: 'END_PHASE' });
-      else {
-        if (action.type === 'attach_equipment') equipPlayed++;
-        if (action.type === 'cast_spell') { if (gs.activePlayerIndex === 0) spellsCastA++; else spellsCastB++; }
-        actionCounts[action.type] = (actionCounts[action.type] || 0) + 1;
-        if (config.__trace && config.__trace.onAction) config.__trace.onAction(action.type, gs.turnNumber, gs.activePlayerIndex);
-        actor.send({ type: 'PLAYER_ACTION', action });
+    } catch (error) {
+      recordFailure('bot_exception', error, {
+        decisionKind: 'proactive_action',
+        playerId: gs.activePlayerIndex,
+      });
+      break;
+    }
+    if (action == null) {
+      if (!sendActorEvent({ type: 'END_PHASE' })) break;
+    } else {
+      if (action.type === 'attach_equipment') equipPlayed++;
+      if (action.type === 'cast_spell') { if (gs.activePlayerIndex === 0) spellsCastA++; else spellsCastB++; }
+      actionCounts[action.type] = (actionCounts[action.type] || 0) + 1;
+      if (action.xValue !== undefined) xValuesSeen.add(action.xValue);
+      if (config.observation?.actions === true) {
+        observedActions.push(Object.freeze({
+          type: action.type,
+          turnNumber: gs.turnNumber,
+          playerId: gs.activePlayerIndex,
+          action: immutableSnapshot(action),
+        }));
       }
-    } catch {
-      try { actor.send({ type: 'END_PHASE' }); } catch { break; }
+      if (config.__trace && config.__trace.onAction) config.__trace.onAction(action.type, gs.turnNumber, gs.activePlayerIndex);
+      if (!sendActorEvent({ type: 'PLAYER_ACTION', action }, action.type)) break;
     }
   }
 
@@ -982,21 +1780,139 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   const lp0 = fin.players[0].hero.currentLp, lp1 = fin.players[1].hero.currentLp;
   let winner = fin.winner;
   let timedOut = false;
+  if (terminalReason === null && winner != null) {
+    if (fin.log.some((event) => event.type === 'GAME_CONCEDED')) {
+      terminalReason = 'concession';
+    } else if (
+      fin.log.some(
+        (event) =>
+          event.type === 'GAME_ENDED' &&
+          event.reason === 'deck_exhaustion',
+      )
+    ) {
+      terminalReason = 'deck_exhaustion';
+    } else {
+      terminalReason = 'normal_win';
+    }
+  }
   if (winner == null) {
     timedOut = true;
-    if (config.termination === 'tiebreak') {
+    if (terminalReason === null) {
+      terminalReason =
+        fin.pendingChoice !== null || fin.pendingPriority != null
+          ? 'unresolved_interaction'
+          : 'step_cap_loop';
+    }
+    if (
+      (terminalReason === 'turn_cap_tiebreak' ||
+        terminalReason === 'turn_cap_draw') &&
+      config.termination === 'tiebreak'
+    ) {
       winner = lp0 === lp1 ? 'draw' : lp0 > lp1 ? 0 : 1;
     } else {
       winner = 'draw';
     }
   }
   const decided = winner === 0 || winner === 1;
+  const actionLifecycle = summarizeActionLifecycle(
+    actionLifecycleRecords,
+    fin.log,
+    fin.pendingChoice,
+    fin.pendingPriority,
+  );
+  let replay;
+  if (config.collectReplay === true && replayInitialState !== null) {
+    const replayConfig = JSON.parse(
+      JSON.stringify(config, (key, value) =>
+        key === '__diag' ||
+        key === '__trace' ||
+        key === 'observation' ||
+        typeof value === 'function'
+          ? undefined
+          : value,
+      ),
+    );
+    const provenance = {
+      artifactStatus: config.artifactStatus,
+      rulesProfile: config.rulesProfile,
+      rulesManifestHash: config.rulesManifestHash,
+      studyManifestId: config.studyManifestId,
+      studyManifestHash: config.studyManifestHash,
+      studyArtifactStatus: config.studyArtifactStatus,
+      effectiveConfig: replayConfig,
+      engine: {
+        packageName: ENGINE_PACKAGE.name,
+        packageVersion: ENGINE_PACKAGE.version,
+        commit: process.env.AETHERION_COMMIT ?? null,
+        dirtyPatchHash: process.env.AETHERION_DIRTY_PATCH_HASH ?? null,
+        buildHash: CURRENT_ENGINE_BUILD_HASH,
+        harnessBuildHash: CURRENT_HARNESS_BUILD_HASH,
+      },
+      cardPoolHash: CARD_POOL_HASH,
+      decks: {
+        player0: {
+          faction: fA,
+          hash: deckContentHash(deckA),
+          contents: plainDeck(deckA),
+        },
+        player1: {
+          faction: fB,
+          hash: deckContentHash(deckB),
+          contents: plainDeck(deckB),
+        },
+      },
+      bot: {
+        policy: config.botPolicy,
+        policyBySeat: config.botPolicySeat ?? null,
+        configHash: policyConfigHash(config),
+        implementationHash: CURRENT_BOT_IMPLEMENTATION_HASH,
+        calibrationManifestHash: POLICY_CALIBRATION_MANIFEST_HASH,
+      },
+      rng: {
+        gameSeed: seed,
+        scheduleVersion: 'semantic-key-v1',
+        engineAlgorithm: 'xorshift32-v1',
+        policyAlgorithm: 'mulberry32-v1',
+      },
+    };
+    const initialStateHash = canonicalHash(replayInitialState);
+    const eventHash = canonicalHash(fin.log);
+    const finalStateHash = canonicalHash(fin);
+    const traceCore = {
+      schemaVersion: 1,
+      provenance,
+      initialStateHash,
+      commands: replayCommands,
+      eventHash,
+      finalStateHash,
+      terminalReason,
+    };
+    replay = {
+      ...traceCore,
+      initialState: replayInitialState,
+      traceHash: canonicalHash(traceCore),
+    };
+  }
   // Diagnostic accounting hook (no-op unless a collector is supplied; not hashed).
   if (config.__diag && typeof config.__diag.onGame === 'function') {
     config.__diag.onGame(fin, { fA, fB, firstPlayer, winner, turns: fin.turnNumber }, diag);
   }
   return {
     fA, fB, seed,
+    replicate: gameIndex,
+    // Four consecutive games form the predeclared counterbalancing block:
+    // both first-player assignments within both physical seat assignments.
+    // Statistics resample the block as one cluster.
+    scheduleBlockId: Math.floor(gameIndex / 4),
+    matchupId: canonicalHash({
+      participants: [
+        { faction: fA, deckHash: deckContentHash(deckA) },
+        { faction: fB, deckHash: deckContentHash(deckB) },
+      ].sort((a, b) =>
+        a.faction.localeCompare(b.faction) ||
+        a.deckHash.localeCompare(b.deckHash),
+      ),
+    }).slice(0, 16),
     winner,
     decided,
     timedOut,
@@ -1004,10 +1920,36 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     firstPlayerWon: decided ? winner === firstPlayer : null,
     turns: fin.turnNumber,
     leaderAt10,
+    leaderAt10Snapshot,
     equipPlayed,
     spellsCastA,
     spellsCastB,
     spellsCounters,
+    policyCoverage: {
+      actions: actionCounts,
+      choices: choiceCounts,
+      responses: responseCounts,
+      xValues: [...xValuesSeen].sort((a, b) => a - b),
+    },
+    actionLifecycle,
+    terminalReason,
+    ...(failure !== null ? { failure } : {}),
+    ...(replay !== undefined ? { replay } : {}),
+    ...(config.observation !== null
+      ? {
+          observation: Object.freeze({
+            ...(config.observation.finalState
+              ? { finalState: immutableSnapshot(fin) }
+              : {}),
+            ...(config.observation.turnStates
+              ? { turnStates: Object.freeze(observedTurns) }
+              : {}),
+            ...(config.observation.actions
+              ? { actions: Object.freeze(observedActions) }
+              : {}),
+          }),
+        }
+      : {}),
     // Post-game diagnostics — computeRunHash never reads this field (hash-exempt).
     dx: gameDiagnostics(fin, winner, decided, timedOut),
     // Candidate-generation pruning telemetry (T2, rollout only) — computeRunHash
@@ -1021,10 +1963,10 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       ? { trainingRows: trainingRows.map(row => ({ ...row, y: row.mover === winner ? 1 : 0 })) }
       : {}),
     // Decision log (opt-in via config.collectDecisionLog) — the foundation for
-    // pilotability analysis + policy-net distillation. computeRunHash never reads
-    // this field (same hash-exemption as dx/__diag/__trace/trainingRows). Only
-    // attached when the game actually decided, mirroring trainingRows above.
-    ...(config.collectDecisionLog && rolloutPilot && decided
+    // pilotability analysis + policy calibration. computeRunHash never reads
+    // this field. Decisions made before any terminal outcome remain valid
+    // tactical observations, so turn-cap games retain them too.
+    ...(config.collectDecisionLog && rolloutPilot
       ? { decisionLog: rolloutPilot.decisionLog }
       : {}),
   };
@@ -1068,28 +2010,136 @@ function isMatchupList(m) {
 //   2. Faction pairings (default): from resolveMatchups, with each faction's
 //      deck taken from config.decks[faction] override (any deck spec) else auto.
 function buildPairingPlan(config) {
+  const strict = config.rulesProfile === 'current';
+  const assertDeck = (resolved) => {
+    if (!strict) return resolved;
+    const legality = validateDeck(resolved.deck, DECK_LEGALITY_INDEX);
+    if (!legality.legal) {
+      const error = new Error(
+        `Invalid current-rules deck ${resolved.label}: ${legality.errors.join('; ')}`,
+      );
+      error.code = 'invalid_deck';
+      error.deckLabel = resolved.label;
+      error.violations = legality.errors;
+      throw error;
+    }
+    return resolved;
+  };
+  if (config.studyPopulation === true) {
+    if (config.rulesProfile !== 'current') {
+      throw new Error('studyPopulation requires rulesProfile current');
+    }
+    if (config.decks !== undefined || config.matchups !== 'all-pairs') {
+      throw new Error(
+        'studyPopulation owns decks and requires matchups all-pairs',
+      );
+    }
+    const population = buildCurrentStudyDeckPopulation().map((deck) =>
+      assertDeck({
+        deck,
+        faction: deck.faction,
+        label: `study:${deck.deckKey}`,
+      }),
+    );
+    const plan = [];
+    for (let left = 0; left < population.length; left++) {
+      for (let right = left; right < population.length; right++) {
+        const A = population[left];
+        const B = population[right];
+        plan.push({
+          fA: A.faction,
+          fB: B.faction,
+          deckA: A.deck,
+          deckB: B.deck,
+          label: `${A.label}:${deckContentHash(A.deck)}|${B.label}:${deckContentHash(B.deck)}`,
+        });
+      }
+    }
+    return plan;
+  }
   // config.decks: per-faction overrides ({ Onyx: <spec>, ... }) resolved up front.
   const overrides = {};
   if (config.decks && typeof config.decks === 'object' && !Array.isArray(config.decks)) {
     for (const [f, spec] of Object.entries(config.decks)) {
-      if (FACTIONS.includes(f)) overrides[f] = resolveDeckSpec(spec, f);
+      if (!FACTIONS.includes(f)) {
+        if (strict) throw new Error(`Unknown deck override faction ${JSON.stringify(f)}`);
+        continue;
+      }
+      overrides[f] = assertDeck(resolveDeckSpec(spec, f, strict));
     }
   }
 
   if (isMatchupList(config.matchups)) {
     return config.matchups.map((m, i) => {
-      const A = resolveDeckSpec(m.p0Deck, FACTIONS[0]);
-      const B = resolveDeckSpec(m.p1Deck, FACTIONS[0]);
-      return { fA: A.faction, fB: B.faction, deckA: A.deck, deckB: B.deck, label: `m${i}:${A.label}|${B.label}` };
+      const A = assertDeck(resolveDeckSpec(m.p0Deck, FACTIONS[0], strict));
+      const B = assertDeck(resolveDeckSpec(m.p1Deck, FACTIONS[0], strict));
+      return {
+        fA: A.faction,
+        fB: B.faction,
+        deckA: A.deck,
+        deckB: B.deck,
+        label:
+          config.rulesProfile === 'current'
+            ? `${A.label}:${deckContentHash(A.deck)}|${B.label}:${deckContentHash(B.deck)}`
+            : `m${i}:${A.label}|${B.label}`,
+      };
     });
   }
 
   const pairs = resolveMatchups(config.matchups);
   return pairs.map(([a, b]) => {
-    const A = overrides[a] || { deck: decks[a], faction: a, label: `auto:${a}` };
-    const B = overrides[b] || { deck: decks[b], faction: b, label: `auto:${b}` };
-    return { fA: A.faction, fB: B.faction, deckA: A.deck, deckB: B.deck, label: `${A.label}|${B.label}` };
+    const A = assertDeck(
+      overrides[a] || { deck: decks[a], faction: a, label: `auto:${a}` },
+    );
+    const B = assertDeck(
+      overrides[b] || { deck: decks[b], faction: b, label: `auto:${b}` },
+    );
+    return {
+      fA: A.faction,
+      fB: B.faction,
+      deckA: A.deck,
+      deckB: B.deck,
+      label:
+        config.rulesProfile === 'current'
+          ? `${A.label}:${deckContentHash(A.deck)}|${B.label}:${deckContentHash(B.deck)}`
+          : `${A.label}|${B.label}`,
+    };
   });
+}
+
+function deckContentHash(deck) {
+  return createHash('sha256')
+    .update(JSON.stringify(plainDeck(deck)))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+/**
+ * Current seed streams are keyed by the matchup's semantic inputs, not its
+ * position in a panel. Reordering or expanding a panel therefore cannot change
+ * an existing matchup/replicate stream. Historical profiles retain the archived
+ * panel-index formula so their pins remain reproducible.
+ */
+function gameSeed(config, pairing, pairingIndex, replicate) {
+  if (config.rulesProfile !== 'current') {
+    return (config.seedBase + pairingIndex * 100003 + replicate * 7919) >>> 0;
+  }
+  const policyKey =
+    config.pairedPolicySeedKey ??
+    (config.botPolicySeat
+      ? `${config.botPolicySeat[0]}|${config.botPolicySeat[1]}`
+      : config.botPolicy);
+  const key = [
+    'aetherion-seed-v1',
+    config.seedBase,
+    pairing.fA,
+    pairing.fB,
+    pairing.label,
+    policyKey,
+    replicate,
+  ].join('|');
+  const digest = createHash('sha256').update(key).digest();
+  return digest.readUInt32LE(0);
 }
 
 // ── Config resolution (defaults) ─────────────────────────────────────────────
@@ -1114,6 +2164,16 @@ export function normalizeCardStatOverride(map) {
 
 const BOT_POLICIES = ['heuristic', 'random', 'rollout', 'valueGreedy'];
 
+const LEGACY_RULE_PROFILES = Object.freeze({
+  'legacy-v1': JSON.parse(readFileSync(new URL('./sim-data/ruleset-v1.json', import.meta.url), 'utf8')),
+  'legacy-v2': JSON.parse(readFileSync(new URL('./sim-data/ruleset-v2.json', import.meta.url), 'utf8')),
+  'legacy-v3': JSON.parse(readFileSync(new URL('./sim-data/ruleset-v3.json', import.meta.url), 'utf8')),
+});
+
+const CURRENT_MANIFEST_HASH = createHash('sha256')
+  .update(JSON.stringify(CURRENT_RULES_MANIFEST))
+  .digest('hex');
+
 // Normalize a botPolicySeat spec ({ 0: policy, 1: policy }) to a genuine
 // per-seat split, or null when it's absent, malformed, or both seats name the
 // SAME policy (a "split" that isn't actually one — folds into the monolithic
@@ -1126,7 +2186,131 @@ function normalizeBotPolicySeat(spec) {
   return { 0: p0, 1: p1 };
 }
 
+export function assertFreshArtifactExpectations(expectations, actual) {
+  if (expectations === undefined || expectations === null) return;
+  if (
+    typeof expectations !== 'object' ||
+    Array.isArray(expectations)
+  ) {
+    throw new TypeError('artifactExpectations must be an object');
+  }
+  const allowed = new Set([
+    'rulesManifestHash',
+    'studyManifestHash',
+    'cardPoolHash',
+    'engineBuildHash',
+  ]);
+  for (const key of Object.keys(expectations)) {
+    if (!allowed.has(key)) {
+      throw new TypeError(`artifactExpectations.${key} is unknown`);
+    }
+  }
+  for (const key of allowed) {
+    const expected = expectations[key];
+    if (expected !== undefined && expected !== actual[key]) {
+      const error = new Error(
+        `Stale artifact: expected ${key} ${String(expected)}, current is ${String(actual[key])}`,
+      );
+      error.code = 'stale_artifact';
+      error.artifact = key;
+      error.expected = expected;
+      error.actual = actual[key];
+      throw error;
+    }
+  }
+}
+
 function resolveConfig(config = {}) {
+  const requestedConfig = config;
+  const rulesProfile = config.rulesProfile ?? 'current';
+  if (
+    rulesProfile !== 'current' &&
+    rulesProfile !== 'custom-diagnostic' &&
+    !Object.hasOwn(LEGACY_RULE_PROFILES, rulesProfile)
+  ) {
+    throw new Error(
+      `Unknown rulesProfile ${JSON.stringify(rulesProfile)}; expected current, legacy-v1, legacy-v2, legacy-v3, or custom-diagnostic`,
+    );
+  }
+  const legacyManifest = LEGACY_RULE_PROFILES[rulesProfile];
+  if (rulesProfile === 'current') {
+    if (config.__diag !== undefined || config.__trace !== undefined) {
+      throw new Error(
+        'Current rules require declarative observation; mutable __diag/__trace hooks are legacy-only',
+      );
+    }
+    for (const [field, manifestValue] of Object.entries(CURRENT_GAME_CONFIG)) {
+      if (
+        Object.hasOwn(config, field) &&
+        config[field] !== manifestValue
+      ) {
+        throw new Error(
+          `Current rules setting ${field} is locked by the canonical manifest`,
+        );
+      }
+    }
+  }
+  if (requestedConfig.studyPopulation === true) {
+    if (!USING_COMMITTED_CARD_POOL) {
+      throw new Error(
+        'studyPopulation requires the committed sim-data/aetherion-cards.json pool',
+      );
+    }
+    const allowedInputs = new Set([
+      'rulesProfile',
+      'studyPopulation',
+      'gamesPerPairing',
+      'collectReplay',
+      'certification',
+      'artifactExpectations',
+      'observation',
+      ...Object.keys(CURRENT_GAME_CONFIG),
+    ]);
+    const unsupported = Object.keys(requestedConfig).filter(
+      (key) => !allowedInputs.has(key),
+    );
+    if (unsupported.length > 0) {
+      throw new Error(
+        `studyPopulation does not permit diagnostic override ${unsupported[0]}`,
+      );
+    }
+    const gamesPerPairing = requestedConfig.gamesPerPairing ?? 60;
+    if (
+      !Number.isSafeInteger(gamesPerPairing) ||
+      gamesPerPairing <= 0 ||
+      gamesPerPairing % 4 !== 0
+    ) {
+      throw new Error(
+        'studyPopulation gamesPerPairing must be a positive multiple of 4',
+      );
+    }
+  }
+  const profileRules =
+    rulesProfile === 'current'
+      ? CURRENT_GAME_CONFIG
+      : legacyManifest?.rules ?? {};
+  config = { ...profileRules, ...config };
+  const artifactStatus =
+    rulesProfile === 'current'
+      ? CURRENT_RULES_MANIFEST.status
+      : rulesProfile.startsWith('legacy-')
+        ? 'legacy'
+        : 'diagnostic';
+  const rulesManifestHash =
+    rulesProfile === 'current'
+      ? CURRENT_MANIFEST_HASH
+      : legacyManifest
+        ? createHash('sha256').update(JSON.stringify(legacyManifest)).digest('hex')
+        : null;
+  const studyManifest =
+    rulesProfile === 'current' ? CURRENT_STUDY_MANIFEST : null;
+  assertFreshArtifactExpectations(config.artifactExpectations, {
+    rulesManifestHash,
+    studyManifestHash:
+      studyManifest === null ? null : CURRENT_STUDY_MANIFEST_HASH,
+    cardPoolHash: CARD_POOL_HASH,
+    engineBuildHash: CURRENT_ENGINE_BUILD_HASH,
+  });
   const botPolicySeat = normalizeBotPolicySeat(config.botPolicySeat);
   // A uniform (non-split) botPolicySeat spec resolves the monolithic botPolicy
   // to that seat's policy instead — so { 0: 'rollout', 1: 'rollout' } replays
@@ -1140,12 +2324,35 @@ function resolveConfig(config = {}) {
     || (botPolicySeat != null && (botPolicySeat[0] === 'rollout' || botPolicySeat[1] === 'rollout'));
   const valueGreedyActive = resolvedBotPolicy === 'valueGreedy'
     || (botPolicySeat != null && (botPolicySeat[0] === 'valueGreedy' || botPolicySeat[1] === 'valueGreedy'));
+  const primaryStudy = config.studyPopulation === true;
+  const observation = normalizeObservation(config.observation);
   return {
-    matchups: config.matchups ?? 'all-pairs',
+    rulesProfile,
+    artifactStatus,
+    rulesManifestHash,
+    studyManifestId: studyManifest?.studyId ?? null,
+    studyManifestHash:
+      studyManifest === null ? null : CURRENT_STUDY_MANIFEST_HASH,
+    studyArtifactStatus: studyManifest?.status ?? null,
+    observation,
+    ...(primaryStudy
+      ? {
+          studyPopulation: true,
+          cardPoolHash: CARD_POOL_HASH,
+          engineBuildHash: CURRENT_ENGINE_BUILD_HASH,
+          harnessBuildHash: CURRENT_HARNESS_BUILD_HASH,
+          botImplementationHash: CURRENT_BOT_IMPLEMENTATION_HASH,
+          policyCalibrationManifestHash: POLICY_CALIBRATION_MANIFEST_HASH,
+        }
+      : {}),
+    ...(config.artifactExpectations !== undefined
+      ? { artifactExpectations: { ...config.artifactExpectations } }
+      : {}),
+    matchups: primaryStudy ? 'all-pairs' : (config.matchups ?? 'all-pairs'),
     gamesPerPairing: config.gamesPerPairing ?? 60,
-    turnCap: config.turnCap ?? 80,
-    abilitiesOn: config.abilitiesOn ?? true,
-    botPolicy: resolvedBotPolicy,
+    turnCap: primaryStudy ? 80 : (config.turnCap ?? 80),
+    abilitiesOn: primaryStudy ? true : (config.abilitiesOn ?? true),
+    botPolicy: primaryStudy ? 'heuristic' : resolvedBotPolicy,
     // Per-seat policy split (see the doc header + normalizeBotPolicySeat). Only
     // emitted (and hashed) for a GENUINE split — a uniform spec folds into
     // `botPolicy` above and never reaches here, so a default/monolithic run
@@ -1205,6 +2412,12 @@ function resolveConfig(config = {}) {
           ...(config.playoutBackend && config.playoutBackend !== 'actor'
             ? { playoutBackend: config.playoutBackend }
             : {}),
+          // Policy-calibration dimension: apply rollout outcome search to real
+          // priority and explicit-choice decisions as well as proactive turns.
+          // Explicit opt-in preserves every historical rollout configuration.
+          ...(config.rolloutInteractions
+            ? { rolloutInteractions: true }
+            : {}),
           // Stage E — valueLeafModelPath: when set, a TRUNCATED (non-terminal)
           // rollout leaf is scored by this value net's win-probability instead
           // of the LP-diff heuristic; terminal leaves are unaffected. A real
@@ -1247,12 +2460,18 @@ function resolveConfig(config = {}) {
     // gameState.pendingChoice) so the bot loop can pass the turn instead of spinning
     // on END_PHASE until STEP_CAP. Only emitted (and hashed) when ENABLED ⇒ a default
     // run is byte-identical to the v10 baseline.
-    ...(config.fixHandSizeStall ? { fixHandSizeStall: true } : {}),
-    firstPlayerCompensation: config.firstPlayerCompensation ?? 'none',
-    termination: config.termination ?? 'none',
-    terminationMode: config.terminationMode ?? 'turn_cap',
+    ...(rulesProfile !== 'current' && config.fixHandSizeStall
+      ? { fixHandSizeStall: true }
+      : {}),
+    firstPlayerCompensation: primaryStudy
+      ? 'none'
+      : (config.firstPlayerCompensation ?? 'none'),
+    termination: primaryStudy ? 'none' : (config.termination ?? 'none'),
+    terminationMode: primaryStudy
+      ? 'turn_cap'
+      : (config.terminationMode ?? 'turn_cap'),
     // ── Diagnostic ablation knobs (all default to a no-op) ───────────────────
-    firstPlayer: config.firstPlayer ?? 'random',
+    firstPlayer: primaryStudy ? 'alternating' : (config.firstPlayer ?? 'random'),
     lpScale: config.lpScale ?? 1,
     healScale: config.healScale ?? 1,
     disableEffectTypes: Array.isArray(config.disableEffectTypes) ? config.disableEffectTypes : [],
@@ -1402,10 +2621,37 @@ function resolveConfig(config = {}) {
     // ENGINE CODE TICKET — Tier 4 (see game-state.ts's GameConfig doc comment).
     // ON-only hashed; absent ⇒ byte-identical.
     ...(config.responseWindowsOnAllActions ? { responseWindowsOnAllActions: true } : {}),
+    // BUG FIX (see game-state.ts's GameConfig.registerPrintedTriggers doc comment).
+    // ON-only hashed; absent ⇒ byte-identical.
+    ...(config.registerPrintedTriggers ? { registerPrintedTriggers: true } : {}),
+    // BUG FIX (see game-state.ts's GameConfig.equipmentTriggers doc comment).
+    // ON-only hashed; absent ⇒ byte-identical.
+    ...(config.equipmentTriggers ? { equipmentTriggers: true } : {}),
+    // NEW ABILITY CATEGORY — [React] (see game-state.ts's GameConfig.reactAbilities
+    // doc comment). ON-only hashed; absent ⇒ byte-identical.
+    ...(config.reactAbilities ? { reactAbilities: true } : {}),
+    // BOT TEMPO FIX (see game-state.ts's GameConfig.dynamicDrawValue). Bot-only but
+    // hashed so ON runs are distinguishable; absent ⇒ byte-identical.
+    ...(config.dynamicDrawValue ? { dynamicDrawValue: true } : {}),
+    // BUG FIX (see game-state.ts's GameConfig.heroAuras doc comment). ON-only
+    // hashed; absent ⇒ byte-identical.
+    ...(config.heroAuras ? { heroAuras: true } : {}),
+    ...(config.authoritativeTransitions ? { authoritativeTransitions: true } : {}),
+    ...(config.explicitEffectChoices ? { explicitEffectChoices: true } : {}),
+    ...(config.observableInteractions ? { observableInteractions: true } : {}),
+    ...(config.scopedTurnResets ? { scopedTurnResets: true } : {}),
+    ...(config.dispatchTurnBoundaryTriggers ? { dispatchTurnBoundaryTriggers: true } : {}),
+    ...(config.effectDrawDeckout ? { effectDrawDeckout: true } : {}),
+    ...(config.stateBasedActions ? { stateBasedActions: true } : {}),
+    ...(config.simultaneousAllEffects ? { simultaneousAllEffects: true } : {}),
+    ...(config.transactionalDeclarations ? { transactionalDeclarations: true } : {}),
+    // BOT TEMPO FIX (see game-state.ts's GameConfig.activateAfterDeploy). Bot-only,
+    // but hashed so ON runs are distinguishable; absent ⇒ byte-identical.
+    ...(config.activateAfterDeploy ? { activateAfterDeploy: true } : {}),
     ...(config.firstPlayerCompAfterMulligan ? { firstPlayerCompAfterMulligan: true } : {}),
     // MEASUREMENT-HARNESS KNOB — seat-neutral panels (see playPairing). NOT a rule;
     // affects only which seat each deck sits in per game, hashed so ON runs differ.
-    ...(config.seatAlternation ? { seatAlternation: true } : {}),
+    ...(primaryStudy || config.seatAlternation ? { seatAlternation: true } : {}),
     // RAW-POWER DECOMP — hero-LP head-start override: pin ONE faction's Hero
     // starting+max LP to a fixed value ({ faction, lp }). Only emitted (and hashed)
     // when a valid spec is given ⇒ default run is byte-identical to the v10 baseline.
@@ -1429,7 +2675,14 @@ function resolveConfig(config = {}) {
     ...(config.cardCostOverride && typeof config.cardCostOverride === 'object' && Object.keys(config.cardCostOverride).length
       ? { cardCostOverride: config.cardCostOverride }
       : {}),
-    seedBase: config.seedBase ?? 12345,
+    seedBase: primaryStudy ? 20260726 : (config.seedBase ?? 12345),
+    // Cross-policy sensitivity panels set one explicit key so policy arms share
+    // exogenous game streams. The key is hashed and forbidden in primary-study
+    // mode; ordinary runs remain keyed by their actual policy identity.
+    ...(typeof config.pairedPolicySeedKey === 'string' &&
+    config.pairedPolicySeedKey.length > 0
+      ? { pairedPolicySeedKey: config.pairedPolicySeedKey }
+      : {}),
     // Explicit-deck overrides / matchup-deck specs (undefined => auto decks).
     ...(config.decks !== undefined ? { decks: config.decks } : {}),
     // Diagnostic accounting collector (read-only side-channel). Stripped from the
@@ -1445,6 +2698,14 @@ function resolveConfig(config = {}) {
     // policy only). Stripped from the hashed config in computeRunHash, so attaching
     // it keeps runHash byte-identical to a run without it set.
     ...(config.collectDecisionLog ? { collectDecisionLog: true } : {}),
+    ...(config.collectReplay ? { collectReplay: true } : {}),
+    ...(INFRASTRUCTURE_TERMINAL_REASONS.has(config.__faultInjection)
+      ? { __faultInjection: config.__faultInjection }
+      : {}),
+    // Certification is a harness gate, not a gameplay rule. It makes any
+    // infrastructure terminal class fail the run after exact reasons have been
+    // collected, and is excluded from behavioral hashing below.
+    ...(config.certification ? { certification: true } : {}),
   };
 }
 
@@ -1466,8 +2727,36 @@ function median(nums) {
   return s.length % 2 ? s[m] : +((s[m - 1] + s[m]) / 2).toFixed(1);
 }
 
+export const INFRASTRUCTURE_TERMINAL_REASONS = new Set([
+  'step_cap_loop',
+  'unresolved_interaction',
+  'guard_exhaustion',
+  'illegal_or_stale_action',
+  'bot_exception',
+  'engine_exception',
+  'invalid_data',
+  'invalid_config',
+  'invalid_deck',
+]);
+
 function summarize(results, config) {
   const games = results.length;
+  const terminalReasons = Object.fromEntries(
+    [...new Set(results.map((result) => result.terminalReason ?? 'unclassified'))]
+      .sort()
+      .map((reason) => [
+        reason,
+        results.filter(
+          (result) => (result.terminalReason ?? 'unclassified') === reason,
+        ).length,
+      ]),
+  );
+  const infrastructureFailures = results.filter((result) =>
+    INFRASTRUCTURE_TERMINAL_REASONS.has(result.terminalReason),
+  );
+  const gameplayResults = results.filter(
+    (result) => !INFRASTRUCTURE_TERMINAL_REASONS.has(result.terminalReason),
+  );
   const decided = results.filter(r => r.decided);
   const nonMirror = decided.filter(r => r.fA !== r.fB);
 
@@ -1504,7 +2793,11 @@ function summarize(results, config) {
   const leaderAtTurn10WinPct = +(100 * leaderWon / Math.max(snapped.length, 1)).toFixed(1);
   const comebackPct = +(100 * (snapped.length - leaderWon) / Math.max(snapped.length, 1)).toFixed(1);
 
-  const timeouts = results.filter(r => r.timedOut).length;
+  const timeouts = results.filter(
+    (result) =>
+      result.terminalReason === 'turn_cap_draw' ||
+      result.terminalReason === 'turn_cap_tiebreak',
+  ).length;
 
   // Equipment actually played (attach_equipment dispatched) per game — confirms the
   // deck builder now seeds Equipment AND the bot's chooseEquip path fires on real cards.
@@ -1580,6 +2873,7 @@ function summarize(results, config) {
         winsT: 0, decT: 0, winsN: 0, decN: 0,
         res5: 0, res10: 0, res15: 0, deploys: 0, deploysEarly: 0, spellsEarly: 0, discards: 0,
         flipLpSum: 0, flipLpN: 0, flipSurvSum: 0, flipSurvN: 0, heroPre: 0, heroPost: 0,
+        transformMaxLpDeltaSum: 0, transformCurrentLpDeltaSum: 0, transformDeltaN: 0,
         heroPostIdx: {},
       });
       d.games++;
@@ -1591,6 +2885,11 @@ function summarize(results, config) {
         if (dx.transformTurn[seat] != null) { d.transformTurnSum += dx.transformTurn[seat]; d.transformTurnN++; }
         if (dx.lpAtFlip?.[seat] != null) { d.flipLpSum += dx.lpAtFlip[seat]; d.flipLpN++; }
         if (dx.survivedAfterFlip?.[seat] != null) { d.flipSurvSum += dx.survivedAfterFlip[seat]; d.flipSurvN++; }
+        if (dx.transformLpDelta?.[seat] != null) {
+          d.transformMaxLpDeltaSum += dx.transformLpDelta[seat].maxLp;
+          d.transformCurrentLpDeltaSum += dx.transformLpDelta[seat].currentLp;
+          d.transformDeltaN++;
+        }
       }
       for (const [idx, n] of Object.entries(dx.heroUsesPre?.[seat] || {})) { d.heroPre += n; void idx; }
       for (const [idx, n] of Object.entries(dx.heroUsesPost?.[seat] || {})) {
@@ -1618,6 +2917,14 @@ function summarize(results, config) {
       // §13b transform autopsy: how dead was the hero at flip time, how long did
       // it live after, and were the (base/transformed) kit buttons ever pressed?
       avgLpAtFlip: d.flipLpN ? +(d.flipLpSum / d.flipLpN).toFixed(1) : null,
+      avgTransformMaxLpDelta:
+        d.transformDeltaN
+          ? +(d.transformMaxLpDeltaSum / d.transformDeltaN).toFixed(2)
+          : null,
+      avgTransformCurrentLpDelta:
+        d.transformDeltaN
+          ? +(d.transformCurrentLpDeltaSum / d.transformDeltaN).toFixed(2)
+          : null,
       avgTurnsAfterFlip: d.flipSurvN ? +(d.flipSurvSum / d.flipSurvN).toFixed(1) : null,
       heroAbilityUsesPerGame: {
         preFlip: +(d.heroPre / d.games).toFixed(2),
@@ -1652,6 +2959,56 @@ function summarize(results, config) {
     }
     candidatePruning = acc;
   }
+  const policyCoverage = {
+    actions: {},
+    choices: {},
+    responses: {},
+    xValues: [],
+  };
+  const actionLifecycle = {
+    overall: emptyActionLifecycleCounts(),
+    byKind: {},
+  };
+  const xValues = new Set();
+  for (const result of results) {
+    const coverage = result.policyCoverage;
+    if (coverage === undefined) continue;
+    for (const family of ['actions', 'choices', 'responses']) {
+      for (const [kind, count] of Object.entries(coverage[family] ?? {})) {
+        policyCoverage[family][kind] =
+          (policyCoverage[family][kind] ?? 0) + count;
+      }
+    }
+    for (const value of coverage.xValues ?? []) xValues.add(value);
+    const lifecycle = result.actionLifecycle;
+    if (lifecycle !== undefined) {
+      for (const outcome of ACTION_LIFECYCLE_OUTCOMES) {
+        actionLifecycle.overall[outcome] += lifecycle.overall[outcome] ?? 0;
+      }
+      for (const [kind, sourceCounts] of Object.entries(lifecycle.byKind)) {
+        const targetCounts =
+          actionLifecycle.byKind[kind] ??= emptyActionLifecycleCounts();
+        for (const outcome of ACTION_LIFECYCLE_OUTCOMES) {
+          targetCounts[outcome] += sourceCounts[outcome] ?? 0;
+        }
+      }
+    }
+  }
+  actionLifecycle.unresolved = results
+    .filter((result) => (result.actionLifecycle?.overall.pending ?? 0) > 0)
+    .map((result) => ({
+      factionA: result.fA,
+      factionB: result.fB,
+      seed: result.seed,
+      terminalReason: result.terminalReason,
+      pending: result.actionLifecycle.overall.pending,
+      byKind: Object.fromEntries(
+        Object.entries(result.actionLifecycle.byKind)
+          .filter(([, counts]) => (counts.pending ?? 0) > 0)
+          .map(([kind, counts]) => [kind, counts.pending]),
+      ),
+    }));
+  policyCoverage.xValues = [...xValues].sort((a, b) => a - b);
 
   return {
     factionWinPct,
@@ -1662,6 +3019,20 @@ function summarize(results, config) {
     snowball: { leaderAtTurn10WinPct, comebackPct },
     decidedPct: +(100 * decided.length / Math.max(games, 1)).toFixed(1),
     timeoutPct: +(100 * timeouts / Math.max(games, 1)).toFixed(1),
+    validGameplayGames: gameplayResults.length,
+    infrastructureFailureCount: infrastructureFailures.length,
+    infrastructureFailurePct:
+      +(100 * infrastructureFailures.length / Math.max(games, 1)).toFixed(1),
+    failures: infrastructureFailures.map((result) => ({
+      factionA: result.fA,
+      factionB: result.fB,
+      seed: result.seed,
+      reason: result.terminalReason,
+      failure: result.failure ?? null,
+    })),
+    terminalReasons,
+    policyCoverage,
+    actionLifecycle,
     equipmentPlayedPerGame,
     gamesWithEquipPct,
     spellsCastPerGame,
@@ -1669,11 +3040,22 @@ function summarize(results, config) {
     ...(candidatePruning ? { candidatePruning } : {}),
     // ADDITIVE balance-read output (NOT hashed; computed from the same non-mirror
     // decided games as factionWinPct). `factionCounts` surfaces the raw {w,n} per
-    // faction (previously discarded); `stats` is the inferential summary (G-test
-    // imbalance p-value, bias-corrected spread + bootstrap CI, per-faction Wilson
-    // CIs, worst-offender z). Reporting only ⇒ cannot perturb runHash.
+    // faction (previously discarded); `stats` uses the decided-game schedule for
+    // a coupled winner permutation, maxT-adjusted contrasts, and a
+    // matchup×replicate cluster bootstrap. Wilson intervals are descriptive
+    // marginals only. Reporting cannot perturb runHash.
     factionCounts: fc,
-    stats: summarizeStats(fc),
+    stats: summarizeStats(fc, 'win', results, [
+      ...(infrastructureFailures.length > 0
+        ? ['infrastructure_failures_present']
+        : []),
+      ...(config.artifactStatus !== 'ratified'
+        ? [`rules_artifact_status:${config.artifactStatus}`]
+        : []),
+      ...(config.studyArtifactStatus !== 'ratified'
+        ? [`study_artifact_status:${config.studyArtifactStatus ?? 'missing'}`]
+        : []),
+    ]),
     // Mechanism diagnostics (§12) — per-cell + per-faction evidence, hash-exempt.
     matchupDetail,
     factionDetail,
@@ -1685,7 +3067,11 @@ function summarize(results, config) {
 // ── runHash: stable digest over per-game outcomes (config-independent of order) ─
 
 function computeRunHash(results, config, deckLabels = []) {
-  const rows = results.map(r => `${r.fA}|${r.fB}|${r.seed}|${r.winner}|${r.firstPlayer}|${r.turns}|${r.timedOut ? 1 : 0}|${r.leaderAt10}`);
+  const rows = results.map(r =>
+    `${r.fA}|${r.fB}|${r.seed}|${r.winner}|${r.firstPlayer}|${r.turns}|${r.timedOut ? 1 : 0}|${r.leaderAt10}${
+      config.rulesProfile === 'current' ? `|${r.terminalReason}` : ''
+    }`,
+  );
   // Decks used are part of the run's identity: fold their stable labels in so two
   // runs that differ only by deck selection produce different hashes. The diagnostic
   // accounting collector (__diag) is a read-only side-channel and is excluded.
@@ -1700,12 +3086,39 @@ function computeRunHash(results, config, deckLabels = []) {
   // firstPlayer/turns/timedOut/leaderAt10 only), so it needs no handling here.
   // collectDecisionLog is the same discipline: a harness-only data-collection
   // knob (result.decisionLog is never read here either).
-  const { __diag, __trace, playoutBackend, collectTrainingData, collectDecisionLog, ...hashedConfig } = config;
+  const {
+    __diag,
+    __trace,
+    observation,
+    playoutBackend,
+    collectTrainingData,
+    collectDecisionLog,
+    collectReplay,
+    certification,
+    __faultInjection,
+    artifactStatus,
+    rulesManifestHash,
+    studyManifestId,
+    studyManifestHash,
+    studyArtifactStatus,
+    rulesProfile,
+    ...hashedConfig
+  } = config;
   void __diag;
   void __trace;
+  void observation;
   void playoutBackend;
   void collectTrainingData;
   void collectDecisionLog;
+  void collectReplay;
+  void certification;
+  void __faultInjection;
+  void artifactStatus;
+  void rulesManifestHash;
+  void studyManifestId;
+  void studyManifestHash;
+  void studyArtifactStatus;
+  void rulesProfile;
   const payload = JSON.stringify(hashedConfig) + '\n' + deckLabels.join(',') + '\n' + rows.join('\n');
   return createHash('sha256').update(payload).digest('hex').slice(0, 16);
 }
@@ -1724,7 +3137,7 @@ function generateResults(plan, config, shard = null) {
     const { fA, fB, deckA, deckB } = plan[p];
     for (let g = 0; g < config.gamesPerPairing; g++) {
       if (!shard || gi % shard.count === shard.index) {
-        const seed = (config.seedBase + p * 100003 + g * 7919) >>> 0;
+        const seed = gameSeed(config, plan[p], p, g);
         // SEAT ALTERNATION (measurement-harness knob, not a rule): swap which deck
         // sits in seat 0 on a 4-phase cycle vs firstPlayer's g%2 alternation, so the
         // two axes stay UNCORRELATED — games 0,1 normal seats, 2,3 swapped, both
@@ -1753,10 +3166,59 @@ function generateResults(plan, config, shard = null) {
 function finalize(results, config, plan) {
   const summary = summarize(results, config);
   const deckLabels = plan.map(p => p.label);
+  if (config.certification === true && summary.infrastructureFailureCount > 0) {
+    const error = new Error(
+      `Certification failed: ${String(summary.infrastructureFailureCount)} infrastructure failure(s): ${JSON.stringify(summary.terminalReasons)}`,
+    );
+    error.code = 'certification_failed';
+    error.failures = summary.failures;
+    throw error;
+  }
   return {
     ...summary,
     deckLabels,
     runHash: computeRunHash(results, config, deckLabels),
+    ...(config.observation !== null
+      ? {
+          observations: immutableSnapshot(
+            results.map((result) => ({
+              factionA: result.fA,
+              factionB: result.fB,
+              seed: result.seed,
+              replicate: result.replicate,
+              outcome: Object.freeze({
+                winner: result.winner,
+                decided: result.decided,
+                terminalReason: result.terminalReason,
+              }),
+              observation: result.observation,
+            })),
+          ),
+        }
+      : {}),
+    ...(config.studyPopulation
+      ? {
+          studyBindings: {
+            rulesManifestHash: config.rulesManifestHash,
+            studyManifestHash: config.studyManifestHash,
+            cardPoolHash: config.cardPoolHash,
+            engineBuildHash: config.engineBuildHash,
+            harnessBuildHash: config.harnessBuildHash,
+            botImplementationHash: config.botImplementationHash,
+            deckContentHashes: [
+              ...new Set(
+                plan.flatMap(({ deckA, deckB }) => [
+                  deckContentHash(deckA),
+                  deckContentHash(deckB),
+                ]),
+              ),
+            ].sort(),
+            policyConfigHash: policyConfigHash(config),
+            policyCalibrationManifestHash:
+              config.policyCalibrationManifestHash,
+          },
+        }
+      : {}),
     // Value-net training rows (opt-in via config.collectTrainingData): the
     // summary object above never retains raw per-game results, so flatten each
     // game's labeled rows here — stamped with the mover's faction (fA if it
@@ -1777,6 +3239,15 @@ function finalize(results, config, plan) {
       ? {
           decisionLog: results.flatMap((r, gi) =>
             (r.decisionLog || []).map(row => ({ ...row, game: gi, faction: row.mover === 0 ? r.fA : r.fB })),
+          ),
+        }
+      : {}),
+    ...(config.collectReplay
+      ? {
+          replays: results.flatMap((result, gameIndex) =>
+            result.replay === undefined
+              ? []
+              : [{ gameIndex, factionA: result.fA, factionB: result.fB, ...result.replay }],
           ),
         }
       : {}),
@@ -1820,7 +3291,7 @@ export function runSimQueue(rawConfig, counterBuffer) {
     const p = Math.floor(gi / G);
     const g = gi - p * G;
     const { fA, fB, deckA, deckB } = plan[p];
-    const seed = (config.seedBase + p * 100003 + g * 7919) >>> 0;
+    const seed = gameSeed(config, plan[p], p, g);
     // SEAT ALTERNATION — see the matching comment in generateResults; kept in sync
     // so parallel (work-stealing) runs stay byte-identical to the serial run.
     const swapSeats = config.seatAlternation === true && (g >> 1) % 2 === 1;
@@ -1876,6 +3347,12 @@ function parseCliConfig(argv) {
     else if (key === 'flashAtWill') cfg[key] = val === 'true';
     else if (key === 'boardReactions') cfg[key] = val === 'true';
     else if (key === 'responseWindowsOnAllActions') cfg[key] = val === 'true';
+    else if (key === 'registerPrintedTriggers') cfg[key] = val === 'true';
+    else if (key === 'equipmentTriggers') cfg[key] = val === 'true';
+    else if (key === 'reactAbilities') cfg[key] = val === 'true';
+    else if (key === 'dynamicDrawValue') cfg[key] = val === 'true';
+    else if (key === 'heroAuras') cfg[key] = val === 'true';
+    else if (key === 'activateAfterDeploy') cfg[key] = val === 'true';
     else if (key === 'disableFactionHeroReach') cfg[key] = { faction: val };
     else if (key === 'botPolicySeat0' || key === 'botPolicySeat1') {
       cfg.botPolicySeat = cfg.botPolicySeat || {};

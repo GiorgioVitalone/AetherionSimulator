@@ -1127,7 +1127,8 @@
 ],
 "trigger": {
 "type": "on_ally_destroyed"
-}
+},
+"react": true
 },
 "cost": {
 "mana": 0,
@@ -1136,7 +1137,7 @@
 "xEnergy": false,
 "flexible": false
 },
-"type": "Aura",
+"type": "React",
 "effect": "Whenever another allied character is destroyed, this gains +1 ATK permanently.",
 "cooldown": null
 }
@@ -1188,7 +1189,8 @@
 ],
 "trigger": {
 "type": "on_sacrifice"
-}
+},
+"react": true
 },
 "cost": {
 "mana": 0,
@@ -1197,7 +1199,7 @@
 "xEnergy": false,
 "flexible": false
 },
-"type": "Aura",
+"type": "React",
 "effect": "Whenever you sacrifice a character, gain +1 ATK permanently.",
 "cooldown": null
 }
@@ -1250,9 +1252,10 @@
 "trigger": {
 "side": "any",
 "type": "on_ally_destroyed"
-}
 },
-"type": "Aura",
+"react": true
+},
+"type": "React",
 "effect": "Whenever any character is destroyed, gain +1/+1 permanently.",
 "cooldown": null
 }
@@ -1313,7 +1316,7 @@
 "xEnergy": false,
 "flexible": false
 },
-"type": "Aura",
+"type": "Last Breath",
 "effect": "When this is destroyed, deal 2 damage to any target.",
 "cooldown": null
 }
@@ -2126,9 +2129,9 @@
 "type": "replacement",
 "instead": [
 {
-"type": "bounce",
+"type": "exile",
 "target": {
-"type": "equipped_character"
+"type": "self"
 }
 }
 ],
@@ -2244,7 +2247,7 @@
 "xEnergy": false,
 "flexible": false
 },
-"type": "Trigger",
+"type": "Deploy",
 "effect": "Heal 2 HP to another character",
 "cooldown": null
 }
@@ -2432,7 +2435,7 @@
 "flexible": false
 },
 "type": "Aura",
-"effect": "At the end of each turn, heal 2 HP to target allied character.",
+"effect": "At the end of your turn, heal 2 HP to target allied character.",
 "cooldown": null
 }
 ],
@@ -2665,6 +2668,15 @@
 {
 "dsl": {
 "type": "triggered",
+"trigger": {
+"type": "activated",
+"cost": {
+"mana": 0,
+"energy": 0,
+"flexible": 0
+},
+"cooldown": 2
+},
 "effects": [
 {
 "type": "draw_cards",
@@ -2674,18 +2686,7 @@
 },
 "player": "allied"
 }
-],
-"trigger": {
-"side": "allied",
-"type": "on_spell_cast"
-},
-"cooldown": 2,
-"condition": {
-"type": "turn_count",
-"value": 2,
-"action": "spell_cast",
-"comparison": "equal"
-}
+]
 },
 "cost": {
 "mana": 0,
@@ -2695,7 +2696,7 @@
 "flexible": false
 },
 "type": "Trigger",
-"effect": "Arcane Insight: When you cast your second spell in a turn, draw a card.",
+"effect": "Arcane Insight: Draw a card.",
 "cooldown": 2
 },
 {
@@ -2908,7 +2909,8 @@
 "filter": {
 "tag": "Arcane"
 }
-}
+},
+"react": true
 },
 "cost": {
 "mana": 0,
@@ -2917,7 +2919,7 @@
 "xEnergy": false,
 "flexible": false
 },
-"type": "Aura",
+"type": "React",
 "effect": "Whenever you play an Arcane spell, draw a card.",
 "cooldown": null
 }
@@ -3090,7 +3092,10 @@
 "token": {
 "hp": 1,
 "atk": 1,
-"name": "Bio-Construct"
+"name": "Bio-Construct",
+"tags": [
+"Bio-Construct"
+]
 }
 }
 ]
@@ -3138,13 +3143,43 @@
 "type": "conditional",
 "ifTrue": [
 {
+"type": "conditional",
+"ifTrue": [
+{
+"type": "modify_stats",
+"target": {
+"side": "allied",
+"type": "target_character",
+"zone": "reserve"
+},
+"duration": {
+"type": "permanent"
+},
+"modifier": {
+"hp": 1,
+"atk": 1
+}
+}
+],
+"ifFalse": [
+{
 "type": "deploy_token",
 "zone": "reserve",
 "count": 1,
 "token": {
 "hp": 1,
 "atk": 1,
-"name": "Bio-Construct"
+"name": "Bio-Construct",
+"tags": [
+"Bio-Construct"
+]
+}
+}
+],
+"condition": {
+"type": "zone_full",
+"zone": "reserve",
+"side": "allied"
 }
 }
 ],
@@ -3693,7 +3728,10 @@
 "token": {
 "hp": 2,
 "atk": 2,
-"name": "Bio-Construct"
+"name": "Bio-Construct",
+"tags": [
+"Bio-Construct"
+]
 }
 }
 ]
@@ -3781,7 +3819,11 @@
 },
 "dynamicModifier": {
 "type": "multiply",
-"factor": 2
+"factor": 2,
+"stats": [
+"atk",
+"hp"
+]
 }
 }
 ],
@@ -4144,7 +4186,7 @@
 "cost": {
 "mana": 0,
 "xMana": false,
-"energy": 2,
+"energy": 0,
 "xEnergy": false,
 "flexible": false
 },
@@ -4564,6 +4606,7 @@
 "cardCode": "CORE1-R-N-129",
 "name": "Energy",
 "cardType": "R",
+"resourceType": "energy",
 "alignment": [
 "None"
 ],
@@ -4676,6 +4719,7 @@
 "cardCode": "CORE1-R-N-130",
 "name": "Mana",
 "cardType": "R",
+"resourceType": "mana",
 "alignment": [
 "None"
 ],
@@ -4958,7 +5002,7 @@
 "xEnergy": false,
 "flexible": false
 },
-"type": "Trigger",
+"type": "Aura",
 "effect": "When this destroys a character in combat, draw a card.",
 "cooldown": null
 }
@@ -5391,7 +5435,8 @@
 ],
 "rarity": "Common",
 "tags": [
-"Construct"
+"Construct",
+"x_cost"
 ],
 "traits": [],
 "cost": {
@@ -5400,11 +5445,67 @@
 "flexible": 0
 },
 "stats": {
-"hp": 0,
-"atk": 0,
+"hp": 1,
+"atk": 1,
 "arm": 0
 },
-"abilities": [],
+"abilities": [
+{
+"dsl": {
+"type": "triggered",
+"xCostResource": "energy",
+"effects": [
+{
+"type": "modify_stats",
+"target": {
+"type": "self"
+},
+"duration": {
+"type": "permanent"
+},
+"modifier": {
+"atk": 0
+},
+"dynamicModifier": {
+"stat": "atk",
+"type": "x_cost",
+"resource": "energy"
+}
+},
+{
+"type": "modify_stats",
+"target": {
+"type": "self"
+},
+"duration": {
+"type": "permanent"
+},
+"modifier": {
+"hp": 0
+},
+"dynamicModifier": {
+"stat": "hp",
+"type": "x_cost",
+"resource": "energy"
+}
+}
+],
+"trigger": {
+"type": "on_deploy"
+}
+},
+"cost": {
+"mana": 0,
+"xMana": false,
+"energy": 0,
+"xEnergy": true,
+"flexible": false
+},
+"type": "Deploy",
+"effect": "Grovekeeper 3000 enters with +X/+X, where X is the Energy spent to deploy it.",
+"cooldown": null
+}
+],
 "transformationId": null,
 "originalHeroId": null
 },
@@ -5639,7 +5740,33 @@
 "abilities": [
 {
 "dsl": {
-"type": "triggered",
+"type": "aura",
+"effects": [
+{
+"type": "cost_reduction",
+"reduction": 1,
+"appliesTo": {
+"cardType": "S",
+"firstPerTurn": true
+},
+"duration": {
+"type": "while_in_play"
+}
+},
+{
+"type": "grant_ability",
+"target": {
+"type": "hero",
+"side": "allied"
+},
+"duration": {
+"type": "while_in_play"
+},
+"ability": {
+"trigger": {
+"type": "on_spell_cast",
+"side": "allied"
+},
 "effects": [
 {
 "type": "draw_cards",
@@ -5650,113 +5777,13 @@
 "player": "allied"
 }
 ],
-"trigger": {
-"side": "allied",
-"type": "on_spell_cast"
-},
-"cooldown": 2,
 "condition": {
 "type": "turn_count",
 "value": 2,
 "action": "spell_cast",
 "comparison": "equal"
 }
-},
-"cost": {
-"mana": 0,
-"xMana": false,
-"energy": 0,
-"xEnergy": false,
-"flexible": false
-},
-"type": "Trigger",
-"effect": "Arcane Insight: When you cast your second spell in a turn, draw a card.",
-"cooldown": 2
-},
-{
-"dsl": {
-"type": "aura",
-"effects": [
-{
-"type": "modify_stats",
-"target": {
-"side": "allied",
-"type": "all_characters"
-},
-"duration": {
-"type": "while_in_play"
-},
-"modifier": {
-"hp": 1
 }
-}
-],
-"condition": {
-"type": "card_count",
-"zone": "hand",
-"value": 5,
-"comparison": "greater_equal"
-}
-},
-"cost": {
-"mana": 0,
-"xMana": false,
-"energy": 0,
-"xEnergy": false,
-"flexible": false
-},
-"type": "Aura",
-"effect": "Knowledge Shield: While you have 5 or more cards in hand, allied characters gain +1 HP.",
-"cooldown": null
-},
-{
-"dsl": {
-"type": "triggered",
-"effects": [
-{
-"type": "bounce",
-"target": {
-"side": "enemy",
-"type": "target_character"
-}
-}
-],
-"trigger": {
-"side": "allied",
-"type": "on_spell_cast"
-},
-"cooldown": 1,
-"condition": {
-"type": "triggering_card_cost",
-"comparison": "less_equal",
-"relativeTo": "triggering_spell"
-}
-},
-"cost": {
-"mana": 2,
-"xMana": false,
-"energy": 0,
-"xEnergy": false,
-"flexible": false
-},
-"type": "Trigger",
-"effect": "Arcane Convergence: When you cast a spell, you may pay 2 Mana to return target enemy character with cost <= that spell's cost to its owner's hand.",
-"cooldown": 1
-},
-{
-"dsl": {
-"type": "aura",
-"effects": [
-{
-"type": "cost_reduction",
-"duration": {
-"type": "while_in_play"
-},
-"appliesTo": {
-"cardType": "S",
-"firstPerTurn": true
-},
-"reduction": 1
 }
 ]
 },
@@ -5768,8 +5795,44 @@
 "flexible": false
 },
 "type": "Aura",
-"effect": "Supreme Intellect: The first spell you cast each turn costs 1 less Mana (minimum 1).",
+"effect": "Supreme Intellect: The first spell you cast each turn costs 1 less Mana (minimum 1). When you cast your second spell in a turn, draw a card.",
 "cooldown": null
+},
+{
+"dsl": {
+"type": "triggered",
+"trigger": {
+"type": "activated",
+"cost": {
+"mana": 2,
+"energy": 0,
+"flexible": 0
+},
+"cooldown": 1
+},
+"effects": [
+{
+"type": "bounce",
+"target": {
+"type": "target_character",
+"side": "enemy",
+"filter": {
+"maxCost": 3
+}
+}
+}
+]
+},
+"cost": {
+"mana": 2,
+"xMana": false,
+"energy": 0,
+"xEnergy": false,
+"flexible": false
+},
+"type": "Trigger",
+"effect": "Arcane Convergence: Return target enemy character with cost 3 or less to its owner's hand.",
+"cooldown": 1
 },
 {
 "dsl": {
@@ -6415,7 +6478,8 @@
 "trigger": {
 "side": "allied",
 "type": "on_spell_cast"
-}
+},
+"react": true
 },
 "cost": {
 "mana": 0,
@@ -6424,7 +6488,7 @@
 "xEnergy": false,
 "flexible": false
 },
-"type": "Aura",
+"type": "React",
 "effect": "Whenever you cast a spell, draw a card.",
 "cooldown": null
 }
@@ -6827,7 +6891,10 @@
 "token": {
 "hp": 1,
 "atk": 4,
-"name": "Bio-Construct"
+"name": "Bio-Construct",
+"tags": [
+"Bio-Construct"
+]
 },
 "inEachEmpty": true
 }

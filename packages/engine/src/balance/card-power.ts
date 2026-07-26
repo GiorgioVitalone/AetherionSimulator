@@ -158,6 +158,7 @@ export function computeCardPower(card: StaticCard): CardPowerBreakdown {
     power: round2(base * synergyMultiplier),
     powerLow: round2(baseLow * synergyMultiplier),
     powerHigh: round2(baseHigh * synergyMultiplier),
+    powerBandInterpretation: 'heuristic_scenario_band',
     flags: [...flags],
     statBase: round2(sb),
     traitValue: round2(tv),

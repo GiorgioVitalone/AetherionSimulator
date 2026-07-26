@@ -30,12 +30,12 @@ const rawArgs = process.argv.slice(2);
 const modelArg = rawArgs.find(a => a.startsWith('--model='));
 const modelPath = modelArg ? modelArg.slice('--model='.length) : process.env.AETHERION_VALUE_MODEL;
 const rulesetArg = rawArgs.find(a => a.startsWith('--ruleset='));
-const rulesetName = rulesetArg ? rulesetArg.slice('--ruleset='.length) : 'v1'; // default v1 (byte-identical to prior runs)
-if (!['v1', 'v2'].includes(rulesetName)) { console.error(`--ruleset must be v1 or v2 (got "${rulesetName}")`); process.exit(1); }
+const rulesetName = rulesetArg ? rulesetArg.slice('--ruleset='.length) : 'current';
+if (!['current', 'v1', 'v2', 'v3'].includes(rulesetName)) { console.error(`--ruleset must be current, v1, v2 or v3 (got "${rulesetName}")`); process.exit(1); }
 const positional = rawArgs.filter(a => !a.startsWith('--'));
 const [baselinePool, editedPool, gppArg, rungArg] = positional;
 if (!baselinePool || !editedPool) {
-  console.error('usage: node paired-compare.mjs <baselinePool.json> <editedPool.json> [gpp=150] [rung=r8d3] [--model=path] [--ruleset=v1|v2]');
+  console.error('usage: node paired-compare.mjs <baselinePool.json> <editedPool.json> [gpp=150] [rung=r8d3] [--model=path] [--ruleset=current|v1|v2|v3]');
   process.exit(1);
 }
 const gpp = +(gppArg || 150);
@@ -62,14 +62,22 @@ if ((rungName === 'valueGreedy' || rungName === 'r8d3v') && !modelPath) {
 // ── Shared harness config (identical across both arms except AETHERION_CARDS) ─
 const FACTIONS = ['Radiant', 'Verdant', 'Onyx', 'Sapphire'];
 const decks = Object.fromEntries(FACTIONS.map(f => [f, f]));
-// Locked ruleset manifest (sim-data/ruleset-v1.json, or ruleset-v2.json via --ruleset=v2) — the
-// rule flags come from here (see balance-verify.mjs's manifestRules pattern), not a hand-written
-// subset. Default v1 keeps every prior panel byte-identical.
-const manifestRules = JSON.parse(readFileSync(new URL(`./sim-data/ruleset-${rulesetName}.json`, import.meta.url), 'utf8')).rules;
+const manifestRules =
+  rulesetName === 'current'
+    ? {}
+    : JSON.parse(
+        readFileSync(
+          new URL(`./sim-data/ruleset-${rulesetName}.json`, import.meta.url),
+          'utf8',
+        ),
+      ).rules;
 const RULES = {
+  rulesProfile:
+    rulesetName === 'current' ? 'current' : `legacy-${rulesetName}`,
   reachDiscard: true, termination: 'tiebreak',
-  firstPlayer: 'alternating', seatAlternation: true, fixHandSizeStall: true,
+  firstPlayer: 'alternating', seatAlternation: true,
   turnCap: 80,
+  ...(rulesetName === 'current' ? {} : { fixHandSizeStall: true }),
   ...manifestRules,
 };
 const SEED_BASE = 12345; // FIXED and identical for both arms — this is what makes the games pair up.

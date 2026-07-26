@@ -3,7 +3,7 @@
  * Called each time the UI needs to know what the player can do.
  */
 import type { GameState, PlayerState, CardInstance } from '../types/game-state.js';
-import type { ResourceCost, ZoneType, Trait } from '../types/common.js';
+import type { ResourceCost, ResourceType, ZoneType } from '../types/common.js';
 import type { AbilityDSL } from '../types/ability.js';
 import { hasOpenSlot, getAllCards, getCardsInZone } from '../zones/zone-manager.js';
 import { getValidAttackTargets, type AttackTarget } from '../zones/targeting.js';
@@ -12,6 +12,7 @@ import { isFlashSpell } from './reactive-actions.js';
 import { meetsEquipRequirement } from './equip-eligibility.js';
 import { isReserveTapEligible } from './reserve-tap.js';
 import { evaluateCondition } from '../effects/condition-evaluator.js';
+import { effectiveTraits, hasEffectiveTrait } from '../selectors/card-semantics.js';
 
 // ── Result Types ──────────────────────────────────────────────────────────────
 
@@ -19,6 +20,8 @@ export interface AvailableActions {
   readonly canDeploy: readonly DeployOption[];
   readonly canCastSpell: readonly CastSpellOption[];
   readonly canAttachEquipment: readonly EquipOption[];
+  readonly canRemoveEquipment: readonly RemoveEquipmentOption[];
+  readonly canTransferEquipment: readonly TransferEquipmentOption[];
   readonly canMove: readonly MoveOption[];
   readonly canActivateAbility: readonly ActivateOption[];
   readonly canAttack: readonly AttackOption[];
@@ -35,6 +38,7 @@ export interface DeployOption {
   readonly cardInstanceId: string;
   readonly validSlots: readonly DeploySlotGroup[];
   readonly cost: ResourceCost;
+  readonly xValues?: readonly number[];
 }
 
 /** A deployable zone with its open slot indices and any cost surcharge (Elite pays
@@ -48,10 +52,24 @@ export interface DeploySlotGroup {
 export interface CastSpellOption {
   readonly cardInstanceId: string;
   readonly cost: ResourceCost;
+  readonly xValues?: readonly number[];
 }
 
 export interface EquipOption {
   readonly cardInstanceId: string;
+  readonly validTargets: readonly string[];
+  readonly cost: ResourceCost;
+  readonly xValues?: readonly number[];
+}
+
+export interface RemoveEquipmentOption {
+  readonly equipmentInstanceId: string;
+  readonly holderInstanceId: string;
+}
+
+export interface TransferEquipmentOption {
+  readonly equipmentInstanceId: string;
+  readonly holderInstanceId: string;
   readonly validTargets: readonly string[];
   readonly cost: ResourceCost;
 }
@@ -66,6 +84,7 @@ export interface ActivateOption {
   readonly cardInstanceId: string;
   readonly abilityIndex: number;
   readonly cost: ResourceCost;
+  readonly xValues?: readonly number[];
 }
 
 export interface AttackOption {
@@ -81,10 +100,11 @@ export function computeAvailableActions(state: GameState): AvailableActions {
   const opponent = state.players[opponentIndex];
   const isStrategy = state.phase === 'strategy';
   const isAction = state.phase === 'action';
+  const authoritative = state.config?.authoritativeTransitions === true;
   // RULES-ACCURACY FIX (config.transformAtStartOfTurn): the engine machine
   // pauses in a start-of-turn transform window (phase still 'upkeep') only
   // when this flag is ON — see game-machine.ts's startOfTurnTransform state.
-  // Absent/false ⇒ byte-identical no-op (this is always false, since the
+  // Absent/false ⇒ semantically invariant no-op (this is always false, since the
   // engine never pauses there when the flag is off).
   const isStartOfTurnWindow =
     state.phase === 'upkeep' && state.config?.transformAtStartOfTurn === true;
@@ -93,7 +113,7 @@ export function computeAvailableActions(state: GameState): AvailableActions {
   // Widens the ACTIVE player's proactive cast surface to the Flash-tagged
   // subset of hand spells during the Action Phase too (non-Flash spells stay
   // Strategy-only). See game-state.ts's GameConfig.flashAtWill for the known
-  // opponent's-turn limitation. Absent/false ⇒ byte-identical no-op.
+  // opponent's-turn limitation. Absent/false ⇒ semantically invariant no-op.
   const flashAtWillInAction = isAction && state.config?.flashAtWill === true;
 
   return {
@@ -104,12 +124,15 @@ export function computeAvailableActions(state: GameState): AvailableActions {
         ? computeSpellOptions(player, state, true)
         : [],
     canAttachEquipment: isStrategy ? computeEquipOptions(player, state) : [],
-    canMove: isStrategy ? computeMoveOptions(player) : [],
-    canActivateAbility: isStrategy ? computeActivateOptions(player, state) : [],
+    canRemoveEquipment: isStrategy ? computeRemoveEquipmentOptions(player) : [],
+    canTransferEquipment: isStrategy ? computeTransferEquipmentOptions(player, state) : [],
+    canMove: (authoritative ? isAction : isStrategy) ? computeMoveOptions(player) : [],
+    canActivateAbility:
+      (authoritative ? isAction : isStrategy) ? computeActivateOptions(player, state) : [],
     canAttack: isAction ? computeAttackOptions(player, opponent, state) : [],
     canDiscardForEnergy: isStrategy && computeCanDiscardForEnergy(player, state),
     canTransform:
-      (isStrategy || isStartOfTurnWindow) && computeCanTransform(state, player, opponent),
+      (isStrategy || isStartOfTurnWindow) && canTransform(state),
     canEndPhase: isStrategy || isAction || isStartOfTurnWindow,
     canTapReserve:
       isStrategy && state.config?.reserveTapChoice === true
@@ -121,6 +144,48 @@ export function computeAvailableActions(state: GameState): AvailableActions {
             .map((c) => c.instanceId)
         : [],
   };
+}
+
+function computeRemoveEquipmentOptions(
+  player: PlayerState,
+): readonly RemoveEquipmentOption[] {
+  return getAllCards(player.zones)
+    .filter((card) => card.equipment !== null)
+    .map((card) => ({
+      equipmentInstanceId: card.equipment!.instanceId,
+      holderInstanceId: card.instanceId,
+    }));
+}
+
+function computeTransferEquipmentOptions(
+  player: PlayerState,
+  state: GameState,
+): readonly TransferEquipmentOption[] {
+  const board = getAllCards(player.zones).filter((card) => card.cardType === 'C');
+  const options: TransferEquipmentOption[] = [];
+  for (const holder of board) {
+    const equipment = holder.equipment;
+    if (equipment === null || equipment.transferredThisTurn === true) continue;
+    const cost = effectiveCost(player, equipment, state.config);
+    if (!canAfford(player, cost)) continue;
+    const validTargets = board
+      .filter(
+        (candidate) =>
+          candidate.instanceId !== holder.instanceId &&
+          candidate.equipment === null &&
+          meetsEquipRequirement(equipment, candidate),
+      )
+      .map((candidate) => candidate.instanceId);
+    if (validTargets.length > 0) {
+      options.push({
+        equipmentInstanceId: equipment.instanceId,
+        holderInstanceId: holder.instanceId,
+        validTargets,
+        cost,
+      });
+    }
+  }
+  return options;
 }
 
 // ── Deploy ────────────────────────────────────────────────────────────────────
@@ -146,6 +211,9 @@ function computeDeployOptions(player: PlayerState, state: GameState): readonly D
         cardInstanceId: card.instanceId,
         validSlots,
         cost: card.cost,
+        ...(card.xCostResource !== undefined
+          ? { xValues: legalXValues(player, baseCost, card.xCostResource) }
+          : {}),
       });
     }
   }
@@ -189,7 +257,7 @@ function getValidDeploySlots(
 }
 
 function hasElite(card: CardInstance): boolean {
-  return card.traits.includes('elite') || card.grantedTraits.some((g) => g.trait === 'elite');
+  return hasEffectiveTrait(card, 'elite');
 }
 
 function getOpenSlotIndices(player: PlayerState, zone: ZoneType): readonly number[] {
@@ -220,7 +288,19 @@ function computeSpellOptions(
     if (card.cardType !== 'S') continue;
     if (flashOnly && !isFlashSpell(card)) continue;
     if (!canAfford(player, effectiveCost(player, card, state.config))) continue;
-    options.push({ cardInstanceId: card.instanceId, cost: card.cost });
+    options.push({
+      cardInstanceId: card.instanceId,
+      cost: card.cost,
+      ...(card.xCostResource !== undefined
+        ? {
+            xValues: legalXValues(
+              player,
+              effectiveCost(player, card, state.config),
+              card.xCostResource,
+            ),
+          }
+        : {}),
+    });
   }
 
   return options;
@@ -249,6 +329,15 @@ function computeEquipOptions(player: PlayerState, state: GameState): readonly Eq
         cardInstanceId: card.instanceId,
         validTargets: targets,
         cost: card.cost,
+        ...(card.xCostResource !== undefined
+          ? {
+              xValues: legalXValues(
+                player,
+                effectiveCost(player, card, state.config),
+                card.xCostResource,
+              ),
+            }
+          : {}),
       });
     }
   }
@@ -325,6 +414,12 @@ function computeActivateOptions(player: PlayerState, state: GameState): readonly
       if (triggered.trigger.type !== 'activated') continue;
 
       const activatedTrigger = triggered.trigger;
+      if (
+        triggered.abilityKind === 'ultimate' &&
+        player.hero.transformedThisTurn
+      ) {
+        continue;
+      }
 
       // Once-per-game: a single prior activation (anywhere in the log) locks it out
       // for the rest of the game (e.g. transformed-Hero Ultimates ids 3/41/103).
@@ -352,7 +447,7 @@ function computeActivateOptions(player: PlayerState, state: GameState): readonly
       // once per turn, regardless of any per-ability DSL oncePerTurn flag.
       // Applies ONLY to the Hero (src.card is undefined for the Hero
       // pseudo-source above); character activated abilities are unaffected.
-      // Absent/false ⇒ byte-identical no-op.
+      // Absent/false ⇒ semantically invariant no-op.
       if (
         state.config?.heroAbilitiesOncePerTurn === true &&
         src.card === undefined &&
@@ -367,11 +462,39 @@ function computeActivateOptions(player: PlayerState, state: GameState): readonly
         cardInstanceId: src.id,
         abilityIndex: i,
         cost: activatedTrigger.cost,
+        ...(triggered.xCostResource !== undefined
+          ? {
+              xValues: legalXValues(
+                player,
+                activatedTrigger.cost,
+                triggered.xCostResource,
+              ),
+            }
+          : {}),
       });
     }
   }
 
   return options;
+}
+
+export function legalXValues(
+  player: PlayerState,
+  baseCost: ResourceCost,
+  resource: ResourceType,
+): readonly number[] {
+  const available = player.resourceBank.filter(
+    (card) => !card.exhausted && card.resourceType === resource,
+  ).length;
+  const values: number[] = [];
+  for (let x = 0; x <= available; x++) {
+    const cost = {
+      ...baseCost,
+      [resource]: baseCost[resource] + x,
+    };
+    if (canAfford(player, cost)) values.push(x);
+  }
+  return values;
 }
 
 /** Whether a battlefield character may use an activated ability right now: not
@@ -479,7 +602,7 @@ function computeAttackOptions(
     for (const card of cards) {
       if (card.exhausted || card.summoningSick) continue;
 
-      const traits = allTraits(card);
+      const traits = effectiveTraits(card);
       // Haste bypasses summoning sickness (already handled by not being summoningSick)
 
       const targets = getValidAttackTargets(
@@ -502,10 +625,6 @@ function computeAttackOptions(
   return options;
 }
 
-function allTraits(card: CardInstance): readonly Trait[] {
-  return [...card.traits, ...card.grantedTraits.map((g) => g.trait)];
-}
-
 // ── Discard for Energy ────────────────────────────────────────────────────────
 
 function computeCanDiscardForEnergy(player: PlayerState, state: GameState): boolean {
@@ -518,11 +637,9 @@ function computeCanDiscardForEnergy(player: PlayerState, state: GameState): bool
 
 // ── Transform ─────────────────────────────────────────────────────────────────
 
-function computeCanTransform(
-  state: GameState,
-  player: PlayerState,
-  opponent: PlayerState,
-): boolean {
+export function canTransform(state: GameState): boolean {
+  const player = state.players[state.activePlayerIndex];
+  const opponent = state.players[state.activePlayerIndex === 0 ? 1 : 0];
   const hero = player.hero;
 
   if (hero.transformed || !hero.canTransformThisGame || hero.transformedThisTurn) {

@@ -480,6 +480,7 @@ export function effectStaticValueDetailed(effect: Effect): EffectValueDetailed {
 function effectStaticValueDetailedInner(effect: Effect): EffectValueDetailed {
   switch (effect.type) {
     case 'destroy':
+    case 'exile':
     case 'sacrifice':
       return isEnemyFacing(effect.target)
         ? det(

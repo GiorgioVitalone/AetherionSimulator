@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
   pull_request:
+  schedule:
+    - cron: '17 2 * * *'
 
 # Cancel superseded runs on the same ref.
 concurrency:
@@ -16,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -35,6 +39,26 @@ jobs:
         # Includes the engine balance-sim suite, which runs the committed starter
         # decks (packages/engine/sim-data) and asserts runHash determinism.
         run: pnpm test
+      - name: Current engine correctness
+        run: pnpm --filter @aetherion-sim/engine ci:correctness
+        env:
+          COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - name: Historical engine compatibility
+        run: pnpm --filter @aetherion-sim/engine test:legacy
+      - name: Engine performance budgets
+        run: pnpm --filter @aetherion-sim/engine benchmark:verify
+      - name: Current policy disagreement calibration
+        run: pnpm --filter @aetherion-sim/engine calibrate:policy
+      - name: Finding and critical-summary evidence audit
+        run: pnpm --filter @aetherion-sim/engine audit:findings:report
+      - name: Certification campaign smoke
+        if: github.event_name != 'schedule'
+        run: pnpm --filter @aetherion-sim/engine certify:campaigns:smoke
+      - name: Nightly full certification campaigns
+        if: github.event_name == 'schedule'
+        run: pnpm --filter @aetherion-sim/engine certify:campaigns:full
+      - name: Ratification readiness diagnostics
+        run: pnpm --filter @aetherion-sim/engine ratification:status
 
   lint:
     name: lint

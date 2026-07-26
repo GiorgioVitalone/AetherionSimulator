@@ -3,23 +3,21 @@
  * Validates, exhausts attacker, calculates damage, applies results, emits events.
  */
 import type { GameState, GameEvent, CardInstance, DiagCounters } from '../types/game-state.js';
-import type { Trait } from '../types/common.js';
 import { findCard } from '../zones/zone-manager.js';
 import { getValidAttackTargets, activeForcingDefenders } from '../zones/targeting.js';
 import { calculateCombatDamage, calculateHeroDamage } from './damage-calculator.js';
 import { applyDamageReplacements, markReplacementsUsed } from '../effects/replacement-handler.js';
+import { applyStateBasedDeaths } from '../effects/interpreter.js';
 import {
   isExiledOnDestruction,
-  detachEquipmentForDiscard,
 } from '../effects/destruction-destination.js';
+import { effectiveTraits, hasEffectiveTrait, snapshotCard } from '../selectors/card-semantics.js';
+import { expireModifiers } from '../runtime/modifier-expiry.js';
+import { removeCardFromState } from '../effects/state-helpers.js';
 
 export interface CombatResult {
   readonly newState: GameState;
   readonly events: readonly GameEvent[];
-}
-
-function allTraits(card: CardInstance): readonly Trait[] {
-  return [...card.traits, ...card.grantedTraits.map((g) => g.trait)];
 }
 
 // ── Diagnostic instrumentation (no-op unless a `diag` accumulator is supplied) ──
@@ -72,7 +70,7 @@ interface ArmBody {
  *   decrement the charge; when charges hit 0, ARM = 0 (normal flow). Charges are
  *   lazily initialized from currentArm and topped up when currentArm exceeds them.
  * `delta` is the fields to merge onto the body if this instance actually engaged
- * ARM (so the OFF/no-engagement path stays a byte-identical no-op). */
+ * ARM (so the OFF/no-engagement path stays a semantically invariant no-op). */
 function resolveArmMechanic(
   body: ArmBody,
   rawAtk: number,
@@ -188,31 +186,8 @@ function removeCardFromZones(
     const player = state.players[pi]!;
     const location = findCard(player.zones, instanceId);
     if (location !== null) {
-      const newZones = {
-        reserve: player.zones.reserve.map((c) => (c?.instanceId === instanceId ? null : c)),
-        frontline: player.zones.frontline.map((c) => (c?.instanceId === instanceId ? null : c)),
-        highGround: player.zones.highGround.map((c) => (c?.instanceId === instanceId ? null : c)),
-      };
-      const newPlayers = [...state.players] as [
-        (typeof state.players)[0],
-        (typeof state.players)[1],
-      ];
-      // The destroyed holder's equipment follows it to the discard pile as its own
-      // entry (Rulebook 13), even if the holder itself is exiled.
-      const split = detachEquipmentForDiscard(location.card);
-      const holder = split?.holder ?? location.card;
-      const withHolder = isExiledOnDestruction(holder)
-        ? player.discardPile
-        : [...player.discardPile, holder];
-      newPlayers[pi] = {
-        ...player,
-        zones: newZones,
-        // Volatile units (and tokens) are exiled — removed from the game rather
-        // than placed in the discard pile (Rulebook 16).
-        discardPile: split === null ? withHolder : [...withHolder, split.equipment],
-      };
       return {
-        state: { ...state, players: newPlayers },
+        state: removeCardFromState(state, instanceId),
         removedFrom: pi as 0 | 1,
         card: location.card,
       };
@@ -227,6 +202,7 @@ export function resolveCombat(
   state: GameState,
   attackerInstanceId: string,
   targetId: string,
+  declarationCommitted = false,
 ): CombatResult {
   const events: GameEvent[] = [];
 
@@ -241,8 +217,14 @@ export function resolveCombat(
   if (attackerLocation === null) {
     throw new Error(`Attacker ${attackerInstanceId} not found`);
   }
-  if (attackerLocation.card.exhausted) {
+  if (attackerLocation.card.exhausted && !declarationCommitted) {
     throw new Error(`Attacker ${attackerInstanceId} is exhausted`);
+  }
+  if (
+    declarationCommitted &&
+    (!attackerLocation.card.exhausted || !attackerLocation.card.attackedThisTurn)
+  ) {
+    throw new Error(`Attacker ${attackerInstanceId} has no committed declaration`);
   }
 
   // 2. Validate target
@@ -250,7 +232,7 @@ export function resolveCombat(
   const defenderPlayer = state.players[defenderIndex];
   const validTargets = getValidAttackTargets(
     attackerLocation.zone,
-    allTraits(attackerLocation.card),
+    effectiveTraits(attackerLocation.card),
     defenderPlayer.zones,
     state.config,
     state.activePlayerIndex,
@@ -264,13 +246,15 @@ export function resolveCombat(
   }
 
   // 3. Exhaust attacker
-  const currentState = updateCardInZones(state, attackerInstanceId, (card) => ({
-    ...card,
-    exhausted: true,
-    attackedThisTurn: true,
-    // Attacking lifts Stealth's untargetability permanently (Rulebook 16).
-    hasActed: true,
-  }));
+  const currentState = declarationCommitted
+    ? state
+    : updateCardInZones(state, attackerInstanceId, (card) => ({
+        ...card,
+        exhausted: true,
+        attackedThisTurn: true,
+        // Attacking lifts Stealth's untargetability permanently (Rulebook 16).
+        hasActed: true,
+      }));
 
   events.push({
     type: 'CHARACTER_ATTACKED',
@@ -300,7 +284,9 @@ export function resolveCombat(
     // Instrument every attack that reaches the hero face (independent of EC-004, but
     // only when a diag accumulator is attached ⇒ no-op for a normal run).
     if (diag?.heroFaceAttacks) diag.heroFaceAttacks[attackerPlayerIndex] += 1;
-    return resolveHeroAttack(currentState, attackerLocation.card, defenderIndex, events);
+    return finishCombat(
+      resolveHeroAttack(currentState, attackerLocation.card, defenderIndex, events),
+    );
   }
 
   const result = resolveCharacterAttack(
@@ -321,7 +307,7 @@ export function resolveCombat(
         ...card,
         forcedAttacksThisTurn: (card.forcedAttacksThisTurn ?? 0) + 1,
       }));
-      return { ...result, newState };
+      return finishCombat({ ...result, newState });
     }
     // Target was NOT a forcing Defender, yet Frontline Defenders existed ⇒ flowed
     // around the wall. (forcingIds empty means all Defenders were capped out.)
@@ -330,7 +316,18 @@ export function resolveCombat(
     }
   }
 
-  return result;
+  return finishCombat(result);
+}
+
+function finishCombat(result: CombatResult): CombatResult {
+  return {
+    ...result,
+    newState: expireModifiers(
+      expireModifiers(result.newState, 0, 'for_combat'),
+      1,
+      'for_combat',
+    ),
+  };
 }
 
 /** EC-004 instrumentation helper: count of Frontline Defenders the defending player
@@ -339,7 +336,7 @@ function getDefendersInFrontlineCount(zones: GameState['players'][0]['zones']): 
   return zones.frontline.filter(
     (c) =>
       c !== null &&
-      (c.traits.includes('defender') || c.grantedTraits.some((g) => g.trait === 'defender')),
+      hasEffectiveTrait(c, 'defender'),
   ).length;
 }
 
@@ -441,7 +438,7 @@ function resolveCharacterAttack(
   // config.diag (when present) accumulates shield fires/prevented + ARM absorbed.
   const ablateShield = state.config?.ablateShield === true;
   // EC-003: each body's −1 shield blunts only its FIRST combat instance this turn.
-  // Default OFF ⇒ shieldSuppressed always false (per-instance shield, byte-identical).
+  // Default OFF ⇒ shieldSuppressed always false (per-instance shield, semantically invariant).
   const shieldFirstInstanceOnly = state.config?.shieldFirstInstanceOnly === true;
   const diag = state.config?.diag;
   const defConsumed: string[] = [];
@@ -502,14 +499,14 @@ function resolveCharacterAttack(
     });
 
   // EC-002: each body presents ARM only on its FIRST combat instance this turn.
-  // Default OFF ⇒ effectiveCombatArm returns currentArm (byte-identical). The diag
+  // Default OFF ⇒ effectiveCombatArm returns currentArm (semantically invariant). The diag
   // instrumentation records the ARM points withheld on subsequent (gang) instances.
   const firstInstanceOnly = state.config?.armFirstInstanceOnly === true;
   accumulateFirstInstanceStripped(diag, defender, attacker.currentAtk, defenderPlayerId);
   accumulateFirstInstanceStripped(diag, attacker, defender.currentAtk, attackerPlayerId);
   // TEST A / TEST B: alternative ARM mechanics fully define ARM presentation when
   // ON (replacing the normal/EC-002 path). Default OFF ⇒ mechanic === 'none' ⇒ the
-  // EC-002/engine-default branch runs unchanged (byte-identical no-op).
+  // EC-002/engine-default branch runs unchanged (semantically invariant no-op).
   const mechanic = armMechanic(state.config);
   let defenderArm: number;
   let attackerArm: number;
@@ -534,8 +531,8 @@ function resolveCharacterAttack(
     defender.currentAtk,
     defenderArm,
     defender.currentHp,
-    allTraits(attacker),
-    allTraits(defender),
+    effectiveTraits(attacker),
+    effectiveTraits(defender),
     reduceDefender,
     reduceAttacker,
     state.config?.damageScale ?? 1,
@@ -561,7 +558,7 @@ function resolveCharacterAttack(
   }
   // TEST A / TEST B: persist the ARM-mechanic spend (armConsumed / decremented
   // armCharges) onto each body whose ARM actually engaged this instance. Delta null
-  // (no engagement, or mechanic OFF) ⇒ flag untouched (byte-identical no-op).
+  // (no engagement, or mechanic OFF) ⇒ flag untouched (semantically invariant no-op).
   if (defArmDelta !== null) {
     currentState = updateCardInZones(currentState, targetId, (card) => ({
       ...card,
@@ -622,6 +619,21 @@ function resolveCharacterAttack(
     }));
   }
 
+  if (state.config?.stateBasedActions === true) {
+    if (result.defenderDestroyed) {
+      events.push({
+        type: 'LETHAL_DAMAGE_DEALT',
+        attackerId: attackerInstanceId,
+        targetId,
+      });
+    }
+    const stateBased = applyStateBasedDeaths(currentState, 'combat');
+    return {
+      newState: stateBased.newState,
+      events: [...events, ...stateBased.events],
+    };
+  }
+
   // Destroy defender if dead
   if (result.defenderDestroyed) {
     events.push({
@@ -635,6 +647,7 @@ function resolveCharacterAttack(
       cardDefId: defender.cardDefId,
       cause: 'combat',
       playerId: defenderPlayerId,
+      lastKnownCard: snapshotCard(defender),
     });
     if (!defender.isToken && isExiledOnDestruction(defender)) {
       events.push({
@@ -651,6 +664,7 @@ function resolveCharacterAttack(
         cardDefId: defender.equipment.cardDefId,
         cause: 'combat',
         playerId: defenderPlayerId,
+        lastKnownCard: snapshotCard(defender.equipment),
       });
     }
     const removal = removeCardFromZones(currentState, targetId);
@@ -667,6 +681,7 @@ function resolveCharacterAttack(
       cardDefId: attacker.cardDefId,
       cause: 'combat',
       playerId: attackerPlayerId,
+      lastKnownCard: snapshotCard(attacker),
     });
     if (!attacker.isToken && isExiledOnDestruction(attacker)) {
       events.push({
@@ -683,6 +698,7 @@ function resolveCharacterAttack(
         cardDefId: attacker.equipment.cardDefId,
         cause: 'combat',
         playerId: attackerPlayerId,
+        lastKnownCard: snapshotCard(attacker.equipment),
       });
     }
     const removal = removeCardFromZones(currentState, attackerInstanceId);

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "candidateId": "aetherion-current-remediation-2026-07-26",
+  "status": "awaiting_external_review",
+  "findings": ["REPRO-07", "BOT-10", "EXP-03", "TEST-07"],
+  "requiredChecks": {
+    "cleanTrackedCheckout": true,
+    "fullGateEvidence": true,
+    "ratifiedRulesManifest": true,
+    "ratifiedStudyManifest": true,
+    "independentlyReviewedRuleOracle": true,
+    "independentlyLabeledExpertCorpus": true
+  },
+  "requiredApprovals": {
+    "rulesOwner": null,
+    "verificationOwner": null,
+    "releaseOwner": null,
+    "quantitativeOwner": null,
+    "independentRulesReviewer": null,
+    "independentPolicyExpert": null
+  },
+  "attestationText": "I reviewed the named candidate commit and evidence hashes in my stated domain; the approval is independent, attributable, and limited to that exact content.",
+  "evidenceSources": {
+    "rulesManifest": "packages/engine/sim-data/ruleset-current.json",
+    "studyManifest": "packages/engine/sim-data/current-study-manifest.json",
+    "policyCalibrationManifest": "packages/engine/sim-data/policy-calibration-manifest.json",
+    "cardPool": "packages/engine/sim-data/aetherion-cards.json",
+    "deckPool": "packages/engine/sim-data/aetherion-decks.json",
+    "semanticExceptions": "packages/engine/sim-data/card-semantic-exceptions.json",
+    "coverageExceptions": "packages/engine/sim-data/coverage-exceptions.json",
+    "performanceBudgets": "packages/engine/sim-data/performance-budgets.json",
+    "simulationEntrypoints": "packages/engine/sim-data/simulation-entrypoints.json",
+    "legacyPinReanchors": "packages/engine/sim-data/legacy-pin-reanchors.json",
+    "balanceBudget": "packages/engine/sim-data/balance-budget.v2.json",
+    "rulesDecisionRegister": "docs/simulation-engine-rules-decisions-2026-07-26.md",
+    "verificationReport": "docs/simulation-engine-remediation-verification-2026-07-27.md",
+    "ruleOracle": "packages/engine/sim-data/independent-rule-oracle-candidate.json",
+    "expertCorpus": "packages/engine/sim-data/expert-policy-corpus-template.json",
+    "findingLedger": "packages/engine/sim-data/finding-evidence.json",
+    "enginePackage": "packages/engine/package.json",
+    "workspaceLock": "pnpm-lock.yaml"
+  }
+}

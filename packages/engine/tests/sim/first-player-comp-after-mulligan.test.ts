@@ -111,6 +111,7 @@ ds('firstPlayerCompAfterMulligan knob (harness: sim-runner.mjs)', () => {
       runSim: (c: unknown) => { runHash: string };
     };
     const base = {
+      rulesProfile: 'legacy-v1',
       matchups: 'all-pairs',
       gamesPerPairing: 3,
       seedBase: 4242,
@@ -134,6 +135,7 @@ ds('endPhaseOrderFix knob: byte-identical no-op + determinism (runSim)', () => {
       runSim: (c: unknown) => { runHash: string };
     };
     const base = {
+      rulesProfile: 'custom-diagnostic',
       matchups: 'all-pairs',
       gamesPerPairing: 3,
       seedBase: 4242,

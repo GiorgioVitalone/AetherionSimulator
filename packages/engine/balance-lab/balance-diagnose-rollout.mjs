@@ -10,7 +10,7 @@ const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f]));
 const GPP = +(process.env.GPP || 20);
 const OUT = process.env.OUT || '/tmp/balance-diagnose-rollout-result.json';
-const BASE = { decks: realDecks, matchups: 'all-pairs', firstPlayer: 'alternating', fixHandSizeStall: true,
+const BASE = { rulesProfile: 'custom-diagnostic', decks: realDecks, matchups: 'all-pairs', firstPlayer: 'alternating', fixHandSizeStall: true,
   termination: 'tiebreak', abilitiesOn: true, turnCap: 80, seedBase: 12345,
   botPolicy: 'rollout', rollouts: 4, rolloutDepth: 2, maxCandidates: 5, gamesPerPairing: GPP };
 

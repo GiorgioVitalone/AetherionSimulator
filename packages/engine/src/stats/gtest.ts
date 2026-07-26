@@ -23,6 +23,7 @@ export interface GoodnessOfFitResult {
  * categories or zero total => no evidence (statistic 0, p = 1).
  */
 export function gTestUniform(counts: readonly number[]): GoodnessOfFitResult {
+  assertCounts(counts);
   const k = counts.length;
   const total = counts.reduce((a, b) => a + b, 0);
   if (k < 2 || total <= 0) {
@@ -45,6 +46,7 @@ export function gTestUniform(counts: readonly number[]): GoodnessOfFitResult {
 export function chiSquareUniform(
   counts: readonly number[],
 ): GoodnessOfFitResult {
+  assertCounts(counts);
   const k = counts.length;
   const total = counts.reduce((a, b) => a + b, 0);
   if (k < 2 || total <= 0) {
@@ -58,4 +60,16 @@ export function chiSquareUniform(
   }
   const df = k - 1;
   return { statistic: chi, df, pValue: chiSquareUpperP(chi, df) };
+}
+
+function assertCounts(counts: readonly number[]): void {
+  if (
+    counts.some(
+      (count) =>
+        !Number.isSafeInteger(count) ||
+        count < 0,
+    )
+  ) {
+    throw new RangeError('Counts must be nonnegative safe integers');
+  }
 }

@@ -8,7 +8,7 @@
 // arm B's i-th game ARE the same seed — a "flip" (different faction wins) is
 // attributable to the enumeration/cap axis alone, not sampling noise.
 //
-// BASE mirrors balance-verify.mjs's rollout-rung BASE (ruleset v1 manifest, real
+// BASE mirrors the current rollout-rung contract (canonical manifest, real
 // starter decks, all-pairs incl. mirrors, seatAlternation) so this A/B panel is
 // statistically comparable to prior panel history. rolloutSeedMode 'actionKey'
 // (T3) is fixed ON for every arm — it's what keeps legacy/full candidate
@@ -50,11 +50,6 @@ const POOL_SHA = createHash('sha256')
   .digest('hex')
   .slice(0, 16);
 
-// Locked ruleset manifest (same as balance-verify.mjs) — v1 never mutates.
-const MANIFEST_PATH = new URL('./sim-data/ruleset-v1.json', import.meta.url);
-const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
-const manifestRules = manifest.rules;
-
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f]));
 
@@ -75,13 +70,12 @@ const AB_OUT = EXPLICIT_OUT || `${RUNS_DIR}tmp-ab-candidates-${Date.now()}.json`
 
 // Measurement fields identical to balance-verify.mjs's rollout-rung BASE.
 const BASE = {
+  rulesProfile: 'current',
   firstPlayer: 'alternating',
-  fixHandSizeStall: true,
   termination: 'tiebreak',
   abilitiesOn: true,
   turnCap: 80,
   seedBase: 12345,
-  ...manifestRules,
   seatAlternation: true,
   botPolicy: 'rollout',
   rollouts: 8,

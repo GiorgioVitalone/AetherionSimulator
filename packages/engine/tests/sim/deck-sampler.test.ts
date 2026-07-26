@@ -7,7 +7,15 @@
  * dist/sim/deck-legality.js, so we skip gracefully if the build is absent.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -101,6 +109,28 @@ d('deck-sampler', () => {
     const m = (await import(samplerPath)) as unknown as Sampler;
     expect(m.multisetHash([3, 1, 2, 1])).toBe(m.multisetHash([1, 1, 2, 3]));
     expect(m.multisetHash([1, 2])).not.toBe(m.multisetHash([1, 1, 2]));
+  });
+
+  it('is invariant to card-pool source order', () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'aetherion-deck-order-'));
+    try {
+      const original = JSON.parse(readFileSync(cardsPath, 'utf8')) as unknown[];
+      const reversedPath = join(temporary, 'reversed-cards.json');
+      writeFileSync(reversedPath, JSON.stringify([...original].reverse()));
+      const script = [
+        `import { sampleFactionDecks } from ${JSON.stringify(samplerPath)};`,
+        `process.stdout.write(JSON.stringify(sampleFactionDecks('Onyx', 5, { seed: 31337 })));`,
+      ].join('');
+      const run = (poolPath: string) =>
+        execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+          encoding: 'utf8',
+          env: { ...process.env, AETHERION_CARDS: poolPath },
+        });
+
+      expect(run(fileURLToPath(cardsPath))).toBe(run(reversedPath));
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
   });
 
   it('resource deck is exactly 12 of the faction resource id', async () => {

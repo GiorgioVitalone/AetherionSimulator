@@ -218,7 +218,7 @@ export function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn,
       try {
         const ids = playoutPolicy === 'heuristic'
           ? chooseChoiceResponse({ ...gs, pendingChoice: cpc })
-          : (cpc.options || []).map(o => o.instanceId ?? o.id).slice(0, Math.max(cpc.minSelections || 0, 0));
+          : (cpc.options || []).map(o => o.id).slice(0, Math.max(cpc.minSelections || 0, 0));
         if (cpc.type === 'mulligan') fork.send({ type: 'MULLIGAN_DECISION', playerId: cpc.playerId, keep: true });
         else fork.send({ type: 'PLAYER_RESPONSE', response: { selectedOptionIds: ids } });
       } catch { try { fork.send({ type: 'END_PHASE' }); } catch { break; } }
@@ -234,7 +234,7 @@ export function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn,
         } else {
           const ids = playoutPolicy === 'heuristic'
             ? chooseChoiceResponse(gs)
-            : (pc.options || []).map(o => o.instanceId ?? o.id).slice(0, Math.max(pc.minSelections || 0, 0));
+            : (pc.options || []).map(o => o.id).slice(0, Math.max(pc.minSelections || 0, 0));
           fork.send({ type: 'PLAYER_RESPONSE', response: { selectedOptionIds: ids } });
         }
         continue;
@@ -372,6 +372,10 @@ export function makeRolloutPilot(opts = {}) {
   // pushes a record, so it cannot perturb the rollout's RNG/decisionIndex or the
   // chosen action. Same discipline as collectTrainingData in sim-runner.mjs.
   const collectDecisionLog = opts.collectDecisionLog ?? false;
+  // Calibration-only policy dimension: evaluate real priority and explicit-choice
+  // decisions through the same outcome model used for proactive actions. OFF by
+  // default so historical rollout behavior and pins remain unchanged.
+  const rolloutInteractions = opts.rolloutInteractions ?? false;
 
   // A per-decision counter folded into the rollout seed for determinism. Reset by
   // the runner at game start via reset().
@@ -493,7 +497,269 @@ export function makeRolloutPilot(opts = {}) {
     return best ? best.action : null;
   }
 
-  return { chooseAction, reset, diag, decisionLog, meta: { rollouts, playoutPolicy, maxCandidates, candidateGen, candidateKindCaps, seedMode, playoutBackend, depth, closingReward, search, fixHandSizeStall, fairPilot, valueLeafModelPath, collectDecisionLog } };
+  function evaluateInteraction(actor, gs, gameSeed, turnCap, family, mover, options, heuristicAction) {
+    const di = decisionIndex++;
+    if (options.length === 0) {
+      throw new Error(`${family} interaction has no legal candidates`);
+    }
+    const persisted = actor.getPersistedSnapshot();
+    const hydrated =
+      playoutBackend === 'snapshot'
+        ? hydratePersistedSnapshot(gameMachine, persisted)
+        : null;
+    const horizonTurn = depth > 0 ? gs.turnNumber + depth : Infinity;
+    const oneRollout = (ci, r) => {
+      const option = options[ci];
+      const rnd = rngf(
+        mix(
+          gameSeed,
+          di,
+          seedMode === 'actionKey'
+            ? hashActionKey(seedKeyOf(option.action))
+            : ci,
+          r,
+        ),
+      );
+      let fork;
+      if (hydrated != null) {
+        fork = makeSnapshotFork(gameMachine, hydrated);
+      } else {
+        fork = createActor(gameMachine, { snapshot: persisted });
+        fork.start();
+      }
+      try {
+        fork.send(option.event);
+      } catch {
+        // The option was enumerated from the authoritative interaction itself.
+        // If a backend nevertheless rejects it, the resulting error snapshot is
+        // scored consistently with proactive rollout branches.
+      }
+      const fin = playout(
+        fork,
+        playoutPolicy,
+        turnCap,
+        rnd,
+        stepCap,
+        horizonTurn,
+        fixHandSizeStall,
+        fairPilot,
+      );
+      const score = scoreLeaf(
+        fin,
+        mover,
+        turnCap,
+        closingReward,
+        valueLeafNet,
+      );
+      fork.stop();
+      return score;
+    };
+    const stats =
+      search === 'ucb'
+        ? evalUcb(options.length, rollouts, oneRollout)
+        : evalFlat(options.length, rollouts, oneRollout);
+    let bestIdx = 0;
+    let bestMean = -Infinity;
+    for (let ci = 0; ci < options.length; ci++) {
+      const stat = stats[ci];
+      const candidateMean = stat.n > 0 ? stat.sum / stat.n : -Infinity;
+      if (candidateMean > bestMean + 1e-12) {
+        bestIdx = ci;
+        bestMean = candidateMean;
+      }
+    }
+    if (collectDecisionLog) {
+      decisionLog.push({
+        turn: gs.turnNumber,
+        mover,
+        family,
+        features: Array.from(featurize(gs)),
+        candidates: options.map((option, index) => ({
+          action: option.action,
+          value:
+            stats[index].n > 0
+              ? stats[index].sum / stats[index].n
+              : null,
+          playouts: stats[index].n,
+        })),
+        chosenIdx: bestIdx,
+        heuristicIdx: options.findIndex((option) =>
+          actionsEqual(option.action, heuristicAction),
+        ),
+        passIdx: options.findIndex((option) => option.action === null),
+      });
+    }
+    return options[bestIdx].action;
+  }
+
+  function chooseInteractionReaction(actor, gs, gameSeed, turnCap) {
+    const priority = gs.pendingPriority;
+    if (priority == null) return null;
+    const concrete = concreteReactiveActions(
+      computeReactiveActions(gs, priority.toRespondPlayerId),
+    );
+    const options = [
+      ...concrete.map((action) => ({
+        action,
+        event: { type: 'REACTIVE_ACTION', action },
+      })),
+      { action: null, event: { type: 'PRIORITY_PASS' } },
+    ];
+    return evaluateInteraction(
+      actor,
+      gs,
+      gameSeed,
+      turnCap,
+      'reaction',
+      priority.toRespondPlayerId,
+      options,
+      chooseReactiveAction(gs),
+    );
+  }
+
+  function chooseInteractionMulligan(actor, gs, gameSeed, turnCap) {
+    const choice = gs.pendingChoice;
+    if (choice == null || choice.type !== 'mulligan') return true;
+    const options = [true, false].map((keep) => ({
+      action: { type: 'mulligan_decision', keep },
+      event: {
+        type: 'MULLIGAN_DECISION',
+        playerId: choice.playerId,
+        keep,
+      },
+    }));
+    const selected = evaluateInteraction(
+      actor,
+      gs,
+      gameSeed,
+      turnCap,
+      'choice',
+      choice.playerId,
+      options,
+      {
+        type: 'mulligan_decision',
+        keep: shouldKeepHand(gs, choice.playerId),
+      },
+    );
+    return selected.keep;
+  }
+
+  function chooseInteractionChoice(actor, gs, gameSeed, turnCap) {
+    const choice = gs.pendingChoice;
+    if (choice == null || choice.type === 'mulligan') return [];
+    const options = enumerateInteractionChoiceResponses(choice).map(
+      (selectedOptionIds) => ({
+        action: { type: 'choice_response', selectedOptionIds },
+        event: {
+          type: 'PLAYER_RESPONSE',
+          playerId: choice.playerId,
+          interactionId: choice.interactionId,
+          response: { selectedOptionIds },
+        },
+      }),
+    );
+    const selected = evaluateInteraction(
+      actor,
+      gs,
+      gameSeed,
+      turnCap,
+      'choice',
+      choice.playerId,
+      options,
+      {
+        type: 'choice_response',
+        selectedOptionIds: chooseChoiceResponse(gs),
+      },
+    );
+    return selected.selectedOptionIds;
+  }
+
+  return {
+    chooseAction,
+    chooseInteractionReaction,
+    chooseInteractionMulligan,
+    chooseInteractionChoice,
+    reset,
+    diag,
+    decisionLog,
+    meta: {
+      rollouts,
+      playoutPolicy,
+      maxCandidates,
+      candidateGen,
+      candidateKindCaps,
+      seedMode,
+      playoutBackend,
+      depth,
+      closingReward,
+      search,
+      fixHandSizeStall,
+      fairPilot,
+      valueLeafModelPath,
+      collectDecisionLog,
+      rolloutInteractions,
+    },
+  };
+}
+
+function concreteReactiveActions(options) {
+  return options.flatMap((option) => {
+    const xValues = option.xValues ?? [undefined];
+    return xValues.map((xValue) =>
+      option.source === 'board'
+        ? {
+            type: 'activate_ability',
+            cardInstanceId: option.cardInstanceId,
+            abilityIndex: option.abilityIndex,
+            ...(xValue !== undefined ? { xValue } : {}),
+          }
+        : {
+            type: 'cast_spell',
+            cardInstanceId: option.cardInstanceId,
+            ...(xValue !== undefined ? { xValue } : {}),
+          },
+    );
+  });
+}
+
+function enumerateInteractionChoiceResponses(choice) {
+  const ids = choice.options
+    .map((option) => option.id)
+    .sort((a, b) => a.localeCompare(b));
+  if (choice.type === 'choose_trigger_order') {
+    return permutations(ids).slice(0, 24);
+  }
+  const min = Math.max(0, choice.minSelections ?? 0);
+  const max = Math.min(ids.length, choice.maxSelections ?? ids.length);
+  const candidates = [];
+  const build = (start, remaining, selected) => {
+    if (remaining === 0) {
+      candidates.push([...selected]);
+      return;
+    }
+    for (let index = start; index <= ids.length - remaining; index++) {
+      selected.push(ids[index]);
+      build(index + 1, remaining - 1, selected);
+      selected.pop();
+    }
+  };
+  for (let count = min; count <= max; count++) {
+    build(0, count, []);
+    if (candidates.length >= 24) break;
+  }
+  return candidates.slice(0, 24);
+}
+
+function permutations(values) {
+  if (values.length <= 1) return [[...values]];
+  const result = [];
+  for (let index = 0; index < values.length; index++) {
+    const head = values[index];
+    const rest = values.filter((_, restIndex) => restIndex !== index);
+    for (const tail of permutations(rest)) result.push([head, ...tail]);
+    if (result.length >= 24) break;
+  }
+  return result.slice(0, 24);
 }
 
 // ── Budget allocators (flat default; UCB1 optional behind opts.search==="ucb") ─
@@ -624,7 +890,7 @@ function sameCandidate(a, b) {
 const ACTION_ID_FIELDS = [
   'cardInstanceId', 'attackerInstanceId', 'targetId', 'targetInstanceId',
   'toZone', 'zone', 'slotIndex', 'abilityIndex', 'xValue',
-  'selectedTargetIds', 'equipmentInstanceId',
+  'selectedTargetIds', 'selectedOptionIds', 'equipmentInstanceId', 'keep',
 ];
 function actionsEqual(a, b) {
   if (a == null && b == null) return true;
@@ -681,6 +947,9 @@ export function seedKeyOf(a) {
   switch (a.type) {
     case 'tap_reserve': return `tap:${a.cardInstanceId}`;
     case 'discard_for_energy': return `dfe:${a.cardInstanceId}`;
+    case 'mulligan_decision': return `mulligan:${a.keep ? 'keep' : 'replace'}`;
+    case 'choice_response':
+      return `choice:${(a.selectedOptionIds ?? []).join('\u0000')}`;
     default: return keyOf(a);
   }
 }

@@ -23,6 +23,7 @@ const pilotCfg = PILOT === 'rollout'
   ? { botPolicy: 'rollout', rollouts: 4, maxCandidates: 5, rolloutDepth: RDEPTH }
   : { botPolicy: 'heuristic' };
 const cfg = {
+  rulesProfile: 'custom-diagnostic',
   decks, matchups: 'all-pairs', firstPlayer: 'alternating', fixHandSizeStall: true,
   termination: 'tiebreak', terminationMode: 'turn_cap', abilitiesOn: true, turnCap: 80,
   seedBase: 12345, fairPilot: true, gamesPerPairing: GPP, ...pilotCfg,

@@ -35,7 +35,8 @@ export interface TwoPropResult {
  * probabilities of all outcomes no more likely than the observed one.
  */
 export function binomTest(k: number, n: number, p0 = 0.5): BinomTestResult {
-  if (n <= 0) {
+  assertBinomialDomain(k, n, p0);
+  if (n === 0) {
     return { k, n, phat: 0, p0, pValue: 1 };
   }
   const pObs = binomPmf(k, n, p0);
@@ -58,9 +59,8 @@ export function twoProportionZ(
   w2: number,
   n2: number,
 ): TwoPropResult {
-  if (n1 <= 0 || n2 <= 0) {
-    return { diff: 0, z: 0, pValue: 1 };
-  }
+  assertPositiveBinomialDomain(w1, n1, 'arm 1');
+  assertPositiveBinomialDomain(w2, n2, 'arm 2');
   const p1 = w1 / n1;
   const p2 = w2 / n2;
   const pPool = (w1 + w2) / (n1 + n2);
@@ -86,3 +86,31 @@ function binomPmf(k: number, n: number, p: number): number {
 
 /** Re-exported so consumers needing the raw normal CDF have one import. */
 export { normalCdf };
+
+function assertBinomialDomain(k: number, n: number, p: number): void {
+  if (
+    !Number.isSafeInteger(n) ||
+    n < 0 ||
+    !Number.isSafeInteger(k) ||
+    k < 0 ||
+    k > n ||
+    !Number.isFinite(p) ||
+    p < 0 ||
+    p > 1
+  ) {
+    throw new RangeError(
+      'Binomial inputs require integer 0 <= successes <= trials and 0 <= p <= 1',
+    );
+  }
+}
+
+function assertPositiveBinomialDomain(
+  wins: number,
+  trials: number,
+  label: string,
+): void {
+  assertBinomialDomain(wins, trials, 0.5);
+  if (trials === 0) {
+    throw new RangeError(`${label} must contain at least one trial`);
+  }
+}

@@ -127,6 +127,35 @@ describe('replacement effects', () => {
     expect(result.events.some(e => e.type === 'CARD_DESTROYED')).toBe(false);
   });
 
+  it('a destruction replacement can exile the card into the durable ledger', () => {
+    const card = mockCard({ owner: 0, currentHp: 2, isToken: false });
+    const zones = deployToZone(emptyZones(), card, 'frontline');
+    let state = mockGameState({
+      config: { terminationMode: 'turn_cap', stateBasedActions: true },
+      players: [mockPlayerState(0, { zones }), mockPlayerState(1)],
+    });
+    state = executeEffect(
+      state,
+      registerReplacement({
+        replaces: { type: 'on_would_be_destroyed' },
+        instead: [{ type: 'exile', target: { type: 'self' } }],
+      }),
+      ctx(card.instanceId),
+    ).newState;
+
+    const result = executeEffect(state, dealSelf(5), ctx(card.instanceId));
+    expect(findById(result.newState, card.instanceId)).toBeNull();
+    expect(result.newState.players[0].discardPile).toHaveLength(0);
+    expect(result.newState.players[0].exile).toMatchObject([
+      {
+        instanceId: card.instanceId,
+        ownerPlayerId: 0,
+        cause: 'effect',
+      },
+    ]);
+    expect(result.events.some((event) => event.type === 'CARD_EXILED')).toBe(true);
+  });
+
   it('oncePerTurn replacement only fires once', () => {
     const card = mockCard({ owner: 0, currentHp: 10 });
     const zones = deployToZone(emptyZones(), card, 'frontline');

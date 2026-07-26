@@ -10,11 +10,12 @@ import type {
   ResourceCard,
   RngState,
 } from '../types/game-state.js';
-import type { ResourceCost, CardTypeCode } from '../types/common.js';
+import type { ResourceCost, CardTypeCode, ResourceType } from '../types/common.js';
 import { createEmptyZoneState } from '../zones/zone-manager.js';
 import { createRng, shuffle, randomInt } from './rng.js';
 import { normalizeTraits } from './trait-normalizer.js';
 import { INITIAL_HAND_SIZE, MULLIGAN_HAND_SIZE } from '../types/game-state.js';
+import { CURRENT_GAME_CONFIG } from '../rules/manifest.js';
 
 // ── Card Definition (minimal interface for setup) ─────────────────────────────
 
@@ -27,6 +28,8 @@ export interface CardDefinition {
   readonly traits?: readonly string[];
   readonly tags?: readonly string[];
   readonly alignment?: readonly string[];
+  readonly xCostResource?: ResourceType;
+  readonly resourceType?: 'mana' | 'energy';
 }
 
 export interface HeroDefinition {
@@ -45,6 +48,11 @@ export interface DeckSelection {
 export interface CardDefinitionRegistry {
   readonly getCard: (id: number) => CardDefinition | undefined;
   readonly getHero: (id: number) => HeroDefinition | undefined;
+}
+
+export interface GameSetupOptions {
+  readonly resourceDeckSize?: number;
+  readonly strictResourceTypes?: boolean;
 }
 
 // ── Instance Counter ──────────────────────────────────────────────────────────
@@ -91,6 +99,7 @@ function createCardInstance(def: CardDefinition, owner: 0 | 1): CardInstance {
     isToken: false,
     tags: def.tags ?? [],
     cost: def.cost,
+    ...(def.xCostResource !== undefined ? { xCostResource: def.xCostResource } : {}),
     alignment: def.alignment ?? [],
     owner,
   };
@@ -126,7 +135,7 @@ export function createGame(
   player2: DeckSelection,
   registry: CardDefinitionRegistry,
   seed?: number,
-  setupOptions?: { readonly resourceDeckSize?: number },
+  setupOptions?: GameSetupOptions,
 ): GameState {
   resetSetupInstanceCounter();
   const rng = createRng(seed ?? Date.now());
@@ -157,9 +166,55 @@ export function createGame(
     log: [],
     winner: null,
     rng: rng3,
+    eventSequence: 0,
     turnState: {
       discardedForEnergy: false,
       firstPlayerFirstTurn: true,
+    },
+  };
+}
+
+/**
+ * Canonical current-rules constructor.
+ *
+ * `createGame` remains the low-level/legacy-compatible constructor during the
+ * public-API migration. New normal callers must use this constructor so rules
+ * cannot silently fall back to absent configuration.
+ */
+export function createCurrentGame(
+  player1: DeckSelection,
+  player2: DeckSelection,
+  registry: CardDefinitionRegistry,
+  seed?: number,
+): GameState {
+  const state = createGame(player1, player2, registry, seed, {
+    resourceDeckSize: CURRENT_GAME_CONFIG.resourceDeckSize,
+    strictResourceTypes: true,
+  });
+  const choice = state.pendingChoice;
+  if (choice === null || choice.type !== 'mulligan') {
+    return {
+      ...state,
+      config: CURRENT_GAME_CONFIG,
+      auraDerivation: { sourceKeys: [], contributionKeys: [] },
+    };
+  }
+  const interactionId = [
+    'mulligan',
+    state.rng.seed,
+    state.turnNumber,
+    choice.playerId,
+  ].join(':');
+  return {
+    ...state,
+    config: CURRENT_GAME_CONFIG,
+    auraDerivation: { sourceKeys: [], contributionKeys: [] },
+    pendingChoice: {
+      ...choice,
+      interactionId,
+      validationToken: interactionId,
+      visibility: 'controller',
+      optional: false,
     },
   };
 }
@@ -169,7 +224,7 @@ function buildPlayerState(
   registry: CardDefinitionRegistry,
   owner: 0 | 1,
   rng: RngState,
-  setupOptions?: { readonly resourceDeckSize?: number },
+  setupOptions?: GameSetupOptions,
 ): {
   readonly player: PlayerState;
   readonly nextRng: RngState;
@@ -192,10 +247,22 @@ function buildPlayerState(
 
   // Load resource deck
   const resourceCards = deck.resourceDeckDefIds.map((id) => {
-    // Determine resource type from card definition
     const def = registry.getCard(id);
+    if (def === undefined) {
+      throw new Error(`Resource definition not found: ${String(id)}`);
+    }
+    if (def.cardType !== 'R') {
+      throw new Error(`Definition ${String(id)} is not a Resource card`);
+    }
     const resourceType =
-      def !== undefined && def.cardType === 'R' ? guessResourceType(def) : 'mana';
+      def.resourceType ??
+      (setupOptions?.strictResourceTypes === true
+        ? (() => {
+            throw new Error(
+              `Resource definition ${String(id)} is missing explicit resourceType`,
+            );
+          })()
+        : guessResourceType(def));
     return createResourceCard(resourceType);
   });
 
@@ -224,6 +291,7 @@ function buildPlayerState(
       resourceDeck: shuffledResource,
       resourceBank: [],
       discardPile: [],
+      exile: [],
       temporaryResources: [],
       turnCounters: {
         spellsCast: 0,

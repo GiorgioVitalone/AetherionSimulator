@@ -9,11 +9,10 @@ import type {
   GameEvent,
   StackItem,
   HeroState,
-  RegisteredTrigger,
   TemporaryResource,
 } from '../types/game-state.js';
 import type { PlayerAction } from './types.js';
-import type { Effect, ScheduledTiming } from '../types/effects.js';
+import type { Effect } from '../types/effects.js';
 import type { AbilityDSL } from '../types/ability.js';
 import { deployToZone, moveCard } from '../zones/zone-manager.js';
 import { resolveCombat } from '../combat/combat-resolver.js';
@@ -23,22 +22,57 @@ import { isReserveTapEligible, tapReserveCard } from '../actions/reserve-tap.js'
 import { meetsEquipRequirement } from '../actions/equip-eligibility.js';
 import { runAbilityEffects } from '../effects/effect-runner.js';
 import { updateCardInState } from '../effects/state-helpers.js';
-import { openWindowOrResolve, passPriority } from '../effects/stack-resolver.js';
-import { processScheduledEffects } from '../effects/scheduled-handler.js';
+import {
+  openWindowOrResolve,
+  passPriority,
+  stackDeclaredEvent,
+} from '../effects/stack-resolver.js';
 import { dispatchTriggers } from '../runtime/dispatch.js';
 import { recomputeAuras } from '../runtime/aura-recompute.js';
+import { stabilizeStateBased } from '../runtime/state-based-stabilizer.js';
+import { stampGameEvents } from '../runtime/event-envelope.js';
 import { expireModifiers } from '../runtime/modifier-expiry.js';
 import { isStunned, consumeStun, isSlowed, tickStatusEffects } from '../runtime/status-tick.js';
-import { getAllRegisteredTriggers, triggerRateLimits } from '../events/trigger-registry.js';
-import { ELITE_HIGH_GROUND_SURCHARGE } from '../actions/available-actions.js';
-import { MAX_HAND_SIZE } from '../types/game-state.js';
-import type { ResourceCost, ZoneType } from '../types/common.js';
+import {
+  getAllRegisteredTriggers,
+  registerCardTriggers,
+  buildHeroTriggers,
+  computeCardTriggers,
+} from '../events/trigger-registry.js';
+import {
+  canTransform,
+  computeAvailableActions,
+  ELITE_HIGH_GROUND_SURCHARGE,
+} from '../actions/available-actions.js';
+import type { ResourceCost, ResourceType, ZoneType } from '../types/common.js';
+import { hasEffectiveTrait, snapshotCard } from '../selectors/card-semantics.js';
+import { attemptDraw } from '../effects/draw-service.js';
+
+export {
+  checkHandSize,
+  continueEndPhaseBoundary,
+  discardCards,
+  executeTurnBoundary,
+  expireEndOfTurnModifiers,
+  expireEndOfTurnModifiersWithEvents,
+  passTurn,
+  removeTemporaryResources,
+  resumeTurnBoundary,
+  runScheduledEffects,
+} from './turn-boundary.js';
 
 // Variable (X) cost: the chosen X is paid as additional flexible resource on top
 // of the base cost, and threaded to effects as `context.xPaid`. The engine's
 // ResourceCost has no per-resource X channel, so X draws from any resource.
-function addXCost(cost: ResourceCost, xValue: number): ResourceCost {
-  return { ...cost, flexible: cost.flexible + Math.max(0, xValue) };
+function addXCost(
+  cost: ResourceCost,
+  xValue: number,
+  resource?: ResourceType,
+): ResourceCost {
+  const x = Math.max(0, xValue);
+  return resource === undefined
+    ? { ...cost, flexible: cost.flexible + x }
+    : { ...cost, [resource]: cost[resource] + x };
 }
 
 // ── Ability Effect Execution ─────────────────────────────────────────────────
@@ -61,6 +95,22 @@ function abilityEffects(
   return out;
 }
 
+// GAP FIX (config.equipmentTriggers): an equipment's printed on_equipment_attached
+// trigger (e.g. Growplate Helm) needs to fire at the moment it attaches, same as
+// on_deploy fires inline for a deployed card — the dispatch trigger pool is
+// snapshotted BEFORE the attach resolves (see processPlayerAction), and its
+// matcher keys on the HOLDER's instance id (event.targetId), not the equipment's
+// own, so it could never fire via the general pool. Absent/false ⇒ never called.
+function equipmentAttachedEffects(abilities: readonly AbilityDSL[]): readonly Effect[] {
+  const out: Effect[] = [];
+  for (const ab of abilities) {
+    if (ab.type === 'triggered' && ab.trigger.type === 'on_equipment_attached') {
+      out.push(...ab.effects);
+    }
+  }
+  return out;
+}
+
 function findOnBattlefield(state: GameState, instanceId: string): CardInstance | null {
   for (const p of state.players) {
     for (const zone of [p.zones.reserve, p.zones.frontline, p.zones.highGround]) {
@@ -73,15 +123,43 @@ function findOnBattlefield(state: GameState, instanceId: string): CardInstance |
 // ── Upkeep Actions ──────────────────────────────────────────────────────────
 
 // `until_next_upkeep` buffs expire at the start of the affected card's
-// controller's Upkeep (the active player at this point). Aura recompute follows
-// so any continuous modifiers are rebuilt cleanly.
+// controller's Upkeep (the active player at this point). The eventful form is
+// the authoritative boundary: losing HP or an aura can cause simultaneous
+// state-based deaths, and those events must dispatch with pre-expiry LKI.
+export function expireUpkeepModifiersWithEvents(
+  state: GameState,
+  actionId = [
+    'upkeep-expiry',
+    state.rng.seed,
+    state.turnNumber,
+    state.activePlayerIndex,
+  ].join(':'),
+): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+  const triggerPool = getAllRegisteredTriggers(state);
+  const cleared = expireModifiers(
+    state,
+    state.activePlayerIndex,
+    'until_next_upkeep',
+  );
+  return stabilizeStateBased(cleared, {
+    triggerPool,
+    actionId,
+    transactionId: actionId,
+  });
+}
+
+/** Compatibility projection for callers that only consume state. */
 export function expireUpkeepModifiers(state: GameState): GameState {
-  return recomputeAuras(expireModifiers(state, state.activePlayerIndex, 'until_next_upkeep'));
+  return expireUpkeepModifiersWithEvents(state).state;
 }
 
 export function refreshCards(state: GameState): GameState {
-  return updateActivePlayer(state, (player) => ({
+  const refreshed = updateActivePlayer(state, (player) => ({
     ...player,
+    hero:
+      player.hero.transformedThisTurn
+        ? { ...player.hero, transformedThisTurn: false }
+        : player.hero,
     zones: {
       reserve: player.zones.reserve.map(refreshCard),
       frontline: player.zones.frontline.map(refreshCard),
@@ -89,6 +167,10 @@ export function refreshCards(state: GameState): GameState {
     },
     resourceBank: player.resourceBank.map((r) => ({ ...r, exhausted: false })),
   }));
+  // Refresh clears reserveEnergyExhausted, which can reactivate a printed aura.
+  // Rebuild the continuous graph at that exact boundary so the next observable
+  // state never carries stale source/contribution metadata.
+  return recomputeAuras(refreshed);
 }
 
 function refreshCard(card: CardInstance | null): CardInstance | null {
@@ -126,8 +208,17 @@ export function tickUpkeepStatuses(state: GameState): {
   // those decrements persist — returning the pre-tick `state` would drop them.
   if (ticked.events.length === 0) return { state: ticked.state, events: [] };
   const dispatched = dispatchTriggers(ticked.state, ticked.events, 0, triggerPool);
-  const finalState = recomputeAuras(dispatched.newState);
-  return { state: finalState, events: [...ticked.events, ...dispatched.events] };
+  if (dispatched.newState.pendingChoice !== null) {
+    return {
+      state: dispatched.newState,
+      events: [...ticked.events, ...dispatched.events],
+    };
+  }
+  const stabilized = stabilizeStateBased(dispatched.newState);
+  return {
+    state: stabilized.state,
+    events: [...ticked.events, ...dispatched.events, ...stabilized.events],
+  };
 }
 
 // Reserve Energy Generation (Rulebook 8, Upkeep step 4): the active player may
@@ -219,7 +310,7 @@ export function drawResourceCard(state: GameState): {
   const player = state.players[state.activePlayerIndex];
   // Precise "Resource Deck empty at Upkeep, BEFORE the draw" flag for the
   // `resource_deck_empty_transform` rule — recorded ONLY under that mode so every
-  // other run is byte-identical. Captured from the PRE-draw deck length, so transform
+  // other run is semantically invariant. Captured from the PRE-draw deck length, so transform
   // unlocks the first turn that STARTS empty, not the turn the last card is drawn.
   const base =
     state.config?.terminationMode === 'resource_deck_empty_transform'
@@ -236,7 +327,7 @@ export function drawResourceCard(state: GameState): {
   // firstPlayerFirstTurn` here — it is still true at this point in the upkeep
   // sequence (this action runs on upkeep entry, BEFORE the drawMain state
   // consumes/reads the flag), so it reliably identifies "first player, first turn".
-  // Absent/false ⇒ byte-identical no-op.
+  // Absent/false ⇒ semantically invariant no-op.
   if (
     state.config?.firstPlayerSkipsFirstResource === true &&
     state.turnState.firstPlayerFirstTurn
@@ -244,7 +335,7 @@ export function drawResourceCard(state: GameState): {
     return { state: base, events: [] };
   }
   // DESIGN-SWEEP (config.resourceRampBonus N): draw 1 + N this Upkeep (faster ramp),
-  // never past the live Resource Deck. Absent / <= 0 ⇒ exactly 1 (byte-identical).
+  // never past the live Resource Deck. Absent / <= 0 ⇒ exactly 1 (semantically invariant).
   const bonus = state.config?.resourceRampBonus ?? 0;
   const want = 1 + (bonus > 0 ? bonus : 0);
   const count = Math.min(want, player.resourceDeck.length);
@@ -275,28 +366,11 @@ export function drawMainDeckCard(state: GameState): {
   readonly events: readonly GameEvent[];
   readonly deckEmpty: boolean;
 } {
-  const player = state.players[state.activePlayerIndex];
-  if (player.mainDeck.length === 0) {
-    return { state, events: [], deckEmpty: true };
-  }
-
-  const drawn = player.mainDeck[0]!;
-  const newPlayer: PlayerState = {
-    ...player,
-    mainDeck: player.mainDeck.slice(1),
-    hand: [...player.hand, drawn],
-  };
-
+  const result = attemptDraw(state, state.activePlayerIndex, 1, 'upkeep');
   return {
-    state: setPlayer(state, state.activePlayerIndex, newPlayer),
-    events: [
-      {
-        type: 'CARD_DRAWN',
-        playerId: state.activePlayerIndex,
-        count: 1,
-      },
-    ],
-    deckEmpty: false,
+    state: result.state,
+    events: result.events,
+    deckEmpty: result.failedAttempt !== null,
   };
 }
 
@@ -305,13 +379,33 @@ export function drawMainDeckCard(state: GameState): {
 export function executePlayerAction(
   state: GameState,
   action: PlayerAction,
+  actionId?: string,
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
   // Snapshot triggers before resolving so Last Breath fires after sources leave play.
   const triggerPool = getAllRegisteredTriggers(state);
-  const resolved = resolvePlayerAction(state, action);
+  const rawResolved = resolvePlayerAction(state, action);
+  const resolved = stampGameEvents(rawResolved.state, rawResolved.events, {
+    ...(actionId !== undefined ? { actionId, transactionId: actionId } : {}),
+  });
   const dispatched = dispatchTriggers(resolved.state, resolved.events, 0, triggerPool);
-  const finalState = recomputeAuras(dispatched.newState);
-  return { state: finalState, events: [...resolved.events, ...dispatched.events] };
+  if (dispatched.newState.pendingChoice !== null) {
+    return {
+      state: dispatched.newState,
+      events: [...resolved.events, ...dispatched.events],
+    };
+  }
+  const stabilized = stabilizeStateBased(dispatched.newState, {
+    triggerPool,
+    ...(actionId !== undefined ? { actionId, transactionId: actionId } : {}),
+  });
+  return {
+    state: stabilized.state,
+    events: [
+      ...resolved.events,
+      ...dispatched.events,
+      ...stabilized.events,
+    ],
+  };
 }
 
 // ── Reactive Priority Window ─────────────────────────────────────────────────
@@ -323,6 +417,7 @@ export function executePlayerAction(
 export function executeReactiveResponse(
   state: GameState,
   action: PlayerAction,
+  actionId?: string,
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
   if (state.pendingPriority == null) {
     return { state, events: [] };
@@ -336,15 +431,30 @@ export function executeReactiveResponse(
     // BOARD REACTIONS (config.boardReactions, Tier 3 part 2): a battlefield
     // character or the Hero responds via `activate_ability` (reused — same
     // shape a proactive activation uses) instead of `cast_spell`. Absent/false
-    // ⇒ byte-identical no-op: `activate_ability` never reaches here off-flag,
+    // ⇒ semantically invariant no-op: `activate_ability` never reaches here off-flag,
     // since computeReactiveActions never offers a 'board' option off-flag.
     resolved = activateBoardReaction(state, action, responderId);
   } else {
     return { state, events: [] };
   }
-  const dispatched = dispatchTriggers(resolved.state, resolved.events, 0, triggerPool);
-  const finalState = recomputeAuras(dispatched.newState);
-  return { state: finalState, events: [...resolved.events, ...dispatched.events] };
+  const stamped = stampGameEvents(resolved.state, resolved.events, {
+    ...(actionId !== undefined ? { actionId, transactionId: actionId } : {}),
+  });
+  const dispatched = dispatchTriggers(stamped.state, stamped.events, 0, triggerPool);
+  if (dispatched.newState.pendingChoice !== null) {
+    return {
+      state: dispatched.newState,
+      events: [...stamped.events, ...dispatched.events],
+    };
+  }
+  const stabilized = stabilizeStateBased(dispatched.newState, {
+    triggerPool,
+    ...(actionId !== undefined ? { actionId, transactionId: actionId } : {}),
+  });
+  return {
+    state: stabilized.state,
+    events: [...stamped.events, ...dispatched.events, ...stabilized.events],
+  };
 }
 
 // A board Counter/Flash (config.boardReactions): pays the ability's own
@@ -393,9 +503,26 @@ function activateBoardReaction(
   const trigger = ability.trigger;
   if (trigger.type !== 'on_counter' && trigger.type !== 'on_flash') return { state, events: [] };
 
-  const cost = addXCost(trigger.cost ?? { mana: 0, energy: 0, flexible: 0 }, action.xValue ?? 0);
+  const cost = addXCost(
+    trigger.cost ?? { mana: 0, energy: 0, flexible: 0 },
+    action.xValue ?? 0,
+    ability.xCostResource,
+  );
   if (!canAfford(player, cost)) return { state, events: [] };
-  let payState = setPlayer(state, responderId, payCost(player, cost));
+  const paidPlayer = payCost(player, cost);
+  let payState = setPlayer(
+    state,
+    responderId,
+    state.config?.scopedTurnResets === true
+      ? {
+          ...paidPlayer,
+          turnCounters: {
+            ...paidPlayer.turnCounters,
+            abilitiesActivated: paidPlayer.turnCounters.abilitiesActivated + 1,
+          },
+        }
+      : paidPlayer,
+  );
   if (boardCard !== null) {
     payState = updateCardInState(payState, action.cardInstanceId, (c) => ({
       ...c,
@@ -411,6 +538,32 @@ function activateBoardReaction(
     // Tag with the window it answered so the once-per-window guard can key on it.
     ...(currentWindowId != null ? { windowId: currentWindowId } : {}),
   } as GameEvent;
+  if (state.config?.transactionalDeclarations === true) {
+    const stackItem: StackItem = {
+      id: `ability_${action.cardInstanceId}_${String(action.abilityIndex)}_${String(state.stack.length)}`,
+      type: 'ability',
+      sourceInstanceId: action.cardInstanceId,
+      controllerId: responderId,
+      effects: ability.effects,
+      targets: reactiveTargets(state, undefined, responderId),
+      ...(action.xValue !== undefined ? { xPaid: action.xValue } : {}),
+    };
+    const other = responderId === 0 ? 1 : 0;
+    return {
+      state: {
+        ...payState,
+        stack: [...payState.stack, stackItem],
+        pendingPriority: {
+          type: 'priority',
+          toRespondPlayerId: other,
+          window: state.pendingPriority!.window,
+          baseStackItemId: state.pendingPriority!.baseStackItemId,
+          passes: 0,
+        },
+      },
+      events: [activatedEvent, stackDeclaredEvent(stackItem)],
+    };
+  }
   const ran = runAbilityEffects(
     payState,
     action.cardInstanceId,
@@ -425,7 +578,7 @@ function activateBoardReaction(
       type: 'priority',
       toRespondPlayerId: other,
       // Preserve the base action's window kind (off-flag it can only ever be
-      // 'cast', so this is byte-identical to the legacy hardcode).
+      // 'cast', so this is semantically invariant to the declared window-kind invariant).
       window: state.pendingPriority!.window,
       baseStackItemId: state.pendingPriority!.baseStackItemId,
       passes: 0,
@@ -434,15 +587,30 @@ function activateBoardReaction(
   return { state: finalState, events: [activatedEvent, ...ran.events] };
 }
 
-export function executePriorityPass(state: GameState): {
+export function executePriorityPass(state: GameState, actionId?: string): {
   readonly state: GameState;
   readonly events: readonly GameEvent[];
 } {
   const triggerPool = getAllRegisteredTriggers(state);
-  const resolved = passPriority(state);
+  const rawResolved = passPriority(state);
+  const resolved = stampGameEvents(rawResolved.state, rawResolved.events, {
+    ...(actionId !== undefined ? { actionId, transactionId: actionId } : {}),
+  });
   const dispatched = dispatchTriggers(resolved.state, resolved.events, 0, triggerPool);
-  const finalState = recomputeAuras(dispatched.newState);
-  return { state: finalState, events: [...resolved.events, ...dispatched.events] };
+  if (dispatched.newState.pendingChoice !== null) {
+    return {
+      state: dispatched.newState,
+      events: [...resolved.events, ...dispatched.events],
+    };
+  }
+  const stabilized = stabilizeStateBased(dispatched.newState, {
+    triggerPool,
+    ...(actionId !== undefined ? { actionId, transactionId: actionId } : {}),
+  });
+  return {
+    state: stabilized.state,
+    events: [...resolved.events, ...dispatched.events, ...stabilized.events],
+  };
 }
 
 // A reactive cast: pay cost + discard now (resources not refunded), push the
@@ -458,7 +626,11 @@ function castReactiveSpell(
   if (cardIndex === -1) return { state, events: [] };
 
   const card = player.hand[cardIndex]!;
-  const cost = addXCost(effectiveCost(player, card, state.config), action.xValue ?? 0);
+  const cost = addXCost(
+    effectiveCost(player, card, state.config),
+    action.xValue ?? 0,
+    card.xCostResource,
+  );
   if (!canAfford(player, cost)) return { state, events: [] };
   const paidPlayer = consumeReductions(payCost(player, cost), card);
   const newPlayer: PlayerState = {
@@ -485,15 +657,35 @@ function castReactiveSpell(
       type: 'priority',
       toRespondPlayerId: other,
       // Preserve the base action's window kind (off-flag it can only ever be
-      // 'cast', so this is byte-identical to the legacy hardcode).
+      // 'cast', so this is semantically invariant to the declared window-kind invariant).
       window: state.pendingPriority!.window,
       baseStackItemId: state.pendingPriority!.baseStackItemId,
       passes: 0,
     },
   };
-  // SPELL_CAST is emitted on RESOLUTION (resolveStack), not here at cast-push, so a
-  // countered spell's on_spell_cast watchers never fire (Rulebook 14).
-  return { state: newState, events: [] };
+  const declaredEvent: GameEvent = {
+    type: 'SPELL_CAST',
+    cardInstanceId: card.instanceId,
+    cardDefId: card.cardDefId,
+    playerId: responderId,
+  };
+  return {
+    state: newState,
+    events:
+      state.config?.transactionalDeclarations === true
+        ? [
+            {
+              type: 'SPELL_DECLARED',
+              stackItemId: stackItem.id,
+              cardInstanceId: card.instanceId,
+              cardDefId: card.cardDefId,
+              playerId: responderId,
+            },
+            declaredEvent,
+            stackDeclaredEvent(stackItem),
+          ]
+        : [],
+  };
 }
 
 // A Counter targets the newest enemy spell on the stack when no explicit target
@@ -501,7 +693,7 @@ function castReactiveSpell(
 // TIER 4 (config.responseWindowsOnAllActions): ANY enemy stack item is a legal
 // default counter target, so a reactive cast in an attack/ability/equip/move
 // window counters the base action it responds to. Off-flag the scan stays
-// spell-only (legacy, byte-identical).
+// spell-only (legacy, semantically invariant).
 function reactiveTargets(
   state: GameState,
   selected: readonly string[] | undefined,
@@ -553,32 +745,6 @@ function resolvePlayerAction(
 // transformedThisTurn, and register the new side's triggers so its triggered/
 // Ultimate abilities are live. Pure (state) => newState.
 
-let heroTriggerCounter = 0;
-
-function buildHeroTriggers(
-  hero: HeroState,
-  abilities: readonly AbilityDSL[],
-): readonly RegisteredTrigger[] {
-  const triggers: RegisteredTrigger[] = [];
-  for (let i = 0; i < abilities.length; i++) {
-    const ability = abilities[i]!;
-    if (ability.type !== 'triggered') continue;
-    const t = ability;
-    heroTriggerCounter++;
-    triggers.push({
-      id: `hero_trigger_${String(heroTriggerCounter)}`,
-      sourceInstanceId: `hero_${String(hero.cardDefId)}`,
-      ownerPlayerId: 0,
-      trigger: t.trigger,
-      effects: t.effects,
-      condition: t.condition,
-      abilityIndex: i,
-      ...triggerRateLimits(t),
-    });
-  }
-  return triggers;
-}
-
 function executeDeclareTransform(state: GameState): {
   readonly state: GameState;
   readonly events: readonly GameEvent[];
@@ -590,7 +756,8 @@ function executeDeclareTransform(state: GameState): {
     data === undefined ||
     hero.transformed ||
     !hero.canTransformThisGame ||
-    hero.transformedThisTurn
+    hero.transformedThisTurn ||
+    (state.config?.authoritativeTransitions === true && !canTransform(state))
   ) {
     return { state, events: [] };
   }
@@ -608,7 +775,11 @@ function executeDeclareTransform(state: GameState): {
   };
   const withTriggers: HeroState = {
     ...transformedHero,
-    registeredTriggers: buildHeroTriggers(transformedHero, data.abilities).map((t) => ({
+    registeredTriggers: buildHeroTriggers(
+      transformedHero,
+      data.abilities,
+      state.activePlayerIndex,
+    ).map((t) => ({
       ...t,
       ownerPlayerId: state.activePlayerIndex,
     })),
@@ -618,9 +789,17 @@ function executeDeclareTransform(state: GameState): {
     state: setPlayer(state, state.activePlayerIndex, { ...player, hero: withTriggers }),
     events: [
       {
-        type: 'ABILITY_ACTIVATED',
-        cardInstanceId: `hero_${String(data.cardDefId)}`,
-        abilityIndex: -1,
+        type: 'HERO_TRANSFORMED',
+        playerId: state.activePlayerIndex,
+        fromCardDefId: hero.cardDefId,
+        toCardDefId: data.cardDefId,
+        previousMaxLp: hero.maxLp,
+        newMaxLp: withTriggers.maxLp,
+        maxLpDelta: withTriggers.maxLp - hero.maxLp,
+        previousCurrentLp: hero.currentLp,
+        newCurrentLp: withTriggers.currentLp,
+        currentLpDelta: withTriggers.currentLp - hero.currentLp,
+        currentLp: withTriggers.currentLp,
       },
     ],
   };
@@ -634,15 +813,15 @@ function totalTempResources(player: PlayerState): number {
 }
 
 function deployFreeMoves(card: CardInstance): number {
-  const rush = card.traits.includes('rush') ? (card.rushValue ?? 1) : 0;
-  const swift = card.traits.includes('swift') ? 1 : 0;
+  const rush = hasEffectiveTrait(card, 'rush') ? (card.rushValue ?? 1) : 0;
+  const swift = hasEffectiveTrait(card, 'swift') ? 1 : 0;
   return rush + swift;
 }
 
 /** Free moves a character refreshes to at the start of its Upkeep: Swift grants 1
  * each turn; Rush X is deploy-turn only and does not refresh. */
 function refreshFreeMoves(card: CardInstance): number {
-  return card.traits.includes('swift') ? 1 : 0;
+  return hasEffectiveTrait(card, 'swift') ? 1 : 0;
 }
 
 function executeDeploy(
@@ -663,7 +842,7 @@ function executeDeploy(
   // Elite direct High-Ground deploy costs +2 (Rulebook 16). Frontline/Reserve free.
   const eliteSurcharge =
     action.zone === 'high_ground' &&
-    (card.traits.includes('elite') || card.grantedTraits.some((g) => g.trait === 'elite'))
+    hasEffectiveTrait(card, 'elite')
       ? ELITE_HIGH_GROUND_SURCHARGE
       : 0;
   const baseCost = effectiveCost(player, card, state.config);
@@ -671,7 +850,7 @@ function executeDeploy(
     ...baseCost,
     flexible: baseCost.flexible + eliteSurcharge,
   };
-  const deployCost = addXCost(surchargedCost, xPaid ?? 0);
+  const deployCost = addXCost(surchargedCost, xPaid ?? 0, card.xCostResource);
   if (!canAfford(player, deployCost)) return { state, events: [] };
   const paidPlayer = consumeReductions(payCost(player, deployCost), card);
   // Did this deploy consume any Temporary Resource? (RIA-09 Symbiotic Expansion).
@@ -679,7 +858,7 @@ function executeDeploy(
 
   const deployedCard: CardInstance = {
     ...card,
-    summoningSick: !card.traits.includes('haste'),
+    summoningSick: !hasEffectiveTrait(card, 'haste'),
     owner: state.activePlayerIndex,
     // Rush X grants X extra deploy-turn moves; Swift grants 1 extra move this turn.
     // Both are seeded as free moves that do not exhaust the mover (Rulebook 16).
@@ -700,13 +879,20 @@ function executeDeploy(
   };
 
   const baseState = setPlayer(state, state.activePlayerIndex, newPlayer);
+  // BUG FIX (config.registerPrintedTriggers): register the deployed card's
+  // printed triggered abilities so the dispatch runtime can actually see them
+  // (see GameConfig.registerPrintedTriggers). Absent/false ⇒ no-op.
+  const triggeredState =
+    state.config?.registerPrintedTriggers === true
+      ? registerCardTriggers(baseState, card.instanceId)
+      : baseState;
   // Flag the deploy's temp-resource use on turnState so the CARD_DEPLOYED event's
   // `event_context: used_temporary_resource` watchers can read it during dispatch.
   // Always (re)set explicitly so a prior temp-deploy's flag never leaks to a later
   // non-temp deploy in the same turn.
   const deployedState: GameState = {
-    ...baseState,
-    turnState: { ...baseState.turnState, usedTemporaryResource: usedTemp },
+    ...triggeredState,
+    turnState: { ...triggeredState.turnState, usedTemporaryResource: usedTemp },
   };
   const deployEvent: GameEvent = {
     type: 'CARD_DEPLOYED',
@@ -735,7 +921,11 @@ function executeCastSpell(
 
   const card = player.hand[cardIndex]!;
   const xPaid = action.xValue;
-  const spellCost = addXCost(effectiveCost(player, card, state.config), xPaid ?? 0);
+  const spellCost = addXCost(
+    effectiveCost(player, card, state.config),
+    xPaid ?? 0,
+    card.xCostResource,
+  );
   if (!canAfford(player, spellCost)) return { state, events: [] };
   const paidPlayer = consumeReductions(payCost(player, spellCost), card);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
@@ -753,7 +943,7 @@ function executeCastSpell(
   // Push the spell onto the stack (Rulebook 14): cost/discard happen now (spent
   // resources are not refunded even if countered), but the EFFECTS are deferred
   // so the non-active player gets a response window. The window machinery resolves
-  // the chain LIFO; when nobody can respond it resolves inline (byte-identical).
+  // the chain LIFO; when nobody can respond it resolves inline (semantically invariant).
   const stackItem: StackItem = {
     id: `spell_${card.instanceId}`,
     type: 'spell',
@@ -768,11 +958,30 @@ function executeCastSpell(
     ...setPlayer(state, state.activePlayerIndex, newPlayer),
     stack: [...state.stack, stackItem],
   };
-  // SPELL_CAST is emitted on RESOLUTION (resolveStack), not here at cast-push: a
-  // countered spell is removed from the stack before resolving, so its
-  // on_spell_cast watchers never fire (Rulebook 14).
   const resolved = openWindowOrResolve(castState, stackItem.id);
-  return { state: resolved.state, events: resolved.events };
+  const declaredEvent: GameEvent = {
+    type: 'SPELL_CAST',
+    cardInstanceId: card.instanceId,
+    cardDefId: card.cardDefId,
+    playerId: state.activePlayerIndex,
+  };
+  return {
+    state: resolved.state,
+    events:
+      state.config?.transactionalDeclarations === true
+        ? [
+            {
+              type: 'SPELL_DECLARED',
+              stackItemId: stackItem.id,
+              cardInstanceId: card.instanceId,
+              cardDefId: card.cardDefId,
+              playerId: state.activePlayerIndex,
+            },
+            declaredEvent,
+            ...resolved.events,
+          ]
+        : resolved.events,
+  };
 }
 
 function executeAttachEquipment(
@@ -788,7 +997,11 @@ function executeAttachEquipment(
   // Honor the equipment's alignment/Tag requirement (Rulebook 13).
   if (target === null || !meetsEquipRequirement(equipCard, target)) return { state, events: [] };
   const xPaid = action.xValue;
-  const equipCost = addXCost(effectiveCost(player, equipCard, state.config), xPaid ?? 0);
+  const equipCost = addXCost(
+    effectiveCost(player, equipCard, state.config),
+    xPaid ?? 0,
+    equipCard.xCostResource,
+  );
   if (!canAfford(player, equipCost)) return { state, events: [] };
   const paidPlayer = consumeReductions(payCost(player, equipCost), equipCard);
   const newHand = paidPlayer.hand.filter((_, i) => i !== cardIndex);
@@ -800,7 +1013,73 @@ function executeAttachEquipment(
 
   // Attach to target character, recording the X paid on the equipment so its
   // continuous x_cost auras (e.g. Steel-Root Armor +0/+X HP) scale on recompute.
-  const attachedEquip: CardInstance = xPaid !== undefined ? { ...equipCard, xPaid } : equipCard;
+  const xPaidEquip: CardInstance = {
+    ...equipCard,
+    holderInstanceId: action.targetInstanceId,
+    ...(xPaid !== undefined ? { xPaid } : {}),
+  };
+  // BUG FIX (config.equipmentTriggers): register the equipment's own printed
+  // triggered abilities now, the equipment's "enters play" moment, exactly like
+  // registerPrintedTriggers does for a deployed card's abilities — an attached
+  // equipment isn't in a zone slot of its own, so it can't go through
+  // registerCardTriggers/updateCardTriggers; apply computeCardTriggers directly
+  // to the CardInstance instead. See GameConfig.equipmentTriggers.
+  // Absent/false ⇒ semantically invariant no-op.
+  const attachedEquip: CardInstance =
+    state.config?.equipmentTriggers === true
+      ? { ...xPaidEquip, registeredTriggers: computeCardTriggers(xPaidEquip) }
+      : xPaidEquip;
+  const equipEffects = [
+    ...abilityEffects(equipCard.abilities, true),
+    ...(state.config?.equipmentTriggers === true
+      ? equipmentAttachedEffects(equipCard.abilities)
+      : []),
+  ];
+
+  if (
+    state.config?.responseWindowsOnAllActions === true &&
+    state.config.transactionalDeclarations === true
+  ) {
+    const declaredPlayer: PlayerState = {
+      ...paidPlayer,
+      hand: newHand,
+      turnCounters: {
+        ...paidPlayer.turnCounters,
+        equipmentPlayed: paidPlayer.turnCounters.equipmentPlayed + 1,
+      },
+    };
+    const declaredState = setPlayer(state, state.activePlayerIndex, declaredPlayer);
+    const stackItem: StackItem = {
+      id: `equip_${equipCard.instanceId}`,
+      type: 'equip',
+      sourceInstanceId: equipCard.instanceId,
+      sourceCardDefId: equipCard.cardDefId,
+      controllerId: state.activePlayerIndex,
+      effects: equipEffects,
+      targets: [action.targetInstanceId],
+      declaredCard: attachedEquip,
+      ...(xPaid !== undefined ? { xPaid } : {}),
+    };
+    const withStack: GameState = {
+      ...declaredState,
+      stack: [...declaredState.stack, stackItem],
+    };
+    const opened = openWindowOrResolve(withStack, stackItem.id, 'equip');
+    return {
+      state: opened.state,
+      events: [
+        {
+          type: 'EQUIPMENT_DECLARED',
+          equipmentId: equipCard.instanceId,
+          targetId: action.targetInstanceId,
+          cardDefId: equipCard.cardDefId,
+          playerId: state.activePlayerIndex,
+        },
+        ...opened.events,
+      ],
+    };
+  }
+
   const attachToCard = (c: CardInstance | null): CardInstance | null => {
     if (c === null || c.instanceId !== action.targetInstanceId) return c;
     return { ...c, equipment: attachedEquip };
@@ -816,7 +1095,10 @@ function executeAttachEquipment(
     ...paidPlayer,
     zones: newZones,
     hand: newHand,
-    discardPile: replaced === null ? paidPlayer.discardPile : [...paidPlayer.discardPile, replaced],
+    discardPile:
+      replaced === null
+        ? paidPlayer.discardPile
+        : [...paidPlayer.discardPile, { ...replaced, holderInstanceId: undefined }],
     turnCounters: {
       ...paidPlayer.turnCounters,
       equipmentPlayed: paidPlayer.turnCounters.equipmentPlayed + 1,
@@ -834,6 +1116,7 @@ function executeAttachEquipment(
             cardDefId: replaced.cardDefId,
             cause: 'effect',
             playerId: replaced.owner,
+            lastKnownCard: snapshotCard(replaced),
           },
         ];
   const attachEvent: GameEvent = {
@@ -848,8 +1131,10 @@ function executeAttachEquipment(
   // replaced-equipment destruction happen now (the physical/cost half), but the
   // equipment's deploy-time EFFECTS defer through the stack and resolve only
   // when the window closes. An equipment with no deploy effects stays inline
-  // (a window over nothing is pointless). Absent/false ⇒ legacy inline path.
-  const equipEffects = abilityEffects(equipCard.abilities, true);
+  // (a window over nothing is pointless). Absent/false ⇒ direct-resolution path.
+  // config.equipmentTriggers folds in the equipment's own on_equipment_attached
+  // effects (e.g. Growplate Helm's grant_ability) alongside its deploy-time
+  // effects — both are attach-time effects of this same equipment.
   if (state.config?.responseWindowsOnAllActions === true && equipEffects.length > 0) {
     const stackItem: StackItem = {
       id: `equip_${equipCard.instanceId}`,
@@ -870,7 +1155,7 @@ function executeAttachEquipment(
   const ran = runAbilityEffects(
     attachedState,
     equipCard.instanceId,
-    abilityEffects(equipCard.abilities, true),
+    equipEffects,
     state.activePlayerIndex,
     xPaid,
   );
@@ -886,7 +1171,7 @@ function executeRemoveEquipment(
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
   const holder = findEquipmentHolder(state, state.activePlayerIndex, action.equipmentInstanceId);
   if (holder === null) return { state, events: [] };
-  const equip = holder.equipment!;
+  const equip = { ...holder.equipment!, holderInstanceId: undefined };
   const cleared = updateCardInState(state, holder.instanceId, (c) => ({ ...c, equipment: null }));
   const player = cleared.players[state.activePlayerIndex];
   const withDiscard = setPlayer(cleared, state.activePlayerIndex, {
@@ -897,11 +1182,18 @@ function executeRemoveEquipment(
     state: recomputeAuras(withDiscard),
     events: [
       {
-        type: 'CARD_DESTROYED',
-        cardInstanceId: equip.instanceId,
-        cardDefId: equip.cardDefId,
-        cause: 'effect',
+        type: 'EQUIPMENT_DETACHED',
+        equipmentId: equip.instanceId,
+        holderId: holder.instanceId,
         playerId: equip.owner,
+        reason: 'voluntary',
+      },
+      {
+        type: 'EQUIPMENT_DISCARDED',
+        equipmentId: equip.instanceId,
+        cardDefId: equip.cardDefId,
+        playerId: equip.owner,
+        reason: 'voluntary',
       },
     ],
   };
@@ -926,12 +1218,59 @@ function executeTransferEquipment(
   ) {
     return { state, events: [] };
   }
+  const paidPlayer = consumeReductions(
+    payCost(player, effectiveCost(player, equip, state.config)),
+    equip,
+  );
   const paid = setPlayer(
     state,
     state.activePlayerIndex,
-    payCost(player, effectiveCost(player, equip, state.config)),
+    paidPlayer,
   );
-  const movedEquip: CardInstance = { ...equip, transferredThisTurn: true };
+  if (
+    state.config?.responseWindowsOnAllActions === true &&
+    state.config.transactionalDeclarations === true
+  ) {
+    const committed = updateCardInState(paid, holder.instanceId, (card) => ({
+      ...card,
+      equipment:
+        card.equipment === null
+          ? null
+          : { ...card.equipment, transferredThisTurn: true },
+    }));
+    const stackItem: StackItem = {
+      id: `transfer_${equip.instanceId}`,
+      type: 'transfer',
+      sourceInstanceId: equip.instanceId,
+      sourceCardDefId: equip.cardDefId,
+      controllerId: state.activePlayerIndex,
+      effects: [],
+      targets: [holder.instanceId, target.instanceId],
+    };
+    const opened = openWindowOrResolve(
+      { ...committed, stack: [...committed.stack, stackItem] },
+      stackItem.id,
+      'equip',
+    );
+    return {
+      state: opened.state,
+      events: [
+        {
+          type: 'EQUIPMENT_DECLARED',
+          equipmentId: equip.instanceId,
+          targetId: target.instanceId,
+          cardDefId: equip.cardDefId,
+          playerId: equip.owner,
+        },
+        ...opened.events,
+      ],
+    };
+  }
+  const movedEquip: CardInstance = {
+    ...equip,
+    holderInstanceId: target.instanceId,
+    transferredThisTurn: true,
+  };
   const detached = updateCardInState(paid, holder.instanceId, (c) => ({ ...c, equipment: null }));
   const attached = updateCardInState(detached, target.instanceId, (c) => ({
     ...c,
@@ -940,6 +1279,20 @@ function executeTransferEquipment(
   return {
     state: recomputeAuras(attached),
     events: [
+      {
+        type: 'EQUIPMENT_DETACHED',
+        equipmentId: equip.instanceId,
+        holderId: holder.instanceId,
+        playerId: equip.owner,
+        reason: 'transfer',
+      },
+      {
+        type: 'EQUIPMENT_TRANSFERRED',
+        equipmentId: equip.instanceId,
+        fromHolderId: holder.instanceId,
+        toHolderId: target.instanceId,
+        playerId: equip.owner,
+      },
       {
         type: 'EQUIPMENT_ATTACHED',
         equipmentId: equip.instanceId,
@@ -978,7 +1331,7 @@ function executeMove(
   // an Effect, so the StackItem carries the declaration (mover + destination,
   // effects empty) and resolveStack re-invokes moveCard when the window closes
   // (fizzling if the mover left or was Slowed mid-window). Absent/false ⇒
-  // legacy inline path.
+  // direct-resolution path.
   if (state.config?.responseWindowsOnAllActions === true) {
     const stackItem: StackItem = {
       id: `move_${action.cardInstanceId}_${action.toZone}`,
@@ -988,7 +1341,19 @@ function executeMove(
       effects: [],
       targets: [action.toZone],
     };
-    const withStack: GameState = { ...state, stack: [...state.stack, stackItem] };
+    const declared =
+      state.config.transactionalDeclarations === true
+        ? updateCardInState(state, action.cardInstanceId, (card) => {
+            const freeMoves = card.freeMovesRemaining ?? 0;
+            return freeMoves > 0
+              ? { ...card, freeMovesRemaining: freeMoves - 1 }
+              : { ...card, exhausted: true, movedThisTurn: true };
+          })
+        : state;
+    const withStack: GameState = {
+      ...declared,
+      stack: [...declared.stack, stackItem],
+    };
     return openWindowOrResolve(withStack, stackItem.id, 'move');
   }
   const newZones = moveCard(player.zones, action.cardInstanceId, action.toZone);
@@ -1020,6 +1385,19 @@ function executeActivateAbility(
   state: GameState,
   action: { cardInstanceId: string; abilityIndex: number; xValue?: number },
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+  if (
+    state.config?.authoritativeTransitions === true &&
+    !computeAvailableActions(state).canActivateAbility.some(
+      (option) =>
+        option.cardInstanceId === action.cardInstanceId &&
+        option.abilityIndex === action.abilityIndex &&
+        (action.xValue === undefined
+          ? option.xValues === undefined || option.xValues.includes(0)
+          : option.xValues?.includes(action.xValue) === true),
+    )
+  ) {
+    return { state, events: [] };
+  }
   const activatedEvent: GameEvent = {
     type: 'ABILITY_ACTIVATED',
     cardInstanceId: action.cardInstanceId,
@@ -1038,9 +1416,26 @@ function executeActivateAbility(
   let payState = state;
   if (ability?.type === 'triggered' && ability.trigger.type === 'activated') {
     const player = state.players[state.activePlayerIndex];
-    const cost = addXCost(ability.trigger.cost, action.xValue ?? 0);
+    const cost = addXCost(
+      ability.trigger.cost,
+      action.xValue ?? 0,
+      ability.xCostResource,
+    );
     if (!canAfford(player, cost)) return { state, events: [] };
-    payState = setPlayer(state, state.activePlayerIndex, payCost(player, cost));
+    const paid = payCost(player, cost);
+    payState = setPlayer(
+      state,
+      state.activePlayerIndex,
+      state.config?.scopedTurnResets === true
+        ? {
+            ...paid,
+            turnCounters: {
+              ...paid.turnCounters,
+              abilitiesActivated: paid.turnCounters.abilitiesActivated + 1,
+            },
+          }
+        : paid,
+    );
   }
 
   // A character that uses an activated ability becomes exhausted (Rulebook 3/8) and
@@ -1059,7 +1454,7 @@ function executeActivateAbility(
   // a cast's pay/discard: spent, never refunded), but the ability's EFFECTS defer
   // through the stack and resolve only when the window closes. An activation
   // with no effects stays inline (a window over nothing is pointless).
-  // Absent/false ⇒ legacy inline path.
+  // Absent/false ⇒ direct-resolution path.
   if (state.config?.responseWindowsOnAllActions === true && effects.length > 0) {
     const stackItem: StackItem = {
       id: `ability_${action.cardInstanceId}_${String(action.abilityIndex)}`,
@@ -1109,6 +1504,21 @@ function executeDiscardForEnergy(
     ...player,
     hand: player.hand.filter((_, i) => i !== cardIndex),
     ...(exile ? {} : { discardPile: [...player.discardPile, card] }),
+    ...(exile
+      ? {
+          exile: [
+            ...player.exile,
+            {
+              instanceId: card.instanceId,
+              card,
+              ownerPlayerId: state.activePlayerIndex,
+              cause: 'discard_for_energy' as const,
+              turnNumber: state.turnNumber,
+              sourceInstanceId: card.instanceId,
+            },
+          ],
+        }
+      : {}),
     temporaryResources: [
       ...player.temporaryResources,
       { resourceType: cardResourceType(card), amount: 1 },
@@ -1122,14 +1532,23 @@ function executeDiscardForEnergy(
 
   return {
     state: newState,
-    events: [
-      {
-        type: 'CARD_DISCARDED',
-        cardInstanceId: card.instanceId,
-        cardDefId: card.cardDefId,
-        playerId: state.activePlayerIndex,
-      },
-    ],
+    events: exile
+      ? [
+          {
+            type: 'CARD_EXILED',
+            cardInstanceId: card.instanceId,
+            cardDefId: card.cardDefId,
+            playerId: state.activePlayerIndex,
+          },
+        ]
+      : [
+          {
+            type: 'CARD_DISCARDED',
+            cardInstanceId: card.instanceId,
+            cardDefId: card.cardDefId,
+            playerId: state.activePlayerIndex,
+          },
+        ],
   };
 }
 
@@ -1142,7 +1561,7 @@ function executeDeclareAttack(
   // damage steps are not expressible as Effect[], so the StackItem carries the
   // declaration (attacker + target, effects empty) and resolveStack re-invokes
   // resolveCombat when the window closes; a Counter on the chain removes the
-  // attack item so the combat never happens. Absent/false ⇒ legacy inline path.
+  // attack item so the combat never happens. Absent/false ⇒ direct-resolution path.
   if (state.config?.responseWindowsOnAllActions === true) {
     const stackItem: StackItem = {
       id: `attack_${action.attackerInstanceId}`,
@@ -1152,147 +1571,23 @@ function executeDeclareAttack(
       effects: [],
       targets: [action.targetId],
     };
-    const withStack: GameState = { ...state, stack: [...state.stack, stackItem] };
+    const declaredState =
+      state.config.transactionalDeclarations === true
+        ? updateCardInState(state, action.attackerInstanceId, (card) => ({
+            ...card,
+            exhausted: true,
+            attackedThisTurn: true,
+            hasActed: true,
+          }))
+        : state;
+    const withStack: GameState = {
+      ...declaredState,
+      stack: [...declaredState.stack, stackItem],
+    };
     return openWindowOrResolve(withStack, stackItem.id, 'attack');
   }
   const result = resolveCombat(state, action.attackerInstanceId, action.targetId);
   return { state: result.newState, events: result.events };
-}
-
-// ── End Phase Actions ───────────────────────────────────────────────────────
-
-export function removeTemporaryResources(state: GameState): GameState {
-  return updateActivePlayer(state, (player) => ({
-    ...player,
-    temporaryResources: [],
-  }));
-}
-
-// `until_end_of_turn` buffs expire at the current turn's End Phase, regardless of
-// which player controls the affected card (a debuff on enemy cards expires here
-// too). Aura recompute follows to rebuild continuous modifiers cleanly.
-export function expireEndOfTurnModifiers(state: GameState): GameState {
-  const cleared = expireModifiers(
-    expireModifiers(state, 0, 'until_end_of_turn'),
-    1,
-    'until_end_of_turn',
-  );
-  return recomputeAuras(cleared);
-}
-
-export function checkHandSize(state: GameState): {
-  readonly needsDiscard: boolean;
-  readonly count: number;
-} {
-  const player = state.players[state.activePlayerIndex];
-  const excess = player.hand.length - MAX_HAND_SIZE;
-  return { needsDiscard: excess > 0, count: Math.max(0, excess) };
-}
-
-export function discardCards(state: GameState, cardIds: readonly string[]): GameState {
-  return updateActivePlayer(state, (player) => {
-    const discarded: CardInstance[] = [];
-    const remaining = player.hand.filter((c) => {
-      if (cardIds.includes(c.instanceId)) {
-        discarded.push(c);
-        return false;
-      }
-      return true;
-    });
-    return {
-      ...player,
-      hand: remaining,
-      discardPile: [...player.discardPile, ...discarded],
-    };
-  });
-}
-
-export function passTurn(state: GameState): GameState {
-  const nextPlayer = state.activePlayerIndex === 0 ? 1 : 0;
-  return {
-    ...state,
-    activePlayerIndex: nextPlayer,
-    turnNumber: state.turnNumber + 1,
-    // Per-turn flags reset at the turn boundary (gainedTemporaryResource /
-    // usedTemporaryResource are scoped to a single turn; absent ≡ none).
-    turnState: { discardedForEnergy: false, firstPlayerFirstTurn: false },
-    // EC-002 / EC-003: every body's first-instance ARM (EC-002) and shield (EC-003)
-    // charge recharges at the turn boundary (both players, all zones, both heroes).
-    // No-op when both toggles are OFF.
-    players: rechargeArmCharges(clearCostReductions(state.players), state.config),
-  };
-}
-
-// EC-002 (config.armFirstInstanceOnly) / EC-003 (config.shieldFirstInstanceOnly) /
-// EC-004 (config.defenderForceCap): clear the per-turn body flags
-// `armMitigatedThisTurn` (EC-002), `shieldMitigatedThisTurn` (EC-003) and the
-// `forcedAttacksThisTurn` counter (EC-004) on every body (and hero, EC-002 only) of
-// both players so each presents ARM / its shield / its full forcing again next turn.
-// Gated on the toggles so the default path is byte-identical (no new objects
-// allocated when all are OFF). Pure.
-function rechargeArmCharges(
-  players: [PlayerState, PlayerState],
-  config: GameState['config'],
-): [PlayerState, PlayerState] {
-  const arm = config?.armFirstInstanceOnly === true;
-  const shield = config?.shieldFirstInstanceOnly === true;
-  const forceCap = (config?.defenderForceCap ?? 0) > 0;
-  if (!arm && !shield && !forceCap) return players;
-  const clearCard = (c: CardInstance | null): CardInstance | null => {
-    if (c === null) return c;
-    const armDirty = arm && c.armMitigatedThisTurn === true;
-    const shieldDirty = shield && c.shieldMitigatedThisTurn === true;
-    const forceDirty = forceCap && (c.forcedAttacksThisTurn ?? 0) !== 0;
-    if (!armDirty && !shieldDirty && !forceDirty) return c;
-    return {
-      ...c,
-      ...(armDirty ? { armMitigatedThisTurn: false } : {}),
-      ...(shieldDirty ? { shieldMitigatedThisTurn: false } : {}),
-      ...(forceDirty ? { forcedAttacksThisTurn: 0 } : {}),
-    };
-  };
-  const clearPlayer = (p: PlayerState): PlayerState => ({
-    ...p,
-    hero:
-      arm && p.hero.armMitigatedThisTurn === true
-        ? { ...p.hero, armMitigatedThisTurn: false }
-        : p.hero,
-    zones: {
-      reserve: p.zones.reserve.map(clearCard),
-      frontline: p.zones.frontline.map(clearCard),
-      highGround: p.zones.highGround.map(clearCard),
-    },
-  });
-  return [clearPlayer(players[0]), clearPlayer(players[1])];
-}
-
-// Cost reductions are "this turn" — clear them when the turn passes.
-function clearCostReductions(
-  players: readonly [PlayerState, PlayerState],
-): [PlayerState, PlayerState] {
-  return [
-    { ...players[0], costReductions: undefined },
-    { ...players[1], costReductions: undefined },
-  ];
-}
-
-// ── Scheduled Effects (phase-boundary queue) ─────────────────────────────────
-// Fire any scheduled entries whose timing matches the given boundary, running
-// each entry's effects with its own controller, then dispatching triggers/auras.
-export function runScheduledEffects(
-  state: GameState,
-  timing: ScheduledTiming['type'],
-): { readonly state: GameState; readonly events: readonly GameEvent[] } {
-  const triggerPool = getAllRegisteredTriggers(state);
-  const processed = processScheduledEffects(state, timing, (s, sourceId, controllerId, effects) =>
-    runAbilityEffects(s, sourceId, effects, controllerId),
-  );
-  if (processed.events.length === 0 && processed.state === state) {
-    return { state, events: [] };
-  }
-  const dispatched = dispatchTriggers(processed.state, processed.events, 0, triggerPool);
-  const finalState = recomputeAuras(dispatched.newState);
-  return { state: finalState, events: [...processed.events, ...dispatched.events] };
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

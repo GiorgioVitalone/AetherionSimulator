@@ -1,7 +1,9 @@
 # Aetherion Balance Targets & Verification Protocol
 
-**Status:** living document — re-check the bands each balance pass.
-**Last updated:** 2026-06-27.
+**Status:** target reference only — historical runs below are legacy evidence and
+must not be treated as decision-grade until the current rules manifest is ratified
+and the semantic, harness, population, and statistical gates all pass.
+**Last updated:** 2026-07-26.
 **Scope today:** the 4 official starter decks (Onyx, Radiant, Sapphire, Verdant). Crimson & Amethyst have no card data yet and are out of scope until they do.
 
 This document records (1) the **numeric balance goals** we hold ourselves to, derived from how real competitive card games are actually balanced, and (2) the **protocol** for measuring our game against them credibly. It exists so the goals are written down and stable rather than re-argued each time.
@@ -96,8 +98,11 @@ A balance number is only as good as the player generating it. A single heuristic
 
 **Statistics**
 - **Per-game** as the unit of analysis.
-- **Wilson 95% CIs** per faction and per matchup cell; G-test for overall imbalance; bias-corrected parity spread with a bootstrap CI (all already in `packages/engine/src/stats/`).
-- **Multiple-comparison correction** (Holm/FDR) across the matchup cells.
+- **Wilson 95% CIs** are descriptive marginal summaries, not the headline inferential model.
+- Preserve the supplied matchup schedule and its one-winner/one-loser coupling in null randomization.
+- Estimate all pairwise faction contrasts simultaneously with maxT family-wise adjustment.
+- Resample declared matchup × replicate clusters for spread uncertainty; never bootstrap the four faction point estimates.
+- Refuse inferential verdicts when engine, harness, rules-ratification, deck-population, or infrastructure validity gates are red.
 - **Sample size:** floor **100 games/cell** (vS practice); target **2,000–5,000 games/cell** so a 50% Wilson CI is ≈ ±1.5–2 pp — enough to resolve a 5 pp imbalance. Pre-register seeds (the runner is deterministic via `runHash`).
 - **Read the verdict off CIs**, not point estimates: a faction is "imbalanced" only if its CI clears the threshold after correction.
 
@@ -112,6 +117,9 @@ Target every faction inside **47–53%** (spread **≤6 pp**, ~8–10 pp tolerat
 ---
 
 ## 6. Verification run — 2026-06-27 (first measurement)
+
+> **Legacy artifact notice:** this section records historical encoded behavior.
+> It predates the current remediation and cannot support a present balance claim.
 
 **Method.** Real 4 starter decks (committed fixture), all-pairs incl. mirrors, first player **alternating**, hand-size stall fixed, undecided games LP-tiebroken. Pilot panel run via `packages/engine/balance-verify.mjs`, deterministic (seeded). Reproduce: `cd packages/engine && node balance-verify.mjs` (env knobs `GPP_MATRIX`, `RL_GPP`, `RH_GPP`).
 

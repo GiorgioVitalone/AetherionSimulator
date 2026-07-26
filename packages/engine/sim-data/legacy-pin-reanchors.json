@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "id": "legacy-smoke-current-remediation-20260727",
+      "suite": "tests/legacy/balance-smoke.test.ts",
+      "profile": "legacy-v1",
+      "previousRunHash": "eb69205c97124bb2",
+      "replacementRunHash": "fbda6c336681e350",
+      "reason": "The archived profile shares the corrected canonical card corpus and repaired runtime layers; it does not restore invalid card identities, direct semantic defects, or pre-remediation event/state behavior. The all-pairs outcome therefore changed while the explicit legacy manifest settings remained frozen.",
+      "scope": "compatibility_oracle_only_never_current_correctness",
+      "verification": {
+        "configuration": "real committed starter decks, all-pairs, GPP 8, heuristic, seedBase 12345, alternating first player and seats",
+        "determinismRequired": true,
+        "catastropheEnvelopeRetained": true
+      }
+    },
+    {
+      "id": "legacy-smoke-grovekeeper-semantic-repair-20260727",
+      "suite": "tests/legacy/balance-smoke.test.ts",
+      "profile": "legacy-v1",
+      "previousRunHash": "fbda6c336681e350",
+      "replacementRunHash": "ac39002b0c8dc0f4",
+      "reason": "Grovekeeper 3000 was an invalid zero-HP, zero-ATK deployable definition with no executable text. Its canonical semantic repair to a 1/1 X-Energy character with an on-deploy +X/+X effect changes historical starter-deck outcomes because the archived adapter intentionally shares the corrected canonical card corpus.",
+      "scope": "compatibility_oracle_only_never_current_correctness",
+      "verification": {
+        "configuration": "real committed starter decks, all-pairs, GPP 8, heuristic, seedBase 12345, alternating first player and seats",
+        "determinismRequired": true,
+        "catastropheEnvelopeRetained": true
+      }
+    }
+  ]
+}

@@ -26,6 +26,7 @@ if (!process.env.AETHERION_CARDS) {
 // The standard heuristic pilot + standard rules, exactly as balance-verify.mjs's
 // BASE + heuristic pilot config. The ONLY variable is disableDiscardForEnergy.
 const BASE = {
+  rulesProfile: 'custom-diagnostic',
   firstPlayer: 'alternating',
   fixHandSizeStall: true,
   termination: 'tiebreak',

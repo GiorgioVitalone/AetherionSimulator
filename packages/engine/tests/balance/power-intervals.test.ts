@@ -500,7 +500,7 @@ describe('computeCardPower — §S3 power intervals + context flags', () => {
     const d = effectStaticValueDetailed({
       type: 'modify_stats',
       modifier: {},
-      dynamicModifier: { type: 'multiply', factor: 2 },
+      dynamicModifier: { type: 'multiply', factor: 2, stats: ['atk', 'hp'] },
       target: alliedCharacter,
       duration: { type: 'until_end_of_turn' },
     });
@@ -553,7 +553,7 @@ describe('§R13-2: dynamic-valuation false-precision sweep', () => {
     const d = effectStaticValueDetailed({
       type: 'modify_stats',
       modifier: {},
-      dynamicModifier: { type: 'multiply', factor: 0 },
+      dynamicModifier: { type: 'multiply', factor: 0, stats: ['atk', 'hp'] },
       target: enemyCharacter,
       duration: { type: 'until_end_of_turn' },
     });
@@ -566,7 +566,7 @@ describe('§R13-2: dynamic-valuation false-precision sweep', () => {
     const d = effectStaticValueDetailed({
       type: 'modify_stats',
       modifier: {},
-      dynamicModifier: { type: 'multiply', factor: 0.5 },
+      dynamicModifier: { type: 'multiply', factor: 0.5, stats: ['atk', 'hp'] },
       target: enemyCharacter,
       duration: { type: 'until_end_of_turn' },
     });
@@ -582,7 +582,7 @@ describe('§R13-2: dynamic-valuation false-precision sweep', () => {
     const d = effectStaticValueDetailed({
       type: 'modify_stats',
       modifier: {},
-      dynamicModifier: { type: 'multiply', factor: 0 },
+      dynamicModifier: { type: 'multiply', factor: 0, stats: ['atk', 'hp'] },
       target: alliedCharacter,
       duration: { type: 'until_end_of_turn' },
     });
@@ -593,7 +593,7 @@ describe('§R13-2: dynamic-valuation false-precision sweep', () => {
     const d = effectStaticValueDetailed({
       type: 'modify_stats',
       modifier: {},
-      dynamicModifier: { type: 'multiply', factor: 2 },
+      dynamicModifier: { type: 'multiply', factor: 2, stats: ['atk', 'hp'] },
       target: alliedCharacter,
       duration: { type: 'until_end_of_turn' },
     });

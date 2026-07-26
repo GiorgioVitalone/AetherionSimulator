@@ -13,10 +13,9 @@ const gpp = +(process.argv[3] || 80);
 const FACTIONS = ['Radiant', 'Verdant', 'Onyx', 'Sapphire'];
 const decks = Object.fromEntries(FACTIONS.map((f) => [f, f]));
 const RULES = {
-  reachDiscard: true, exileDiscardForEnergy: true, termination: 'tiebreak',
-  firstPlayer: 'alternating', seatAlternation: true, fixHandSizeStall: true,
-  armFirstInstanceOnly: true, terminationMode: 'resource_deck_empty_transform',
-  costFloor: true, reserveTapChoice: true, reserveTapStrain: true, turnCap: 80,
+  rulesProfile: 'current',
+  reachDiscard: true, termination: 'tiebreak',
+  firstPlayer: 'alternating', seatAlternation: true, turnCap: 80,
 };
 
 console.log(`Sapphire diagnostic — pool ${process.env.AETHERION_CARDS.split('/').pop()}, GROUND-TRUTH bot (rollout r8 heuristic), gpp ${gpp}`);

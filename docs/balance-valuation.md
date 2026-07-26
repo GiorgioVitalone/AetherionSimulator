@@ -16,6 +16,14 @@ deterministic analysis layer over the card DSL, not wired into gameplay. Impleme
    matches through a sparse coefficient matrix `W`. The same mechanism covers intra-card, inter-card,
    and hero synergy.
 
+### Power low/high values are heuristic scenario bands
+
+`powerLow` and `powerHigh` bound authored static-valuation scenarios for
+conditional, dynamic, recursive, and rules-sensitive effects. Output labels them
+with `powerBandInterpretation: "heuristic_scenario_band"`. They are not
+confidence intervals, credible intervals, prediction intervals, or estimates
+with a coverage probability, and must never support an inferential claim.
+
 ## Input — `StaticCard`
 The core is context-free (no `GameState`/`CardInstance`). The harness adapts raw `SimCard` JSON into
 `StaticCard`, running `normalizeTraits` (engine traits + `rushValue`/`recycleValue`/regen) and casting

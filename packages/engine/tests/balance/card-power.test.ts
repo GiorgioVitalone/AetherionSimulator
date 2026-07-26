@@ -4,6 +4,12 @@ import type { Effect } from '../../src/types/effects.js';
 import { aura, body, fixed, selfTarget, triggered } from './factory.js';
 
 describe('computeCardPower — stats + traits + abilities + intra-synergy', () => {
+  it('labels low/high values as a non-inferential heuristic scenario band', () => {
+    expect(computeCardPower(body(0, 'Band label', 1, 1))).toMatchObject({
+      powerBandInterpretation: 'heuristic_scenario_band',
+    });
+  });
+
   it('scores a vanilla body as atk + hp', () => {
     expect(computeCardPower(body(1, 'Vanilla', 4, 4)).power).toBeCloseTo(8);
   });

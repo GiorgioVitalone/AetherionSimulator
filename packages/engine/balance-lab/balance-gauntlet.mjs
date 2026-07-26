@@ -31,6 +31,7 @@ const testSpec = testDeck
   : DECK;
 
 const BASE = {
+  rulesProfile: 'custom-diagnostic',
   firstPlayer: 'alternating',
   fixHandSizeStall: true,
   termination: 'tiebreak',

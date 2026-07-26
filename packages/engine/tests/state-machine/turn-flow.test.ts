@@ -10,6 +10,7 @@ import {
 } from '../helpers/card-factory.js';
 import { deployToZone } from '../../src/zones/zone-manager.js';
 import type { GameState, ResourceCard } from '../../src/types/game-state.js';
+import { CURRENT_GAME_CONFIG } from '../../src/rules/index.js';
 
 function makeBank(resources: readonly { type: 'mana' | 'energy' }[]): ResourceCard[] {
   return resources.map((r, i) => ({
@@ -45,8 +46,14 @@ function makePlayableState(overrides?: Partial<GameState>): GameState {
       mockPlayerState(1, {
         hand: [mockCard({ owner: 1 })],
         mainDeck: deck2,
-        resourceDeck: [...resDeck],
-        resourceBank: makeBank([{ type: 'energy' }]),
+        resourceDeck: resDeck.map((resource, index) => ({
+          ...resource,
+          instanceId: `rd_p1_${String(index)}`,
+        })),
+        resourceBank: makeBank([{ type: 'energy' }]).map((resource, index) => ({
+          ...resource,
+          instanceId: `bank_p1_${String(index)}`,
+        })),
       }),
     ],
     ...overrides,
@@ -97,6 +104,57 @@ describe('Turn Flow State Machine', () => {
       const snapshot = actor.getSnapshot();
       // Should have cycled through end phase back to strategy (next turn)
       expect(snapshot.value).toEqual({ playing: 'strategy' });
+    });
+
+    it('surfaces and resolves hand-limit discard in authoritative state without a runner flag', () => {
+      const base = makePlayableState({ config: CURRENT_GAME_CONFIG });
+      const state: GameState = {
+        ...base,
+        players: [
+          {
+            ...base.players[0],
+            hand: Array.from({ length: 8 }, (_, i) =>
+              mockCard({ instanceId: `hand-${String(i)}`, owner: 0 }),
+            ),
+          },
+          base.players[1],
+        ],
+      };
+      const actor = createActor(gameMachine, { input: { gameState: state } });
+      actor.start();
+      // Current rules expose the start-of-turn transformation window first.
+      actor.send({ type: 'END_PHASE' });
+      actor.send({ type: 'END_PHASE' });
+      actor.send({ type: 'END_PHASE' });
+
+      const paused = actor.getSnapshot();
+      expect(paused.value).toEqual({ playing: 'boundaryInteraction' });
+      const choice = paused.context.gameState.pendingChoice;
+      expect(choice?.type).toBe('discard_to_hand_limit');
+      expect(choice).toBe(paused.context.pendingChoice);
+
+      actor.send({
+        type: 'PLAYER_RESPONSE',
+        interactionId: choice!.interactionId,
+        playerId: choice!.playerId,
+        response: { selectedOptionIds: [choice!.options[0]!.id] },
+      });
+      expect(actor.getSnapshot().value).toEqual({ playing: 'startOfTurnTransform' });
+      actor.send({ type: 'END_PHASE' });
+      const resumed = actor.getSnapshot();
+      expect(resumed.value).toEqual({ playing: 'strategy' });
+      expect(resumed.context.gameState.pendingChoice).toBeNull();
+      expect(resumed.context.gameState.players[0].hand).toHaveLength(8);
+      expect(
+        resumed.context.gameState.log.map((event) => event.type),
+      ).toEqual(
+        expect.arrayContaining([
+          'CHOICE_REQUESTED',
+          'CHOICE_SUBMITTED',
+          'CHOICE_ACCEPTED',
+          'CHOICE_RESOLVED',
+        ]),
+      );
     });
   });
 

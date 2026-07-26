@@ -13,6 +13,7 @@ const GPP = +(process.env.GPP || 14);
 const OUT = process.env.OUT || '/tmp/balance-diagnose-fair-result.json';
 const RAD2 = [45, 46, 47, 48, 49, 51, 53, 54]; // Radiant characters costing >= 2
 const BASE = {
+  rulesProfile: 'custom-diagnostic',
   decks: realDecks, matchups: 'all-pairs', firstPlayer: 'alternating', fixHandSizeStall: true,
   termination: 'tiebreak', abilitiesOn: true, turnCap: 80, seedBase: 12345,
   botPolicy: 'rollout', rollouts: 4, maxCandidates: 5, rolloutDepth: 3, fairPilot: true, gamesPerPairing: GPP,

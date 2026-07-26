@@ -5,6 +5,7 @@
 import type { CardInstance, ZoneState, GameConfig } from '../types/game-state.js';
 import type { Trait, ZoneType } from '../types/common.js';
 import { getCardsInZone } from './zone-manager.js';
+import { hasEffectiveTrait } from '../selectors/card-semantics.js';
 
 // ── Attack Target ────────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ function hasTrait(traits: readonly Trait[], trait: Trait): boolean {
 }
 
 function cardHasTrait(card: CardInstance, trait: Trait): boolean {
-  return hasTrait(card.traits, trait) || card.grantedTraits.some((g) => g.trait === trait);
+  return hasEffectiveTrait(card, trait);
 }
 
 // ── Board State Queries ──────────────────────────────────────────────────────

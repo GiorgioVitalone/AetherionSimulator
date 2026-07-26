@@ -70,9 +70,9 @@ describe('evaluateDynamicStat — equals_stat (Seraphina)', () => {
 describe('evaluateDynamicStat — multiply (RIA-09)', () => {
   it('returns the delta that doubles current ATK and HP', () => {
     const target = mockCard({ currentAtk: 2, currentHp: 4, currentArm: 0 });
-    const dyn: DynamicStatSource = { type: 'multiply', factor: 2 };
+    const dyn: DynamicStatSource = { type: 'multiply', factor: 2, stats: ['atk', 'hp'] };
     // factor-1 = 1 -> delta equals current stats (doubling on apply).
-    expect(evaluateDynamicStat(mockGameState(), dyn, target, ctx())).toEqual({ atk: 2, hp: 4, arm: 0 });
+    expect(evaluateDynamicStat(mockGameState(), dyn, target, ctx())).toEqual({ atk: 2, hp: 4 });
   });
 });
 
@@ -137,7 +137,7 @@ describe('executeModifyStats — applies dynamic modifiers to the board', () => 
       target: { type: 'all_characters', side: 'allied' },
       duration: { type: 'until_next_upkeep' },
       modifier: { hp: 0, atk: 0 },
-      dynamicModifier: { type: 'multiply', factor: 2 },
+      dynamicModifier: { type: 'multiply', factor: 2, stats: ['atk', 'hp'] },
     };
     const result = executeEffect(state, effect, ctx());
     const buffed = result.newState.players[0].zones.frontline[0]!;

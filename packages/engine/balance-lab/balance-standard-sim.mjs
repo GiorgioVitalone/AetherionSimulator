@@ -37,18 +37,13 @@ if (!cardsPath) {
 }
 const args = [
   '../sim-runner.mjs',
+  '--rulesProfile', 'current',
   '--realDecks',
   '--reachDiscard', 'true',
   '--exileDiscardForEnergy', 'true',
   '--valuePilot', 'true',
   '--termination', 'tiebreak',
   '--firstPlayer', 'alternating',
-  '--fixHandSizeStall', 'true',
-  '--armFirstInstanceOnly', 'true',
-  '--terminationMode', 'resource_deck_empty_transform',
-  '--costFloor', 'true',
-  '--reserveTapChoice', 'true',
-  '--reserveTapStrain', 'true',
   '--gamesPerPairing', gpp || '300',
   '--parallel', parallel || String(availableParallelism()),
 ];

@@ -5,6 +5,8 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { chooseAction, chooseChoiceResponse } from '../../src/bot/heuristic.js';
+import { runAbilityEffects } from '../../src/effects/effect-runner.js';
+import { CURRENT_GAME_CONFIG } from '../../src/rules/manifest.js';
 import {
   mockCard,
   mockHero,
@@ -58,6 +60,156 @@ describe('heuristic bot — strategy decisions', () => {
     expect(action).not.toBeNull();
     expect(action!.type).toBe('move');
     expect((action as { toZone: string }).toZone).toBe('high_ground');
+  });
+
+  it('removes equipment whose authored effects have negative utility', () => {
+    const cursed = mockCard({
+      instanceId: 'CURSED',
+      owner: 0,
+      cardType: 'E',
+      abilities: [{
+        type: 'aura',
+        effects: [{
+          type: 'modify_stats',
+          target: { type: 'equipped_character' },
+          modifier: { hp: -5 },
+          duration: { type: 'while_in_play' },
+        }],
+      }],
+    });
+    const holder = mockCard({
+      instanceId: 'HOLDER',
+      owner: 0,
+      equipment: { ...cursed, holderInstanceId: 'HOLDER' },
+    });
+    const state = mockGameState({
+      phase: 'strategy',
+      config: CURRENT_GAME_CONFIG,
+      players: [
+        mockPlayerState(0, {
+          zones: zonesWithCards({ frontline: [holder] }),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+
+    expect(chooseAction(state)).toEqual({
+      type: 'remove_equipment',
+      equipmentInstanceId: 'CURSED',
+    });
+  });
+
+  it('transfers useful equipment from a weak holder to a stronger legal holder', () => {
+    const equipment = mockCard({
+      instanceId: 'GEAR',
+      owner: 0,
+      cardType: 'E',
+      cost: { mana: 0, energy: 0, flexible: 0 },
+    });
+    const weak = mockCard({
+      instanceId: 'WEAK',
+      owner: 0,
+      baseAtk: 1,
+      currentAtk: 1,
+      baseHp: 1,
+      currentHp: 1,
+      equipment: { ...equipment, holderInstanceId: 'WEAK' },
+    });
+    const strong = mockCard({
+      instanceId: 'STRONG',
+      owner: 0,
+      baseAtk: 5,
+      currentAtk: 5,
+      baseHp: 5,
+      currentHp: 5,
+    });
+    const state = mockGameState({
+      phase: 'strategy',
+      config: CURRENT_GAME_CONFIG,
+      players: [
+        mockPlayerState(0, {
+          zones: zonesWithCards({ frontline: [weak, strong, null] }),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+
+    expect(chooseAction(state)).toEqual({
+      type: 'transfer_equipment',
+      equipmentInstanceId: 'GEAR',
+      targetInstanceId: 'STRONG',
+    });
+  });
+
+  it('chooses X by marginal utility across the full legal range', () => {
+    const xBurn = mockCard({
+      instanceId: 'X-BURN',
+      owner: 0,
+      cardType: 'S',
+      xCostResource: 'mana',
+      cost: { mana: 0, energy: 0, flexible: 0 },
+      abilities: [{
+        type: 'triggered',
+        trigger: { type: 'on_cast' },
+        effects: [{
+          type: 'deal_damage',
+          amount: { type: 'x_cost' },
+          target: { type: 'hero', side: 'enemy' },
+        }],
+      }],
+    });
+    const state = mockGameState({
+      phase: 'strategy',
+      config: CURRENT_GAME_CONFIG,
+      players: [
+        mockPlayerState(0, {
+          hand: [xBurn],
+          resourceBank: manaBank(5),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+
+    expect(chooseAction(state)).toMatchObject({
+      type: 'cast_spell',
+      cardInstanceId: 'X-BURN',
+      xValue: 5,
+    });
+  });
+
+  it('does not spend X when the authored effect does not scale with X', () => {
+    const fixed = mockCard({
+      instanceId: 'FIXED',
+      owner: 0,
+      cardType: 'S',
+      xCostResource: 'mana',
+      cost: { mana: 0, energy: 0, flexible: 0 },
+      abilities: [{
+        type: 'triggered',
+        trigger: { type: 'on_cast' },
+        effects: [{
+          type: 'deal_damage',
+          amount: { type: 'fixed', value: 2 },
+          target: { type: 'hero', side: 'enemy' },
+        }],
+      }],
+    });
+    const state = mockGameState({
+      phase: 'strategy',
+      config: CURRENT_GAME_CONFIG,
+      players: [
+        mockPlayerState(0, {
+          hand: [fixed],
+          resourceBank: manaBank(5),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+
+    expect(chooseAction(state)).toEqual({
+      type: 'cast_spell',
+      cardInstanceId: 'FIXED',
+    });
   });
 });
 
@@ -218,5 +370,48 @@ describe('heuristic bot — pendingChoice', () => {
     };
     const state = mockGameState({ players: [p0, mockPlayerState(1)], pendingChoice: pc });
     expect(chooseChoiceResponse(state)).toEqual(['DROP']);
+  });
+
+  it('selects a modal branch by projected utility rather than option order', () => {
+    const makePending = (healingFirst: boolean) => {
+      const heal = {
+        label: 'Heal 10',
+        effects: [
+          {
+            type: 'heal' as const,
+            amount: { type: 'fixed' as const, value: 10 },
+            target: { type: 'owner_hero' as const },
+          },
+        ],
+      };
+      const ping = {
+        label: 'Deal 1',
+        effects: [
+          {
+            type: 'deal_damage' as const,
+            amount: { type: 'fixed' as const, value: 1 },
+            target: { type: 'hero' as const, side: 'enemy' as const },
+          },
+        ],
+      };
+      const state = mockGameState({
+        config: CURRENT_GAME_CONFIG,
+        players: [
+          mockPlayerState(0, {
+            hero: mockHero({ currentLp: 5, maxLp: 25 }),
+          }),
+          mockPlayerState(1),
+        ],
+      });
+      return runAbilityEffects(state, 'source', [
+        {
+          type: 'choose_one',
+          options: healingFirst ? [heal, ping] : [ping, heal],
+        },
+      ]).state;
+    };
+
+    expect(chooseChoiceResponse(makePending(true))).toEqual(['0']);
+    expect(chooseChoiceResponse(makePending(false))).toEqual(['1']);
   });
 });

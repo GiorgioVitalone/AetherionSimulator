@@ -115,11 +115,22 @@ function transformCard(row: DbRow): SimCard | null {
     console.warn(`Skipping card ${row.id} "${row.name}": invalid rarity "${rarity}"`);
     return null;
   }
+  const rawResourceType = row.cost?.['resourceType'];
+  const resourceType =
+    rawResourceType === 'mana' || rawResourceType === 'energy'
+      ? rawResourceType
+      : undefined;
+  if (cardType === 'R' && resourceType === undefined) {
+    throw new Error(
+      `Resource card ${String(row.id)} "${row.name}" is missing cost.resourceType`,
+    );
+  }
 
   return {
     id: row.id,
     name: row.name,
     cardType: cardType as CardTypeCode,
+    ...(resourceType !== undefined ? { resourceType } : {}),
     rarity: rarity as Rarity,
     alignment: parseAlignment(row.alignment),
     cost: parseCost(row.cost),

@@ -44,15 +44,61 @@ export function executeCounterSpell(
 
   const events: GameEvent[] = [];
   const remaining: StackItem[] = [];
+  const players = [...state.players] as [GameState['players'][0], GameState['players'][1]];
   for (const item of state.stack) {
     if (targetIds.has(item.id) && shouldCounter(state, item, effect.unlessPay)) {
-      events.push({ type: 'SPELL_COUNTERED', cardInstanceId: item.sourceInstanceId, playerId: item.controllerId });
+      if (state.config?.transactionalDeclarations === true) {
+        events.push({
+          type: 'STACK_ITEM_COUNTERED',
+          stackItemId: item.id,
+          stackItemType: item.type,
+          sourceInstanceId: item.sourceInstanceId,
+          controllerPlayerId: item.controllerId,
+        });
+      }
+      if (
+        item.type === 'spell' ||
+        state.config?.transactionalDeclarations !== true
+      ) {
+        events.push({
+          type: 'SPELL_COUNTERED',
+          cardInstanceId: item.sourceInstanceId,
+          playerId: item.controllerId,
+        });
+      }
+      if (item.declaredCard !== undefined) {
+        const player = players[item.controllerId];
+        // A declared equipment card records its intended holder while it is on
+        // the stack. Once countered it becomes an ordinary unattached discard
+        // card, so the attachment relation must be cleared.
+        const discardedCard = {
+          ...item.declaredCard,
+          holderInstanceId: undefined,
+        };
+        players[item.controllerId] = {
+          ...player,
+          discardPile: [...player.discardPile, discardedCard],
+        };
+        events.push({
+          type: 'EQUIPMENT_COUNTERED',
+          equipmentId: item.declaredCard.instanceId,
+          stackItemId: item.id,
+          playerId: item.controllerId,
+        });
+        events.push({
+          type: 'EQUIPMENT_DISCARDED',
+          equipmentId: item.declaredCard.instanceId,
+          cardDefId: item.declaredCard.cardDefId,
+          playerId: item.controllerId,
+          reason: 'countered',
+        });
+      }
       continue; // negated — drop from the stack
     }
     remaining.push(item);
   }
 
-  return { newState: { ...state, stack: remaining }, events };
+  return { newState: { ...state, players, stack: remaining }, events };
 }
 
 /**

@@ -36,7 +36,7 @@ export function executeAttachAsEquipment(
   const source = findCardInState(state, context.sourceInstanceId);
   if (source === null) return { newState: state, events: [] };
 
-  const equipment = toEquipment(source, effect.retainAbilities ?? false);
+  const equipment = toEquipment(source, targetId, effect.retainAbilities ?? false);
   const withoutSource = removeSourceFromZone(state, context.sourceInstanceId);
   const attached = updateCardInState(withoutSource, targetId, (card) => ({
     ...card,
@@ -55,10 +55,16 @@ export function executeAttachAsEquipment(
   return { newState: attached, events };
 }
 
-function toEquipment(source: CardInstance, retainAbilities: boolean): CardInstance {
+function toEquipment(
+  source: CardInstance,
+  holderInstanceId: string,
+  retainAbilities: boolean,
+): CardInstance {
   return {
     ...source,
+    cardType: 'E',
     equipment: null,
+    holderInstanceId,
     abilities: retainAbilities ? source.abilities : [],
     registeredTriggers: retainAbilities ? source.registeredTriggers : [],
   };

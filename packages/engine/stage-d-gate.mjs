@@ -21,10 +21,9 @@ const gpp = +(process.argv[3] || 500);
 const FACTIONS = ['Radiant', 'Verdant', 'Onyx', 'Sapphire'];
 const decks = Object.fromEntries(FACTIONS.map((f) => [f, f]));
 const RULES = {
-  reachDiscard: true, exileDiscardForEnergy: true, termination: 'tiebreak',
-  firstPlayer: 'alternating', seatAlternation: true, fixHandSizeStall: true,
-  armFirstInstanceOnly: true, terminationMode: 'resource_deck_empty_transform',
-  costFloor: true, reserveTapChoice: true, reserveTapStrain: true, turnCap: 80,
+  rulesProfile: 'current',
+  reachDiscard: true, termination: 'tiebreak',
+  firstPlayer: 'alternating', seatAlternation: true, turnCap: 80,
 };
 function wilson(w, n) {
   if (!n) return [0, 0];

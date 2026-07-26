@@ -5,7 +5,7 @@
  * - aura: continuous passive (buffs, cost reductions while in play)
  * - stat_grant: equipment stat bonuses (no trigger, no condition)
  */
-import type { StatModifier, DynamicStatSource } from './common.js';
+import type { StatModifier, DynamicStatSource, ResourceType } from './common.js';
 import type { Effect } from './effects.js';
 import type { Trigger } from './triggers.js';
 import type { Condition } from './conditions.js';
@@ -19,6 +19,19 @@ export interface TriggeredAbilityDSL {
   readonly condition?: Condition;
   readonly cooldown?: number;
   readonly oncePerTurn?: boolean;
+  readonly xCostResource?: ResourceType;
+  readonly abilityKind?:
+    | 'activated'
+    | 'trigger'
+    | 'counter'
+    | 'flash'
+    | 'ultimate';
+  /** [React]: event-driven ability that exhausts its source card when it procs, and
+   * cannot proc while its source is already exhausted (effectively once per turn,
+   * exhaust-gated rather than counter-gated). Contrast [Aura], which may also use
+   * "when" phrasing but procs unlimited times and never exhausts. No [React] on
+   * Heroes — HeroState has no `exhausted` field. Absent/false ⇒ semantically invariant no-op. */
+  readonly react?: boolean;
 }
 
 export interface AuraAbilityDSL {

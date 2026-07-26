@@ -100,7 +100,7 @@ describe('multiply dynamic modifier (§13c — Synthetic Evolution was priced 0)
       target: { side: 'allied', type: 'all_characters', filter: { tag: 'Bio-Construct' } },
       duration: { type: 'until_next_upkeep' },
       modifier: { hp: 0, atk: 0 },
-      dynamicModifier: { type: 'multiply', factor: 2 },
+      dynamicModifier: { type: 'multiply', factor: 2, stats: ['atk', 'hp'] },
     };
     // (factor−1) × AVG_WEAK_BODY per body × AoE width × tempo weight
     expect(effectStaticValue(e).value).toBeCloseTo(AVG_WEAK_BODY * AOE_WIDTH * 0.6, 10);

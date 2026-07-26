@@ -4,6 +4,7 @@
 import type { AmountExpr, CountingExpr, CountingFilter, DynamicStatSource, StatModifier } from '../types/common.js';
 import type { GameState, EffectContext, CardInstance } from '../types/game-state.js';
 import { getCardsInZone, getAllCards, getZoneArray } from '../zones/zone-manager.js';
+import { hasEffectiveTag, hasEffectiveTrait } from '../selectors/card-semantics.js';
 
 export function evaluateAmount(
   state: GameState,
@@ -104,11 +105,18 @@ export function evaluateDynamicStat(
     }
     case 'multiply': {
       const base = dynamic.factor - 1;
-      return {
-        atk: target.currentAtk * base,
-        hp: target.currentHp * base,
-        arm: target.currentArm * base,
-      };
+      return dynamic.stats.reduce<StatModifier>(
+        (out, stat) => ({
+          ...out,
+          [stat]:
+            (stat === 'atk'
+              ? target.currentAtk
+              : stat === 'hp'
+                ? target.currentHp
+                : target.currentArm) * base,
+        }),
+        {},
+      );
     }
     case 'per_count':
       return { [dynamic.stat]: evaluateCount(state, dynamic.counting, context, undefined) * dynamic.valuePerCount };
@@ -146,8 +154,8 @@ function filterCards(
   if (filter === undefined) return cards;
   return cards.filter(c => {
     if (filter.cardType !== undefined && c.cardType !== filter.cardType) return false;
-    if (filter.trait !== undefined && !c.traits.includes(filter.trait)) return false;
-    if (filter.tag !== undefined && !c.tags.includes(filter.tag)) return false;
+    if (filter.trait !== undefined && !hasEffectiveTrait(c, filter.trait)) return false;
+    if (filter.tag !== undefined && !hasEffectiveTag(c, filter.tag)) return false;
     if (filter.maxCost !== undefined) {
       const totalCost = c.cost.mana + c.cost.energy + c.cost.flexible;
       if (totalCost > filter.maxCost) return false;

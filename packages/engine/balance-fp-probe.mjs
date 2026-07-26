@@ -21,6 +21,7 @@ import { availableParallelism } from 'node:os';
 import { createHash } from 'node:crypto';
 import { runSim } from './sim-runner.mjs';
 import { runSimParallel } from './sim-parallel.mjs';
+import { CURRENT_GAME_CONFIG } from './dist/index.js';
 
 const POOL_PATH = process.env.AETHERION_CARDS || new URL('./sim-data/aetherion-cards.json', import.meta.url);
 const POOL_SHA = createHash('sha256')
@@ -28,28 +29,6 @@ const POOL_SHA = createHash('sha256')
   .digest('hex')
   .slice(0, 16);
 const T = JSON.parse(readFileSync(new URL('./sim-data/balance-targets.json', import.meta.url), 'utf8'));
-
-// Locked ruleset manifest (sim-data/ruleset-v1.json) — same CONSUMED source of
-// truth as balance-verify.mjs. Missing manifest means a pre-lock checkout;
-// fall back to the pre-lock hardcoded defaults with a warning.
-const MANIFEST_PATH = new URL('./sim-data/ruleset-v1.json', import.meta.url);
-const PRE_LOCK_FALLBACK_RULES = {
-  armFirstInstanceOnly: true,
-  terminationMode: 'resource_deck_empty_transform',
-  costFloor: true,
-  reserveTapChoice: true,
-  reserveTapStrain: true,
-  exileDiscardForEnergy: true,
-  apnapAnyOrderFix: true,
-};
-let manifest = null;
-let manifestRules = PRE_LOCK_FALLBACK_RULES;
-try {
-  manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
-  manifestRules = manifest.rules;
-} catch {
-  console.warn(`WARNING: manifest not found at ${MANIFEST_PATH} — using pre-lock hardcoded BASE (this checkout predates the ruleset-v1 lock).`);
-}
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const realDecks = Object.fromEntries(FACTIONS.map(f => [f, f]));
@@ -72,13 +51,12 @@ const run = (cfg) => (WORKERS > 1 ? runSimParallel(cfg, WORKERS) : Promise.resol
 // locked manifest; firstPlayer alternating is what makes the mirror split a
 // clean seat read.
 const BASE = {
+  rulesProfile: 'current',
   firstPlayer: 'alternating',
-  fixHandSizeStall: true,
   termination: 'tiebreak',
   abilitiesOn: true,
   turnCap: 80,
   seedBase: 12345,
-  ...manifestRules,
   // §13q seat-asymmetry fix (2026-07-10) — see balance-verify.mjs BASE.
   seatAlternation: true,
 };
@@ -88,10 +66,14 @@ const BASE = {
 // actually change an effective rule value away from the manifest's.
 const ruleOverrides = [];
 function override(key, effectiveValue) {
-  const manifestValue = manifestRules[key] ?? null;
+  const manifestValue = CURRENT_GAME_CONFIG[key] ?? null;
   if (manifestValue !== effectiveValue) {
     console.log(`RULE OVERRIDE (experiment): ${key} ${JSON.stringify(manifestValue)} -> ${JSON.stringify(effectiveValue)} — not the locked ruleset`);
     ruleOverrides.push({ rule: key, manifestValue, effectiveValue });
+    if (BASE.rulesProfile === 'current') {
+      BASE.rulesProfile = 'custom-diagnostic';
+      Object.assign(BASE, CURRENT_GAME_CONFIG);
+    }
   }
   BASE[key] = effectiveValue;
 }

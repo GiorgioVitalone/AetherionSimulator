@@ -18,7 +18,14 @@ export type { BinomTestResult, TwoPropResult } from './binomTest.js';
 export { gTestUniform, chiSquareUniform } from './gtest.js';
 export type { GoodnessOfFitResult } from './gtest.js';
 
-export { normalCdf, normalTwoSidedP, chiSquareUpperP, lnGamma } from './normal.js';
+export {
+  normalCdf,
+  normalSurvival,
+  normalLogSurvival,
+  normalTwoSidedP,
+  chiSquareUpperP,
+  lnGamma,
+} from './normal.js';
 
 export { pearson, spearman } from './correlation.js';
 export type { CorrelationResult } from './correlation.js';

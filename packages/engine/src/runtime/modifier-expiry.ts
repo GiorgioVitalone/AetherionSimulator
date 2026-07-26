@@ -9,7 +9,10 @@
 import type { GameState, CardInstance } from '../types/game-state.js';
 import type { GrantedDuration } from '../types/game-state.js';
 
-type TimedBoundary = Extract<GrantedDuration['type'], 'until_end_of_turn' | 'until_next_upkeep'>;
+type TimedBoundary = Extract<
+  GrantedDuration['type'],
+  'for_combat' | 'until_end_of_turn' | 'until_next_upkeep'
+>;
 
 function stripCardModifiers(card: CardInstance, boundary: TimedBoundary): CardInstance {
   const hasMod = card.modifiers.some(m => m.duration.type === boundary);

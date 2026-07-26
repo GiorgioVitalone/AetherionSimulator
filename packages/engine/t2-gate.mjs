@@ -6,7 +6,7 @@
 //   node t2-gate.mjs [gpp=128] [seedBlocks=1|2]
 // Writes a summary table to stdout AND a JSON to scratchpad for ledgering.
 import { pathToFileURL } from 'node:url';
-import { writeFileSync, readFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 
 const ENGINE = new URL('.', import.meta.url).pathname;
 process.env.AETHERION_CARDS = process.env.AETHERION_CARDS || ENGINE + 'generated-pools/aetherion-CURRENT.json';
@@ -18,15 +18,11 @@ const SEEDS = SEED_BLOCKS === 2 ? [12345, 67890] : [12345];
 
 const FACTIONS = ['Radiant', 'Verdant', 'Onyx', 'Sapphire'];
 const decks = Object.fromEntries(FACTIONS.map((f) => [f, f]));
-// Locked ruleset manifest (sim-data/ruleset-v1.json) — the 9 locked rule flags
-// come from here (see balance-verify.mjs's manifestRules pattern), not a
-// hand-written subset.
-const manifestRules = JSON.parse(readFileSync(new URL('./sim-data/ruleset-v1.json', import.meta.url), 'utf8')).rules;
 const RULES = {
+  rulesProfile: 'current',
   reachDiscard: true, termination: 'tiebreak',
-  firstPlayer: 'alternating', seatAlternation: true, fixHandSizeStall: true,
+  firstPlayer: 'alternating', seatAlternation: true,
   turnCap: 80,
-  ...manifestRules,
 };
 function wilson(w, n) {
   if (!n) return [0, 0];

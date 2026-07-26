@@ -22,3 +22,5 @@ export { executeScheduled, processScheduledEffects } from './scheduled-handler.j
 export { executeAttachAsEquipment } from './attach-handler.js';
 export { evaluateCondition } from './condition-evaluator.js';
 export { evaluateAmount } from './amount-evaluator.js';
+export { attemptDraw } from './draw-service.js';
+export type { DrawAttemptResult, DrawCause } from './draw-service.js';

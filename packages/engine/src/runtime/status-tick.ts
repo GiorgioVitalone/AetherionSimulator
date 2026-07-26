@@ -11,6 +11,12 @@
 import type { GameState, CardInstance, GameEvent, ActiveStatus } from '../types/game-state.js';
 import { removeCardFromState } from '../effects/state-helpers.js';
 import { isExiledOnDestruction } from '../effects/destruction-destination.js';
+import {
+  applyDamageReplacements,
+  markReplacementsUsed,
+} from '../effects/replacement-handler.js';
+import { snapshotCard } from '../selectors/card-semantics.js';
+import { applyStateBasedDeaths } from '../effects/interpreter.js';
 
 export interface StatusTickResult {
   readonly state: GameState;
@@ -52,14 +58,20 @@ export function tickStatusEffects(state: GameState, playerIndex: 0 | 1): StatusT
     if (live === null) continue;
     const stepped = stepCard(live);
     currentState = setCard(currentState, playerIndex, stepped.card);
+    currentState = markReplacementsUsed(
+      currentState,
+      stepped.card.instanceId,
+      stepped.consumedReplacementIds,
+    );
     events.push(...stepped.events);
-    if (stepped.destroyed) {
+    if (stepped.destroyed && state.config?.stateBasedActions !== true) {
       events.push({
         type: 'CARD_DESTROYED',
         cardInstanceId: stepped.card.instanceId,
         cardDefId: stepped.card.cardDefId,
         cause: 'effect',
         playerId: stepped.card.owner,
+        lastKnownCard: snapshotCard(stepped.card),
       });
       if (!stepped.card.isToken && isExiledOnDestruction(stepped.card)) {
         events.push({
@@ -72,6 +84,13 @@ export function tickStatusEffects(state: GameState, playerIndex: 0 | 1): StatusT
       currentState = removeCardFromState(currentState, stepped.card.instanceId);
     }
   }
+  if (state.config?.stateBasedActions === true) {
+    const stateBased = applyStateBasedDeaths(currentState);
+    return {
+      state: stateBased.newState,
+      events: [...events, ...stateBased.events],
+    };
+  }
   return { state: currentState, events };
 }
 
@@ -79,6 +98,7 @@ interface StepResult {
   readonly card: CardInstance;
   readonly events: readonly GameEvent[];
   readonly destroyed: boolean;
+  readonly consumedReplacementIds: readonly string[];
 }
 
 /** Apply Regeneration/Persistent/Slowed for one card; returns updated statuses. */
@@ -86,6 +106,7 @@ function stepCard(card: CardInstance): StepResult {
   const events: GameEvent[] = [];
   let hp = card.currentHp;
   const next: ActiveStatus[] = [];
+  const consumedReplacementIds: string[] = [];
 
   for (const status of card.statusEffects) {
     if (status.sourceAuraId !== undefined) {
@@ -108,20 +129,25 @@ function stepCard(card: CardInstance): StepResult {
       }
       case 'persistent': {
         if (status.value > 0) {
-          hp -= status.value;
+          const replaced = applyDamageReplacements({ ...card, currentHp: hp }, status.value);
+          hp -= replaced.amount;
+          consumedReplacementIds.push(...replaced.consumedIds);
           events.push({
             type: 'DAMAGE_DEALT',
             sourceId: card.instanceId,
             targetId: card.instanceId,
-            amount: status.value,
+            amount: replaced.amount,
           });
         }
         pushDecremented(next, status);
         break;
       }
       case 'slowed':
-      case 'stunned':
         pushTurnDecremented(next, status);
+        break;
+      case 'stunned':
+        // Refresh owns the Stun clock; ticking it here would decrement twice.
+        next.push(status);
         break;
       case 'hexproof':
       case 'anti_redirect':
@@ -134,6 +160,7 @@ function stepCard(card: CardInstance): StepResult {
     card: { ...card, currentHp: hp, statusEffects: next },
     events,
     destroyed: hp <= 0,
+    consumedReplacementIds,
   };
 }
 

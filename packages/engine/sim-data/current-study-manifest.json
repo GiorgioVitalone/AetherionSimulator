@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "studyId": "aetherion-current-four-faction-v1",
+  "status": "diagnostic",
+  "artifacts": {
+    "rules": {
+      "profile": "current",
+      "source": "sim-data/ruleset-current.json",
+      "hashAlgorithm": "sha256_json_stringify",
+      "binding": "runtime_required"
+    },
+    "cardPool": {
+      "source": "sim-data/aetherion-cards.json",
+      "hashAlgorithm": "sha256_json_stringify",
+      "binding": "runtime_required"
+    },
+    "engineBuild": {
+      "packageName": "@aetherion-sim/engine",
+      "source": "dist/**/*.js",
+      "hashAlgorithm": "sha256_sorted_relative_path_nul_bytes_nul",
+      "binding": "runtime_required"
+    },
+    "harnessBuild": {
+      "source": "sim-runner.mjs+deck-loader.mjs+deck-sampler.mjs+pilot-rollout.mjs+pilot-value.mjs",
+      "hashAlgorithm": "sha256_sorted_relative_path_nul_bytes_nul",
+      "binding": "runtime_required"
+    },
+    "botImplementation": {
+      "source": "dist/bot/**/*.js+pilot-rollout.mjs+pilot-value.mjs+sim-runner.mjs",
+      "hashAlgorithm": "sha256_sorted_relative_path_nul_bytes_nul",
+      "binding": "runtime_required"
+    },
+    "policyCalibration": {
+      "source": "sim-data/policy-calibration-manifest.json",
+      "hashAlgorithm": "sha256_canonical_json",
+      "binding": "runtime_required",
+      "requiredRulesArtifactStatus": "ratified"
+    }
+  },
+  "policies": {
+    "population": "uniform_heuristic_v1",
+    "policyBySeat": "same_policy_both_seats",
+    "action": "chooseAction",
+    "reaction": "chooseReactiveAction",
+    "choice": "chooseChoiceResponse",
+    "mulligan": "shouldKeepHand",
+    "stochasticTieBreaking": "mulberry32-v1"
+  },
+  "termination": {
+    "turnCap": 80,
+    "turnCapOutcome": "typed_turn_cap_draw",
+    "tiebreak": "disabled",
+    "engineTerminalReasons": [
+      "normal_win",
+      "concession",
+      "deck_exhaustion"
+    ]
+  },
+  "runtimeBindings": [
+    "rulesManifestHash",
+    "studyManifestHash",
+    "cardPoolHash",
+    "engineBuildHash",
+    "harnessBuildHash",
+    "botImplementationHash",
+    "deckContentHashes",
+    "policyConfigHash",
+    "policyCalibrationManifestHash"
+  ],
+  "population": {
+    "factions": ["Onyx", "Radiant", "Sapphire", "Verdant"],
+    "claimScope": "committed_four_faction_card_pool",
+    "deckSelection": "predeclared_legal_decks",
+    "minimumDistinctDecksPerFaction": 2
+  },
+  "deckPopulation": {
+    "source": "deterministic_seeded_sampler",
+    "samplerVersion": "faction_archetype_v1",
+    "seed": 20260726,
+    "decksPerFaction": 5,
+    "archetypes": ["Aggro", "Midrange", "Control", "Tempo", "Ramp"],
+    "sourceOrder": "card_id_ascending",
+    "pairing": "all_unordered_deck_pairs"
+  },
+  "schedule": {
+    "seedScheduleVersion": "semantic-key-v1",
+    "gameSeedBase": 20260726,
+    "gamesPerPairingMultiple": 4,
+    "counterbalanceBlockSize": 4,
+    "clusterUnit": "matchup_x_schedule_block",
+    "seatAlternation": true,
+    "firstPlayerAssignment": "alternating_by_replicate"
+  },
+  "endpoints": {
+    "primary": "faction_marginal_win_rate_difference_in_supplied_schedule",
+    "leaderModel": {
+      "id": "multicomponent_leader_v1",
+      "snapshotTurn": 10,
+      "tieTolerance": 1e-12,
+      "weights": {
+        "heroLp": 1,
+        "boardPower": 0.5,
+        "availableResources": 0.75,
+        "handSize": 0.5,
+        "deckRemaining": 0.1,
+        "transformed": 2,
+        "readyFrontline": 1
+      }
+    },
+    "secondary": [
+      {
+        "id": "leader_at_turn_10",
+        "definition": "multicomponent_leader_v1_score_at_turn_10"
+      },
+      {
+        "id": "comeback",
+        "definition": "winner_was_not_leader_at_turn_10"
+      },
+      {
+        "id": "decided_rate",
+        "definition": "typed_gameplay_win_over_valid_gameplay_games"
+      }
+    ]
+  },
+  "multiplicity": {
+    "family": "all_pairwise_faction_win_rate_contrasts",
+    "method": "schedule_preserving_permutation_maxT",
+    "familywiseAlpha": 0.05
+  },
+  "practicalThresholds": {
+    "factionSpreadFlagPctPoints": 5,
+    "factionSpreadFailPctPoints": 8,
+    "mirrorFirstPlayerFlagPctPoints": 3,
+    "minimumDecidedPct": 80
+  },
+  "decisionTable": [
+    {
+      "metric": "faction_spread_pct_points",
+      "pass": "x_lt_5",
+      "flag": "5_lte_x_lt_8",
+      "fail": "x_gte_8"
+    },
+    {
+      "metric": "mirror_first_player_pct_points",
+      "pass": "x_lt_3",
+      "flag": "x_gte_3",
+      "fail": "not_automatic_requires_design_review"
+    },
+    {
+      "metric": "decided_pct",
+      "pass": "x_gte_80",
+      "flag": "x_lt_80",
+      "fail": "inference_blocked"
+    }
+  ],
+  "power": {
+    "target": 0.8,
+    "minimumDetectableFactionDifferencePctPoints": 8,
+    "nominalIndependentGamesPerFactionArm": 946,
+    "calibrationModel": "two_sided_bonferroni_six_contrasts_worst_case_p_0_5",
+    "clusterInflationRequired": true,
+    "calibrationRequired": true
+  },
+  "validityGates": {
+    "requiredRulesArtifactStatus": "ratified",
+    "maximumInfrastructureFailures": 0,
+    "semanticCardValidation": "required",
+    "policyCalibration": "required",
+    "independentRuleOracle": "required"
+  }
+}

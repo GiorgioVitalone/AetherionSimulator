@@ -104,13 +104,15 @@ describe('status-tick — Persistent', () => {
     });
     const r = tickStatusEffects(stateWith(card), 0);
     expect(findCard(r.state, card.instanceId)).toBeNull();
-    expect(r.events).toContainEqual({
-      type: 'CARD_DESTROYED',
-      cardInstanceId: card.instanceId,
-      cardDefId: card.cardDefId,
-      cause: 'effect',
-      playerId: 0,
-    });
+    expect(r.events).toContainEqual(
+      expect.objectContaining({
+        type: 'CARD_DESTROYED',
+        cardInstanceId: card.instanceId,
+        cardDefId: card.cardDefId,
+        cause: 'effect',
+        playerId: 0,
+      }),
+    );
   });
 
   it('decrements its value when the character survives', () => {

@@ -2103,3 +2103,47 @@ matters only alongside a package ⇒ adjust the package, not the card. Any resul
 through the card gate; the pricing formula is never tuned to these results.
 
 Results follow below as they land; every run ledgered.
+
+### §14b. Step-4 screen results (ledger `2026-07-13_deck-panel_34cf3a28_step4-screen`, 5,120 games)
+
+Win% of each sampled deck vs the pooled starter field (Wilson 95%), faction averages:
+**Onyx ~80** (Aggro 87.9 [83.3–91.3] … Ramp 76.2), **Verdant ~67** (Aggro 78.9 … Control 50.4),
+**Radiant ~54** (Aggro 75.4 … Control 25.8), **Sapphire ~39** (Control 49.2 … Aggro 22.7
+[18.0–28.2]). Pacing: all 80 pairings OK on every watch band. Extremes: Onyx:Aggro beats the
+Verdant starter 95.3%; Sapphire:Aggro loses to the Radiant starter 87.5%.
+
+**The Layer-2 headline the screen exists to reveal: constructed-vs-starter strength is wildly
+faction-asymmetric.** The Onyx pool assembles strong decks from ANY template (all five ≥76%
+vs starters) while the Sapphire pool assembles weak ones (four of five <50) — despite the
+starters themselves being Layer-3-fair at 46–55%. Sapphire's competitive strength apparently
+lives in its specific tuned starter construction, not its pool (rhyming with the §8 redesign
+history). Screen-grade observations only; the step-5 field grades them.
+
+**Selection per §14a (strongest + median):** Onyx Aggro+Tempo, Radiant Aggro+Ramp, Sapphire
+Control+Midrange, Verdant Aggro+Midrange → the 8-deck field.
+
+**Instrument note:** the screen's card-usage table reported all 122 equipment slots as
+never-used — an artifact (EQUIPMENT_ATTACHED wasn't tallied; ground truth ~8 attaches/game).
+Fixed same day (equipment events now carry card identity; attaches count as uses); step-4
+equipment-usage numbers are void, character/spell numbers stand.
+
+### §14c. Equipment-class study (side investigation, 2026-07-13)
+
+Question: is equipment OP, balanced, or weak? Method: static class residuals (all 31 E cards),
+attach-rate telemetry under both pilots, and a matched strip-test (each faction's frozen
+Midrange deck WITH vs WITHOUT its 6 E cards, refilled with legal extra C/S copies, 1,024
+games/arm heuristic + one 128-game rollout confirmation). **Verdict: UNDERPOWERED in
+practice** — stripping equipment never hurt and helped every faction (Onyx +3.4, Radiant
++10.4, Sapphire +0.8 null, Verdant +5.7 pp; rollout confirms Radiant +12.5). Structure:
+cost-2/3 weapon equipment is at-or-over curve; cost-≥4 equipment is almost uniformly under
+(8 of 9). Named traps: Guardian's Plate (power 0.0 — the on-block heal prices at ZERO, a
+pricer blind spot), Holy Avenger, Bio-Plating, Chalice of Insight, Green Catalyst, Growplate
+Helm, Hammer of Light. Strong: Bone Sword, Arcane Staff, Soulstealer Blade, Doomshroud Armor.
+Pilot-dependence: real only for Sapphire (rollout attaches −45% vs heuristic — plausibly
+correct play, Sapphire's is the only break-even E suite). Static class mean is ~on-budget
+(−0.49) — i.e., THE PRICER MISSES equipment's structural liabilities (tempo cost, 2-for-1
+exposure, needs-a-body): flagged for the formula's backlog alongside on_block coverage.
+**Interpretation caveat for the step-5 field: the set's 6E quota taxes decks unevenly
+(Radiant ~−10 pp, Sapphire ~0) — carry this when reading deck-vs-deck results.**
+Design queue (post-study): buff pass or repricing for the cost-≥4 equipment tier — through
+the card gate as usual.

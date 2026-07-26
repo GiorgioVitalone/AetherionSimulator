@@ -11,6 +11,7 @@ const realDecks = Object.fromEntries(FACTIONS.map((f) => [f, f]));
 const GPP = +(process.env.GPP || 300);
 const OUT = process.env.OUT || '/tmp/balance-matrix2-result.json';
 const BASE = {
+  rulesProfile: 'custom-diagnostic',
   decks: realDecks, matchups: 'all-pairs', firstPlayer: 'alternating', fixHandSizeStall: true,
   termination: 'tiebreak', terminationMode: 'turn_cap', abilitiesOn: true, turnCap: 80,
   seedBase: 12345, botPolicy: 'heuristic', fairPilot: true, gamesPerPairing: GPP,

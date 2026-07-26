@@ -5,6 +5,7 @@
 import type { GameEvent, RegisteredTrigger } from '../types/game-state.js';
 import type { Trigger, TriggerFilter } from '../types/triggers.js';
 import type { CardTypeCode, Trait } from '../types/common.js';
+import { hasEffectiveTag, hasEffectiveTrait } from '../selectors/card-semantics.js';
 
 interface CardInfo {
   readonly instanceId: string;
@@ -17,10 +18,11 @@ function matchesFilter(
   filter: TriggerFilter | undefined,
   card: CardInfo | null,
 ): boolean {
-  if (filter === undefined || card === null) return true;
+  if (filter === undefined) return true;
+  if (card === null) return false;
   if (filter.cardType !== undefined && card.cardType !== filter.cardType) return false;
-  if (filter.trait !== undefined && !card.traits.includes(filter.trait)) return false;
-  if (filter.tag !== undefined && !card.tags.includes(filter.tag)) return false;
+  if (filter.trait !== undefined && !hasEffectiveTrait(card, filter.trait)) return false;
+  if (filter.tag !== undefined && !hasEffectiveTag(card, filter.tag)) return false;
   return true;
 }
 

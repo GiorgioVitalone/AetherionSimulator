@@ -54,12 +54,12 @@ frozen constants, not a fit on this pool):
 - **Protector of Faith** — Common, cost 3, 1/3/0 [Defender]  ·  power **11.1** vs **[5.9, 8.9]** (**+2.2 over**) — **[SIM_REQUIRED]**
   - **Keyword:** remove Defender → power 7.5 ✓
   - **Cost:** raise cost 3→5 (+2) → window [9.9, 12.9]
-  - **Gate:** SIM_REQUIRED: |Δcost| = 2 > 1; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
+  - **Gate:** SIM_REQUIRED: |Δcost| = 2 > 1; power interval straddles the budget window; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
 - **Faithkeeper of Dawn** — Ethereal, cost 4, 2/4/0 [Defender]  ·  power **13.6** vs **[8.7, 11.7]** (**+1.9 over**) — **[SIM_REQUIRED]**
   - **Stats:** -2 HP (2/4/0 → 2/2/0) → power 10.4 ✓
   - **Keyword:** remove Defender → power 11.2 ✓
   - **Cost:** raise cost 4→5 (+1) → window [10.7, 13.7]
-  - **Gate:** SIM_REQUIRED: |Δstat| = 2 > 1; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
+  - **Gate:** SIM_REQUIRED: |Δstat| = 2 > 1; power interval straddles the budget window; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
 - **Angelic Strike** — Common, cost 3, spell  ·  power **6.2** vs **[1.4, 4.4]** (**+1.8 over**) — **[HUMAN_REWRITE]**
   - **Ability** (6.2 of 6.2 power): scale down / add a cooldown / raise its activation cost — **chosen lever: this card was left unedited, needs a human ability rewrite** — "Deal 3 damage to target enemy character. Heal your Hero 1 HP."
   - **Gate:** HUMAN_REWRITE — ability drives ≥ half the power on this over-budget card; needs a manual ability rewrite, not a numeric lever
@@ -67,12 +67,12 @@ frozen constants, not a fit on this pool):
   - **Stats:** -1 HP (3/3/0 → 3/2/0) → power 15.6 ✓
   - **Keyword:** remove Flying → power 15.1 ✓
   - **Cost:** raise cost 6→7 (+1) → window [15.4, 18.4]
-  - **Gate:** SIM_REQUIRED: no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
+  - **Gate:** SIM_REQUIRED: power interval straddles the budget window; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
 - **Archon of Order, Uriel** — Legendary, cost 7, 4/4/0 [Flying]  ·  power **19.6** vs **[16.4, 19.4]** (**+0.2 over**) — **[SIM_REQUIRED]**
   - **Stats:** -1 HP (4/4/0 → 4/3/0) → power 18.6 ✓
   - **Keyword:** remove Flying → power 17.6 ✓
   - **Cost:** raise cost 7→8 (+1) → window [18.4, 21.4]
-  - **Gate:** SIM_REQUIRED: no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
+  - **Gate:** SIM_REQUIRED: power interval straddles the budget window; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
 
 #### Sapphire
 - **Time Reversal** — Ethereal, cost 4, spell  ·  power **10.9** vs **[2.7, 5.7]** (**+5.2 over**) — **[HUMAN_REWRITE]**
@@ -130,7 +130,7 @@ frozen constants, not a fit on this pool):
 - **Celestial Aegis** — Mythic, cost 5, equipment  ·  power **3.9** vs **[3.9, 6.9]** (**−0 under**) — **[SIM_REQUIRED]**
   - **Ability** (3.9 of 3.9 power): scale up / lower its activation cost — "At the end of your turn, heal 1 HP to all your characters."
   - **Cost:** lower cost 5→4 (−1) → window [3.4, 6.4]
-  - **Gate:** SIM_REQUIRED: no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
+  - **Gate:** SIM_REQUIRED: power interval straddles the budget window; no faction marginals supplied — conservative default (no data, no auto edit) — run one paired sim arm to confirm, then re-classify
 
 #### Sapphire
 - **Master Archivist** — Mythic, cost 6, 2/5/0  ·  power **11.1** vs **[13.4, 16.4]** (**−2.3 under**) — **[SIM_REQUIRED]**
