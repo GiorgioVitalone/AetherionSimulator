@@ -247,8 +247,9 @@ function resolveTargetCharacter(
   target: Extract<TargetExpr, { type: 'target_character' }>,
   context: EffectContext,
 ): ResolvedTargets {
+  const currentRules = state.config?.authoritativeTransitions === true;
   const cards =
-    target.zone === undefined
+    !currentRules || target.zone === undefined
       ? getCardsBySide(state, target.side, context)
       : excludeUntargetable(
           getPlayersBySide(state, target.side, context).flatMap((player) =>
@@ -256,7 +257,11 @@ function resolveTargetCharacter(
           ),
           context.controllerId,
         );
-  const filtered = applyFilter(cards, target.filter, context);
+  const filtered = applyFilter(
+    cards,
+    target.filter,
+    currentRules ? context : undefined,
+  );
   if (filtered.length === 0) {
     return { resolved: true, targetIds: [] };
   }

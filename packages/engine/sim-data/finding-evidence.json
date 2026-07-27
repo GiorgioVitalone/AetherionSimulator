@@ -397,7 +397,9 @@
       "tests": ["packages/engine/tests/transitions/transition.test.ts"],
       "implementationChanges": [
         "packages/engine/src/transitions/transition.ts",
-        "packages/engine/src/effects/effect-runner.ts"
+        "packages/engine/src/effects/effect-runner.ts",
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/types/game-state.ts"
       ]
     },
     "DSL-03": {
@@ -1029,7 +1031,9 @@
       ],
       "implementationChanges": [
         "packages/engine/src/effects/effect-runner.ts",
-        "packages/engine/src/bot/heuristic.ts"
+        "packages/engine/src/bot/heuristic.ts",
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/transitions/transition.ts"
       ]
     },
     "PLAY-02": {
@@ -1428,11 +1432,13 @@
       "status": "evidence-green",
       "workPackage": "WP-15",
       "tests": [
+        "packages/engine/tests/sim/deck-legality.test.ts",
         "packages/engine/tests/sim/deck-sampler.test.ts",
         "packages/engine/tests/sim/current-simulation-contract.test.ts",
         "packages/engine/tests/sim/study-manifest.test.ts"
       ],
       "implementationChanges": [
+        "packages/engine/src/sim/deck-legality.ts",
         "packages/engine/deck-sampler.mjs",
         "packages/engine/sim-runner.mjs",
         "packages/engine/sim-data/current-study-manifest.json"
@@ -1442,10 +1448,12 @@
       "status": "evidence-green",
       "workPackage": "WP-15",
       "tests": [
+        "packages/engine/tests/sim/deck-legality.test.ts",
         "packages/engine/tests/sim/deck-sampler.test.ts",
         "packages/engine/tests/sim/current-simulation-contract.test.ts"
       ],
       "implementationChanges": [
+        "packages/engine/src/sim/deck-legality.ts",
         "packages/engine/deck-sampler.mjs",
         "packages/engine/sim-runner.mjs"
       ]

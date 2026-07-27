@@ -1545,7 +1545,8 @@ export interface TriggerDispatchContinuation {
   readonly depth: number;
   readonly triggerPool: readonly RegisteredTrigger[];
   readonly currentEvent: GameEvent;
-  readonly remainingTriggers: readonly RegisteredTrigger[];
+  /** Omitted when dispatch was deferred before the current event was scanned. */
+  readonly remainingTriggers?: readonly RegisteredTrigger[];
   readonly remainingEvents: readonly GameEvent[];
   /** Trigger-produced events waiting for recursive dispatch after the batch. */
   readonly producedEvents: readonly GameEvent[];

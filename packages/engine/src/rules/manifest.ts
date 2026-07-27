@@ -26,6 +26,12 @@ export interface RulesManifest {
       readonly firstPlayerMainDeckDraw: 'skip';
       readonly firstPlayerAttack: 'forbidden';
     };
+    readonly deckConstruction: {
+      readonly dualAlignmentPrimary: 'declared';
+      readonly secondaryAlignmentRarities: 'common_and_ethereal';
+      readonly dualResourceCards: 'either_printed_resource';
+      readonly resourceDeckCards: 'hero_resource_types_only';
+    };
     readonly actions: {
       readonly executionValidation: 'authoritative';
       readonly activatedAbilityLimit: 'once_per_turn_unless_printed';
@@ -99,6 +105,7 @@ const TOP_LEVEL_KEYS = [
 
 const RULE_GROUP_KEYS = [
   'setup',
+  'deckConstruction',
   'actions',
   'effects',
   'timing',
@@ -255,6 +262,16 @@ export function validateRulesManifest(value: unknown): RulesManifest {
       firstPlayerAttack: 'forbidden',
     },
     'manifest.rules.setup',
+  );
+  exactLiteralObject(
+    rules.deckConstruction,
+    {
+      dualAlignmentPrimary: 'declared',
+      secondaryAlignmentRarities: 'common_and_ethereal',
+      dualResourceCards: 'either_printed_resource',
+      resourceDeckCards: 'hero_resource_types_only',
+    },
+    'manifest.rules.deckConstruction',
   );
   exactLiteralObject(
     rules.actions,

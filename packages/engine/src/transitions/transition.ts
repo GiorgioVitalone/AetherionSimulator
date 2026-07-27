@@ -155,6 +155,71 @@ function pendingResult(
   };
 }
 
+function resumeOuterChoiceContinuations(
+  result: { readonly state: GameState; readonly events: readonly GameEvent[] },
+  choice: NonNullable<GameState['pendingChoice']>,
+): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+  const stackContinuation = choice.stackResolutionContinuation;
+  if (result.state.pendingChoice !== null) {
+    if (
+      stackContinuation === undefined &&
+      choice.turnBoundaryContinuation === undefined
+    ) {
+      return result;
+    }
+    return {
+      ...result,
+      state: {
+        ...result.state,
+        pendingChoice: {
+          ...result.state.pendingChoice,
+          ...(stackContinuation === undefined
+            ? {}
+            : { stackResolutionContinuation: stackContinuation }),
+          ...(choice.turnBoundaryContinuation === undefined ||
+          result.state.pendingChoice.turnBoundaryContinuation !== undefined
+            ? {}
+            : { turnBoundaryContinuation: choice.turnBoundaryContinuation }),
+        },
+      },
+    };
+  }
+  if (choice.turnBoundaryContinuation !== undefined) {
+    const boundary = resumeTurnBoundary(
+      result.state,
+      choice.turnBoundaryContinuation,
+    );
+    result = {
+      state: boundary.state,
+      events: [...result.events, ...boundary.events],
+    };
+    if (result.state.pendingChoice !== null) {
+      if (stackContinuation === undefined) return result;
+      return {
+        ...result,
+        state: {
+          ...result.state,
+          pendingChoice: {
+            ...result.state.pendingChoice,
+            stackResolutionContinuation: stackContinuation,
+          },
+        },
+      };
+    }
+  }
+  if (stackContinuation !== undefined) {
+    const resumed = resumeStackAfterChoice(
+      result.state,
+      stackContinuation.item,
+    );
+    result = {
+      state: resumed.state,
+      events: [...result.events, ...resumed.events],
+    };
+  }
+  return result;
+}
+
 function resumeChoicePipeline(
   state: GameState,
   choice: NonNullable<GameState['pendingChoice']>,
@@ -201,43 +266,8 @@ function resumeChoicePipeline(
     );
     result = { state: dispatched.newState, events: dispatched.events };
   }
-  if (result.state.pendingChoice !== null) {
-    if (choice.turnBoundaryContinuation === undefined) return result;
-    return {
-      ...result,
-      state: {
-        ...result.state,
-        pendingChoice: {
-          ...result.state.pendingChoice,
-          ...(stackContinuation !== undefined
-            ? { stackResolutionContinuation: stackContinuation }
-            : {}),
-          turnBoundaryContinuation: choice.turnBoundaryContinuation,
-        },
-      },
-    };
-  }
-  if (choice.turnBoundaryContinuation !== undefined) {
-    const boundary = resumeTurnBoundary(
-      result.state,
-      choice.turnBoundaryContinuation,
-    );
-    result = {
-      state: boundary.state,
-      events: [...result.events, ...boundary.events],
-    };
-  }
+  result = resumeOuterChoiceContinuations(result, choice);
   if (result.state.pendingChoice !== null) return result;
-  if (stackContinuation !== undefined) {
-    const resumed = resumeStackAfterChoice(
-      result.state,
-      stackContinuation.item,
-    );
-    result = {
-      state: resumed.state,
-      events: [...result.events, ...resumed.events],
-    };
-  }
   if (result.state.winner !== null) return result;
 
   return finalizeAfterChoice(result);
@@ -267,7 +297,11 @@ function resumeTriggerOrderPipeline(
   selected: readonly string[],
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
   const result = resumeTriggerOrdering(state, choice, selected);
-  return finalizeAfterChoice({ state: result.newState, events: result.events });
+  const resumed = resumeOuterChoiceContinuations(
+    { state: result.newState, events: result.events },
+    choice,
+  );
+  return finalizeAfterChoice(resumed);
 }
 
 function rejectedChoiceEvent(

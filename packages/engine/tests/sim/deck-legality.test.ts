@@ -28,9 +28,32 @@ const cards: Record<number, CardFacts> = {
   14: { id: 14, cardType: 'C', faction: 'Onyx', rarity: 'Ethereal' },
   15: { id: 15, cardType: 'C', faction: 'Onyx', rarity: 'Mythic' },
   20: { id: 20, cardType: 'C', faction: 'Radiant', rarity: 'Common' },
+  21: { id: 21, cardType: 'C', faction: 'Radiant', rarity: 'Mythic' },
+  22: { id: 22, cardType: 'C', faction: 'Sapphire', rarity: 'Common' },
+  23: {
+    id: 23,
+    cardType: 'C',
+    faction: 'Radiant',
+    rarity: 'Common',
+    requiredResourceTypes: ['energy'],
+  },
+  24: {
+    id: 24,
+    cardType: 'C',
+    faction: 'Onyx',
+    rarity: 'Common',
+    requiredResourceTypes: ['energy'],
+  },
 };
 const heroes: Record<number, HeroFacts> = {
   1: { id: 1, faction: 'Onyx', resourceType: 'mana' },
+  2: {
+    id: 2,
+    faction: 'Onyx',
+    alignments: ['Onyx', 'Radiant'],
+    resourceType: 'mana',
+    resourceTypes: ['mana', 'energy'],
+  },
 };
 const index: CardIndex = {
   card: (id) => cards[id],
@@ -214,6 +237,105 @@ describe('validateDeck', () => {
     );
     expect(r.legal).toBe(false);
     expect(r.errors.some((e) => e.includes('selection faction Radiant'))).toBe(true);
+  });
+
+  it('accepts Common secondary-alignment cards and either dual-Hero resource', () => {
+    const main = [...bigMain.slice(0, 39), 20];
+    const mixedResources = [
+      ...resources.slice(0, RESOURCE_DECK_SIZE / 2),
+      ...Array.from({ length: RESOURCE_DECK_SIZE / 2 }, () => 98),
+    ];
+    const r = validateDeck(
+      {
+        heroDefId: 2,
+        mainDeckDefIds: main,
+        resourceDeckDefIds: mixedResources,
+        faction: 'Onyx',
+      },
+      bigIndex,
+    );
+    expect(r).toEqual({ legal: true, errors: [] });
+  });
+
+  it('rejects Mythic cards from a dual Hero secondary alignment', () => {
+    const r = validateDeck(
+      {
+        heroDefId: 2,
+        mainDeckDefIds: [...bigMain.slice(0, 39), 21],
+        resourceDeckDefIds: resources,
+        faction: 'Onyx',
+      },
+      bigIndex,
+    );
+    expect(r.legal).toBe(false);
+    expect(r.errors.some((error) => error.includes('secondary alignment Radiant'))).toBe(true);
+  });
+
+  it('allows that same Mythic when its alignment is declared primary', () => {
+    const r = validateDeck(
+      {
+        heroDefId: 2,
+        mainDeckDefIds: [...bigMain.slice(0, 39), 21],
+        resourceDeckDefIds: resources,
+        faction: 'Radiant',
+      },
+      bigIndex,
+    );
+    expect(r).toEqual({ legal: true, errors: [] });
+  });
+
+  it('requires dual-alignment decks to declare their primary alignment', () => {
+    const r = validateDeck(
+      {
+        heroDefId: 2,
+        mainDeckDefIds: bigMain,
+        resourceDeckDefIds: resources,
+      },
+      bigIndex,
+    );
+    expect(r.legal).toBe(false);
+    expect(r.errors.some((error) => error.includes('must declare'))).toBe(true);
+  });
+
+  it('still rejects cards outside both Hero alignments', () => {
+    const r = validateDeck(
+      {
+        heroDefId: 2,
+        mainDeckDefIds: [...bigMain.slice(0, 39), 22],
+        resourceDeckDefIds: resources,
+        faction: 'Onyx',
+      },
+      bigIndex,
+    );
+    expect(r.legal).toBe(false);
+    expect(r.errors.some((error) => error.includes('outside hero alignments'))).toBe(true);
+  });
+
+  it('allows either printed resource requirement for a dual-resource Hero', () => {
+    const r = validateDeck(
+      {
+        heroDefId: 2,
+        mainDeckDefIds: [...bigMain.slice(0, 39), 23],
+        resourceDeckDefIds: resources,
+        faction: 'Onyx',
+      },
+      bigIndex,
+    );
+    expect(r).toEqual({ legal: true, errors: [] });
+  });
+
+  it('rejects a resource requirement the Hero does not support', () => {
+    const r = validateDeck(
+      {
+        heroDefId: 1,
+        mainDeckDefIds: [...bigMain.slice(0, 39), 24],
+        resourceDeckDefIds: resources,
+        faction: 'Onyx',
+      },
+      bigIndex,
+    );
+    expect(r.legal).toBe(false);
+    expect(r.errors.some((error) => error.includes('requires energy'))).toBe(true);
   });
 
   it('synthetic small-pool legalDeck helper stays within copy caps', () => {

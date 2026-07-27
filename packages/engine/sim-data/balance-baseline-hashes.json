@@ -1,7 +1,7 @@
 {
   "smoke": {
-    "runHash": "01c5cf5616b7f86f",
+    "runHash": "ac39002b0c8dc0f4",
     "note": "heuristic all-pairs GPP=8 under ruleset-v1 + real official starter decks (deck-loader's committed fixture, sim-data/aetherion-decks.json — hermetic, no Docker/Postgres); bump ONLY with a cited full-panel ledger run id in the commit message",
-    "provenance": "re-anchored 2026-07-27 after the ungated effect-layer semantic repairs in e949627 (resume stack choices in order) and 9a0d465 (honor effect target zones) shifted deterministic outcomes under every profile; recomputed value reproduced identically in CI (run 30244116537) and locally. This compatibility pin is isolated from current correctness and carries no balance or ratification claim."
+    "provenance": "restored 2026-07-27 after revision-by-revision reproduction showed e949627 still matched this original pin and 9a0d465 alone leaked current target-zone semantics into legacy-v1. The target-zone repair is now current-profile-only, and the historical ac39002b0c8dc0f4 outcome reproduces again without re-anchoring."
   }
 }

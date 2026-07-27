@@ -79,6 +79,7 @@ export interface ValidatorCard {
   readonly name: string;
   readonly cardType: string;
   readonly resourceType?: string;
+  readonly resourceTypes?: readonly string[];
   readonly alignment?: readonly string[];
   readonly tags?: readonly string[];
   readonly traits?: readonly string[];
@@ -431,6 +432,29 @@ function strictCardSchema(card: ValidatorCard): Finding[] {
     }
   } else if (card.resourceType !== undefined) {
     fail('resourceType', 'Only Resource definitions may declare resourceType.', RULES.RESOURCE_TYPE);
+  }
+  if (card.resourceTypes !== undefined) {
+    if (card.cardType !== 'H') {
+      fail(
+        'resourceTypes',
+        'Only Hero definitions may declare resourceTypes.',
+        RULES.RESOURCE_TYPE,
+      );
+    } else if (
+      !Array.isArray(card.resourceTypes) ||
+      card.resourceTypes.length === 0 ||
+      new Set(card.resourceTypes).size !== card.resourceTypes.length ||
+      card.resourceTypes.some(
+        (resourceType) =>
+          resourceType !== 'mana' && resourceType !== 'energy',
+      )
+    ) {
+      fail(
+        'resourceTypes',
+        'Hero resourceTypes must be a non-empty unique list of mana and/or energy.',
+        RULES.RESOURCE_TYPE,
+      );
+    }
   }
   return out;
 }

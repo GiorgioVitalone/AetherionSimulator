@@ -34,6 +34,17 @@ const copyLimit = (c) => {
   return 3;
 };
 const resourceTypeFor = (faction) => (ENERGY_FACTIONS.has(faction) ? 'energy' : 'mana');
+const requiredResourceTypesFor = (card) => {
+  const costs = [card.cost, ...(card.abilities ?? []).map((ability) => ability.cost)];
+  const required = [];
+  if (costs.some((cost) => (cost?.mana ?? 0) > 0 || cost?.xMana === true)) {
+    required.push('mana');
+  }
+  if (costs.some((cost) => (cost?.energy ?? 0) > 0 || cost?.xEnergy === true)) {
+    required.push('energy');
+  }
+  return required;
+};
 
 // Resource cards (alignment-neutral): pick by name, mirroring sim-runner.mjs.
 const rCards = raw.filter((c) => c.cardType === 'R');
@@ -56,7 +67,14 @@ const cardFactsById = new Map();
 const heroFactsById = new Map();
 for (const c of raw) {
   if (c.cardType === 'C' || c.cardType === 'S' || c.cardType === 'E') {
-    cardFactsById.set(c.id, { id: c.id, cardType: c.cardType, faction: factionOf(c), rarity: c.rarity });
+    cardFactsById.set(c.id, {
+      id: c.id,
+      cardType: c.cardType,
+      faction: factionOf(c),
+      alignments: c.alignment,
+      rarity: c.rarity,
+      requiredResourceTypes: requiredResourceTypesFor(c),
+    });
   } else if (c.cardType === 'R') {
     cardFactsById.set(c.id, {
       id: c.id,
@@ -66,7 +84,26 @@ for (const c of raw) {
       resourceType: /energy/i.test(c.name) ? 'energy' : 'mana',
     });
   } else if (c.cardType === 'H') {
-    heroFactsById.set(c.id, { id: c.id, faction: factionOf(c), resourceType: resourceTypeFor(factionOf(c)) });
+    const explicitResourceTypes =
+      Array.isArray(c.resourceTypes) && c.resourceTypes.length > 0
+        ? [...new Set(c.resourceTypes)]
+        : null;
+    const inferredResourceTypes = [
+      ...((c.cost?.mana ?? 0) > 0 ? ['mana'] : []),
+      ...((c.cost?.energy ?? 0) > 0 ? ['energy'] : []),
+    ];
+    const resourceTypes =
+      explicitResourceTypes ??
+      (inferredResourceTypes.length > 0
+        ? inferredResourceTypes
+        : [resourceTypeFor(factionOf(c))]);
+    heroFactsById.set(c.id, {
+      id: c.id,
+      faction: factionOf(c),
+      alignments: c.alignment,
+      resourceType: resourceTypes[0],
+      resourceTypes,
+    });
   }
 }
 

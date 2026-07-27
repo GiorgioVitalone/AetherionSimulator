@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "profileId": "current",
-  "semanticVersion": "4.0.0-diagnostic.6",
+  "semanticVersion": "4.0.0-diagnostic.7",
   "status": "diagnostic",
   "rulebook": {
     "path": "Documentation/game/Rulebook.md",
@@ -20,6 +20,12 @@
       "secondPlayerOpeningCard": "after_mulligans",
       "firstPlayerMainDeckDraw": "skip",
       "firstPlayerAttack": "forbidden"
+    },
+    "deckConstruction": {
+      "dualAlignmentPrimary": "declared",
+      "secondaryAlignmentRarities": "common_and_ethereal",
+      "dualResourceCards": "either_printed_resource",
+      "resourceDeckCards": "hero_resource_types_only"
     },
     "actions": {
       "executionValidation": "authoritative",

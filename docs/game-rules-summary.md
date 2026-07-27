@@ -5,13 +5,19 @@ This is an engine-facing quick reference. The complete source is
 machine settings are in
 [`ruleset-current.json`](../packages/engine/sim-data/ruleset-current.json).
 
-Status: **diagnostic candidate**, semantic version `4.0.0-diagnostic.6`.
+Status: **diagnostic candidate**, semantic version `4.0.0-diagnostic.7`.
 External rules ratification is still required before decision-grade balance
 claims.
 
 ## Setup
 
 - Each player has a Hero, main deck, and 12-card resource deck.
+- A dual-alignment Hero deck declares one alignment as primary. Any rarity is
+  legal from the primary alignment; only Common and Ethereal cards are legal
+  from the secondary alignment.
+- A deck may include only cards whose printed resource requirements its Hero
+  supports. A dual-resource Hero may use either printed resource, and its
+  resource deck may contain either supported resource type.
 - After mulligans, the player going second draws one additional Main Deck card.
 - The selected first player skips their first main-deck draw and cannot attack
   on their first turn.
@@ -73,6 +79,11 @@ first-out after both players pass.
 An effect choice pauses the chain; lower links cannot resolve until its target,
 mode, or payment interaction finishes. “Counter unless its controller pays”
 exposes that decision and exhausts the resources when paid.
+
+There is exactly one active interaction. If resolving a spell choice produces
+events whose triggers also require a choice, trigger dispatch waits behind the
+current interaction, then resumes without replacing it or abandoning the
+declared stack item.
 
 Spell-cast observation occurs at declaration. Attack exhaustion also commits at
 declaration. Equipment attaches at resolution. A countered declaration keeps

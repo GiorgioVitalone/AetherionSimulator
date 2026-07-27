@@ -67,8 +67,12 @@ explicit legacy profiles.
 - **Effect-zone targeting (resolved in the current profile)**: authored
   `target_character.zone` restrictions now constrain the offered target set,
   including the current cards that explicitly select from Reserve.
-- **Engine can't model book features**: §6 dual-alignment primary/secondary Heroes
-  (secondary restricted to Common/Ethereal) and §6 dual-resource Heroes.
+- **Dual-Hero deck construction (resolved in the current profile)**:
+  §6 dual-alignment Heroes declare a primary alignment, accept only
+  Common/Ethereal cards from the secondary alignment, and reject cards outside
+  both alignments. §6 dual-resource Heroes accept cards and Resource Deck cards
+  using either printed resource type; unsupported printed resource requirements
+  fail deck validation.
 
 ## Verification note
 Every finding above has a Rulebook line + an engine file:line on file (the 5 audit batches; see

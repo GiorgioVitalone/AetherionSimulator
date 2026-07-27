@@ -1,7 +1,7 @@
 # Simulation Engine Remediation Verification
 
 - Verification date: 2026-07-27
-- Parent commit: `e949627`
+- Parent commit: `339c1ae`
 - Rules profile: `current`
 - Artifact classification: **diagnostic**
 
@@ -14,16 +14,16 @@ the required external approvals are absent.
 
 | Gate evidence | Result |
 |---|---|
-| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,378 tests passed, 1 skipped |
-| Current coverage | statements 90.59%, branches 84.60%, functions 95.11%, lines 90.59% |
-| Changed-code coverage | passed for 5 changed engine source files |
+| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,386 tests passed, 1 skipped |
+| Current coverage | statements 90.42%, branches 84.59%, functions 95.13%, lines 90.42% |
+| Changed-code coverage | passed for 6 changed engine source files |
 | Legacy compatibility suite | 11 files and 60 tests passed |
 | Client integration | typecheck, lint, 9 tests, and production Vite build passed |
 | Cards / engine / UI builds | direct package TypeScript builds passed |
 | Engine / client / UI lint | package-scoped lint passed |
 | Card semantic validator | 0 errors, 0 warnings |
 | Performance and semantic-equivalence budgets | passed |
-| Policy calibration | 602 scored decisions; all 9 required families; 0 infrastructure failures |
+| Policy calibration | 577 scored decisions; all 9 required families; 0 infrastructure failures |
 | Finding structural audit | all 167 findings and C-01–C-12 match the source review and plan |
 
 The package-manager wrapper in this environment still fails before root Turbo
@@ -37,13 +37,13 @@ with the exact required `pnpm` commands recorded by `ratification-status.mjs`.
 |---|---:|
 | Valid gameplay games | 10,080 / 10,080 |
 | Infrastructure failures | 0 |
-| Attempted / declared actions | 1,111,833 / 1,111,833 |
-| Resolved / explicitly fizzled | 1,111,832 / 1 |
+| Attempted / declared actions | 1,148,223 / 1,148,223 |
+| Resolved / countered / explicitly fizzled | 1,148,035 / 181 / 7 |
 | Rejected / failed / pending | 0 / 0 / 0 |
 | Fresh-process replay checks | 100 / 100 |
 | Unique replay trace hashes | 100 |
-| Campaign run hash | `f683198daed169ea` |
-| Replay sample hash | `bfc0368ce4b614df01fb73e259c65cfe9eb58d9e9d4e6e0110bcf01499bd29c0` |
+| Campaign run hash | `edffdd6e00e94256` |
+| Replay sample hash | `4b29100dd1b98dc805028d35d076755c005c4fe0576ecc25de0f5d24a5a9362f` |
 
 The first follow-up campaign exposed 283 invariant failures: bounce reused a
 destruction-only destination helper, so a Volatile character could be both
@@ -56,7 +56,7 @@ failures.
 
 The diagnostic heuristic-versus-rollout corpus contains:
 
-- 602 scored runtime decisions;
+- 577 scored runtime decisions;
 - ability, choice, combat, development, equipment, movement, reaction,
   resource, and transform families;
 - explicit outcome search for proactive actions, priority responses, mulligans,
@@ -106,6 +106,24 @@ RIA-09 branch now offers only its two Reserve bodies and excludes a deliberately
 stronger Frontline body. The full campaign did not select either affected
 branch, so its unchanged behavioral run hash is supporting regression evidence,
 not the proof of the corrected card behavior.
+
+Dual-Hero deck construction now follows Rulebook §6 through the production deck
+boundary. A dual-alignment Hero must declare its primary alignment; Common and
+Ethereal cards are accepted from the secondary alignment while Mythic and
+Legendary cards are rejected there. Main-deck printed resource requirements and
+Resource Deck cards must be supported by the Hero, with either channel legal for
+a dual-resource Hero. The committed pool contains no dual Hero, so this expands
+legal future data without changing the current population.
+
+The first 1,000-game run after that wiring exposed a deeper interaction bug:
+212 spell declarations remained without a terminal stack disposition. A target
+choice created during spell resolution could be replaced by a simultaneous
+cast-trigger ordering choice; in a second path, nested trigger choices lost the
+outer stack continuation. The engine now keeps one active interaction, defers
+trigger dispatch behind it, carries the outer continuation through nested
+trigger ordering, and resumes the original stack item afterward. In the final
+full campaign, all 1,148,223 declarations ended resolved, countered, or
+explicitly fizzled, with zero pending, rejected, or failed actions.
 
 ## Closure status
 

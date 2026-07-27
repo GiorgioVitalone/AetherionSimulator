@@ -94,6 +94,7 @@ describe('resolveTargets — target_character zone', () => {
     const frontline = mockCard({ instanceId: 'frontline', owner: 0 });
     const highGround = mockCard({ instanceId: 'high-ground', owner: 0 });
     const state = mockGameState({
+      config: CURRENT_GAME_CONFIG,
       players: [
         mockPlayerState(0, {
           zones: zonesWithCards({

@@ -351,6 +351,27 @@ const abilityKind = ability => {
     default: return undefined;
   }
 };
+const heroResourceTypes = hero => {
+  if (Array.isArray(hero.resourceTypes) && hero.resourceTypes.length > 0) {
+    return [...new Set(hero.resourceTypes)];
+  }
+  const inferred = [];
+  if ((hero.cost?.mana ?? 0) > 0) inferred.push('mana');
+  if ((hero.cost?.energy ?? 0) > 0) inferred.push('energy');
+  if (inferred.length > 0) return inferred;
+  return [ENERGY_FACTIONS.has(hero.alignment[0]) ? 'energy' : 'mana'];
+};
+const cardRequiredResourceTypes = card => {
+  const costs = [card.cost, ...(card.abilities ?? []).map((ability) => ability.cost)];
+  const required = [];
+  if (costs.some((cost) => (cost?.mana ?? 0) > 0 || cost?.xMana === true)) {
+    required.push('mana');
+  }
+  if (costs.some((cost) => (cost?.energy ?? 0) > 0 || cost?.xEnergy === true)) {
+    required.push('energy');
+  }
+  return required;
+};
 const LEGALITY_CARD_BY_ID = new Map(
   raw
     .filter((card) => card.cardType !== 'H' && card.cardType !== 'T')
@@ -360,7 +381,9 @@ const LEGALITY_CARD_BY_ID = new Map(
         id: card.id,
         cardType: card.cardType,
         faction: card.alignment[0],
+        alignments: card.alignment,
         rarity: card.rarity,
+        requiredResourceTypes: cardRequiredResourceTypes(card),
         ...(card.cardType === 'R'
           ? { resourceType: card.resourceType }
           : {}),
@@ -370,15 +393,19 @@ const LEGALITY_CARD_BY_ID = new Map(
 const LEGALITY_HERO_BY_ID = new Map(
   raw
     .filter((card) => card.cardType === 'H')
-    .map((hero) => [
-      hero.id,
-      {
-        id: hero.id,
-        faction: hero.alignment[0],
-        resourceType:
-          hero.cost?.energy > hero.cost?.mana ? 'energy' : 'mana',
-      },
-    ]),
+    .map((hero) => {
+      const resourceTypes = heroResourceTypes(hero);
+      return [
+        hero.id,
+        {
+          id: hero.id,
+          faction: hero.alignment[0],
+          alignments: hero.alignment,
+          resourceType: resourceTypes[0],
+          resourceTypes,
+        },
+      ];
+    }),
 );
 const DECK_LEGALITY_INDEX = {
   card: (id) => LEGALITY_CARD_BY_ID.get(id),
@@ -496,8 +523,13 @@ export function buildCurrentStudyDeckPopulation() {
 const DECK_KEY_FIELDS = ['heroDefId', 'mainDeckDefIds', 'resourceDeckDefIds'];
 const isDeckSelection = v => v && typeof v === 'object' && DECK_KEY_FIELDS.every(k => k in v);
 
-function plainDeck(d) {
-  return { heroDefId: d.heroDefId, mainDeckDefIds: d.mainDeckDefIds, resourceDeckDefIds: d.resourceDeckDefIds };
+function plainDeck(d, includeFaction = d.faction !== undefined) {
+  return {
+    heroDefId: d.heroDefId,
+    mainDeckDefIds: d.mainDeckDefIds,
+    resourceDeckDefIds: d.resourceDeckDefIds,
+    ...(!includeFaction || d.faction === undefined ? {} : { faction: d.faction }),
+  };
 }
 
 // Resolve a deck spec against `fallbackFaction` (used when spec is null/auto).
@@ -513,7 +545,7 @@ function resolveDeckSpec(spec, fallbackFaction, strict = false) {
     }
     const faction = spec.faction && FACTIONS.includes(spec.faction) ? spec.faction : fallbackFaction;
     const id = spec.deckId != null ? `id${spec.deckId}` : `h${spec.heroDefId}`;
-    return { deck: plainDeck(spec), faction, label: `sel:${id}` };
+    return { deck: plainDeck(spec, strict), faction, label: `sel:${id}` };
   }
 
   // "auto:<Faction>"
@@ -529,7 +561,13 @@ function resolveDeckSpec(spec, fallbackFaction, strict = false) {
   // faction name -> real official deck (deck-loader)
   if (typeof spec === 'string' && FACTIONS.includes(spec)) {
     const d = getDeck(spec);
-    if (d) return { deck: plainDeck(d), faction: d.faction || spec, label: `real:${d.deckId}` };
+    if (d) {
+      return {
+        deck: plainDeck(d, strict),
+        faction: d.faction || spec,
+        label: `real:${d.deckId}`,
+      };
+    }
     if (strict) throw new Error(`Official deck for faction ${JSON.stringify(spec)} is unavailable`);
     // Legacy diagnostic runs preserve the historical auto-deck fallback.
     return { deck: decks[spec], faction: spec, label: `auto:${spec}` };
@@ -539,7 +577,7 @@ function resolveDeckSpec(spec, fallbackFaction, strict = false) {
   const d = getDeck(spec);
   if (d) {
     const faction = d.faction && FACTIONS.includes(d.faction) ? d.faction : fallbackFaction;
-    return { deck: plainDeck(d), faction, label: `real:${d.deckId}` };
+    return { deck: plainDeck(d, strict), faction, label: `real:${d.deckId}` };
   }
   if (strict) throw new Error(`Unknown deck specification ${JSON.stringify(spec)}`);
   // Legacy diagnostic runs preserve the historical auto-deck fallback.

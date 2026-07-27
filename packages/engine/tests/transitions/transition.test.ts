@@ -705,6 +705,118 @@ describe('authoritative transition boundary', () => {
     expect(resolved.events.every((event) => event.eventId !== undefined)).toBe(true);
   });
 
+  it('does not let cast-trigger ordering replace a spell target choice', () => {
+    const watcher = mockCard({
+      instanceId: 'choice-watcher',
+      owner: 0,
+      registeredTriggers: [
+        {
+          id: 'trigger:choice-watcher:0',
+          sourceInstanceId: 'choice-watcher',
+          ownerPlayerId: 0,
+          trigger: { type: 'on_spell_cast', side: 'allied' },
+          effects: [{
+            type: 'heal',
+            amount: { type: 'fixed', value: 1 },
+            target: { type: 'owner_hero' },
+          }],
+          abilityIndex: 0,
+        },
+        {
+          id: 'trigger:choice-watcher:1',
+          sourceInstanceId: 'choice-watcher',
+          ownerPlayerId: 0,
+          trigger: { type: 'on_spell_cast', side: 'allied' },
+          effects: [{
+            type: 'heal',
+            amount: { type: 'fixed', value: 2 },
+            target: { type: 'owner_hero' },
+          }],
+          abilityIndex: 1,
+        },
+      ],
+    });
+    const spell = mockCard({
+      instanceId: 'targeted-spell',
+      owner: 0,
+      cardType: 'S',
+      cost: { mana: 0, energy: 0, flexible: 0 },
+      abilities: [{
+        type: 'triggered',
+        trigger: { type: 'on_deploy' },
+        effects: [{
+          type: 'destroy',
+          target: { type: 'target_character', side: 'enemy' },
+        }],
+      }],
+    });
+    const enemy = mockCard({ instanceId: 'spell-target', owner: 1 });
+    const state = mockGameState({
+      phase: 'strategy',
+      config: CURRENT_GAME_CONFIG,
+      players: [
+        mockPlayerState(0, {
+          hero: { ...mockPlayerState(0).hero, currentLp: 10 },
+          hand: [spell],
+          zones: zonesWithCards({ reserve: [watcher, null] }),
+        }),
+        mockPlayerState(1, {
+          zones: zonesWithCards({ frontline: [enemy, null, null] }),
+        }),
+      ],
+    });
+
+    const targetPause = transition(state, {
+      type: 'player_action',
+      action: { type: 'cast_spell', cardInstanceId: spell.instanceId },
+    });
+    expect(targetPause.status).toBe('pending');
+    expect(targetPause.state.pendingChoice?.type).toBe('select_targets');
+    expect(targetPause.state.pendingChoice?.dispatchContinuation).toBeDefined();
+    expect(
+      targetPause.state.pendingChoice?.stackResolutionContinuation,
+    ).toBeDefined();
+
+    const targetChoice = targetPause.state.pendingChoice!;
+    const orderPause = transition(targetPause.state, {
+      type: 'choice_response',
+      interactionId: targetChoice.interactionId!,
+      playerId: 0,
+      response: { selectedOptionIds: [enemy.instanceId] },
+    });
+    expect(orderPause.status).toBe('pending');
+    expect(orderPause.state.pendingChoice?.type).toBe('choose_trigger_order');
+    expect(
+      orderPause.state.pendingChoice?.stackResolutionContinuation,
+    ).toBeDefined();
+
+    const orderChoice = orderPause.state.pendingChoice!;
+    const resolved = transition(orderPause.state, {
+      type: 'choice_response',
+      interactionId: orderChoice.interactionId!,
+      playerId: 0,
+      response: {
+        selectedOptionIds: [
+          'trigger:choice-watcher:0',
+          'trigger:choice-watcher:1',
+        ],
+      },
+    });
+
+    expect(resolved.status).toBe('resolved');
+    expect(resolved.state.pendingChoice).toBeNull();
+    expect(resolved.state.players[1].zones.frontline[0]).toBeNull();
+    expect(resolved.state.players[0].hero.currentLp).toBe(13);
+    expect(resolved.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'STACK_ITEM_RESOLVED',
+          stackItemId: `spell_${spell.instanceId}`,
+        }),
+      ]),
+    );
+  });
+
   it('normalizes the terminal aura graph after an ordered trigger ends the game', () => {
     const watcher = mockCard({
       instanceId: 'terminal-aura-source',

@@ -10,6 +10,7 @@ import type {
   StackItem,
   HeroState,
   TemporaryResource,
+  RegisteredTrigger,
 } from '../types/game-state.js';
 import type { PlayerAction } from './types.js';
 import type { Effect } from '../types/effects.js';
@@ -376,6 +377,34 @@ export function drawMainDeckCard(state: GameState): {
 
 // ── Strategy Phase Actions ──────────────────────────────────────────────────
 
+function deferTriggerDispatchBehindChoice(
+  state: GameState,
+  events: readonly GameEvent[],
+  triggerPool: readonly RegisteredTrigger[],
+): GameState {
+  const currentEvent = events[0];
+  if (
+    state.pendingChoice === null ||
+    currentEvent === undefined ||
+    state.pendingChoice.dispatchContinuation !== undefined
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    pendingChoice: {
+      ...state.pendingChoice,
+      dispatchContinuation: {
+        depth: 0,
+        triggerPool,
+        currentEvent,
+        remainingEvents: events.slice(1),
+        producedEvents: [],
+      },
+    },
+  };
+}
+
 export function executePlayerAction(
   state: GameState,
   action: PlayerAction,
@@ -387,6 +416,16 @@ export function executePlayerAction(
   const resolved = stampGameEvents(rawResolved.state, rawResolved.events, {
     ...(actionId !== undefined ? { actionId, transactionId: actionId } : {}),
   });
+  if (resolved.state.pendingChoice !== null) {
+    return {
+      state: deferTriggerDispatchBehindChoice(
+        resolved.state,
+        resolved.events,
+        triggerPool,
+      ),
+      events: resolved.events,
+    };
+  }
   const dispatched = dispatchTriggers(resolved.state, resolved.events, 0, triggerPool);
   if (dispatched.newState.pendingChoice !== null) {
     return {
@@ -440,6 +479,16 @@ export function executeReactiveResponse(
   const stamped = stampGameEvents(resolved.state, resolved.events, {
     ...(actionId !== undefined ? { actionId, transactionId: actionId } : {}),
   });
+  if (stamped.state.pendingChoice !== null) {
+    return {
+      state: deferTriggerDispatchBehindChoice(
+        stamped.state,
+        stamped.events,
+        triggerPool,
+      ),
+      events: stamped.events,
+    };
+  }
   const dispatched = dispatchTriggers(stamped.state, stamped.events, 0, triggerPool);
   if (dispatched.newState.pendingChoice !== null) {
     return {
@@ -596,6 +645,16 @@ export function executePriorityPass(state: GameState, actionId?: string): {
   const resolved = stampGameEvents(rawResolved.state, rawResolved.events, {
     ...(actionId !== undefined ? { actionId, transactionId: actionId } : {}),
   });
+  if (resolved.state.pendingChoice !== null) {
+    return {
+      state: deferTriggerDispatchBehindChoice(
+        resolved.state,
+        resolved.events,
+        triggerPool,
+      ),
+      events: resolved.events,
+    };
+  }
   const dispatched = dispatchTriggers(resolved.state, resolved.events, 0, triggerPool);
   if (dispatched.newState.pendingChoice !== null) {
     return {

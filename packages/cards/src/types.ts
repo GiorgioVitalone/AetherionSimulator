@@ -45,6 +45,9 @@ export interface SimCard {
   readonly cardType: CardTypeCode;
   /** Required for Resource cards; absent for every other card type. */
   readonly resourceType?: 'mana' | 'energy';
+  /** Optional for Hero cards. When absent, current single-resource Heroes are
+   * inferred from their authored resource channel/alignment. */
+  readonly resourceTypes?: readonly ('mana' | 'energy')[];
   readonly rarity: Rarity;
   readonly alignment: readonly Alignment[];
   readonly cost: Cost;
