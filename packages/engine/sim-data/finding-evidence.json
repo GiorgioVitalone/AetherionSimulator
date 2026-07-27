@@ -85,6 +85,7 @@
       "status": "rules/quant review",
       "tests": [
         "packages/engine/tests/state-machine/transactional-attack.test.ts",
+        "packages/engine/tests/state-machine/counter-chain-lifo.test.ts",
         "packages/engine/tests/effects/stack-resolver-failure.test.ts"
       ]
     }
@@ -504,6 +505,8 @@
       ],
       "implementationChanges": [
         "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/effects/counter-handler.ts",
+        "packages/engine/src/effects/effect-runner.ts",
         "packages/engine/src/effects/stack-resolver.ts"
       ]
     },

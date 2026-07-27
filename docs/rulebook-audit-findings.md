@@ -41,25 +41,29 @@ rule the book mis-states/absents. **3 are patched; #1 is deferred to an owner de
 
 ## CLASS 2 — Engine is wrong (→ code ticket, NOT the Rulebook patch)
 
-The book states the (correct) rule; the engine default or implementation diverges. Do NOT edit the book
-for these. The locked `ruleset-v1` already overrides most via flags — the fix is code-level (defaults,
-missing features, or bugs), tracked separately.
+The book states the (correct) rule; the engine default or implementation
+diverged. Do NOT edit the book for these. The canonical current profile resolves
+the implemented items below; historical behavior remains available only through
+explicit legacy profiles.
 
 - **Unconfigured defaults contradict the book** (resolved in the current profile; legacy defaults remain
   reproducible): ARM every-hit vs first-instance; reserve-tap strain + choice flag-gated; and the
   second-player opening card. Current games now apply the extra card in the engine after both mulligans,
   rather than through a simulation-harness-only compensation path.
-- **Priority / reactions under-implemented** (book promises more than engine does): response windows open
-  ONLY on spell casts (book: also attack/activate/equip/move); Flash unusable "at any time" (only inside
-  an open spell window); Counter/Flash limited to spell cards in hand (book: any ability keyword).
+- **Priority / reactions (resolved in the current profile)**: spell, attack,
+  activation, equipment, and movement declarations open response windows;
+  proactive Flash and battlefield/Hero Counter/Flash abilities are legal.
+  Explicit choices pause LIFO resolution, and an “unless its controller pays”
+  clause now spends the resources when accepted instead of treating
+  affordability as a free escape.
 - **Turn/timing contradictions (resolved in the current profile)**: Reserve generation is an explicit
   optional Upkeep-step-4 window; transformation uses the book's exclusive post-Upkeep start-of-turn
   window; Ultimate is unavailable on the transform turn; Hero abilities are once per turn; End-Phase
   sub-steps and start-of-turn triggers follow the Rulebook order. Historical behavior remains isolated
   in the legacy profile.
-- **Logic bugs**: Flying's Defender-bypass is all-or-nothing in the mixed case (over-forces a plain
-  Defender); `executeDeploy` lacks defense-in-depth zone re-validation; X-cost always pays Flexible
-  (ignores specified resource); `RESOURCE_DECK_SIZE` constant was 15 vs 12 (fixed in A1).
+- **Logic bugs (resolved in the current profile)**: Flying bypass is evaluated
+  per Defender; deploy revalidates its destination; X augments its authored
+  resource axis; and the Resource Deck is exactly 12 cards.
 - **Engine can't model book features**: §6 dual-alignment primary/secondary Heroes (secondary restricted
   to Common/Ethereal); §6 dual-resource Heroes; §9 Reserve-targeting escape hatch.
 

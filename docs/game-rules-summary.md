@@ -5,7 +5,7 @@ This is an engine-facing quick reference. The complete source is
 machine settings are in
 [`ruleset-current.json`](../packages/engine/sim-data/ruleset-current.json).
 
-Status: **diagnostic candidate**, semantic version `4.0.0-diagnostic.4`.
+Status: **diagnostic candidate**, semantic version `4.0.0-diagnostic.5`.
 External rules ratification is still required before decision-grade balance
 claims.
 
@@ -66,6 +66,10 @@ Casting, attacking, equipping, moving, transforming, and activating are
 authoritatively validated. Flash is legal at its printed timing. Every accepted
 declaration may expose a priority window. Reactive links resolve last-in,
 first-out after both players pass.
+
+An effect choice pauses the chain; lower links cannot resolve until its target,
+mode, or payment interaction finishes. “Counter unless its controller pays”
+exposes that decision and exhausts the resources when paid.
 
 Spell-cast observation occurs at declaration. Attack exhaustion also commits at
 declaration. Equipment attaches at resolution. A countered declaration keeps

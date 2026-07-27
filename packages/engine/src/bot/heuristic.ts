@@ -25,6 +25,7 @@ import { simulateCombatExchange, asSimBody } from './combat-sim.js';
 import { gameplanFor, type Gameplan } from './gameplan.js';
 import { hasEffectiveTrait } from '../selectors/card-semantics.js';
 import { resumeAbilityEffects } from '../effects/effect-runner.js';
+import { resumeStackAfterChoice } from '../effects/stack-resolver.js';
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -448,7 +449,15 @@ export function chooseChoiceResponse(state: GameState): readonly string[] {
     const candidates = enumerateChoiceCandidates(pc);
     let best: { ids: readonly string[]; value: number; key: string } | null = null;
     for (const ids of candidates) {
-      const projected = resumeAbilityEffects(state, pc, ids).state;
+      const resumed = resumeAbilityEffects(state, pc, ids);
+      const projected =
+        resumed.state.pendingChoice === null &&
+        pc.stackResolutionContinuation !== undefined
+          ? resumeStackAfterChoice(
+              resumed.state,
+              pc.stackResolutionContinuation.item,
+            ).state
+          : resumed.state;
       const value = choiceStateValue(projected, pc.playerId);
       const key = ids.join('\u0000');
       if (

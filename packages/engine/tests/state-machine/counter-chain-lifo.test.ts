@@ -21,6 +21,8 @@ import {
   executeReactiveResponse,
   executePriorityPass,
 } from '../../src/state-machine/actions.js';
+import { CURRENT_GAME_CONFIG } from '../../src/rules/manifest.js';
+import { transition } from '../../src/transitions/transition.js';
 import { computeReactiveActions } from '../../src/actions/reactive-actions.js';
 import {
   mockCard,
@@ -67,7 +69,7 @@ const flashHeal = (): AbilityDSL => ({
 /** Build the worked-example board. `defenderBank` mana lets us toggle whether the
  * Counterspell's controller (P1) can pay Mana Leak's `unless pay 2` at resolution:
  * P1 always spends 1 mana casting Counterspell, so a 3-mana bank leaves exactly 2. */
-function workedExample(defenderBank: number): GameState {
+function workedExample(defenderBank: number, currentRules = false): GameState {
   const inferno = mockCard({ instanceId: 'INF', cardType: 'S', owner: 0, cost: { mana: 1, energy: 0, flexible: 0 }, abilities: [burnSpell()] });
   const ml = mockCard({ instanceId: 'ML', cardType: 'S', owner: 0, cost: { mana: 1, energy: 0, flexible: 0 }, abilities: [manaLeak()] });
   const cs = mockCard({ instanceId: 'CS', cardType: 'S', owner: 1, cost: { mana: 1, energy: 0, flexible: 0 }, abilities: [counterSpell()] });
@@ -77,7 +79,11 @@ function workedExample(defenderBank: number): GameState {
     resourceBank: manaBank(defenderBank, 'e'),
     hero: { ...mockPlayerState(1).hero, currentLp: 25 },
   });
-  return mockGameState({ phase: 'strategy', players: [p0, p1] });
+  return mockGameState({
+    phase: 'strategy',
+    players: [p0, p1],
+    ...(currentRules ? { config: CURRENT_GAME_CONFIG } : {}),
+  });
 }
 
 describe('counter-chain LIFO (Rulebook 14 worked example)', () => {
@@ -120,6 +126,41 @@ describe('counter-chain LIFO (Rulebook 14 worked example)', () => {
     // Mana Leak resolves first but Counterspell's controller pays 2 → Counterspell
     // survives and resolves next, negating Inferno: P1 takes no damage.
     expect(pass2.state.players[1].hero.currentLp).toBe(25);
+    expect(pass2.state.players[1].resourceBank.filter((resource) => resource.exhausted)).toHaveLength(1);
+  });
+
+  it('current rules explicitly ask whether to pay the Counter tax before resuming LIFO', () => {
+    const state = workedExample(3, true);
+    const cast = executePlayerAction(state, { type: 'cast_spell', cardInstanceId: 'INF' });
+    const link2 = executeReactiveResponse(cast.state, {
+      type: 'cast_spell',
+      cardInstanceId: 'CS',
+      selectedTargetIds: ['spell_INF'],
+    });
+    const link3 = executeReactiveResponse(link2.state, {
+      type: 'cast_spell',
+      cardInstanceId: 'ML',
+      selectedTargetIds: ['spell_CS'],
+    });
+    expect(link3.state.stack.at(-1)?.targets).toEqual(['spell_CS']);
+    const paused = executePriorityPass(executePriorityPass(link3.state).state);
+    expect(paused.state.pendingChoice?.type).toBe('pay_counter_tax');
+    expect(paused.state.stack.map((item) => item.id)).toEqual([
+      'spell_INF',
+      'spell_CS',
+    ]);
+
+    const choice = paused.state.pendingChoice!;
+    const paid = transition(paused.state, {
+      type: 'choice_response',
+      interactionId: choice.interactionId!,
+      playerId: choice.playerId,
+      response: { selectedOptionIds: ['pay'] },
+    });
+    expect(paid.status).toBe('resolved');
+    expect(paid.state.stack).toEqual([]);
+    expect(paid.state.players[1].hero.currentLp).toBe(25);
+    expect(paid.state.players[1].resourceBank.every((resource) => resource.exhausted)).toBe(true);
   });
 
   it('resolves links last-in-first-out: a Flash heal added last applies before the base burn', () => {

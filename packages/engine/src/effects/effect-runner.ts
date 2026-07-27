@@ -40,6 +40,30 @@ function pickChosenTargets(
   return valid.slice(0, cap);
 }
 
+/** Consume targets already committed by a transactional declaration only when
+ * they satisfy this exact interaction. A declaration for a later effect must
+ * not auto-answer an unrelated modal or target choice. */
+function pickDeclaredTargets(
+  choice: PendingChoice,
+  chosen: readonly string[] | undefined,
+): readonly string[] | null {
+  if (chosen === undefined) return null;
+  const legal = new Set(
+    choice.options
+      .map((option) => option.instanceId ?? option.id)
+      .filter((id): id is string => typeof id === 'string'),
+  );
+  if (new Set(chosen).size !== chosen.length) return null;
+  if (chosen.some((id) => !legal.has(id))) return null;
+  if (
+    chosen.length < Math.max(choice.minSelections, 0) ||
+    chosen.length > choice.maxSelections
+  ) {
+    return null;
+  }
+  return chosen;
+}
+
 export function runAbilityEffects(
   state: GameState,
   sourceInstanceId: string,
@@ -69,36 +93,57 @@ export function runEffectSequence(
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
   const context = baseContext;
   let current = state;
+  let declaredTargets = chosenTargets;
   const events: GameEvent[] = [];
   for (let effectIndex = 0; effectIndex < effects.length; effectIndex++) {
     const effect = effects[effectIndex]!;
     let result = executeEffect(current, effect, context);
     if (result.pendingChoice !== undefined) {
-      if (
-        current.config?.observableInteractions === true &&
-        current.config.explicitEffectChoices === true
-      ) {
-        const choice = withContinuation(
-          current,
-          result.pendingChoice,
-          effect,
-          effects.slice(effectIndex + 1),
-          context,
-          effectIndex,
-        );
-        current = { ...result.newState, pendingChoice: choice };
-        events.push(...result.events);
-        events.push({
-          type: 'CHOICE_REQUESTED',
-          interactionId: choice.interactionId!,
-          playerId: choice.playerId,
-          choiceType: choice.type,
-          sourceInstanceId: context.sourceInstanceId,
+      const committed = pickDeclaredTargets(
+        result.pendingChoice,
+        declaredTargets,
+      );
+      if (committed !== null) {
+        result = executeEffect(current, effect, {
+          ...context,
+          selectedTargets: committed,
         });
-        return { state: current, events };
+        declaredTargets = undefined;
       }
-      const selectedTargets = pickChosenTargets(result.pendingChoice, chosenTargets);
-      result = executeEffect(current, effect, { ...context, selectedTargets });
+      if (result.pendingChoice !== undefined) {
+        if (
+          current.config?.observableInteractions === true &&
+          current.config.explicitEffectChoices === true
+        ) {
+          const choice = withContinuation(
+            current,
+            result.pendingChoice,
+            effect,
+            effects.slice(effectIndex + 1),
+            context,
+            effectIndex,
+          );
+          current = { ...result.newState, pendingChoice: choice };
+          events.push(...result.events);
+          events.push({
+            type: 'CHOICE_REQUESTED',
+            interactionId: choice.interactionId!,
+            playerId: choice.playerId,
+            choiceType: choice.type,
+            sourceInstanceId: context.sourceInstanceId,
+          });
+          return { state: current, events };
+        }
+        const selectedTargets = pickChosenTargets(
+          result.pendingChoice,
+          declaredTargets,
+        );
+        result = executeEffect(current, effect, {
+          ...context,
+          selectedTargets,
+        });
+        declaredTargets = undefined;
+      }
     }
     current = result.newState;
     events.push(...result.events);
@@ -167,7 +212,11 @@ export function resumeAbilityEffects(
   const cleared: GameState = { ...state, pendingChoice: null };
   let result = executeEffect(cleared, continuation.currentEffect, {
     ...continuation.context,
-    selectedTargets: selectedOptionIds,
+    selectedTargets:
+      choice.type === 'pay_counter_tax'
+        ? continuation.context.selectedTargets
+        : selectedOptionIds,
+    selectedOptionIds,
   });
   const events: GameEvent[] = [...result.events];
   if (result.pendingChoice !== undefined) {

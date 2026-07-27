@@ -194,6 +194,16 @@ export function resolveStack(state: GameState): StackResult {
             );
     current = ran.state;
     events.push(...ran.events);
+    if (current.pendingChoice !== null) {
+      current = {
+        ...current,
+        pendingChoice: {
+          ...current.pendingChoice,
+          stackResolutionContinuation: { item: top },
+        },
+      };
+      break;
+    }
     if (current.config?.transactionalDeclarations === true) {
       const fizzled = ran.events.some(
         (event) =>
@@ -221,6 +231,7 @@ export function resolveStack(state: GameState): StackResult {
   }
   if (
     current.stack.length > 0 &&
+    current.pendingChoice === null &&
     current.config?.authoritativeTransitions === true
   ) {
     throw new GuardExhaustionError(
@@ -228,6 +239,48 @@ export function resolveStack(state: GameState): StackResult {
     );
   }
   return { state: current, events };
+}
+
+/** Finish the stack item that paused for an explicit effect choice, then resume
+ * ordinary LIFO resolution of the lower stack. */
+export function resumeStackAfterChoice(
+  state: GameState,
+  item: StackItem,
+): StackResult {
+  const events =
+    state.config?.transactionalDeclarations === true
+      ? resolvedEvents(item)
+      : [];
+  if (state.winner !== null || state.stack.length === 0) {
+    return { state, events };
+  }
+  const resumed = resolveStack(state);
+  return {
+    state: resumed.state,
+    events: [...events, ...resumed.events],
+  };
+}
+
+function resolvedEvents(item: StackItem): readonly GameEvent[] {
+  return [
+    {
+      type: 'STACK_ITEM_RESOLVED',
+      stackItemId: item.id,
+      stackItemType: item.type,
+      sourceInstanceId: item.sourceInstanceId,
+      controllerPlayerId: item.controllerId,
+    },
+    ...(item.type === 'spell'
+      ? [
+          {
+            type: 'SPELL_RESOLVED' as const,
+            stackItemId: item.id,
+            cardInstanceId: item.sourceInstanceId,
+            playerId: item.controllerId,
+          },
+        ]
+      : []),
+  ];
 }
 
 function resolveTransferItem(state: GameState, item: StackItem): StackResult {

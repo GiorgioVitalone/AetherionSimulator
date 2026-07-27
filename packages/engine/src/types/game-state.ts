@@ -976,6 +976,10 @@ export interface PendingChoice {
   readonly resolutionContext?: EffectContext;
   /** Remaining trigger work suspended behind an effect-origin interaction. */
   readonly dispatchContinuation?: TriggerDispatchContinuation;
+  /** Stack item whose effect sequence is suspended behind this interaction.
+   * The remaining lower stack stays in GameState.stack; after the choice finishes,
+   * this item receives its resolution disposition and LIFO resolution resumes. */
+  readonly stackResolutionContinuation?: StackResolutionContinuation;
   /** Pending APNAP owner-order selection for a simultaneous trigger group. */
   readonly triggerOrderContinuation?: TriggerOrderContinuation;
   readonly turnBoundaryContinuation?: TurnBoundaryContinuation;
@@ -984,6 +988,7 @@ export interface PendingChoice {
 export type PendingChoiceType =
   | 'mulligan'
   | 'choose_first_player'
+  | 'pay_counter_tax'
   | 'select_targets'
   | 'reserve_exhaust'
   | 'discard_to_hand_limit'
@@ -1028,6 +1033,10 @@ export interface StackItem {
   readonly xPaid?: number;
   /** Physical card committed at declaration but not yet placed at resolution. */
   readonly declaredCard?: CardInstance;
+}
+
+export interface StackResolutionContinuation {
+  readonly item: StackItem;
 }
 
 // ── PendingPriority (open reactive response window) ───────────────────────────
@@ -1499,6 +1508,10 @@ export interface EffectContext {
   readonly controllerId: 0 | 1;
   readonly triggerDepth: number;
   readonly selectedTargets?: readonly string[];
+  /** Option IDs submitted for a non-target effect interaction. Kept separate
+   * from selectedTargets so a choice such as "pay to avoid this Counter" can
+   * retain the declared stack target while consuming the player's answer. */
+  readonly selectedOptionIds?: readonly string[];
   /** Amount of the variable cost (X) paid for the effect's source — e.g. the
    * Energy spent to play an X-cost equipment. Consumed by `x_cost` amount/stat
    * expressions. Absent means no X was paid (evaluates to 0). */

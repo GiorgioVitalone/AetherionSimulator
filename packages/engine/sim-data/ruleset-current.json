@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "profileId": "current",
-  "semanticVersion": "4.0.0-diagnostic.4",
+  "semanticVersion": "4.0.0-diagnostic.5",
   "status": "diagnostic",
   "rulebook": {
     "path": "Documentation/game/Rulebook.md",

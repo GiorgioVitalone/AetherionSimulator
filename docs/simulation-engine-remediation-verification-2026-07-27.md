@@ -1,7 +1,7 @@
 # Simulation Engine Remediation Verification
 
 - Verification date: 2026-07-27
-- Base commit: `524d648443e2cee7bf2e90a5b63d1feac27de184`
+- Parent commit: `6d8b1f8`
 - Rules profile: `current`
 - Artifact classification: **diagnostic**
 
@@ -14,8 +14,8 @@ the required external approvals are absent.
 
 | Gate evidence | Result |
 |---|---|
-| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,375 tests passed, 1 skipped |
-| Current coverage | statements 90.62%, branches 84.60%, functions 95.11%, lines 90.62% |
+| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,377 tests passed, 1 skipped |
+| Current coverage | statements 90.58%, branches 84.55%, functions 95.11%, lines 90.58% |
 | Changed-code coverage | passed for 5 changed engine source files |
 | Legacy compatibility suite | 11 files and 60 tests passed |
 | Client integration | typecheck, lint, 9 tests, and production Vite build passed |
@@ -43,7 +43,7 @@ with the exact required `pnpm` commands recorded by `ratification-status.mjs`.
 | Fresh-process replay checks | 100 / 100 |
 | Unique replay trace hashes | 100 |
 | Campaign run hash | `f683198daed169ea` |
-| Replay sample hash | `4e612c7a8810c66d03692c760adae7455351a5904711126d92242d8cf87fcf72` |
+| Replay sample hash | `5557d19a3b8276d22d73f35429209cc00ec08dd10f42895dbb0540ad83ca56e3` |
 
 The first follow-up campaign exposed 283 invariant failures: bounce reused a
 destruction-only destination helper, so a Volatile character could be both
@@ -89,6 +89,16 @@ game state instead of manually copying selected flags. This also removed a
 primary-study override that had silently disabled the empty-Resource-Deck
 transformation predicate. The final full campaign above runs with both setup
 rules and the canonical transformation predicate active.
+
+Stack resolution now pauses when its current link produces an explicit target,
+mode, or payment interaction. A directed production-chain scenario distinguishes
+the ordering observably: healing from 22 to the 25 cap before a lower 4-damage
+spell ends at 21 LP; the former incorrect lower-link-first ordering ended at 23.
+The same scenario proves that “counter unless its controller pays” asks the
+target controller, exhausts the payment when accepted, and only then resumes
+the lower chain. The full campaign remained clean, but its baseline policy did
+not encounter this particular payment branch; the directed scenario is the
+decisive evidence for that behavior.
 
 ## Closure status
 

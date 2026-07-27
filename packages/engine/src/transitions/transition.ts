@@ -23,7 +23,10 @@ import { recomputeAurasWithEvents } from '../runtime/aura-recompute.js';
 import { stampGameEvents } from '../runtime/event-envelope.js';
 import { applyMulligan, chooseFirstPlayer } from '../setup/game-setup.js';
 import { validateGameStateInvariants } from '../invariants/game-state-invariants.js';
-import { closeTerminalStack } from '../effects/stack-resolver.js';
+import {
+  closeTerminalStack,
+  resumeStackAfterChoice,
+} from '../effects/stack-resolver.js';
 
 function commandId(state: GameState, command: EngineCommand): string {
   const prefix = [
@@ -157,7 +160,20 @@ function resumeChoicePipeline(
   choice: NonNullable<GameState['pendingChoice']>,
   selected: readonly string[],
 ): { readonly state: GameState; readonly events: readonly GameEvent[] } {
+  const stackContinuation = choice.stackResolutionContinuation;
   let result = resumeAbilityEffects(state, choice, selected);
+  if (result.state.pendingChoice !== null && stackContinuation !== undefined) {
+    result = {
+      ...result,
+      state: {
+        ...result.state,
+        pendingChoice: {
+          ...result.state.pendingChoice,
+          stackResolutionContinuation: stackContinuation,
+        },
+      },
+    };
+  }
   if (choice.dispatchContinuation !== undefined) {
     if (result.state.pendingChoice !== null) {
       result = {
@@ -167,6 +183,9 @@ function resumeChoicePipeline(
           pendingChoice: {
             ...result.state.pendingChoice,
             dispatchContinuation: choice.dispatchContinuation,
+            ...(stackContinuation !== undefined
+              ? { stackResolutionContinuation: stackContinuation }
+              : {}),
             ...(choice.turnBoundaryContinuation !== undefined
               ? { turnBoundaryContinuation: choice.turnBoundaryContinuation }
               : {}),
@@ -190,6 +209,9 @@ function resumeChoicePipeline(
         ...result.state,
         pendingChoice: {
           ...result.state.pendingChoice,
+          ...(stackContinuation !== undefined
+            ? { stackResolutionContinuation: stackContinuation }
+            : {}),
           turnBoundaryContinuation: choice.turnBoundaryContinuation,
         },
       },
@@ -205,7 +227,18 @@ function resumeChoicePipeline(
       events: [...result.events, ...boundary.events],
     };
   }
-  if (result.state.pendingChoice !== null || result.state.winner !== null) return result;
+  if (result.state.pendingChoice !== null) return result;
+  if (stackContinuation !== undefined) {
+    const resumed = resumeStackAfterChoice(
+      result.state,
+      stackContinuation.item,
+    );
+    result = {
+      state: resumed.state,
+      events: [...result.events, ...resumed.events],
+    };
+  }
+  if (result.state.winner !== null) return result;
 
   return finalizeAfterChoice(result);
 }
