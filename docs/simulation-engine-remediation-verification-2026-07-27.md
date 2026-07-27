@@ -23,7 +23,7 @@ the required external approvals are absent.
 | Engine / client / UI lint | package-scoped lint passed |
 | Card semantic validator | 0 errors, 0 warnings |
 | Performance and semantic-equivalence budgets | passed |
-| Policy calibration | 577 scored decisions; all 9 required families; 0 infrastructure failures |
+| Policy calibration | 550 scored gameplay decisions; all 9 required families; 0 infrastructure failures |
 | Finding structural audit | all 167 findings and C-01–C-12 match the source review and plan |
 
 The package-manager wrapper in this environment still fails before root Turbo
@@ -56,11 +56,12 @@ failures.
 
 The diagnostic heuristic-versus-rollout corpus contains:
 
-- 577 scored runtime decisions;
+- 550 scored runtime gameplay decisions;
 - ability, choice, combat, development, equipment, movement, reaction,
   resource, and transform families;
-- explicit outcome search for proactive actions, priority responses, mulligans,
-  and effect choices;
+- explicit outcome search for proactive actions, priority responses, hand-limit
+  decisions, and effect choices; setup mulligan/first-player bookkeeping is not
+  counted as tactical choice calibration;
 - content-addressed rules, compiled engine, harness, bot implementation, and
   policy configuration;
 - no claim of expert truth or human-skill equivalence.
@@ -73,8 +74,8 @@ action surface. Movement and ordinary Trigger/Ultimate activation are Strategy
 actions, while proactive Flash remains available in Action. Reserve Energy is
 an explicit Upkeep-step-4 action window, and transformation is an exclusive
 post-Upkeep, pre-Strategy window. Under the corrected current profile, the
-48-game heuristic diagnostic selected 459 movements, 784 activations, 50
-Reserve taps, and 65 transformations. The full 10,080-game campaign exercised
+48-game heuristic diagnostic selected 475 movements, 794 activations, 54
+Reserve taps, and 78 transformations. The full 10,080-game campaign exercised
 all four classes without rejected or failed actions. Equipment removal remains
 implemented and tested, but the pool contains no harmful equipment for the
 heuristic to remove; zero selections are therefore not evidence of an
@@ -152,6 +153,22 @@ and retained command logs outside the checkout:
 pnpm --filter @aetherion-sim/engine ratification:evidence -- \
   --output /path/to/full-gate-evidence.json
 ```
+
+A reproducible expert-policy review packet is prepared outside the checkout
+before the independent policy expert labels it:
+
+```sh
+pnpm --filter @aetherion-sim/engine ratification:prepare-expert-corpus -- \
+  --output-dir /path/to/expert-review-packet
+```
+
+The packet contains nine real current-engine tactical positions, their complete
+legal action sets, readable action objects, state and engine/harness/bot hashes,
+and provenance. The reviewer supplies the selected action, value, rationale,
+identity, qualification, and timestamp. The ratification gate rejects an
+`independently_approved` status if any scenario, identity, binding, or tracked
+state artifact is missing; it likewise rejects a status-only approval of the
+independent rule oracle.
 
 A completed review copy is then supplied out-of-tree with:
 
