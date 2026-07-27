@@ -38,21 +38,34 @@ function maybeRegisterPrintedTriggers(state: GameState, cardInstanceId: string):
 }
 
 /** Reset a card pulled out of a pile so it enters play/hand with clean runtime state. */
-function freshFromPile(card: CardInstance): CardInstance {
+function freshFromPile(
+  card: CardInstance,
+  summoningSick = true,
+): CardInstance {
   return {
     ...card,
     currentHp: card.baseHp,
     currentAtk: card.baseAtk,
     currentArm: card.baseArm,
     exhausted: false,
-    summoningSick: true,
+    summoningSick,
     movedThisTurn: false,
     attackedThisTurn: false,
+    hasActed: false,
+    freeMovesRemaining: 0,
+    reserveEnergyExhausted: false,
+    transferredThisTurn: false,
+    armMitigatedThisTurn: false,
+    shieldMitigatedThisTurn: false,
+    forcedAttacksThisTurn: 0,
+    armConsumed: false,
     grantedTraits: [],
     modifiers: [],
     statusEffects: [],
     registeredTriggers: [],
+    activeReplacements: [],
     equipment: null,
+    xPaid: 0,
   };
 }
 
@@ -255,7 +268,14 @@ export function executeShuffleIntoDeck(
   const source = effect.source === 'discard' ? player.discardPile : player.hand;
   if (source.length === 0) return { newState: state, events: [] };
 
-  const combined = [...player.mainDeck, ...source];
+  // Cards in discard retain last-known battlefield state for recursion and
+  // trigger inspection. Crossing back into the deck is a new-zone reset: a
+  // later draw must not resurrect lethal damage, exhaustion, modifiers, or
+  // once-per-turn markers from the destroyed instance.
+  const combined = [
+    ...player.mainDeck,
+    ...source.map((card) => freshFromPile(card, false)),
+  ];
   const { result, nextRng } = shuffle(combined, state.rng);
   const cleared =
     effect.source === 'discard'

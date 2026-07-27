@@ -64,6 +64,7 @@ const COUNTER_THRESHOLD = 3;
 // Under fair pilot, a lower bar so the bot answers a mid removal / value engine the
 // legacy gate let resolve (control mirror: card advantage matters).
 const COUNTER_THRESHOLD_FAIR = 2;
+const FLASH_THRESHOLD = 0.25;
 // Per-card weight for the fair card-advantage threat term (an enemy draw is a real
 // threat to a control responder even with no removal/face on the spell).
 const CARD_ADV_THREAT = 0.5;
@@ -72,11 +73,11 @@ const CARD_ADV_THREAT = 0.5;
  * Reactive policy during an open priority window (Rulebook 14). Returns a
  * cast_spell action for the responder, or null to pass. Pure / deterministic.
  *
- * Under legacy rules, counter the newest enemy spell on the stack when it scores
- * high enough. Under the current all-actions response rules, rank every enemy
- * declaration (spell/ability/attack/equip/transfer/move) by projected impact.
- * Among held counters pick the cheapest (tie-break by instanceId). Default is to
- * pass — reactive cards are scarce.
+ * Counter an enemy spell when it scores high enough, or use a genuine Flash
+ * effect when its own tactical value justifies spending it. Non-spell
+ * declarations still open Flash windows, but the current counter cards all
+ * carry a `target_spell` effect and therefore cannot legally negate attacks,
+ * abilities, equipment, transfers, or movement.
  */
 export function chooseReactiveAction(state: GameState): PlayerAction | null {
   const pp = state.pendingPriority;
@@ -85,68 +86,148 @@ export function chooseReactiveAction(state: GameState): PlayerAction | null {
   const enemyId = responderId === 0 ? 1 : 0;
 
   const fair = isFairPilot(state.config);
-  const allActions = state.config?.responseWindowsOnAllActions === true;
-  const enemyItem = allActions
-    ? highestThreatEnemyItem(state, enemyId, responderId, fair)
-    : fair
-      ? highestThreatEnemySpell(state, enemyId, responderId)
-      : newestEnemySpell(state, enemyId);
-  if (enemyItem === null) return null;
+  const options = computeReactiveActions(state, responderId);
+  const enemyItem = fair
+    ? highestThreatEnemySpell(state, enemyId, responderId)
+    : newestEnemySpell(state, enemyId);
   const threshold = fair ? COUNTER_THRESHOLD_FAIR : COUNTER_THRESHOLD;
-  const threat = allActions
-    ? stackItemThreat(state, enemyItem, responderId, fair)
-    : spellThreat(state, enemyItem, responderId, fair);
-  if (threat < threshold) return null;
-
-  const counters = computeReactiveActions(state, responderId)
+  const threat =
+    enemyItem === null ? -Infinity : spellThreat(state, enemyItem, responderId, fair);
+  const counters = options
     .filter((o) => o.kind === 'counter')
     .sort(
       (a, b) =>
         costTotal(a.cost) - costTotal(b.cost) || a.cardInstanceId.localeCompare(b.cardInstanceId),
     );
-  const pick = counters[0];
-  if (pick === undefined) return null;
-  const xValue = pick.xValues?.at(-1);
-  if (pick.source === 'board') {
+  const pick = threat >= threshold ? counters[0] : undefined;
+  if (pick?.source === 'board') {
     // Board reactions carry no selectedTargetIds in PlayerAction; the engine
-    // therefore binds them to the newest enemy item. Evaluate that exact item,
+    // therefore binds them to the newest enemy spell. Evaluate that exact item,
     // not an older high-threat item this activation cannot actually name.
-    const boardTarget = newestEnemyItem(state, enemyId);
+    const boardTarget = newestEnemySpell(state, enemyId);
     if (
-      boardTarget === null ||
-      (allActions
-        ? stackItemThreat(state, boardTarget, responderId, fair)
-        : spellThreat(state, boardTarget, responderId, fair)) < threshold
-    ) {
-      return null;
-    }
-    return {
+      boardTarget !== null &&
+      spellThreat(state, boardTarget, responderId, fair) >= threshold
+    )
+      return {
         type: 'activate_ability',
         cardInstanceId: pick.cardInstanceId,
         abilityIndex: pick.abilityIndex!,
-        ...(xValue !== undefined && xValue > 0 ? { xValue } : {}),
+        ...(pick.xValues?.at(-1) !== undefined &&
+        pick.xValues.at(-1)! > 0
+          ? { xValue: pick.xValues.at(-1)! }
+          : {}),
       };
   }
-  return {
-    type: 'cast_spell',
-    cardInstanceId: pick.cardInstanceId,
-    selectedTargetIds: [enemyItem.id],
-    ...(xValue !== undefined && xValue > 0 ? { xValue } : {}),
-  };
+  if (pick !== undefined && enemyItem !== null) {
+    const xValue = pick.xValues?.at(-1);
+    return {
+      type: 'cast_spell',
+      cardInstanceId: pick.cardInstanceId,
+      selectedTargetIds: [enemyItem.id],
+      ...(xValue !== undefined && xValue > 0 ? { xValue } : {}),
+    };
+  }
+  return chooseFlashReaction(state, responderId, enemyId, options, fair);
+}
+
+function chooseFlashReaction(
+  state: GameState,
+  responderId: 0 | 1,
+  enemyId: 0 | 1,
+  options: ReturnType<typeof computeReactiveActions>,
+  fair: boolean,
+): PlayerAction | null {
+  const enemyItem = highestThreatEnemyItem(
+    state,
+    enemyId,
+    responderId,
+    fair,
+  );
+  if (
+    enemyItem === null ||
+    stackItemThreat(state, enemyItem, responderId, fair) <= 0
+  ) {
+    return null;
+  }
+  const player = state.players[responderId];
+  const opponent = state.players[enemyId];
+  const ranked = options
+    .filter((option) => option.kind === 'flash')
+    .map((option) => {
+      const xValue = option.xValues?.at(-1) ?? 0;
+      if (option.source === 'board') {
+        const source =
+          option.cardInstanceId === `hero_${String(player.hero.cardDefId)}`
+            ? player.hero
+            : findOwnedBattlefieldCard(
+                state,
+                responderId,
+                option.cardInstanceId,
+              );
+        const ability = source?.abilities[option.abilityIndex ?? -1];
+        const effects =
+          ability !== undefined &&
+          (ability.type === 'triggered' || ability.type === 'aura')
+            ? ability.effects
+            : [];
+        return {
+          action: {
+            type: 'activate_ability',
+            cardInstanceId: option.cardInstanceId,
+            abilityIndex: option.abilityIndex!,
+            ...(xValue > 0 ? { xValue } : {}),
+          } satisfies PlayerAction,
+          utility:
+            scoreEffects(
+              player,
+              opponent,
+              effects,
+              xValue,
+              gameplanFor('Neutral'),
+              fair,
+            ).value -
+            costTotal(option.cost) * 0.25,
+          id: option.cardInstanceId,
+        };
+      }
+      const card = handCard(player, option.cardInstanceId);
+      if (card === null) return null;
+      const selectedTargetIds = chooseSpellTargets(player, opponent, card);
+      return {
+        action: {
+          type: 'cast_spell',
+          cardInstanceId: option.cardInstanceId,
+          ...(xValue > 0 ? { xValue } : {}),
+          ...(selectedTargetIds === undefined ? {} : { selectedTargetIds }),
+        } satisfies PlayerAction,
+        utility:
+          scoreSpell(
+            player,
+            opponent,
+            card,
+            xValue,
+            gameplanFor('Neutral'),
+            fair,
+          ).value -
+          costTotal(option.cost) * 0.25,
+        id: option.cardInstanceId,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    .sort(
+      (a, b) =>
+        b.utility - a.utility || a.id.localeCompare(b.id),
+    );
+  return ranked[0] !== undefined && ranked[0].utility >= FLASH_THRESHOLD
+    ? ranked[0].action
+    : null;
 }
 
 function newestEnemySpell(state: GameState, enemyId: 0 | 1): GameState['stack'][number] | null {
   for (let i = state.stack.length - 1; i >= 0; i--) {
     const item = state.stack[i]!;
     if (item.type === 'spell' && item.controllerId === enemyId) return item;
-  }
-  return null;
-}
-
-function newestEnemyItem(state: GameState, enemyId: 0 | 1): GameState['stack'][number] | null {
-  for (let index = state.stack.length - 1; index >= 0; index--) {
-    const item = state.stack[index]!;
-    if (item.controllerId === enemyId) return item;
   }
   return null;
 }
@@ -227,10 +308,9 @@ function highestThreatEnemySpell(
   return best;
 }
 
-/** Current-rules threat model for every declaration that can open a response
- * window. It deliberately scores declared consequences, not the window kind, so
- * harmless movement is passed while lethal combat or a large attachment is
- * answerable. */
+/** Threat model for every declaration that can open a response window. It
+ * scores declared consequences rather than treating the mere presence of a
+ * window as a reason to spend a Flash card. */
 function stackItemThreat(
   state: GameState,
   item: GameState['stack'][number],
@@ -241,14 +321,15 @@ function stackItemThreat(
 
   const caster = state.players[item.controllerId];
   const responder = state.players[responderId];
-  const effectValue = scoreEffects(
-    caster,
-    responder,
-    item.effects,
-    item.xPaid ?? 0,
-    gameplanFor('Neutral'),
-    true,
-  ).value + faceDamageThreat(item.effects, item.xPaid ?? 0);
+  const effectValue =
+    scoreEffects(
+      caster,
+      responder,
+      item.effects,
+      item.xPaid ?? 0,
+      gameplanFor('Neutral'),
+      true,
+    ).value + faceDamageThreat(item.effects, item.xPaid ?? 0);
 
   switch (item.type) {
     case 'ability':
@@ -259,7 +340,10 @@ function stackItemThreat(
       const equipment =
         item.declaredCard ??
         findOwnedCard(state, item.controllerId, item.sourceInstanceId);
-      return effectValue + (equipment === null ? 0 : intrinsicValue(equipment) * 0.35);
+      return (
+        effectValue +
+        (equipment === null ? 0 : intrinsicValue(equipment) * 0.35)
+      );
     }
     case 'transfer':
       return transferThreat(state, item);
@@ -303,7 +387,9 @@ function faceDamageThreat(effects: readonly Effect[], xPaid: number): number {
     } else if (effect.type === 'choose_one') {
       total += Math.max(
         0,
-        ...effect.options.map((option) => faceDamageThreat(option.effects, xPaid)),
+        ...effect.options.map((option) =>
+          faceDamageThreat(option.effects, xPaid),
+        ),
       );
     }
   }
@@ -323,7 +409,9 @@ function highestThreatEnemyItem(
     const threat = stackItemThreat(state, item, responderId, fair);
     if (
       threat > bestThreat ||
-      (threat === bestThreat && best !== null && item.id.localeCompare(best.id) < 0)
+      (threat === bestThreat &&
+        best !== null &&
+        item.id.localeCompare(best.id) < 0)
     ) {
       best = item;
       bestThreat = threat;
@@ -337,7 +425,11 @@ function attackThreat(
   item: GameState['stack'][number],
   responderId: 0 | 1,
 ): number {
-  const attacker = findOwnedBattlefieldCard(state, item.controllerId, item.sourceInstanceId);
+  const attacker = findOwnedBattlefieldCard(
+    state,
+    item.controllerId,
+    item.sourceInstanceId,
+  );
   if (attacker === null) return 0;
   const targetId = item.targets[0];
   if (targetId === undefined) return 0;
@@ -360,25 +452,55 @@ function attackThreat(
     : Math.min(damage, target.currentHp);
 }
 
-function transferThreat(state: GameState, item: GameState['stack'][number]): number {
-  const equipment = findOwnedEquipment(state, item.controllerId, item.sourceInstanceId);
-  const from = item.targets[0] === undefined
-    ? null
-    : findOwnedBattlefieldCard(state, item.controllerId, item.targets[0]);
-  const to = item.targets[1] === undefined
-    ? null
-    : findOwnedBattlefieldCard(state, item.controllerId, item.targets[1]);
+function transferThreat(
+  state: GameState,
+  item: GameState['stack'][number],
+): number {
+  const equipment = findOwnedEquipment(
+    state,
+    item.controllerId,
+    item.sourceInstanceId,
+  );
+  const from =
+    item.targets[0] === undefined
+      ? null
+      : findOwnedBattlefieldCard(
+          state,
+          item.controllerId,
+          item.targets[0],
+        );
+  const to =
+    item.targets[1] === undefined
+      ? null
+      : findOwnedBattlefieldCard(
+          state,
+          item.controllerId,
+          item.targets[1],
+        );
   if (equipment === null || to === null) return 0;
-  const tacticalUpgrade = Math.max(0, to.currentAtk - (from?.currentAtk ?? 0)) * 0.5;
+  const tacticalUpgrade =
+    Math.max(0, to.currentAtk - (from?.currentAtk ?? 0)) * 0.5;
   return intrinsicValue(equipment) * 0.25 + tacticalUpgrade;
 }
 
-function moveThreat(state: GameState, item: GameState['stack'][number]): number {
-  const mover = findOwnedBattlefieldCard(state, item.controllerId, item.sourceInstanceId);
+function moveThreat(
+  state: GameState,
+  item: GameState['stack'][number],
+): number {
+  const mover = findOwnedBattlefieldCard(
+    state,
+    item.controllerId,
+    item.sourceInstanceId,
+  );
   const destination = item.targets[0];
   if (mover === null || destination === undefined) return 0;
-  if (destination === 'high_ground') return Math.max(0.5, mover.currentAtk * 0.5);
-  if (destination === 'frontline' && hasEffectiveTrait(mover, 'defender')) {
+  if (destination === 'high_ground') {
+    return Math.max(0.5, mover.currentAtk * 0.5);
+  }
+  if (
+    destination === 'frontline' &&
+    hasEffectiveTrait(mover, 'defender')
+  ) {
     return 1 + Math.max(0, mover.currentHp + mover.currentArm) * 0.25;
   }
   return 0.5;
@@ -389,9 +511,11 @@ function findOwnedBattlefieldCard(
   owner: 0 | 1,
   instanceId: string,
 ): CardInstance | null {
-  return getAllCards(state.players[owner].zones).find(
-    (card) => card.instanceId === instanceId,
-  ) ?? null;
+  return (
+    getAllCards(state.players[owner].zones).find(
+      (card) => card.instanceId === instanceId,
+    ) ?? null
+  );
 }
 
 function findOwnedEquipment(

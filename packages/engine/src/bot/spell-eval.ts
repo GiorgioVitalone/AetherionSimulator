@@ -156,9 +156,18 @@ function scoreEffect(
       return { value, isRemoval: victims.some((v) => dmg >= spellTargetHp(v)) };
     }
     case 'modify_stats': {
-      if (isEnemyTarget(effect.target)) return ZERO; // debuffs handled as chip via dmg path
       const gain =
         (effect.modifier.atk ?? 0) + (effect.modifier.hp ?? 0) + (effect.modifier.arm ?? 0);
+      if (isEnemyTarget(effect.target)) {
+        const bodies = enemyTargets(opponent, effect.target).length;
+        return {
+          value:
+            Math.max(0, -gain) *
+            Math.max(1, bodies) *
+            gameplan.tempoWeight,
+          isRemoval: false,
+        };
+      }
       const bodies = countAlliedBodies(caster, effect.target);
       // Allied buffs are proactive board development; weight by the seat's tempo
       // appetite (A6 `tempoWeight`; NEUTRAL = 0.6 ⇒ no-op).

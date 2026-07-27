@@ -289,13 +289,27 @@ export function validateReactiveAction(
   if (targetViolation !== null) return [targetViolation];
 
   const options = computeReactiveActions(state, pending.toRespondPlayerId);
+  const selectedTargetsAreLegal = (
+    option: (typeof options)[number],
+    selected: readonly string[] | undefined,
+  ): boolean => {
+    if (option.kind !== 'counter') return true;
+    if (selected === undefined || selected.length === 0) {
+      return (option.validTargetIds?.length ?? 0) > 0;
+    }
+    return (
+      selected.length === 1 &&
+      option.validTargetIds?.includes(selected[0]!) === true
+    );
+  };
   const matches =
     action.type === 'cast_spell'
       ? options.some(
           (option) =>
             option.source !== 'board' &&
             option.cardInstanceId === action.cardInstanceId &&
-            xMatches(action.xValue, option.xValues),
+            xMatches(action.xValue, option.xValues) &&
+            selectedTargetsAreLegal(option, action.selectedTargetIds),
         )
       : action.type === 'activate_ability'
         ? options.some(
@@ -303,7 +317,8 @@ export function validateReactiveAction(
               option.source === 'board' &&
               option.cardInstanceId === action.cardInstanceId &&
               option.abilityIndex === action.abilityIndex &&
-              xMatches(action.xValue, option.xValues),
+              xMatches(action.xValue, option.xValues) &&
+              selectedTargetsAreLegal(option, undefined),
           )
         : false;
   return matches

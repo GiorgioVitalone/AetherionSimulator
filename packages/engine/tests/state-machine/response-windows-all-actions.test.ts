@@ -7,8 +7,9 @@
  *
  * ON: each of the four pushes a StackItem and opens a response window for the
  * non-active player when they hold a legal Counter/Flash; the base action's
- * effects do NOT run until the window closes (two passes), and a Counter on the
- * chain negates the base action entirely. ability/equip items carry plain
+ * effects do NOT run until the window closes (two passes). A reaction can only
+ * negate the base action when its printed target permits it; `target_spell`
+ * does not widen to non-spell actions. ability/equip items carry plain
  * effects; attack/move items carry a declaration that resolveStack re-invokes
  * through resolveCombat / moveCard.
  */
@@ -17,7 +18,6 @@ import { createActor } from 'xstate';
 import { gameMachine } from '../../src/state-machine/index.js';
 import {
   executePlayerAction,
-  executeReactiveResponse,
   executePriorityPass,
 } from '../../src/state-machine/actions.js';
 import { deployToZone } from '../../src/zones/zone-manager.js';
@@ -136,27 +136,17 @@ describe('responseWindowsOnAllActions: declare_attack', () => {
     expect(pass2.events.some((e) => e.type === 'CHARACTER_ATTACKED')).toBe(true);
   });
 
-  it('ON: a Counter on the chain negates the attack — combat never happens', () => {
+  it('ON: a target-spell Counter is not offered against an attack', () => {
     const state = attackState(ON, [counterCard('CS', 1)]);
     const r = executePlayerAction(state, {
       type: 'declare_attack',
       attackerInstanceId: 'ATK',
       targetId: 'hero',
     });
-    expect(r.state.pendingPriority?.window).toBe('attack');
-
-    const react = executeReactiveResponse(r.state, { type: 'cast_spell', cardInstanceId: 'CS' });
-    expect(react.state.pendingPriority?.toRespondPlayerId).toBe(0);
-    const pass1 = executePriorityPass(react.state);
-    const pass2 = executePriorityPass(pass1.state);
-
-    expect(pass2.state.pendingPriority == null).toBe(true);
-    expect(pass2.state.stack).toHaveLength(0);
-    // The attack was countered: no damage, no CHARACTER_ATTACKED, attacker fresh.
-    expect(pass2.state.players[1]!.hero.currentLp).toBe(25);
-    expect(pass2.state.players[0]!.zones.frontline[0]?.exhausted).toBe(false);
-    expect(pass2.events.some((e) => e.type === 'CHARACTER_ATTACKED')).toBe(false);
-    expect(pass2.events.some((e) => e.type === 'SPELL_COUNTERED')).toBe(true);
+    expect(r.state.pendingPriority == null).toBe(true);
+    expect(r.state.stack).toHaveLength(0);
+    expect(r.state.players[1]!.hero.currentLp).toBe(23);
+    expect(r.state.players[0]!.zones.frontline[0]?.exhausted).toBe(true);
   });
 
   it('ON: resolves inline when the opponent holds no reaction (same as cast no-op path)', () => {

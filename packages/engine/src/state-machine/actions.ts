@@ -748,11 +748,10 @@ function castReactiveSpell(
 }
 
 // A Counter targets the newest enemy spell on the stack when no explicit target
-// is given, so its counter_spell effect resolves against the spell it responds to.
-// TIER 4 (config.responseWindowsOnAllActions): ANY enemy stack item is a legal
-// default counter target, so a reactive cast in an attack/ability/equip/move
-// window counters the base action it responds to. Off-flag the scan stays
-// spell-only (legacy, semantically invariant).
+// is given, so its counter_spell effect resolves against the spell it responds
+// to. Non-spell declarations still open response windows for genuine Flash
+// effects, but a printed `target_spell` effect never silently widens into a
+// generic action counter.
 function reactiveTargets(
   state: GameState,
   selected: readonly string[] | undefined,
@@ -760,10 +759,9 @@ function reactiveTargets(
 ): readonly string[] {
   if (selected !== undefined && selected.length > 0) return selected;
   const enemyId = responderId === 0 ? 1 : 0;
-  const anyKind = state.config?.responseWindowsOnAllActions === true;
   for (let i = state.stack.length - 1; i >= 0; i--) {
     const item = state.stack[i]!;
-    if (item.controllerId === enemyId && (anyKind || item.type === 'spell')) return [item.id];
+    if (item.controllerId === enemyId && item.type === 'spell') return [item.id];
   }
   return [];
 }

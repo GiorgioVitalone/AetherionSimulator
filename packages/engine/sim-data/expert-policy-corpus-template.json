@@ -65,7 +65,7 @@
     {
       "id": "expert-reaction-001",
       "family": "reaction",
-      "prompt": "Respond to a non-spell declaration or pass priority.",
+      "prompt": "Respond to the pending declaration or pass priority.",
       "stateArtifact": null,
       "legalActionKeys": [],
       "expertActionKey": null,

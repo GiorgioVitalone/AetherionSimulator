@@ -4,7 +4,11 @@
  * and sensible pendingChoice responses.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { chooseAction, chooseChoiceResponse } from '../../src/bot/heuristic.js';
+import {
+  chooseAction,
+  chooseChoiceResponse,
+  chooseReactiveAction,
+} from '../../src/bot/heuristic.js';
 import { runAbilityEffects } from '../../src/effects/effect-runner.js';
 import { CURRENT_GAME_CONFIG } from '../../src/rules/manifest.js';
 import {
@@ -24,6 +28,90 @@ function manaBank(n: number): ResourceCard[] {
     exhausted: false,
   }));
 }
+
+describe('heuristic bot — reactive decisions', () => {
+  beforeEach(() => resetInstanceCounter());
+
+  it('uses a valuable Flash against an attack but not a target-spell Counter', () => {
+    const flash = mockCard({
+      instanceId: 'FLASH',
+      cardType: 'S',
+      owner: 0,
+      cost: { mana: 1, energy: 0, flexible: 0 },
+      abilities: [
+        {
+          type: 'triggered',
+          trigger: { type: 'on_flash' },
+          effects: [
+            {
+              type: 'modify_stats',
+              target: { type: 'target_character', side: 'enemy' },
+              modifier: { atk: -3 },
+              duration: { type: 'until_end_of_turn' },
+            },
+          ],
+        },
+      ],
+    });
+    const counter = mockCard({
+      instanceId: 'COUNTER',
+      cardType: 'S',
+      owner: 0,
+      cost: { mana: 1, energy: 0, flexible: 0 },
+      abilities: [
+        {
+          type: 'triggered',
+          trigger: { type: 'on_counter' },
+          effects: [
+            { type: 'counter_spell', target: { type: 'target_spell' } },
+          ],
+        },
+      ],
+    });
+    const attacker = mockCard({
+      instanceId: 'ATTACKER',
+      owner: 1,
+      currentAtk: 5,
+      baseAtk: 5,
+    });
+    const state = mockGameState({
+      phase: 'action',
+      activePlayerIndex: 1,
+      config: CURRENT_GAME_CONFIG,
+      players: [
+        mockPlayerState(0, {
+          hand: [counter, flash],
+          resourceBank: manaBank(2),
+        }),
+        mockPlayerState(1, {
+          zones: zonesWithCards({ frontline: [attacker, null, null] }),
+        }),
+      ],
+      stack: [
+        {
+          id: 'attack-1',
+          type: 'attack',
+          sourceInstanceId: attacker.instanceId,
+          controllerId: 1,
+          effects: [],
+          targets: ['hero'],
+        },
+      ],
+      pendingPriority: {
+        type: 'priority',
+        toRespondPlayerId: 0,
+        window: 'attack',
+        baseStackItemId: 'attack-1',
+        passes: 0,
+      },
+    });
+
+    expect(chooseReactiveAction(state)).toMatchObject({
+      type: 'cast_spell',
+      cardInstanceId: 'FLASH',
+    });
+  });
+});
 
 describe('heuristic bot — strategy decisions', () => {
   beforeEach(() => resetInstanceCounter());
