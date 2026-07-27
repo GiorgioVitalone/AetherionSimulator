@@ -102,9 +102,16 @@ export function closeTerminalStack(
   reason = 'game ended before stack resolution',
 ): StackResult {
   if (state.winner === null) return { state, events: [] };
-  const events = [...state.stack]
-    .reverse()
-    .flatMap((item) => fizzledEvents(item, reason));
+  const interruptedItem =
+    state.pendingChoice?.stackResolutionContinuation?.item;
+  const unresolved = [
+    ...(interruptedItem === undefined ? [] : [interruptedItem]),
+    ...[...state.stack].reverse(),
+  ].filter(
+    (item, index, items) =>
+      items.findIndex((candidate) => candidate.id === item.id) === index,
+  );
+  const events = unresolved.flatMap((item) => fizzledEvents(item, reason));
   if (
     state.stack.length === 0 &&
     state.pendingPriority == null &&

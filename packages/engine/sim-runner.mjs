@@ -1636,7 +1636,10 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
     // Reactive priority window (Rulebook 14): drive the responder before the
     // active player resumes. Heuristic uses chooseReactiveAction; random passes
     // unless it holds a reactive option (then casts it with prob RANDOM_ACTION_PROB).
-    if (gs.pendingPriority != null) {
+    // A trigger/effect choice suspends the priority window. Drive that choice
+    // first; the authoritative boundary rejects priority commands while an
+    // interaction is unresolved.
+    if (gs.pendingPriority != null && gs.pendingChoice == null) {
       let react = null;
       try {
         const reactPolicy = policyForSeat(gs.pendingPriority.toRespondPlayerId);

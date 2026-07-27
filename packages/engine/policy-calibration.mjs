@@ -154,10 +154,11 @@ export function runPolicyCalibration() {
     },
     gamesPerPairing: 4,
     turnCap: 20,
-    // Fixed current-profile schedule with five observed legal reaction choices.
-    // Keep this directed seed instead of relying on incidental reaction draws in
-    // the baseline panel.
-    seedBase: 0x504f4c00,
+    // Fixed current-profile schedule with an observed legal two-option reaction
+    // decision under the current spell-only Counter semantics. Keep this
+    // directed seed instead of relying on incidental reaction draws in the
+    // baseline panel.
+    seedBase: 0x62000000,
     botPolicy: 'rollout',
     rollouts: 1,
     rolloutDepth: 1,

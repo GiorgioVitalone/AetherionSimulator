@@ -513,6 +513,22 @@ function transitionUnchecked(state: GameState, command: EngineCommand): Transiti
         );
       }
       case 'priority_pass': {
+        if (state.pendingChoice !== null) {
+          return {
+            status: 'rejected',
+            state,
+            violations: [
+              {
+                code: 'choice',
+                path: 'state.pendingChoice',
+                message:
+                  'Resolve the pending interaction before passing priority',
+              },
+            ],
+            events: [],
+            actionId,
+          };
+        }
         if (
           state.pendingPriority == null ||
           state.pendingPriority.baseStackItemId !== command.windowId

@@ -270,6 +270,15 @@ export function validateReactiveAction(
   windowId: string,
   action: PlayerAction,
 ): readonly RuleViolation[] {
+  if (state.pendingChoice !== null) {
+    return [
+      violation(
+        'choice',
+        'state.pendingChoice',
+        'Resolve the pending interaction before responding to the priority window',
+      ),
+    ];
+  }
   const pending = state.pendingPriority;
   if (pending == null) {
     return [violation('stale_window', 'windowId', 'No response window is open')];
