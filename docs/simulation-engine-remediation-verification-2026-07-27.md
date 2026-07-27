@@ -14,16 +14,16 @@ the required external approvals are absent.
 
 | Gate evidence | Result |
 |---|---|
-| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,367 tests passed, 1 skipped |
-| Current coverage | statements 90.56%, branches 84.58%, functions 95.07%, lines 90.56% |
-| Changed-code coverage | passed for 67 changed engine source files |
+| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,370 tests passed, 1 skipped |
+| Current coverage | statements 90.56%, branches 84.55%, functions 95.07%, lines 90.56% |
+| Changed-code coverage | passed for 4 changed engine source files |
 | Legacy compatibility suite | 11 files and 60 tests passed |
 | Client integration | typecheck, lint, 9 tests, and production Vite build passed |
 | Cards / engine / UI builds | direct package TypeScript builds passed |
 | Engine / client / UI lint | package-scoped lint passed |
 | Card semantic validator | 0 errors, 0 warnings |
 | Performance and semantic-equivalence budgets | passed |
-| Policy calibration | 211 scored decisions; all 9 required families; 0 infrastructure failures |
+| Policy calibration | 544 scored decisions; all 9 required families; 0 infrastructure failures |
 | Finding structural audit | all 167 findings and C-01–C-12 match the source review and plan |
 
 The package-manager wrapper in this environment still fails before root Turbo
@@ -37,24 +37,26 @@ with the exact required `pnpm` commands recorded by `ratification-status.mjs`.
 |---|---:|
 | Valid gameplay games | 10,080 / 10,080 |
 | Infrastructure failures | 0 |
-| Attempted / declared actions | 843,447 / 843,447 |
-| Resolved / explicitly fizzled | 843,444 / 3 |
+| Attempted / declared actions | 1,078,538 / 1,078,538 |
+| Resolved / explicitly fizzled | 1,078,536 / 2 |
 | Rejected / failed / pending | 0 / 0 / 0 |
 | Fresh-process replay checks | 100 / 100 |
 | Unique replay trace hashes | 100 |
-| Campaign run hash | `7e64d701c0452b16` |
-| Replay sample hash | `784c39c66ae4788eded8930d4ab11e133372dbe99c5829e743d24530e9e8d572` |
+| Campaign run hash | `0c39c8891bc2de5c` |
+| Replay sample hash | `550375df13ad4a958cdc9890ae9045b864352272c9ec58ed42bf7587fd87954b` |
 
-The campaign hash changed from the earlier local diagnostic run solely because
-the current study/replay provenance contract now binds the executable harness
-and bot implementation. The gameplay counts and action lifecycle totals are
-unchanged.
+The first follow-up campaign exposed 283 invariant failures: bounce reused a
+destruction-only destination helper, so a Volatile character could be both
+exiled and returned to hand. Bounce now removes the character without applying
+Volatile's destruction replacement. A directed regression, an 840-game
+reproduction panel, and the full campaign all complete without infrastructure
+failures.
 
 ## Policy calibration
 
 The diagnostic heuristic-versus-rollout corpus contains:
 
-- 211 scored runtime decisions;
+- 544 scored runtime decisions;
 - ability, choice, combat, development, equipment, movement, reaction,
   resource, and transform families;
 - explicit outcome search for proactive actions, priority responses, mulligans,
@@ -65,6 +67,16 @@ The diagnostic heuristic-versus-rollout corpus contains:
 
 The policy release gate remains closed because the rules and study artifacts are
 diagnostic and the independently expert-labeled corpus is not yet supplied.
+
+The follow-up action-mix audit also corrected a timing error in the
+authoritative action surface: movement and ordinary Trigger/Ultimate activation
+are Strategy actions, while proactive Flash remains available in Action. Under
+the corrected current profile, the 48-game heuristic diagnostic selected 458
+movements and 780 activations on the committed pool. Equipment removal remains
+implemented and tested, but the pool contains no harmful equipment for the
+heuristic to remove; zero selections are therefore not evidence of an
+unreachable action class. These are reachability diagnostics, not balance
+estimates.
 
 ## Closure status
 

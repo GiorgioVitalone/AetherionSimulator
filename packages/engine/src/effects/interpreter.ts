@@ -28,7 +28,10 @@ import {
   removeCardFromState,
   exileCardFromState,
 } from './state-helpers.js';
-import { isExiledOnDestruction } from './destruction-destination.js';
+import {
+  detachEquipmentForDiscard,
+  isExiledOnDestruction,
+} from './destruction-destination.js';
 import {
   executeReturnFromDiscard,
   executeSearchDeck,
@@ -56,6 +59,7 @@ import { hasEffectiveTrait, snapshotCard } from '../selectors/card-semantics.js'
 import { GuardExhaustionError } from '../errors/engine-errors.js';
 import { attemptDraw } from './draw-service.js';
 import { parseHeroTargetId } from '../selectors/hero-identity.js';
+import { expireInactiveSourceDurations } from '../runtime/duration-lifecycle.js';
 
 function unchanged(state: GameState): EffectResult {
   return { newState: state, events: [] };
@@ -756,34 +760,43 @@ function executeBounce(
       cardDefId: card.cardDefId,
       playerId: card.owner,
     });
-    // removeCardFromState sends the holder (and, separately, its detached equipment)
-    // to the discard pile. For a bounce the holder belongs in HAND, not discard, so
-    // pull it back out; the detached equipment stays in discard (Rulebook 13).
-    currentState = removeCardFromState(currentState, targetId);
-    if (!card.isToken) {
-      const ownerState = currentState.players[card.owner];
-      const newPlayers = [...currentState.players] as [
-        (typeof currentState.players)[0],
-        (typeof currentState.players)[1],
-      ];
-      newPlayers[card.owner] = {
-        ...ownerState,
-        discardPile: ownerState.discardPile.filter((c) => c.instanceId !== card.instanceId),
-        hand: [...ownerState.hand, resetCard(card)],
-      };
-      currentState = { ...currentState, players: newPlayers };
-      if (card.equipment !== null) {
-        events.push({
-          type: 'CARD_DESTROYED',
-          cardInstanceId: card.equipment.instanceId,
-          cardDefId: card.equipment.cardDefId,
-          cause: 'effect',
-          playerId: card.owner,
-          lastKnownCard: snapshotCard(card.equipment),
-        });
-      }
+    // Bounce is not destruction. In particular, Volatile changes only the
+    // destination of a destroyed character; it must not also leave an exile
+    // record when that character is returned to hand.
+    const ownerState = currentState.players[card.owner];
+    const removed = removeFromZone(ownerState.zones, targetId);
+    if (removed.removed === null) continue;
+    const split = detachEquipmentForDiscard(removed.removed);
+    const holder = split?.holder ?? removed.removed;
+    const newPlayers = [...currentState.players] as [
+      (typeof currentState.players)[0],
+      (typeof currentState.players)[1],
+    ];
+    newPlayers[card.owner] = {
+      ...ownerState,
+      zones: removed.zones,
+      ...(holder.isToken
+        ? {}
+        : { hand: [...ownerState.hand, resetCard(holder)] }),
+      ...(split === null
+        ? {}
+        : { discardPile: [...ownerState.discardPile, split.equipment] }),
+    };
+    currentState = expireInactiveSourceDurations({
+      ...currentState,
+      players: newPlayers,
+    });
+    if (card.equipment !== null) {
+      events.push({
+        type: 'CARD_DESTROYED',
+        cardInstanceId: card.equipment.instanceId,
+        cardDefId: card.equipment.cardDefId,
+        cause: 'effect',
+        playerId: card.owner,
+        lastKnownCard: snapshotCard(card.equipment),
+      });
     }
-    // Tokens are removed from game when bounced
+    // Tokens are removed from the game when bounced.
   }
   return { newState: currentState, events };
 }

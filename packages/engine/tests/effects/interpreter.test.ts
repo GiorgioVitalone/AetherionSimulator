@@ -400,6 +400,39 @@ describe('Effect Interpreter', () => {
       expect(result.newState.players[1]!.discardPile).toHaveLength(0);
     });
 
+    it('returns a Volatile character to hand without creating an exile record', () => {
+      const card = mockCard({
+        owner: 1,
+        isToken: false,
+        grantedTraits: [{
+          trait: 'volatile',
+          sourceInstanceId: 'source',
+          duration: { type: 'permanent' },
+        }],
+      });
+      const zones = deployToZone(emptyZones(), card, 'frontline');
+      const state = mockGameState({
+        players: [
+          mockPlayerState(0),
+          mockPlayerState(1, { zones }),
+        ],
+      });
+
+      const result = executeEffect(
+        state,
+        {
+          type: 'bounce',
+          target: { type: 'all_characters', side: 'enemy' },
+        },
+        ctx('src', 0),
+      );
+
+      expect(result.newState.players[1]!.zones.frontline[0]).toBeNull();
+      expect(result.newState.players[1]!.hand).toHaveLength(1);
+      expect(result.newState.players[1]!.hand[0]!.instanceId).toBe(card.instanceId);
+      expect(result.newState.players[1]!.exile).toHaveLength(0);
+    });
+
     it('should send equipment to discard when bouncing equipped card', () => {
       const equipment = mockCard({ name: 'Sword', cardType: 'E' as any, owner: 1, isToken: false });
       const card = mockCard({

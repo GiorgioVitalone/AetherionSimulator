@@ -100,7 +100,6 @@ export function computeAvailableActions(state: GameState): AvailableActions {
   const opponent = state.players[opponentIndex];
   const isStrategy = state.phase === 'strategy';
   const isAction = state.phase === 'action';
-  const authoritative = state.config?.authoritativeTransitions === true;
   // RULES-ACCURACY FIX (config.transformAtStartOfTurn): the engine machine
   // pauses in a start-of-turn transform window (phase still 'upkeep') only
   // when this flag is ON — see game-machine.ts's startOfTurnTransform state.
@@ -126,9 +125,12 @@ export function computeAvailableActions(state: GameState): AvailableActions {
     canAttachEquipment: isStrategy ? computeEquipOptions(player, state) : [],
     canRemoveEquipment: isStrategy ? computeRemoveEquipmentOptions(player) : [],
     canTransferEquipment: isStrategy ? computeTransferEquipmentOptions(player, state) : [],
-    canMove: (authoritative ? isAction : isStrategy) ? computeMoveOptions(player) : [],
-    canActivateAbility:
-      (authoritative ? isAction : isStrategy) ? computeActivateOptions(player, state) : [],
+    // Rulebook §§8–9: ordinary movement and Trigger/Ultimate activation are
+    // Strategy actions. Counter/Flash reactions use computeReactiveActions
+    // during priority windows; proactive Flash spells remain available in the
+    // Action phase through canCastSpell above.
+    canMove: isStrategy ? computeMoveOptions(player) : [],
+    canActivateAbility: isStrategy ? computeActivateOptions(player, state) : [],
     canAttack: isAction ? computeAttackOptions(player, opponent, state) : [],
     canDiscardForEnergy: isStrategy && computeCanDiscardForEnergy(player, state),
     canTransform:

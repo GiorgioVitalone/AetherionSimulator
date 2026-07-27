@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { chooseAction } from '../../src/bot/heuristic.js';
 import { scoreSpell } from '../../src/bot/spell-eval.js';
+import { CURRENT_GAME_CONFIG } from '../../src/rules/manifest.js';
 import { executePlayerAction } from '../../src/state-machine/actions.js';
 import {
   mockCard,
@@ -90,6 +91,44 @@ describe('heuristic bot — cast_spell', () => {
     // No enemy body: destroy auto-resolves to nothing, so the spell scores 0 and
     // the bot should not cast it (ends the phase instead).
     expect(chooseAction(state)).toBeNull();
+  });
+
+  it('casts a worthwhile Flash spell proactively during the current Action phase', () => {
+    const flash = mockCard({
+      instanceId: 'FLASH',
+      cardType: 'S',
+      name: 'Flash Burn',
+      cost: { mana: 1, energy: 0, flexible: 0 },
+      abilities: [
+        {
+          type: 'triggered',
+          trigger: { type: 'on_flash' },
+          effects: [
+            {
+              type: 'deal_damage',
+              amount: { type: 'fixed', value: 2 },
+              target: { type: 'hero', side: 'enemy' },
+            },
+          ],
+        },
+      ],
+    });
+    const state = mockGameState({
+      phase: 'action',
+      config: CURRENT_GAME_CONFIG,
+      players: [
+        mockPlayerState(0, {
+          hand: [flash],
+          resourceBank: manaBank(1),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+
+    expect(chooseAction(state)).toMatchObject({
+      type: 'cast_spell',
+      cardInstanceId: 'FLASH',
+    });
   });
 });
 

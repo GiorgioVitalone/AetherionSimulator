@@ -16,7 +16,7 @@
 // kill only loses the in-flight chunk. Each chunk uses a distinct seedBase (so games
 // differ across chunks) and its game ids are offset to stay globally unique.
 //
-// Usage: node decision-datagen.mjs [totalGamesPerPairing=4] [out.ndjson] [chunkGpp=25]
+// Usage: node decision-datagen.mjs [totalGamesPerPairing=4] [out.ndjson] [chunkGpp=25] [--smoke]
 import { writeFileSync, appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { FEATURE_SCHEMA_VERSION, FEATURE_LENGTH } from './dist/index.js';
@@ -29,6 +29,7 @@ const { runSimParallel } = await import(pathToFileURL(ENGINE + 'sim-parallel.mjs
 const totalGpp = +(process.argv[2] || 4);
 const outPath = process.argv[3] || 'decision-log.ndjson';
 const chunkGpp = +(process.argv[4] || 25); // games/pairing per chunk — bounds peak memory
+const smokeMode = process.argv[5] === '--smoke';
 const BASE_SEED = 800000;
 
 // Standard rule flags (copied from t2-gate.mjs's RULES block).
@@ -46,7 +47,16 @@ const override = process.env.DATAGEN_CONFIG_OVERRIDE
   : {};
 const baseConfig = {
   ...RULES,
-  botPolicy: 'rollout', rollouts: 8, rolloutDepth: 3, maxCandidates: 8,
+  ...(smokeMode
+    ? {
+        turnCap: 10,
+        matchups: [{ p0Deck: 'Radiant', p1Deck: 'Onyx' }],
+      }
+    : {}),
+  botPolicy: 'rollout',
+  rollouts: smokeMode ? 1 : 8,
+  rolloutDepth: smokeMode ? 1 : 3,
+  maxCandidates: smokeMode ? 3 : 8,
   candidateGen: 'full', playoutBackend: 'snapshot', rolloutPlayout: 'heuristic',
   collectDecisionLog: true,
   decks: { Radiant: 'Radiant', Verdant: 'Verdant', Onyx: 'Onyx', Sapphire: 'Sapphire' },
@@ -63,7 +73,10 @@ let doneGpp = 0, chunk = 0, gameOffset = 0, totalRows = 0;
 const t0 = Date.now();
 while (doneGpp < totalGpp) {
   const gpp = Math.min(chunkGpp, totalGpp - doneGpp);
-  const result = await runSimParallel({ ...baseConfig, gamesPerPairing: gpp, seedBase: BASE_SEED + chunk }, 8);
+  const result = await runSimParallel(
+    { ...baseConfig, gamesPerPairing: gpp, seedBase: BASE_SEED + chunk },
+    smokeMode ? 1 : 8,
+  );
   const rows = result.decisionLog || [];
   if (rows.length) {
     const lines = rows.map(r => JSON.stringify({

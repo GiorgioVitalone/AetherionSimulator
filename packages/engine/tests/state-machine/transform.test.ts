@@ -237,7 +237,7 @@ describe('hero activated abilities are usable in the Strategy Phase', () => {
     const refreshed = refreshCards(state);
     expect(refreshed.players[0].hero.transformedThisTurn).toBe(false);
     expect(
-      computeAvailableActions({ ...refreshed, phase: 'action' }).canActivateAbility,
+      computeAvailableActions({ ...refreshed, phase: 'strategy' }).canActivateAbility,
     ).toEqual([
       expect.objectContaining({
         cardInstanceId: 'hero_999',

@@ -114,11 +114,14 @@
       "workPackage": "WP-02/WP-14",
       "tests": [
         "packages/engine/tests/transitions/transition.test.ts",
-        "packages/engine/tests/actions/enumerate-actions.test.ts"
+        "packages/engine/tests/actions/enumerate-actions.test.ts",
+        "packages/engine/tests/bot/heuristic.test.ts",
+        "packages/engine/tests/bot/spell-casting.test.ts"
       ],
       "implementationChanges": [
         "packages/engine/src/actions/available-actions.ts",
-        "packages/engine/src/actions/enumerate-actions.ts"
+        "packages/engine/src/actions/enumerate-actions.ts",
+        "packages/engine/src/transitions/validation.ts"
       ]
     },
     "RULE-03": {
@@ -205,8 +208,14 @@
     "RULE-12": {
       "status": "evidence-green",
       "workPackage": "WP-11",
-      "tests": ["packages/engine/tests/effects/equipment-wave8.test.ts"],
-      "implementationChanges": ["packages/engine/src/state-machine/actions.ts"]
+      "tests": [
+        "packages/engine/tests/effects/equipment-wave8.test.ts",
+        "packages/engine/tests/effects/interpreter.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/state-machine/actions.ts",
+        "packages/engine/src/effects/interpreter.ts"
+      ]
     },
     "RULE-13": {
       "status": "evidence-green",
@@ -788,11 +797,13 @@
       "tests": [
         "packages/engine/tests/actions/discard-for-energy.test.ts",
         "packages/engine/tests/combat/volatile-exile.test.ts",
+        "packages/engine/tests/effects/interpreter.test.ts",
         "packages/engine/tests/invariants/game-state-invariants.test.ts"
       ],
       "implementationChanges": [
         "packages/engine/src/types/game-state.ts",
-        "packages/engine/src/effects/state-helpers.ts"
+        "packages/engine/src/effects/state-helpers.ts",
+        "packages/engine/src/effects/interpreter.ts"
       ]
     },
     "FID-09": {
@@ -1007,8 +1018,17 @@
     "PLAY-02": {
       "status": "evidence-green",
       "workPackage": "WP-02/WP-11/WP-14",
-      "tests": ["packages/engine/tests/actions/enumerate-actions.test.ts"],
-      "implementationChanges": ["packages/engine/src/actions/enumerate-actions.ts"]
+      "tests": [
+        "packages/engine/tests/actions/enumerate-actions.test.ts",
+        "packages/engine/tests/bot/heuristic.test.ts",
+        "packages/engine/tests/bot/spell-casting.test.ts",
+        "packages/engine/tests/transitions/transition.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/actions/enumerate-actions.ts",
+        "packages/engine/src/bot/heuristic.ts"
+      ]
     },
     "PLAY-04": {
       "status": "evidence-green",
@@ -1027,9 +1047,15 @@
       "workPackage": "WP-02/WP-14",
       "tests": [
         "packages/engine/tests/bot/heuristic.test.ts",
-        "packages/engine/tests/bot/heuristic-vs-random.test.ts"
+        "packages/engine/tests/bot/heuristic-vs-random.test.ts",
+        "packages/engine/tests/bot/spell-casting.test.ts",
+        "packages/engine/tests/transitions/transition.test.ts"
       ],
-      "implementationChanges": ["packages/engine/src/bot/heuristic.ts"]
+      "implementationChanges": [
+        "packages/engine/src/actions/available-actions.ts",
+        "packages/engine/src/bot/heuristic.ts",
+        "packages/engine/src/transitions/validation.ts"
+      ]
     },
     "BOT-02": {
       "status": "evidence-green",

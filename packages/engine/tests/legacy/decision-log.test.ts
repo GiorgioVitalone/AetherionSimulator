@@ -203,25 +203,12 @@ d('decision-datagen.mjs (smoke)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'decision-datagen-'));
     const outPath = join(dir, 'decision-log.ndjson');
     try {
-      // Async spawn, NOT execFileSync: a sync wait starves the vitest worker's
-      // event loop past its 60s RPC timeout — "Timeout calling onTaskUpdate"
-      // fails the run with zero test failures. The override shrinks the teacher
-      // config to a tiny pass: the full config (10 pairings, deep rollouts)
-      // runs many minutes, far past a smoke budget.
-      await execFileAsync('node', [datagenPath, '1', outPath, '1'], {
+      // Exercise the streaming/NDJSON contract with bounded search settings.
+      // The production defaults intentionally remain search-heavy.
+      await execFileAsync('node', [datagenPath, '1', outPath, '1', '--smoke'], {
         cwd: join(here, '..', '..'),
-        timeout: 120000,
+        timeout: 30000,
         maxBuffer: 32 * 1024 * 1024,
-        env: {
-          ...process.env,
-          DATAGEN_CONFIG_OVERRIDE: JSON.stringify({
-            decks: { Onyx: 'Onyx', Radiant: 'Radiant' },
-            turnCap: 20,
-            rollouts: 2,
-            rolloutDepth: 1,
-            maxCandidates: 5,
-          }),
-        },
       });
       const lines = readFileSync(outPath, 'utf8').trim().split('\n');
       expect(lines.length).toBeGreaterThan(1);
@@ -240,5 +227,5 @@ d('decision-datagen.mjs (smoke)', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 150000);
+  }, 45000);
 });

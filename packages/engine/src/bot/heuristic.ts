@@ -1167,6 +1167,24 @@ function chooseCombatAction(
 ): PlayerAction | null {
   const opponent = state.players[state.activePlayerIndex === 0 ? 1 : 0];
   const faceWeight = faceWeightFor(state.config, state.activePlayerIndex);
+  const flash = bestSpell(
+    player,
+    opponent,
+    acts,
+    gameplanForSeat(state.config, state.activePlayerIndex),
+    isFairPilot(state.config),
+  );
+
+  // Flash spells are legal proactively in the Action phase. Use worthwhile
+  // removal before combat changes its targets, and use other positive-value
+  // Flash effects before choosing an attack.
+  if (
+    flash !== null &&
+    ((flash.score.isRemoval && biggestEnemyThreat(opponent) >= REMOVAL_THREAT) ||
+      flash.score.value >= SPELL_THRESHOLD)
+  ) {
+    return flash.action;
+  }
 
   // Score every legal attack across all ready bodies, then take the single
   // best net-positive one. No target is forced: a body that can only make a

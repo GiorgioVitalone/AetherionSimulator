@@ -55,11 +55,55 @@ describe('heuristic bot — strategy decisions', () => {
       hero: mockHero({ currentLp: 25 }),
       zones: zonesWithCards({ frontline: [attacker, null, null] }),
     });
-    const state = mockGameState({ phase: 'strategy', players: [p0, mockPlayerState(1)] });
+    const state = mockGameState({
+      phase: 'strategy',
+      config: CURRENT_GAME_CONFIG,
+      players: [p0, mockPlayerState(1)],
+    });
     const action = chooseAction(state);
     expect(action).not.toBeNull();
     expect(action!.type).toBe('move');
     expect((action as { toZone: string }).toZone).toBe('high_ground');
+  });
+
+  it('activates a beneficial ability during Strategy under the current rules', () => {
+    const source = mockCard({
+      instanceId: 'SOURCE',
+      summoningSick: false,
+      exhausted: false,
+      abilities: [
+        {
+          type: 'triggered',
+          trigger: {
+            type: 'activated',
+            cost: { mana: 0, energy: 0, flexible: 0 },
+          },
+          effects: [
+            {
+              type: 'draw_cards',
+              count: { type: 'fixed', value: 1 },
+              player: 'allied',
+            },
+          ],
+        },
+      ],
+    });
+    const state = mockGameState({
+      phase: 'strategy',
+      config: CURRENT_GAME_CONFIG,
+      players: [
+        mockPlayerState(0, {
+          zones: zonesWithCards({ frontline: [source, null, null] }),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+
+    expect(chooseAction(state)).toEqual({
+      type: 'activate_ability',
+      cardInstanceId: 'SOURCE',
+      abilityIndex: 0,
+    });
   });
 
   it('removes equipment whose authored effects have negative utility', () => {

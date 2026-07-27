@@ -932,7 +932,7 @@ describe('authoritative transition boundary', () => {
     );
   });
 
-  it('offers movement and activated abilities only in Action under the current rules', () => {
+  it('offers movement and ordinary activated abilities only in Strategy under the current rules', () => {
     const body = mockCard({
       instanceId: 'body',
       summoningSick: false,
@@ -961,10 +961,10 @@ describe('authoritative transition boundary', () => {
       players: [player, mockPlayerState(1)],
     });
     const action = { ...strategy, phase: 'action' as const };
-    expect(computeAvailableActions(strategy).canMove).toHaveLength(0);
-    expect(computeAvailableActions(strategy).canActivateAbility).toHaveLength(0);
-    expect(computeAvailableActions(action).canMove).toHaveLength(1);
-    expect(computeAvailableActions(action).canActivateAbility).toHaveLength(1);
+    expect(computeAvailableActions(strategy).canMove).toHaveLength(1);
+    expect(computeAvailableActions(strategy).canActivateAbility).toHaveLength(1);
+    expect(computeAvailableActions(action).canMove).toHaveLength(0);
+    expect(computeAvailableActions(action).canActivateAbility).toHaveLength(0);
   });
 
   it('enforces typed X values in reactive windows', () => {

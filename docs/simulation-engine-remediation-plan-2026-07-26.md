@@ -296,7 +296,7 @@ The exact type may differ, but the distinctions may not collapse into “unchang
 | Equip | Equipment type, owner/controller, valid friendly Character target, slot/replacement rules, timing, cost/reduction |
 | Remove equipment | legal controller, attachment existence, cost/timing if any, discard/removal events rather than destruction |
 | Transfer equipment | legal source/target/controller, slot handling, once-per-turn cost reduction semantics, response timing |
-| Move | active controller, Action phase, readiness/exhaustion, summoning/status restrictions, move count, adjacency, destination capacity |
+| Move | active controller, Strategy phase, readiness/exhaustion, summoning/status restrictions, move count, adjacency, destination capacity |
 | Attack | active controller, Action phase, ready attacker, target matrix, Defender/Flying/Sniper/effective traits, declaration state |
 | Activate ability | stable ability ID, activated kind, legal phase/window, source zone/controller, readiness/exhaustion/summoning, costs, cooldown/once rules |
 | Discard for Energy | Strategy timing, active controller, hand membership, once-per-turn use, eligible card, exile destination |
@@ -1051,7 +1051,7 @@ planned → test-red → implemented → evidence-green → rules/quant review �
 | Finding | Primary package | Required remediation | Closure evidence |
 |---|---|---|---|
 | RULE-01 | WP-01/WP-02 | enforce full rulebook legality at execution | direct illegal-action matrix rejects without mutation |
-| RULE-02 | WP-02/WP-14 | offer ordinary action-phase activated abilities | action reachability and policy-selection scenarios |
+| RULE-02 | WP-02/WP-14 | offer ordinary Strategy activation plus explicitly timed Action/response abilities | action reachability and policy-selection scenarios |
 | RULE-03 | WP-02/WP-11 | enumerate and execute remove/transfer equipment | positive/negative engine and bot scenarios |
 | RULE-04 | WP-06 | centralize all draw attempts and deckout | source-parametrized empty/partial-deck tests |
 | RULE-05 | WP-06 | make “All” untargeted and simultaneous | Hexproof plus order-permutation scenarios |

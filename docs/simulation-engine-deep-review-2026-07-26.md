@@ -3,6 +3,13 @@
 **Review date:** 2026-07-26
 **Reviewed revision:** working tree based on commit `524d648`
 **Scope:** simulation engine, game-state machine, effect DSL/interpreter, combat, triggers, cards, bots, simulation runner, statistics, validation, tests, and supporting documentation
+
+> **Post-review authority correction (2026-07-27):** RULE-02 and BOT-01
+> originally described ordinary movement and Trigger/Ultimate activation as
+> Action-phase actions. The authoritative Rulebook places movement and ordinary
+> activation in Strategy; only attacks, explicitly Action-timed abilities, and
+> proactive Flash belong in Action. The finding IDs remain stable, but their
+> remediation evidence uses the Rulebook timing.
 **Mode:** review only; no engine or card implementation was changed
 
 ## Executive verdict
@@ -454,9 +461,13 @@ Even corrected p-values would only describe the encoded bot/deck/ruleset distrib
 
 See C-01. This affects phase permissions, card types, ownership, zones, activation timing, discard-for-energy, and transformation.
 
-### RULE-02 — Action-phase ability activation is missing from offered actions
+### RULE-02 — Activated-ability timing is not faithfully offered
 
-The rulebook permits attacks and ability activation in the Action phase. `computeAvailableActions` primarily offers attacks there, with limited Flash handling. Ordinary activated abilities are therefore strategically unavailable through the canonical action list even though direct execution may accept them.
+The rulebook permits ordinary Trigger/Ultimate activation during Strategy,
+explicitly Action-timed abilities during Action, and Counter/Flash activation in
+their response windows. The canonical action list and final validator must
+represent those distinct timing classes rather than accepting a direct action
+that the legal surface cannot offer.
 
 ### RULE-03 — Equipment removal and transfer are not generally enumerable
 
@@ -977,9 +988,12 @@ The reviewed `ruleset-v3.json` is not part of the Git index. Its results cannot 
 
 ## Findings
 
-### BOT-01 — Action-phase activated abilities are broadly ignored
+### BOT-01 — Legal activated abilities are broadly ignored
 
-The heuristic cannot choose what the enumerator does not provide, and its action-phase policy focuses on attacks.
+The heuristic cannot choose what the enumerator does not provide. Its policy
+must consume ordinary Strategy activations, explicitly Action-timed
+activations, and Counter/Flash response actions from the canonical legal
+surface.
 
 ### BOT-02 — Remove/transfer equipment are absent
 

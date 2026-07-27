@@ -144,7 +144,7 @@ export function runPolicyCalibration() {
       Sapphire: 'Sapphire',
       Onyx: 'Onyx',
     },
-    gamesPerPairing: 1,
+    gamesPerPairing: 4,
     turnCap: 20,
     seedBase: 0x504f4c5c,
     botPolicy: 'rollout',

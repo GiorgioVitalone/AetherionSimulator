@@ -123,10 +123,7 @@ function xMatches(
 }
 
 function explainProactiveMismatch(state: GameState, action: PlayerAction): RuleViolation {
-  const actionPhaseAction =
-    action.type === 'declare_attack' ||
-    (state.config?.authoritativeTransitions === true &&
-      (action.type === 'move' || action.type === 'activate_ability'));
+  const actionPhaseAction = action.type === 'declare_attack';
   const expectedPhase =
     actionPhaseAction
       ? 'action'
