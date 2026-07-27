@@ -28,9 +28,7 @@ export interface ExternalReviewManifest {
     readonly independentlyReviewedRuleOracle: true;
     readonly independentlyLabeledExpertCorpus: true;
   };
-  readonly requiredApprovals: Readonly<
-    Record<ExternalReviewRole, ExternalApproval | null>
-  >;
+  readonly requiredApprovals: Readonly<Record<ExternalReviewRole, ExternalApproval | null>>;
   readonly attestationText: string;
   readonly evidenceSources: Readonly<Record<string, string>>;
 }
@@ -48,10 +46,7 @@ export function validateExternalReviewCompletion(
   if (completion.status !== 'approved') {
     throw new TypeError('external review completion must be approved');
   }
-  if (
-    canonicalJson(reviewScope(completion)) !==
-    canonicalJson(reviewScope(requirements))
-  ) {
+  if (canonicalJson(reviewScope(completion)) !== canonicalJson(reviewScope(requirements))) {
     throw new TypeError(
       'external review completion does not match the tracked review requirements',
     );
@@ -59,9 +54,7 @@ export function validateExternalReviewCompletion(
   for (const role of REVIEW_ROLES) {
     const approval = completion.requiredApprovals[role];
     if (approval === null || !isApprovalRecord(approval)) {
-      throw new TypeError(
-        `external review completion approval ${role} is missing or malformed`,
-      );
+      throw new TypeError(`external review completion approval ${role} is missing or malformed`);
     }
   }
   return completion;
@@ -114,9 +107,7 @@ const EVIDENCE_SOURCE_IDS = [
   'workspaceLock',
 ] as const;
 
-export function validateExternalReviewManifest(
-  input: unknown,
-): ExternalReviewManifest {
+export function validateExternalReviewManifest(input: unknown): ExternalReviewManifest {
   const root = objectValue(input, 'external review manifest');
   if (
     root.schemaVersion !== 1 ||
@@ -144,38 +135,21 @@ export function validateExternalReviewManifest(
       throw new TypeError(`external review check ${check} must be required`);
     }
   }
-  const approvals = objectValue(
-    root.requiredApprovals,
-    'external review approvals',
-  );
-  if (
-    Object.keys(approvals).sort().join('|') !==
-    [...REVIEW_ROLES].sort().join('|')
-  ) {
+  const approvals = objectValue(root.requiredApprovals, 'external review approvals');
+  if (Object.keys(approvals).sort().join('|') !== [...REVIEW_ROLES].sort().join('|')) {
     throw new TypeError('external review roles are incomplete');
   }
-  if (
-    typeof root.attestationText !== 'string' ||
-    root.attestationText.length < 40
-  ) {
+  if (typeof root.attestationText !== 'string' || root.attestationText.length < 40) {
     throw new TypeError('external review attestation text is required');
   }
-  const evidenceSources = objectValue(
-    root.evidenceSources,
-    'external review evidence sources',
-  );
+  const evidenceSources = objectValue(root.evidenceSources, 'external review evidence sources');
   if (
-    Object.keys(evidenceSources).sort().join('|') !==
-      [...EVIDENCE_SOURCE_IDS].sort().join('|') ||
+    Object.keys(evidenceSources).sort().join('|') !== [...EVIDENCE_SOURCE_IDS].sort().join('|') ||
     EVIDENCE_SOURCE_IDS.some(
-      (id) =>
-        typeof evidenceSources[id] !== 'string' ||
-        evidenceSources[id].length === 0,
+      (id) => typeof evidenceSources[id] !== 'string' || evidenceSources[id].length === 0,
     )
   ) {
-    throw new TypeError(
-      'external review evidence sources must retain every decisive input',
-    );
+    throw new TypeError('external review evidence sources must retain every decisive input');
   }
   return input as ExternalReviewManifest;
 }
@@ -219,27 +193,15 @@ export function evaluateRatification(
     return approval === null ? [] : [approval.reviewer];
   });
   const reasons = [
-    ...(manifest.status !== 'approved'
-      ? [`external_review_status:${manifest.status}`]
-      : []),
+    ...(manifest.status !== 'approved' ? [`external_review_status:${manifest.status}`] : []),
     ...(!evidence.cleanCheckout ? ['checkout_dirty'] : []),
-    ...(!evidence.allSemanticInputsTracked
-      ? ['semantic_inputs_untracked']
-      : []),
+    ...(!evidence.allSemanticInputsTracked ? ['semantic_inputs_untracked'] : []),
     ...(!evidence.findingLedgerClosed ? ['finding_ledger_open'] : []),
-    ...(!evidence.criticalSummariesClosed
-      ? ['critical_summaries_open']
-      : []),
+    ...(!evidence.criticalSummariesClosed ? ['critical_summaries_open'] : []),
     ...(evidence.unresolvedRulesDecisions !== 0
-      ? [
-          `unresolved_rules_decisions:${String(
-            evidence.unresolvedRulesDecisions,
-          )}`,
-        ]
+      ? [`unresolved_rules_decisions:${String(evidence.unresolvedRulesDecisions)}`]
       : []),
-    ...(!/^[a-f0-9]{40}$/u.test(evidence.candidateCommit)
-      ? ['candidate_commit_invalid']
-      : []),
+    ...(!/^[a-f0-9]{40}$/u.test(evidence.candidateCommit) ? ['candidate_commit_invalid'] : []),
     ...(evidence.fullGateEvidenceHash === null ||
     !/^[a-f0-9]{64}$/u.test(evidence.fullGateEvidenceHash)
       ? ['full_gate_evidence_missing']
@@ -253,12 +215,8 @@ export function evaluateRatification(
     ...(evidence.ruleOracleStatus !== 'independently_approved'
       ? [`rule_oracle_status:${evidence.ruleOracleStatus}`]
       : []),
-    ...(evidence.independentRuleAuthor === null
-      ? ['independent_rule_author_missing']
-      : []),
-    ...(evidence.independentRuleReviewer === null
-      ? ['independent_rule_reviewer_missing']
-      : []),
+    ...(evidence.independentRuleAuthor === null ? ['independent_rule_author_missing'] : []),
+    ...(evidence.independentRuleReviewer === null ? ['independent_rule_reviewer_missing'] : []),
     ...(evidence.independentRuleAuthor !== null &&
     evidence.independentRuleAuthor === evidence.independentRuleReviewer
       ? ['rule_oracle_author_reviewer_not_independent']
@@ -266,9 +224,7 @@ export function evaluateRatification(
     ...(evidence.expertCorpusStatus !== 'independently_approved'
       ? [`expert_corpus_status:${evidence.expertCorpusStatus}`]
       : []),
-    ...(evidence.independentPolicyExpert === null
-      ? ['independent_policy_expert_missing']
-      : []),
+    ...(evidence.independentPolicyExpert === null ? ['independent_policy_expert_missing'] : []),
     ...(new Set(reviewerNames).size !== reviewerNames.length
       ? ['approval_reviewers_not_independent']
       : []),
@@ -277,10 +233,7 @@ export function evaluateRatification(
   return { releaseEligible: reasons.length === 0, reasons };
 }
 
-function objectValue(
-  value: unknown,
-  path: string,
-): Readonly<Record<string, unknown>> {
+function objectValue(value: unknown, path: string): Readonly<Record<string, unknown>> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(`${path} must be an object`);
   }
@@ -306,13 +259,13 @@ function canonicalJson(value: unknown): string {
     const record = value as Readonly<Record<string, unknown>>;
     return `{${Object.keys(record)
       .sort()
-      .map(
-        (key) =>
-          `${JSON.stringify(key)}:${canonicalJson(record[key])}`,
-      )
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
       .join(',')}}`;
   }
-  return JSON.stringify(value) ?? 'null';
+  // JSON.stringify's lib type claims `string`, but it returns undefined for
+  // undefined/function/symbol inputs — widen so the fallback is visibly needed.
+  const json = JSON.stringify(value) as string | undefined;
+  return json ?? 'null';
 }
 
 function isApprovalRecord(value: unknown): value is ExternalApproval {
