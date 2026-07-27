@@ -300,7 +300,7 @@ The exact type may differ, but the distinctions may not collapse into “unchang
 | Attack | active controller, Action phase, ready attacker, target matrix, Defender/Flying/Sniper/effective traits, declaration state |
 | Activate ability | stable ability ID, activated kind, legal phase/window, source zone/controller, readiness/exhaustion/summoning, costs, cooldown/once rules |
 | Discard for Energy | Strategy timing, active controller, hand membership, once-per-turn use, eligible card, exile destination |
-| Transform | Strategy timing, controller, all three eligibility predicates, once-per-game, current form, pending windows |
+| Transform | exclusive start-of-turn timing after Upkeep and before Strategy, controller, one of the three eligibility predicates, once-per-game, current form, pending windows |
 | Hand-size response | current pending interaction, exact cardinality, unique IDs, ownership and current hand membership |
 | Reactive action | current window ID, offered source/ability/targets, priority, cost, timing kind, stack legality |
 

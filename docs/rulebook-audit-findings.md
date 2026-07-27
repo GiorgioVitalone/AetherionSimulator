@@ -52,10 +52,11 @@ missing features, or bugs), tracked separately.
 - **Priority / reactions under-implemented** (book promises more than engine does): response windows open
   ONLY on spell casts (book: also attack/activate/equip/move); Flash unusable "at any time" (only inside
   an open spell window); Counter/Flash limited to spell cards in hand (book: any ability keyword).
-- **Turn/timing contradictions**: transformation is a Strategy-Phase action vs book's start-of-turn window;
-  "no Ultimate on transform turn" not enforced; hero abilities repeatable vs book's once-per-turn; End-Phase
-  sub-steps reversed (EOT effects before temp-removal + hand-discard); start-of-turn triggers fire before
-  Reserve energy.
+- **Turn/timing contradictions (resolved in the current profile)**: Reserve generation is an explicit
+  optional Upkeep-step-4 window; transformation uses the book's exclusive post-Upkeep start-of-turn
+  window; Ultimate is unavailable on the transform turn; Hero abilities are once per turn; End-Phase
+  sub-steps and start-of-turn triggers follow the Rulebook order. Historical behavior remains isolated
+  in the legacy profile.
 - **Logic bugs**: Flying's Defender-bypass is all-or-nothing in the mixed case (over-forces a plain
   Defender); `executeDeploy` lacks defense-in-depth zone re-validation; X-cost always pays Flexible
   (ignores specified resource); `RESOURCE_DECK_SIZE` constant was 15 vs 12 (fixed in A1).

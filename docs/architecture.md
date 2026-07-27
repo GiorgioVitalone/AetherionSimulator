@@ -4,7 +4,7 @@ This document describes the current engine implemented in
 `packages/engine`. It is maintained against the canonical
 [`current` rules manifest](../packages/engine/sim-data/ruleset-current.json).
 
-Status: **diagnostic candidate** (`4.0.0-diagnostic.1`). “Current” identifies
+Status: **diagnostic candidate** (`4.0.0-diagnostic.3`). “Current” identifies
 the only correctness profile; it does not mean externally ratified. Historical
 profiles are replay-only and are described in
 [Legacy simulation compatibility](legacy-simulation-compatibility.md).

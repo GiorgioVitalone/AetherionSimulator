@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "profileId": "current",
-  "semanticVersion": "4.0.0-diagnostic.1",
+  "semanticVersion": "4.0.0-diagnostic.3",
   "status": "diagnostic",
   "rulebook": {
     "path": "Documentation/game/Rulebook.md",
@@ -26,7 +26,7 @@
       "activatedAbilityLimit": "once_per_turn_unless_printed",
       "flashTiming": "any_time",
       "responseWindows": "all_declarations",
-      "transformTiming": "strategy",
+      "transformTiming": "start_of_turn_after_upkeep_before_strategy",
       "ultimateOnTransformTurn": "forbidden"
     },
     "effects": {
@@ -41,6 +41,7 @@
       "castObservedAt": "declaration",
       "attackExhaustionAt": "declaration",
       "equipmentCommitAt": "resolution",
+      "reserveGenerationTiming": "upkeep_step_4",
       "guardExhaustion": "engine_failure"
     },
     "statuses": {

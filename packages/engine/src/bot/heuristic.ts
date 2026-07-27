@@ -37,6 +37,17 @@ export function chooseAction(state: GameState): PlayerAction | null {
   const acts = computeAvailableActions(state);
   const player = state.players[state.activePlayerIndex];
 
+  // Current rules expose two serialized non-phase windows around the Upkeep
+  // boundary. They are real player decisions, so the normal pilot must act in
+  // them rather than blindly sending END_PHASE:
+  //   1. optional Reserve Energy Generation (Upkeep step 4);
+  //   2. optional Hero transformation (after Upkeep, before Strategy).
+  if (state.phase === 'upkeep') {
+    if (acts.canTransform && player.hero.transformData !== undefined) {
+      return { type: 'declare_transform' };
+    }
+    return chooseTapReserve(player, acts);
+  }
   if (state.phase === 'strategy') {
     return chooseStrategyAction(state, player, acts);
   }

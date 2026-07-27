@@ -9,7 +9,13 @@
 > Action-phase actions. The authoritative Rulebook places movement and ordinary
 > activation in Strategy; only attacks, explicitly Action-timed abilities, and
 > proactive Flash belong in Action. The finding IDs remain stable, but their
-> remediation evidence uses the Rulebook timing.
+> remediation evidence uses the Rulebook timing. RD-15 and the original
+> remediation table also mislabeled transformation as Strategy-timed; the
+> Rulebook instead provides an exclusive start-of-turn window after Upkeep and
+> before Strategy, which the corrected current profile enforces. Reserve Energy
+> is likewise an explicit optional action window during Upkeep step 4, not a
+> Strategy action; the corrected current profile serializes it before
+> start-of-turn triggers.
 **Mode:** review only; no engine or card implementation was changed
 
 ## Executive verdict

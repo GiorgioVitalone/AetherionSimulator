@@ -100,13 +100,20 @@ export function computeAvailableActions(state: GameState): AvailableActions {
   const opponent = state.players[opponentIndex];
   const isStrategy = state.phase === 'strategy';
   const isAction = state.phase === 'action';
+  const isReserveEnergyWindow =
+    state.phase === 'upkeep' &&
+    state.config?.reserveTapChoice === true &&
+    state.config.authoritativeTransitions === true &&
+    state.turnState.upkeepActionWindow === 'reserve_energy';
   // RULES-ACCURACY FIX (config.transformAtStartOfTurn): the engine machine
   // pauses in a start-of-turn transform window (phase still 'upkeep') only
   // when this flag is ON — see game-machine.ts's startOfTurnTransform state.
   // Absent/false ⇒ semantically invariant no-op (this is always false, since the
   // engine never pauses there when the flag is off).
   const isStartOfTurnWindow =
-    state.phase === 'upkeep' && state.config?.transformAtStartOfTurn === true;
+    state.phase === 'upkeep' &&
+    state.config?.transformAtStartOfTurn === true &&
+    state.turnState.upkeepActionWindow === 'transform';
   // FLASH-AT-WILL (config.flashAtWill — engine ticket Tier 3, part 1): Flash is
   // usable "at any time" per the Rulebook, not just proactively in Strategy.
   // Widens the ACTIVE player's proactive cast surface to the Flash-tagged
@@ -133,11 +140,19 @@ export function computeAvailableActions(state: GameState): AvailableActions {
     canActivateAbility: isStrategy ? computeActivateOptions(player, state) : [],
     canAttack: isAction ? computeAttackOptions(player, opponent, state) : [],
     canDiscardForEnergy: isStrategy && computeCanDiscardForEnergy(player, state),
+    // Current rules replace the historical Strategy timing with the exclusive
+    // start-of-turn window. Profiles without the timing flag retain the legacy
+    // Strategy surface for replay compatibility.
     canTransform:
-      (isStrategy || isStartOfTurnWindow) && canTransform(state),
-    canEndPhase: isStrategy || isAction || isStartOfTurnWindow,
+      (state.config?.transformAtStartOfTurn === true
+        ? isStartOfTurnWindow
+        : isStrategy) && canTransform(state),
+    canEndPhase:
+      isStrategy || isAction || isReserveEnergyWindow || isStartOfTurnWindow,
     canTapReserve:
-      isStrategy && state.config?.reserveTapChoice === true
+      (state.config?.authoritativeTransitions === true
+        ? isReserveEnergyWindow
+        : isStrategy) && state.config?.reserveTapChoice === true
         ? player.zones.reserve
             .filter(
               (c): c is NonNullable<typeof c> =>
@@ -644,7 +659,12 @@ export function canTransform(state: GameState): boolean {
   const opponent = state.players[state.activePlayerIndex === 0 ? 1 : 0];
   const hero = player.hero;
 
-  if (hero.transformed || !hero.canTransformThisGame || hero.transformedThisTurn) {
+  if (
+    hero.transformData === undefined ||
+    hero.transformed ||
+    !hero.canTransformThisGame ||
+    hero.transformedThisTurn
+  ) {
     return false;
   }
 

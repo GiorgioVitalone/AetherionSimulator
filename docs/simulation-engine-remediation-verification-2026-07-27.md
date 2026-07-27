@@ -14,16 +14,16 @@ the required external approvals are absent.
 
 | Gate evidence | Result |
 |---|---|
-| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,370 tests passed, 1 skipped |
-| Current coverage | statements 90.56%, branches 84.55%, functions 95.07%, lines 90.56% |
-| Changed-code coverage | passed for 4 changed engine source files |
+| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,374 tests passed, 1 skipped |
+| Current coverage | statements 90.62%, branches 84.61%, functions 95.10%, lines 90.62% |
+| Changed-code coverage | passed for 5 changed engine source files |
 | Legacy compatibility suite | 11 files and 60 tests passed |
 | Client integration | typecheck, lint, 9 tests, and production Vite build passed |
 | Cards / engine / UI builds | direct package TypeScript builds passed |
 | Engine / client / UI lint | package-scoped lint passed |
 | Card semantic validator | 0 errors, 0 warnings |
 | Performance and semantic-equivalence budgets | passed |
-| Policy calibration | 544 scored decisions; all 9 required families; 0 infrastructure failures |
+| Policy calibration | 549 scored decisions; all 9 required families; 0 infrastructure failures |
 | Finding structural audit | all 167 findings and C-01–C-12 match the source review and plan |
 
 The package-manager wrapper in this environment still fails before root Turbo
@@ -37,13 +37,13 @@ with the exact required `pnpm` commands recorded by `ratification-status.mjs`.
 |---|---:|
 | Valid gameplay games | 10,080 / 10,080 |
 | Infrastructure failures | 0 |
-| Attempted / declared actions | 1,078,538 / 1,078,538 |
-| Resolved / explicitly fizzled | 1,078,536 / 2 |
+| Attempted / declared actions | 1,075,293 / 1,075,293 |
+| Resolved / explicitly fizzled | 1,075,292 / 1 |
 | Rejected / failed / pending | 0 / 0 / 0 |
 | Fresh-process replay checks | 100 / 100 |
 | Unique replay trace hashes | 100 |
-| Campaign run hash | `0c39c8891bc2de5c` |
-| Replay sample hash | `550375df13ad4a958cdc9890ae9045b864352272c9ec58ed42bf7587fd87954b` |
+| Campaign run hash | `ed4066d3a7f95157` |
+| Replay sample hash | `cf9e5f6221ccd16b2167c6fb4f5bf225331fc9efb14f1c2fecf277ad1fdc446f` |
 
 The first follow-up campaign exposed 283 invariant failures: bounce reused a
 destruction-only destination helper, so a Volatile character could be both
@@ -56,7 +56,7 @@ failures.
 
 The diagnostic heuristic-versus-rollout corpus contains:
 
-- 544 scored runtime decisions;
+- 549 scored runtime decisions;
 - ability, choice, combat, development, equipment, movement, reaction,
   resource, and transform families;
 - explicit outcome search for proactive actions, priority responses, mulligans,
@@ -68,11 +68,14 @@ The diagnostic heuristic-versus-rollout corpus contains:
 The policy release gate remains closed because the rules and study artifacts are
 diagnostic and the independently expert-labeled corpus is not yet supplied.
 
-The follow-up action-mix audit also corrected a timing error in the
-authoritative action surface: movement and ordinary Trigger/Ultimate activation
-are Strategy actions, while proactive Flash remains available in Action. Under
-the corrected current profile, the 48-game heuristic diagnostic selected 458
-movements and 780 activations on the committed pool. Equipment removal remains
+The follow-up action-mix audit corrected two timing errors in the authoritative
+action surface. Movement and ordinary Trigger/Ultimate activation are Strategy
+actions, while proactive Flash remains available in Action. Reserve Energy is
+an explicit Upkeep-step-4 action window, and transformation is an exclusive
+post-Upkeep, pre-Strategy window. Under the corrected current profile, the
+48-game heuristic diagnostic selected 459 movements, 784 activations, 50
+Reserve taps, and 65 transformations. The full 10,080-game campaign exercised
+all four classes without rejected or failed actions. Equipment removal remains
 implemented and tested, but the pool contains no harmful equipment for the
 heuristic to remove; zero selections are therefore not evidence of an
 unreachable action class. These are reachability diagnostics, not balance

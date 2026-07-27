@@ -31,7 +31,7 @@ export interface RulesManifest {
       readonly activatedAbilityLimit: 'once_per_turn_unless_printed';
       readonly flashTiming: 'any_time';
       readonly responseWindows: 'all_declarations';
-      readonly transformTiming: 'strategy';
+      readonly transformTiming: 'start_of_turn_after_upkeep_before_strategy';
       readonly ultimateOnTransformTurn: 'forbidden';
     };
     readonly effects: {
@@ -46,6 +46,7 @@ export interface RulesManifest {
       readonly castObservedAt: 'declaration';
       readonly attackExhaustionAt: 'declaration';
       readonly equipmentCommitAt: 'resolution';
+      readonly reserveGenerationTiming: 'upkeep_step_4';
       readonly guardExhaustion: 'engine_failure';
     };
     readonly statuses: {
@@ -260,7 +261,7 @@ export function validateRulesManifest(value: unknown): RulesManifest {
       activatedAbilityLimit: 'once_per_turn_unless_printed',
       flashTiming: 'any_time',
       responseWindows: 'all_declarations',
-      transformTiming: 'strategy',
+      transformTiming: 'start_of_turn_after_upkeep_before_strategy',
       ultimateOnTransformTurn: 'forbidden',
     },
     'manifest.rules.actions',
@@ -283,6 +284,7 @@ export function validateRulesManifest(value: unknown): RulesManifest {
       castObservedAt: 'declaration',
       attackExhaustionAt: 'declaration',
       equipmentCommitAt: 'resolution',
+      reserveGenerationTiming: 'upkeep_step_4',
       guardExhaustion: 'engine_failure',
     },
     'manifest.rules.timing',

@@ -124,9 +124,22 @@ function xMatches(
 
 function explainProactiveMismatch(state: GameState, action: PlayerAction): RuleViolation {
   const actionPhaseAction = action.type === 'declare_attack';
+  const transformAtStartOfTurn =
+    action.type === 'declare_transform' &&
+    state.config?.transformAtStartOfTurn === true;
+  const reserveTapDuringUpkeep =
+    action.type === 'tap_reserve' &&
+    state.config?.reserveTapChoice === true &&
+    state.config.authoritativeTransitions === true;
   const expectedPhase =
     actionPhaseAction
       ? 'action'
+      : action.type === 'declare_transform'
+        ? transformAtStartOfTurn
+          ? 'the start-of-turn transform window'
+          : 'strategy'
+      : action.type === 'tap_reserve' && reserveTapDuringUpkeep
+        ? 'the Upkeep Reserve Energy window'
       : action.type === 'cast_spell' && state.config?.flashAtWill === true
         ? 'strategy or an allowed Flash window'
         : 'strategy';
@@ -134,8 +147,17 @@ function explainProactiveMismatch(state: GameState, action: PlayerAction): RuleV
     (actionPhaseAction && state.phase !== 'action') ||
     (!actionPhaseAction &&
       action.type !== 'cast_spell' &&
-      state.phase !== 'strategy' &&
-      !(action.type === 'declare_transform' && state.phase === 'upkeep')) ||
+      action.type !== 'declare_transform' &&
+      action.type !== 'tap_reserve' &&
+      state.phase !== 'strategy') ||
+    (action.type === 'declare_transform' &&
+      (state.phase !== (transformAtStartOfTurn ? 'upkeep' : 'strategy') ||
+        (transformAtStartOfTurn &&
+          state.turnState.upkeepActionWindow !== 'transform'))) ||
+    (action.type === 'tap_reserve' &&
+      (state.phase !== (reserveTapDuringUpkeep ? 'upkeep' : 'strategy') ||
+        (reserveTapDuringUpkeep &&
+          state.turnState.upkeepActionWindow !== 'reserve_energy'))) ||
     (action.type === 'cast_spell' && state.phase !== 'strategy' && state.phase !== 'action')
   ) {
     return violation(

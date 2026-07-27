@@ -122,7 +122,8 @@ describe('Turn Flow State Machine', () => {
       };
       const actor = createActor(gameMachine, { input: { gameState: state } });
       actor.start();
-      // Current rules expose the start-of-turn transformation window first.
+      // Current rules expose Reserve Energy, then transformation, before Strategy.
+      actor.send({ type: 'END_PHASE' });
       actor.send({ type: 'END_PHASE' });
       actor.send({ type: 'END_PHASE' });
       actor.send({ type: 'END_PHASE' });
@@ -139,6 +140,8 @@ describe('Turn Flow State Machine', () => {
         playerId: choice!.playerId,
         response: { selectedOptionIds: [choice!.options[0]!.id] },
       });
+      expect(actor.getSnapshot().value).toEqual({ playing: 'reserveEnergyChoice' });
+      actor.send({ type: 'END_PHASE' });
       expect(actor.getSnapshot().value).toEqual({ playing: 'startOfTurnTransform' });
       actor.send({ type: 'END_PHASE' });
       const resumed = actor.getSnapshot();

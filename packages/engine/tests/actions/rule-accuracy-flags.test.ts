@@ -6,9 +6,8 @@
  *     legacy End-of-Turn-Effects-first order.
  *   - startOfTurnTriggerAfterReserve — start-of-turn scheduled triggers fire
  *     AFTER Reserve Energy Generation instead of before.
- *   - transformAtStartOfTurn — opens a transform window right after Reserve
- *     Energy Generation, before Strategy (in addition to the Strategy-phase
- *     window).
+ *   - transformAtStartOfTurn — replaces Strategy-phase transformation with the
+ *     exclusive start-of-turn window after Reserve Energy Generation.
  *   - heroAbilitiesOncePerTurn — blanket once-per-turn lockout on Hero
  *     activated abilities only.
  */
@@ -205,10 +204,20 @@ describe('transformAtStartOfTurn knob', () => {
   });
 
   it('ON: computeAvailableActions offers canTransform during upkeep', () => {
-    const state = makeUpkeepState({ terminationMode: 'turn_cap', transformAtStartOfTurn: true });
+    const base = makeUpkeepState({
+      terminationMode: 'turn_cap',
+      transformAtStartOfTurn: true,
+    });
+    const state: GameState = {
+      ...base,
+      turnState: { ...base.turnState, upkeepActionWindow: 'transform' },
+    };
     const acts = computeAvailableActions(state);
     expect(acts.canTransform).toBe(true);
     expect(acts.canEndPhase).toBe(true);
+    expect(
+      computeAvailableActions({ ...state, phase: 'strategy' }).canTransform,
+    ).toBe(false);
   });
 
   it('OFF (default/absent): the machine skips straight to Strategy after Reserve Energy', () => {

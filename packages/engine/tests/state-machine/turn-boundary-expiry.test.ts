@@ -144,7 +144,7 @@ describe('eventful, pause-safe modifier expiry', () => {
     });
 
     const resumed = actor.getSnapshot();
-    expect(resumed.matches({ playing: 'startOfTurnTransform' })).toBe(true);
+    expect(resumed.matches({ playing: 'reserveEnergyChoice' })).toBe(true);
     expect(resumed.context.gameState.pendingChoice).toBeNull();
     expect(resumed.context.gameState.players[0].mainDeck).toHaveLength(
       initialMainCount - 1,
@@ -152,6 +152,13 @@ describe('eventful, pause-safe modifier expiry', () => {
     expect(resumed.context.gameState.players[0].resourceDeck).toHaveLength(
       initialResourceCount - 1,
     );
+    expect(resumed.context.gameState.turnState.upkeepActionWindow).toBe(
+      'reserve_energy',
+    );
+    actor.send({ type: 'END_PHASE' });
+    expect(
+      actor.getSnapshot().matches({ playing: 'startOfTurnTransform' }),
+    ).toBe(true);
   });
 
   it('pauses authoritative end expiry before passing the turn and resumes once', () => {

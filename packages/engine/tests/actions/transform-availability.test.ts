@@ -14,7 +14,18 @@ import type { Condition } from '../../src/types/conditions.js';
 // Rulebook standard gate (LP <= 10 / resource gap) is met. This isolates the new
 // termination-mode and printed-trigger availability paths.
 function healthyHeroOverrides(extra?: Partial<ReturnType<typeof mockHero>>) {
-  return { hero: mockHero({ currentLp: 25, ...extra }) };
+  return {
+    hero: mockHero({
+      currentLp: 25,
+      transformData: {
+        cardDefId: 999,
+        name: 'Transformed Hero',
+        lpDelta: 0,
+        abilities: [],
+      },
+      ...extra,
+    }),
+  };
 }
 
 const oneResource: readonly ResourceCard[] = [

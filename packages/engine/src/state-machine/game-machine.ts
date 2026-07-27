@@ -87,16 +87,44 @@ export const gameMachine = setup({
     },
     // RULES-ACCURACY FIX (config.transformAtStartOfTurn): gates entry into the
     // new startOfTurnTransform state (between Reserve Energy and Strategy).
-    // Absent/false ⇒ semantically invariant no-op — reserveEnergy always goes straight
-    // to strategy.
+    // Absent/false ⇒ semantically invariant no-op — the post-Upkeep transform
+    // window is skipped.
     transformAtStartOfTurnEnabled: ({ context }) =>
       context.gameState.config?.transformAtStartOfTurn === true,
+    reserveTapChoiceAtUpkeepEnabled: ({ context }) =>
+      context.gameState.config?.reserveTapChoice === true &&
+      context.gameState.config.authoritativeTransitions === true,
     authoritativeTransitionsEnabled: ({ context }) =>
       context.gameState.config?.authoritativeTransitions === true,
   },
   actions: {
     refreshAllCards: assign({
       gameState: ({ context }) => refreshCards(context.gameState),
+    }),
+    openReserveEnergyWindow: assign({
+      gameState: ({ context }) => ({
+        ...context.gameState,
+        turnState: {
+          ...context.gameState.turnState,
+          upkeepActionWindow: 'reserve_energy' as const,
+        },
+      }),
+    }),
+    openTransformWindow: assign({
+      gameState: ({ context }) => ({
+        ...context.gameState,
+        turnState: {
+          ...context.gameState.turnState,
+          upkeepActionWindow: 'transform' as const,
+        },
+      }),
+    }),
+    clearUpkeepActionWindow: assign({
+      gameState: ({ context }) => {
+        const turnState = { ...context.gameState.turnState };
+        delete turnState.upkeepActionWindow;
+        return { ...context.gameState, turnState };
+      },
     }),
     tickStatuses: assign(({ context }) => {
       const result = tickUpkeepStatuses(context.gameState);
@@ -759,7 +787,26 @@ export const gameMachine = setup({
         // draws (steps 2/3) and before the Strategy Phase.
         reserveEnergy: {
           entry: 'reserveEnergy',
-          always: { target: 'upkeepFixedTurnStart' },
+          always: [
+            {
+              target: 'reserveEnergyChoice',
+              guard: { type: 'reserveTapChoiceAtUpkeepEnabled' },
+            },
+            { target: 'upkeepFixedTurnStart' },
+          ],
+        },
+
+        reserveEnergyChoice: {
+          entry: 'openReserveEnergyWindow',
+          exit: 'clearUpkeepActionWindow',
+          on: {
+            PLAYER_ACTION: {
+              actions: 'applyPlayerAction',
+            },
+            END_PHASE: {
+              target: 'upkeepFixedTurnStart',
+            },
+          },
         },
 
         upkeepFixedTurnStart: {
@@ -844,6 +891,8 @@ export const gameMachine = setup({
         // entered when the flag is ON (see transformAtStartOfTurnEnabled
         // guard); OFF ⇒ this state is never reached (semantically invariant no-op).
         startOfTurnTransform: {
+          entry: 'openTransformWindow',
+          exit: 'clearUpkeepActionWindow',
           on: {
             PLAYER_ACTION: {
               actions: 'applyPlayerAction',

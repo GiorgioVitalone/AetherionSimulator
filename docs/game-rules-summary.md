@@ -5,7 +5,7 @@ This is an engine-facing quick reference. The complete source is
 machine settings are in
 [`ruleset-current.json`](../packages/engine/sim-data/ruleset-current.json).
 
-Status: **diagnostic candidate**, semantic version `4.0.0-diagnostic.1`.
+Status: **diagnostic candidate**, semantic version `4.0.0-diagnostic.3`.
 External rules ratification is still required before decision-grade balance
 claims.
 
@@ -20,11 +20,12 @@ claims.
 
 ## Turn sequence
 
-1. **Upkeep:** refresh eligible cards, process controller-owned status ticks,
-   reserve/resource steps, main draw, scheduled effects, and start triggers in
-   manifest order.
+1. **Upkeep:** refresh eligible cards, draw Resource and Main Deck cards when
+   required, expose optional Reserve generation as step 4, then resolve
+   start-of-turn triggers. The exclusive transformation window follows Upkeep
+   and precedes Strategy.
 2. **Strategy:** deploy characters, cast legal spells/equipment, move cards,
-   activate legal abilities, transform when eligible, and pass.
+    activate legal abilities, and pass.
 3. **Action:** declare attacks and other timing-permitted actions. All
    declarations can open response windows.
 4. **End:** emit turn-end observations, resolve scheduled work, remove temporary
@@ -51,7 +52,8 @@ printed owner even while attached.
 - Flexible payment is a player choice recorded at declaration.
 - Cost reductions cannot reduce a payable cost below 1.
 - X is tied to its printed resource component and the amount actually paid.
-- Reserve generation is an optional strain choice.
+- Reserve generation is an optional strain choice exposed only during Upkeep
+  step 4.
 - Resource kinds come from schema data, not card-name inference.
 
 Rejected declarations do not spend resources, exhaust sources, increment
@@ -112,8 +114,9 @@ match the recorded aura derivation at every stable boundary.
 
 ## Transformation and game end
 
-Transformation timing is Strategy. Hero activated abilities are once per turn
-unless printed otherwise, and an ultimate cannot be used on the turn its Hero
+Transformation is declared only at the start of the active player’s turn, after
+Upkeep and before Strategy. Hero activated abilities are once per turn unless
+printed otherwise, and an ultimate cannot be used on the turn its Hero
 transforms.
 
 Terminal gameplay reasons are normal win, concession, and deck exhaustion.

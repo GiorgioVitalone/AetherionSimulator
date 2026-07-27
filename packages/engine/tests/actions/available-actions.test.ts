@@ -373,6 +373,12 @@ describe('Available Actions', () => {
               transformedThisTurn: false,
               abilities: [],
               registeredTriggers: [],
+              transformData: {
+                cardDefId: 2,
+                name: 'Transformed Hero',
+                lpDelta: 0,
+                abilities: [],
+              },
             },
           }),
           mockPlayerState(1),

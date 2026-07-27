@@ -311,11 +311,11 @@ export interface GameConfig {
   /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: Reserve
    * Energy Generation happens AUTOMATICALLY at Upkeep for every eligible ready
    * Reserve character). Rulebook 8 step 4 says the active player MAY exhaust
-   * them — it is a choice. When true, the automatic upkeep generation is off and
-   * a `tap_reserve` player action (Strategy phase, per character) replaces it:
-   * same eligibility, same +1 temporary resource of the card's type, same
-   * all-abilities-disabled exhaustion until next Upkeep. Absent/false ⇒
-   * semantically invariant no-op. */
+   * them — it is a choice. When true, the automatic generation is replaced by
+   * an explicit action window during Upkeep step 4: the player chooses each tap,
+   * then ends the window. Authoritative profiles enforce that window;
+   * non-authoritative profiles retain the historical Strategy surface for
+   * replay compatibility. Absent/false ⇒ semantically invariant no-op. */
   readonly reserveTapChoice?: boolean;
   /** RULES CHANGE UNDER MEASUREMENT (§13m; default absent/false ⇒ tapping is
    * free). When true, generating Reserve Energy STRAINS the character: it takes
@@ -392,11 +392,11 @@ export interface GameConfig {
   readonly startOfTurnTriggerAfterReserve?: boolean;
   /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior:
    * transformation is only declarable during the Strategy Phase). When true,
-   * also opens a start-of-turn transform window — after Reserve Energy
-   * Generation, before Strategy — during which the active player may declare
-   * a transform (or end the window). All existing transform conditions
+   * replaces that timing with an exclusive start-of-turn transform window —
+   * after Reserve Energy Generation, before Strategy — during which the active
+   * player may declare a transform (or end the window). All transform conditions
    * (LP <= 10 / resource-deck-empty / deficit / printed trigger) are
-   * unchanged; only the timing window is widened. Absent/false ⇒
+   * unchanged. Absent/false ⇒
    * semantically invariant no-op. */
   readonly transformAtStartOfTurn?: boolean;
   /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: Hero
@@ -1452,6 +1452,11 @@ export interface ChoiceResolvedEvent {
 export interface TurnState {
   readonly discardedForEnergy: boolean;
   readonly firstPlayerFirstTurn: boolean;
+  /** Explicit authoritative sub-window inside Upkeep. The public transition
+   * boundary uses this marker to distinguish optional Reserve Energy Generation
+   * (step 4) from the later Hero transformation window. Absent means that no
+   * proactive Upkeep action is currently legal. */
+  readonly upkeepActionWindow?: 'reserve_energy' | 'transform';
   /** Precise gate for `resource_deck_empty_transform`: set at the active player's
    * Upkeep, BEFORE the resource draw, to whether their Resource Deck was already
    * empty (nothing to draw). Recorded ONLY under that termination mode; absent ≡

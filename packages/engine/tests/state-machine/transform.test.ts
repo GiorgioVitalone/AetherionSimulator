@@ -114,14 +114,19 @@ describe('transform eligibility (computeAvailableActions.canTransform)', () => {
   it('is allowed when LP <= 10', () => {
     const state = mockGameState({
       phase: 'strategy',
-      players: [mockPlayerState(0, { hero: mockHero({ currentLp: 10 }) }), mockPlayerState(1)],
+      players: [
+        mockPlayerState(0, {
+          hero: mockHero({ currentLp: 10, transformData: transformData() }),
+        }),
+        mockPlayerState(1),
+      ],
     });
     expect(computeAvailableActions(state).canTransform).toBe(true);
   });
 
   it('is allowed on a 5+ resource deficit with no characters in play', () => {
     const me = mockPlayerState(0, {
-      hero: mockHero({ currentLp: 25 }),
+      hero: mockHero({ currentLp: 25, transformData: transformData() }),
       resourceBank: [],
     });
     const opp = mockPlayerState(1, {
@@ -143,10 +148,64 @@ describe('transform eligibility (computeAvailableActions.canTransform)', () => {
     expect(computeAvailableActions(state).canTransform).toBe(false);
   });
 
-  it('rejects a fabricated current-rules transform and preserves the exact state', () => {
+  it('is disallowed when the Hero has no transformed-side data', () => {
     const state = mockGameState({
       phase: 'strategy',
+      players: [
+        mockPlayerState(0, { hero: mockHero({ currentLp: 5 }) }),
+        mockPlayerState(1),
+      ],
+    });
+    expect(computeAvailableActions(state).canTransform).toBe(false);
+  });
+
+  it('offers current-rules transformation only in the start-of-turn window', () => {
+    const hero = mockHero({
+      currentLp: 10,
+      transformData: transformData(),
+    });
+    const strategy = mockGameState({
+      phase: 'strategy',
       config: CURRENT_GAME_CONFIG,
+      players: [mockPlayerState(0, { hero }), mockPlayerState(1)],
+    });
+    const startOfTurn = {
+      ...strategy,
+      phase: 'upkeep' as const,
+      turnState: {
+        ...strategy.turnState,
+        upkeepActionWindow: 'transform' as const,
+      },
+    };
+
+    expect(computeAvailableActions(strategy).canTransform).toBe(false);
+    expect(computeAvailableActions(startOfTurn).canTransform).toBe(true);
+
+    const rejected = transition(strategy, {
+      type: 'player_action',
+      action: DO_TRANSFORM,
+    });
+    expect(rejected.status).toBe('rejected');
+    if (rejected.status !== 'rejected') throw new Error('expected phase rejection');
+    expect(rejected.violations[0]?.code).toBe('phase');
+
+    const resolved = transition(startOfTurn, {
+      type: 'player_action',
+      action: DO_TRANSFORM,
+    });
+    expect(resolved.status).toBe('resolved');
+    expect(resolved.state.players[0].hero.transformed).toBe(true);
+  });
+
+  it('rejects a fabricated current-rules transform and preserves the exact state', () => {
+    const state = mockGameState({
+      phase: 'upkeep',
+      config: CURRENT_GAME_CONFIG,
+      turnState: {
+        discardedForEnergy: false,
+        firstPlayerFirstTurn: false,
+        upkeepActionWindow: 'transform',
+      },
       players: [
         mockPlayerState(0, {
           hero: mockHero({
