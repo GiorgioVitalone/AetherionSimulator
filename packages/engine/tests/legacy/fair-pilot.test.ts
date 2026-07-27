@@ -61,16 +61,25 @@ d('fair-pilot opt-in flag (runSim)', () => {
     const r = {
       ...base,
       matchups: [{ p0Deck: 'Onyx', p1Deck: 'Radiant' }],
-      gamesPerPairing: 2,
+      // gpp 1 (not 2): the ON call must stay a <60s sync block — one rollout
+      // game already exercises many decisions, and the off/explicitFalse/on
+      // comparisons are run-vs-run, so no stored pin depends on the size.
+      gamesPerPairing: 1,
       botPolicy: 'rollout' as const,
       rollouts: 4,
       maxCandidates: 5,
       rolloutDepth: 2, // pin so the ON run stays fast (don't take the fair depth-0 default)
     };
+    // Yield between the sync sims: back-to-back they form one >60s event-loop
+    // block, which starves the vitest worker's RPC past its fixed 60s timeout
+    // (fatal unhandled error even when every assertion passes).
+    const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
     const off = runSim(r);
+    await tick();
     const explicitFalse = runSim({ ...r, fairPilot: false });
+    await tick();
     const on = runSim({ ...r, fairPilot: true });
     expect(explicitFalse.runHash).toBe(off.runHash);
     expect(on.runHash).not.toBe(off.runHash);
-  }, 60000);
+  }, 120000);
 });

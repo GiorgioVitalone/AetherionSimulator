@@ -93,6 +93,15 @@ describe('Game Flow Integration', () => {
         keep: true,
       });
     }
+    // Current setup then surfaces the explicit first-player choice (the random
+    // setup winner picks who goes first); resolve it to reach upkeep.
+    const firstPlayerChoice = states[states.length - 1]?.pendingChoice;
+    if (firstPlayerChoice?.type === 'choose_first_player') {
+      controller!.dispatch({
+        type: 'player_response',
+        response: { selectedOptionIds: [firstPlayerChoice.options[0]!.id] },
+      });
+    }
   }
 
   it('initializes a game in mulligan phase with two players', () => {
@@ -137,7 +146,9 @@ describe('Game Flow Integration', () => {
 
     keepBothOpeningHands(states);
 
-    // Current rules expose the start-of-turn transform window before Strategy.
+    // Current rules expose the Reserve Energy decision window, then the
+    // transform window, before Strategy (upkeep decision timing).
+    controller!.dispatch({ type: 'end_phase' });
     controller!.dispatch({ type: 'end_phase' });
 
     // End strategy phase → should go to action phase

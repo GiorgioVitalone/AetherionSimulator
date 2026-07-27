@@ -53,13 +53,17 @@ d('botPolicySeat (per-seat bot policy)', () => {
   it('uniform botPolicySeat folds into botPolicy: same runHash as monolithic botPolicy', async () => {
     const { runSim } = (await import(runnerPath)) as { runSim: (c: unknown) => RunSimResult };
 
+    // Yield between the sync sims so one event-loop block stays under vitest's
+    // fixed 60s worker-RPC timeout (fatal unhandled error otherwise).
+    const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
     const monolithic = runSim({ ...TINY_ROLLOUT_BASE, botPolicy: 'rollout' });
+    await tick();
     const perSeat = runSim({ ...TINY_ROLLOUT_BASE, botPolicySeat: { 0: 'rollout', 1: 'rollout' } });
 
     expect(perSeat.config).not.toHaveProperty('botPolicySeat');
     expect(perSeat.config.botPolicy).toBe('rollout');
     expect(perSeat.runHash).toBe(monolithic.runHash);
-  }, 30000);
+  }, 90000);
 
   it('unset botPolicySeat is omitted from the resolved (hashed) config', async () => {
     const { runSim } = (await import(runnerPath)) as { runSim: (c: unknown) => RunSimResult };
@@ -69,7 +73,7 @@ d('botPolicySeat (per-seat bot policy)', () => {
 
     const after = runSim(TINY_BASE);
     expect(after.runHash).toBe(before.runHash);
-  }, 30000);
+  }, 90000);
 
   it('mixed botPolicySeat ({0: heuristic, 1: random}) runs without error', async () => {
     const { runSim } = (await import(runnerPath)) as { runSim: (c: unknown) => RunSimResult };
@@ -88,5 +92,5 @@ d('botPolicySeat (per-seat bot policy)', () => {
     // policy) — proving each seat actually reads its OWN policy.
     const allHeuristic = runSim(TINY_BASE);
     expect(mixed.runHash).not.toBe(allHeuristic.runHash);
-  }, 30000);
+  }, 90000);
 });
