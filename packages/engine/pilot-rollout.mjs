@@ -171,6 +171,17 @@ export function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn,
   while (steps++ < stepCap) {
     const snap = fork.getSnapshot();
     if (snap.status === 'done') break;
+    // Authoritative rejections/failures preserve the submitted GameState. A
+    // playout cannot make progress from that unchanged leaf and would otherwise
+    // repeat the same command until stepCap. Stop now: this returns the exact
+    // state (and therefore score) the no-op loop would eventually return.
+    const lastTransition = snap.context.lastTransition;
+    if (
+      lastTransition?.status === 'rejected' ||
+      lastTransition?.status === 'failed'
+    ) {
+      break;
+    }
     gs = snap.context.gameState;
     if (gs.winner != null) break;
     if (gs.turnNumber > turnCap) break;
