@@ -1,7 +1,7 @@
 # Simulation Engine Remediation Verification
 
 - Verification date: 2026-07-27
-- Parent commit: `6d8b1f8`
+- Parent commit: `e949627`
 - Rules profile: `current`
 - Artifact classification: **diagnostic**
 
@@ -14,8 +14,8 @@ the required external approvals are absent.
 
 | Gate evidence | Result |
 |---|---|
-| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,377 tests passed, 1 skipped |
-| Current coverage | statements 90.58%, branches 84.55%, functions 95.11%, lines 90.58% |
+| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,378 tests passed, 1 skipped |
+| Current coverage | statements 90.59%, branches 84.60%, functions 95.11%, lines 90.59% |
 | Changed-code coverage | passed for 5 changed engine source files |
 | Legacy compatibility suite | 11 files and 60 tests passed |
 | Client integration | typecheck, lint, 9 tests, and production Vite build passed |
@@ -43,7 +43,7 @@ with the exact required `pnpm` commands recorded by `ratification-status.mjs`.
 | Fresh-process replay checks | 100 / 100 |
 | Unique replay trace hashes | 100 |
 | Campaign run hash | `f683198daed169ea` |
-| Replay sample hash | `5557d19a3b8276d22d73f35429209cc00ec08dd10f42895dbb0540ad83ca56e3` |
+| Replay sample hash | `bfc0368ce4b614df01fb73e259c65cfe9eb58d9e9d4e6e0110bcf01499bd29c0` |
 
 The first follow-up campaign exposed 283 invariant failures: bounce reused a
 destruction-only destination helper, so a Volatile character could be both
@@ -99,6 +99,13 @@ target controller, exhausts the payment when accepted, and only then resumes
 the lower chain. The full campaign remained clean, but its baseline policy did
 not encounter this particular payment branch; the directed scenario is the
 decisive evidence for that behavior.
+
+The target resolver now consumes an authored `target_character.zone`
+restriction. Two committed current-pool cards use `zone: reserve`; a live
+RIA-09 branch now offers only its two Reserve bodies and excludes a deliberately
+stronger Frontline body. The full campaign did not select either affected
+branch, so its unchanged behavioral run hash is supporting regression evidence,
+not the proof of the corrected card behavior.
 
 ## Closure status
 

@@ -64,8 +64,11 @@ explicit legacy profiles.
 - **Logic bugs (resolved in the current profile)**: Flying bypass is evaluated
   per Defender; deploy revalidates its destination; X augments its authored
   resource axis; and the Resource Deck is exactly 12 cards.
-- **Engine can't model book features**: §6 dual-alignment primary/secondary Heroes (secondary restricted
-  to Common/Ethereal); §6 dual-resource Heroes; §9 Reserve-targeting escape hatch.
+- **Effect-zone targeting (resolved in the current profile)**: authored
+  `target_character.zone` restrictions now constrain the offered target set,
+  including the current cards that explicitly select from Reserve.
+- **Engine can't model book features**: §6 dual-alignment primary/secondary Heroes
+  (secondary restricted to Common/Ethereal) and §6 dual-resource Heroes.
 
 ## Verification note
 Every finding above has a Rulebook line + an engine file:line on file (the 5 audit batches; see

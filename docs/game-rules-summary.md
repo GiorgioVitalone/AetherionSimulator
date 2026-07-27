@@ -5,7 +5,7 @@ This is an engine-facing quick reference. The complete source is
 machine settings are in
 [`ruleset-current.json`](../packages/engine/sim-data/ruleset-current.json).
 
-Status: **diagnostic candidate**, semantic version `4.0.0-diagnostic.5`.
+Status: **diagnostic candidate**, semantic version `4.0.0-diagnostic.6`.
 External rules ratification is still required before decision-grade balance
 claims.
 
@@ -43,6 +43,9 @@ Battlefield zones are Reserve, Frontline, and High Ground. Legal movement and
 attack targets come from canonical zone/trait selectors. Exile is a durable
 zone. Discarding a card for energy sends it to exile. Removed equipment goes to
 discard and emits `equipment_removed`.
+
+An effect with an authored zone restriction offers targets only from that zone;
+in particular, `zone: reserve` cannot select a Frontline or High Ground body.
 
 A card instance has one owner and one location. Equipment ownership remains the
 printed owner even while attached.

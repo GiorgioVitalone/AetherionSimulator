@@ -1368,11 +1368,14 @@
       "workPackage": "WP-03/WP-04/WP-05/WP-12",
       "tests": [
         "packages/engine/tests/sim/every-card-execution.test.ts",
+        "packages/engine/tests/effects/target-resolver.test.ts",
+        "packages/engine/tests/effects/verdant-card-semantics.test.ts",
         "packages/engine/tests/events/register-printed-triggers.test.ts",
         "packages/engine/tests/events/equipment-triggers.test.ts"
       ],
       "implementationChanges": [
         "packages/engine/src/effects/effect-runner.ts",
+        "packages/engine/src/effects/target-resolver.ts",
         "packages/engine/src/effects/scry-handler.ts",
         "packages/engine/src/effects/state-helpers.ts"
       ]

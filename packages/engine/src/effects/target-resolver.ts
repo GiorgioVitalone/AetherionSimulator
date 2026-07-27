@@ -247,8 +247,16 @@ function resolveTargetCharacter(
   target: Extract<TargetExpr, { type: 'target_character' }>,
   context: EffectContext,
 ): ResolvedTargets {
-  const cards = getCardsBySide(state, target.side, context);
-  const filtered = applyFilter(cards, target.filter);
+  const cards =
+    target.zone === undefined
+      ? getCardsBySide(state, target.side, context)
+      : excludeUntargetable(
+          getPlayersBySide(state, target.side, context).flatMap((player) =>
+            getCardsInZone(player.zones, target.zone!),
+          ),
+          context.controllerId,
+        );
+  const filtered = applyFilter(cards, target.filter, context);
   if (filtered.length === 0) {
     return { resolved: true, targetIds: [] };
   }

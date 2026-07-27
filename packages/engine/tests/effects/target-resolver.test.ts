@@ -7,6 +7,7 @@ import {
   mockGameState,
   mockPlayerState,
   resetInstanceCounter,
+  zonesWithCards,
 } from '../helpers/card-factory.js';
 import { CURRENT_GAME_CONFIG } from '../../src/rules/manifest.js';
 
@@ -84,6 +85,36 @@ describe('resolveTargets — target_card_in_discard', () => {
     if (r1.resolved || r2.resolved) throw new Error('expected pendingChoice');
     expect(r1.pendingChoice.options).toEqual(r2.pendingChoice.options);
     expect(r1.pendingChoice.options.map(o => o.id)).toEqual([a.instanceId, b.instanceId]);
+  });
+});
+
+describe('resolveTargets — target_character zone', () => {
+  it('offers only characters in the authored battlefield zone', () => {
+    const reserve = mockCard({ instanceId: 'reserve', owner: 0 });
+    const frontline = mockCard({ instanceId: 'frontline', owner: 0 });
+    const highGround = mockCard({ instanceId: 'high-ground', owner: 0 });
+    const state = mockGameState({
+      players: [
+        mockPlayerState(0, {
+          zones: zonesWithCards({
+            reserve: [reserve],
+            frontline: [frontline],
+            highGround: [highGround],
+          }),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+
+    const result = resolveTargets(
+      state,
+      { type: 'target_character', side: 'allied', zone: 'reserve' },
+      ctx(0),
+    );
+    if (result.resolved) throw new Error('expected pendingChoice');
+    expect(result.pendingChoice.options.map((option) => option.id)).toEqual([
+      reserve.instanceId,
+    ]);
   });
 });
 

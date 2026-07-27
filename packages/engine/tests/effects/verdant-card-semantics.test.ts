@@ -111,6 +111,14 @@ describe('named Verdant semantic scenarios', () => {
       baseHp: 2,
     });
     const second = mockCard({ instanceId: 'reserve-b', owner: 0 });
+    const frontline = mockCard({
+      instanceId: 'frontline-out-of-scope',
+      owner: 0,
+      currentAtk: 9,
+      currentHp: 9,
+      baseAtk: 9,
+      baseHp: 9,
+    });
     const full = mockGameState({
       config: CURRENT_GAME_CONFIG,
       turnState: {
@@ -120,13 +128,19 @@ describe('named Verdant semantic scenarios', () => {
       },
       players: [
         mockPlayerState(0, {
-          zones: zonesWithCards({ reserve: [first, second] }),
+          zones: zonesWithCards({
+            reserve: [first, second],
+            frontline: [frontline],
+          }),
         }),
         mockPlayerState(1),
       ],
     });
     const targetPending = runAbilityEffects(full, 'hero_136', effects(136, 1));
     expect(targetPending.state.pendingChoice?.type).toBe('select_targets');
+    expect(
+      targetPending.state.pendingChoice?.options.map((option) => option.id),
+    ).toEqual(['reserve-a', 'reserve-b']);
     const buffed = choose(targetPending.state, targetPending.state.pendingChoice!, 'reserve-a');
     expect(buffed.state.players[0].zones.reserve[0]).toMatchObject({
       currentAtk: 3,
