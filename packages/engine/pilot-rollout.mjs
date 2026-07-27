@@ -176,7 +176,10 @@ export function playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn,
     if (gs.turnNumber > turnCap) break;
     if (gs.turnNumber > horizonTurn) break;
 
-    if (gs.pendingPriority != null) {
+    // Explicit effect/trigger choices suspend the priority window. Resolve the
+    // choice first; authoritative transitions reject priority commands while it
+    // remains pending, so attempting priority here would only spin to stepCap.
+    if (gs.pendingPriority != null && gs.pendingChoice == null) {
       // Responder policy in playouts: heuristic uses its reactive bot; random
       // mostly passes (reactive cards are scarce) but occasionally fires one.
       try {
@@ -436,9 +439,16 @@ export function makeRolloutPilot(opts = {}) {
     const hydrated = playoutBackend === 'snapshot' ? hydratePersistedSnapshot(gameMachine, persisted) : null;
     const meSeat = gs.activePlayerIndex;
     const horizonTurn = depth > 0 ? gs.turnNumber + depth : Infinity;
+    // Heuristic playouts are deterministic from an identical persisted state:
+    // they never consume the branch RNG, and engine randomness lives in the
+    // cloned GameState. Reuse the first score for this candidate while allowing
+    // evalFlat/evalUcb to retain the configured sample counts and exact means.
+    const deterministicScores =
+      playoutPolicy === 'heuristic' ? new Map() : null;
 
     // One rollout of candidate `ci` with the deterministic per-branch seed.
     const oneRollout = (ci, r) => {
+      if (deterministicScores?.has(ci)) return deterministicScores.get(ci);
       const cand = options[ci].action;
       const rnd = rngf(mix(gameSeed, di, seedSlots ? seedSlots[ci] : ci, r));
       let fork;
@@ -464,6 +474,7 @@ export function makeRolloutPilot(opts = {}) {
       const fin = playout(fork, playoutPolicy, turnCap, rnd, stepCap, horizonTurn, fixHandSizeStall, fairPilot);
       const score = scoreLeaf(fin, meSeat, turnCap, closingReward, valueLeafNet);
       fork.stop();
+      deterministicScores?.set(ci, score);
       return score;
     };
 
@@ -525,7 +536,10 @@ export function makeRolloutPilot(opts = {}) {
         ? hydratePersistedSnapshot(gameMachine, persisted)
         : null;
     const horizonTurn = depth > 0 ? gs.turnNumber + depth : Infinity;
+    const deterministicScores =
+      playoutPolicy === 'heuristic' ? new Map() : null;
     const oneRollout = (ci, r) => {
+      if (deterministicScores?.has(ci)) return deterministicScores.get(ci);
       const option = options[ci];
       const rnd = rngf(
         mix(
@@ -569,6 +583,7 @@ export function makeRolloutPilot(opts = {}) {
         valueLeafNet,
       );
       fork.stop();
+      deterministicScores?.set(ci, score);
       return score;
     };
     const stats =
