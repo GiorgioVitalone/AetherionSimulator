@@ -25,6 +25,7 @@
     "ratification:status": "node ratification-status.mjs",
     "ratification:evidence": "node ratification-evidence.mjs",
     "ratification:require-approved": "node ratification-status.mjs --require-approved",
+    "ratification:prepare-expert-corpus": "node expert-corpus-candidates.mjs",
     "lint": "eslint src/",
     "validate": "node validate-cards.mjs",
     "audit:findings": "node audit-findings.mjs",

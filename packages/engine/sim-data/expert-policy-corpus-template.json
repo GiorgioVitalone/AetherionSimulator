@@ -55,7 +55,7 @@
     {
       "id": "expert-equipment-001",
       "family": "equipment",
-      "prompt": "Choose play, replacement, removal, transfer, and target.",
+      "prompt": "Choose the best available equipment action and target, including replacement, removal, or transfer when legal.",
       "stateArtifact": null,
       "legalActionKeys": [],
       "expertActionKey": null,
@@ -75,7 +75,7 @@
     {
       "id": "expert-mode-001",
       "family": "choice",
-      "prompt": "Choose a modal branch and optional target cardinality.",
+      "prompt": "Choose a gameplay mode, target cardinality, or trigger order from the offered interaction.",
       "stateArtifact": null,
       "legalActionKeys": [],
       "expertActionKey": null,

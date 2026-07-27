@@ -10,6 +10,10 @@ import {
   type ExternalReviewRole,
 } from '../../src/sim/ratification.js';
 import {
+  validateExpertPolicyCorpus,
+  validateIndependentRuleOracle,
+} from '../../src/sim/independent-review.js';
+import {
   currentRatificationStatus,
   REQUIRED_GATE_COMMANDS,
   validateFullGateEvidence,
@@ -28,6 +32,24 @@ const roles: ExternalReviewRole[] = [
   'independentRulesReviewer',
   'independentPolicyExpert',
 ];
+const oracle = JSON.parse(
+  readFileSync(
+    new URL(
+      '../../sim-data/independent-rule-oracle-candidate.json',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
+);
+const expertCorpus = JSON.parse(
+  readFileSync(
+    new URL(
+      '../../sim-data/expert-policy-corpus-template.json',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
+);
 
 describe('external ratification gate', () => {
   it('reports every real current blocker and never fabricates approval', () => {
@@ -262,6 +284,27 @@ describe('external ratification gate', () => {
         independentPolicyExpert: 'policy-expert',
       }).reasons,
     ).toContain('approval_reviewers_not_independent');
+  });
+
+  it('does not allow status-only approval of independent artifacts', () => {
+    expect(validateIndependentRuleOracle(oracle).status).toBe(
+      'awaiting_independent_rules_review',
+    );
+    expect(validateExpertPolicyCorpus(expertCorpus).status).toBe(
+      'awaiting_independent_expert_labels',
+    );
+    expect(() =>
+      validateIndependentRuleOracle({
+        ...oracle,
+        status: 'independently_approved',
+      }),
+    ).toThrow(/lacks independent attributable authorship/);
+    expect(() =>
+      validateExpertPolicyCorpus({
+        ...expertCorpus,
+        status: 'independently_approved',
+      }),
+    ).toThrow(/approved expert policy scenario/);
   });
 
   it('validates every external-review manifest boundary', () => {

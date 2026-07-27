@@ -75,6 +75,7 @@ export interface RatificationEvidenceState {
   readonly independentRuleReviewer: string | null;
   readonly expertCorpusStatus: string;
   readonly independentPolicyExpert: string | null;
+  readonly independentArtifactsValid?: boolean;
 }
 
 const REVIEW_ROLES: readonly ExternalReviewRole[] = [
@@ -224,7 +225,12 @@ export function evaluateRatification(
     ...(evidence.expertCorpusStatus !== 'independently_approved'
       ? [`expert_corpus_status:${evidence.expertCorpusStatus}`]
       : []),
-    ...(evidence.independentPolicyExpert === null ? ['independent_policy_expert_missing'] : []),
+    ...(evidence.independentPolicyExpert === null
+      ? ['independent_policy_expert_missing']
+      : []),
+    ...(evidence.independentArtifactsValid === false
+      ? ['independent_artifacts_invalid']
+      : []),
     ...(new Set(reviewerNames).size !== reviewerNames.length
       ? ['approval_reviewers_not_independent']
       : []),

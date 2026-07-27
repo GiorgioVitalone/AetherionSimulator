@@ -1406,7 +1406,7 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
   // needs it, each counting only that seat's own decisions.
   const legacyHandSizeBridge =
     config.rulesProfile !== 'current' && config.fixHandSizeStall === true;
-  const rolloutOpts = { rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: legacyHandSizeBridge, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps, seedMode: config.rolloutSeedMode, playoutBackend: config.playoutBackend, valueLeafModelPath: config.valueLeafModelPath, collectDecisionLog: config.collectDecisionLog, rolloutInteractions: config.rolloutInteractions };
+  const rolloutOpts = { rollouts: config.rollouts, playoutPolicy: config.rolloutPlayout, maxCandidates: config.maxCandidates, depth: config.rolloutDepth, closingReward: config.rolloutClosing, fixHandSizeStall: legacyHandSizeBridge, fairPilot: config.fairPilot, candidateGen: config.candidateGen, candidateKindCaps: config.candidateKindCaps, seedMode: config.rolloutSeedMode, playoutBackend: config.playoutBackend, valueLeafModelPath: config.valueLeafModelPath, collectDecisionLog: config.collectDecisionLog, collectDecisionStates: config.collectDecisionStates, rolloutInteractions: config.rolloutInteractions };
   const rolloutPilot = !config.botPolicySeat && config.botPolicy === 'rollout' ? makeRolloutPilot(rolloutOpts) : null;
   // Neural value-net greedy pilot (botPolicy === 'valueGreedy'): same one-
   // instance-per-monolithic-run / one-per-split-seat allocation discipline as
@@ -2752,6 +2752,7 @@ function resolveConfig(config = {}) {
     // policy only). Stripped from the hashed config in computeRunHash, so attaching
     // it keeps runHash byte-identical to a run without it set.
     ...(config.collectDecisionLog ? { collectDecisionLog: true } : {}),
+    ...(config.collectDecisionStates ? { collectDecisionStates: true } : {}),
     ...(config.collectReplay ? { collectReplay: true } : {}),
     ...(INFRASTRUCTURE_TERMINAL_REASONS.has(config.__faultInjection)
       ? { __faultInjection: config.__faultInjection }
@@ -3151,6 +3152,7 @@ function computeRunHash(results, config, deckLabels = []) {
     playoutBackend,
     collectTrainingData,
     collectDecisionLog,
+    collectDecisionStates,
     collectReplay,
     certification,
     __faultInjection,
@@ -3168,6 +3170,7 @@ function computeRunHash(results, config, deckLabels = []) {
   void playoutBackend;
   void collectTrainingData;
   void collectDecisionLog;
+  void collectDecisionStates;
   void collectReplay;
   void certification;
   void __faultInjection;
@@ -3296,7 +3299,13 @@ function finalize(results, config, plan) {
     ...(config.collectDecisionLog
       ? {
           decisionLog: results.flatMap((r, gi) =>
-            (r.decisionLog || []).map(row => ({ ...row, game: gi, faction: row.mover === 0 ? r.fA : r.fB })),
+            (r.decisionLog || []).map((row, decision) => ({
+              ...row,
+              game: gi,
+              decision,
+              seed: r.seed,
+              faction: row.mover === 0 ? r.fA : r.fB,
+            })),
           ),
         }
       : {}),

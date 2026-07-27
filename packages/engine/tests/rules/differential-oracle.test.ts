@@ -6,6 +6,7 @@ import { effectiveTraits } from '../../src/selectors/card-semantics.js';
 import { CURRENT_GAME_CONFIG, CURRENT_RULES_MANIFEST } from '../../src/rules/manifest.js';
 import type { ResourceCost, Trait, ZoneType } from '../../src/types/common.js';
 import { getValidAttackTargets } from '../../src/zones/targeting.js';
+import { validateIndependentRuleOracle } from '../../src/sim/independent-review.js';
 import {
   mockCard,
   mockGameState,
@@ -22,7 +23,7 @@ interface OracleScenario {
   readonly expected: unknown;
 }
 
-const oracle = JSON.parse(
+const oracle = validateIndependentRuleOracle(JSON.parse(
   readFileSync(
     new URL(
       '../../sim-data/independent-rule-oracle-candidate.json',
@@ -30,16 +31,7 @@ const oracle = JSON.parse(
     ),
     'utf8',
   ),
-) as {
-  schemaVersion: number;
-  status: string;
-  rulebook: { sha256: string };
-  authorship: {
-    fixtureSource: string;
-    independentAuthor: string | null;
-    independentReviewer: string | null;
-    approvedAt: string | null;
-  };
+)) as ReturnType<typeof validateIndependentRuleOracle> & {
   scenarios: OracleScenario[];
 };
 
@@ -142,7 +134,7 @@ function executeScenario(scenario: OracleScenario): unknown {
 }
 
 describe('declarative rulebook differential oracle candidate', () => {
-  it('is manually declared, rulebook-bound, unique, and awaiting genuinely independent review', () => {
+  it('is manually declared, rulebook-bound, unique, and valid for its declared review status', () => {
     expect(oracle.schemaVersion).toBe(1);
     expect(oracle.rulebook.sha256).toBe(
       CURRENT_RULES_MANIFEST.rulebook.sha256,
@@ -150,12 +142,18 @@ describe('declarative rulebook differential oracle candidate', () => {
     expect(oracle.authorship.fixtureSource).toBe(
       'manually_declared_json_not_generated_from_engine',
     );
-    expect(oracle.status).toBe('awaiting_independent_rules_review');
-    expect(oracle.authorship).toMatchObject({
-      independentAuthor: null,
-      independentReviewer: null,
-      approvedAt: null,
-    });
+    if (oracle.status === 'awaiting_independent_rules_review') {
+      expect(oracle.authorship).toMatchObject({
+        independentAuthor: null,
+        independentReviewer: null,
+        approvedAt: null,
+      });
+    } else {
+      expect(oracle.authorship.independentAuthor).not.toBe(
+        oracle.authorship.independentReviewer,
+      );
+      expect(Date.parse(oracle.authorship.approvedAt!)).not.toBeNaN();
+    }
     expect(new Set(oracle.scenarios.map(({ id }) => id)).size).toBe(
       oracle.scenarios.length,
     );

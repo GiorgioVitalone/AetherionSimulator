@@ -88,6 +88,14 @@ function outcomeValue(outcome) {
 
 function decisionObservations(run, panelId) {
   return run.decisionLog.flatMap((row, index) => {
+    // Setup bookkeeping is not evidence for tactical modal/cardinality choice.
+    // Retain only gameplay interactions in the calibrated "choice" family.
+    if (
+      row.family === 'choice' &&
+      ['mulligan', 'choose_first_player'].includes(
+        row.interactionType,
+      )
+    ) return [];
     const candidates = row.candidates.flatMap((candidate) =>
       Number.isFinite(candidate.value)
         ? [{ actionKey: actionKey(candidate.action), value: candidate.value }]

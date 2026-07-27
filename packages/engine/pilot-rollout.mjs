@@ -372,6 +372,10 @@ export function makeRolloutPilot(opts = {}) {
   // pushes a record, so it cannot perturb the rollout's RNG/decisionIndex or the
   // chosen action. Same discipline as collectTrainingData in sim-runner.mjs.
   const collectDecisionLog = opts.collectDecisionLog ?? false;
+  // Expert-corpus preparation may additionally retain the exact public
+  // GameState shown at each logged decision. This is deliberately separate
+  // from ordinary decision logging because snapshots are much larger.
+  const collectDecisionStates = opts.collectDecisionStates ?? false;
   // Calibration-only policy dimension: evaluate real priority and explicit-choice
   // decisions through the same outcome model used for proactive actions. OFF by
   // default so historical rollout behavior and pins remain unchanged.
@@ -483,6 +487,9 @@ export function makeRolloutPilot(opts = {}) {
       decisionLog.push({
         turn: gs.turnNumber,
         mover: gs.activePlayerIndex,
+        ...(collectDecisionStates
+          ? { state: decisionStateSnapshot(gs) }
+          : {}),
         features: Array.from(featurize(gs)),
         candidates: options.map((o, i) => ({
           action: o.action,
@@ -497,7 +504,17 @@ export function makeRolloutPilot(opts = {}) {
     return best ? best.action : null;
   }
 
-  function evaluateInteraction(actor, gs, gameSeed, turnCap, family, mover, options, heuristicAction) {
+  function evaluateInteraction(
+    actor,
+    gs,
+    gameSeed,
+    turnCap,
+    family,
+    mover,
+    options,
+    heuristicAction,
+    interactionType,
+  ) {
     const di = decisionIndex++;
     if (options.length === 0) {
       throw new Error(`${family} interaction has no legal candidates`);
@@ -573,6 +590,10 @@ export function makeRolloutPilot(opts = {}) {
         turn: gs.turnNumber,
         mover,
         family,
+        interactionType,
+        ...(collectDecisionStates
+          ? { state: decisionStateSnapshot(gs) }
+          : {}),
         features: Array.from(featurize(gs)),
         candidates: options.map((option, index) => ({
           action: option.action,
@@ -614,6 +635,7 @@ export function makeRolloutPilot(opts = {}) {
       priority.toRespondPlayerId,
       options,
       chooseReactiveAction(gs),
+      'priority',
     );
   }
 
@@ -640,6 +662,7 @@ export function makeRolloutPilot(opts = {}) {
         type: 'mulligan_decision',
         keep: shouldKeepHand(gs, choice.playerId),
       },
+      'mulligan',
     );
     return selected.keep;
   }
@@ -670,6 +693,7 @@ export function makeRolloutPilot(opts = {}) {
         type: 'choice_response',
         selectedOptionIds: chooseChoiceResponse(gs),
       },
+      choice.type,
     );
     return selected.selectedOptionIds;
   }
@@ -697,9 +721,18 @@ export function makeRolloutPilot(opts = {}) {
       fairPilot,
       valueLeafModelPath,
       collectDecisionLog,
+      collectDecisionStates,
       rolloutInteractions,
     },
   };
+}
+
+function decisionStateSnapshot(state) {
+  return JSON.parse(
+    JSON.stringify(state, (key, value) =>
+      key === 'diag' || typeof value === 'function' ? undefined : value,
+    ),
+  );
 }
 
 function concreteReactiveActions(options) {

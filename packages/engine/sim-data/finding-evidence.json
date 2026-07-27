@@ -1769,6 +1769,8 @@
         "packages/engine/tests/sim/current-simulation-contract.test.ts"
       ],
       "implementationChanges": [
+        "packages/engine/ratification-commands.mjs",
+        "packages/engine/ratification-evidence.mjs",
         "packages/engine/ratification-status.mjs",
         "packages/engine/src/sim/ratification.ts",
         "packages/engine/sim-data/external-review-manifest.json"
@@ -1790,6 +1792,8 @@
         "packages/engine/policy-calibration.mjs",
         "packages/engine/pilot-rollout.mjs",
         "packages/engine/sim-runner.mjs",
+        "packages/engine/expert-corpus-candidates.mjs",
+        "packages/engine/src/sim/independent-review.ts",
         "packages/engine/src/sim/ratification.ts",
         "packages/engine/sim-data/expert-policy-corpus-template.json"
       ],
@@ -1825,6 +1829,7 @@
       ],
       "implementationChanges": [
         "packages/engine/sim-data/independent-rule-oracle-candidate.json",
+        "packages/engine/src/sim/independent-review.ts",
         "packages/engine/src/sim/ratification.ts"
       ],
       "evidenceArtifacts": [
