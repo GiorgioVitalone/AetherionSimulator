@@ -6,16 +6,19 @@
 // The card SCORE is raw power (no cost anchoring); the dashboard ADDS the cost
 // lens (power/cost, cost-curve residual) the user asked for in the viz layer.
 import { writeFileSync } from 'node:fs';
-import { computeDeckValue } from './dist/balance/index.js';
+import { computeDeckValue, computeCardPower, detectCardLoops } from './dist/balance/index.js';
 import { pearson, spearman } from './dist/stats/index.js';
-import { loadBalanceData, RARITY_BONUS, RARITY_ORDER, budgetModel } from './balance-data.mjs';
+import { loadBalanceData, indexFromRaw, RARITY_BONUS, RARITY_ORDER, loadBudgetModel } from './balance-data.mjs';
+import { applyEdits } from './balance-apply-edits.mjs';
+import { applyFactionDeltas } from './balance-faction-tune.mjs';
+import { auditPool } from './balance-card-audit.mjs';
 import { getDeck } from './deck-loader.mjs';
 
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const WIN_FAIR = { Radiant: 78, Verdant: 69, Onyx: 44, Sapphire: 8 };
 const WIN_HEUR = { Radiant: 81.7, Verdant: 44.9, Onyx: 33.8, Sapphire: 39.6 };
 
-const { index, heroByFaction } = loadBalanceData();
+const { raw, index, heroByFaction } = loadBalanceData();
 const round = (x, n = 2) => {
   const p = 10 ** n;
   return Math.round(x * p) / p;
@@ -91,6 +94,7 @@ for (const f of FACTIONS) {
     value: round(dv.value),
     cardPowerSum: round(dv.cardPowerSum),
     consistency: round(dv.consistency),
+    acceleration: round(dv.acceleration),
     interSynergy: round(dv.interSynergy.capped),
     interSynergyRaw: round(dv.interSynergy.raw),
     heroSynergy: round(dv.heroSynergy),
@@ -115,18 +119,20 @@ for (const c of cards) {
 const meanByCost = new Map([...byCost].map(([k, a]) => [k, a.reduce((s, v) => s + v, 0) / a.length]));
 for (const c of cards) c.costResidual = round(c.power - meanByCost.get(c.cost));
 
-// ── Cost budget window: an expected-power line fit to the pool + a RARITY shift
-// (higher-rarity cards are allowed more power for their cost), widened into a
-// tolerance BAND (a window, not a strict value). Δ = power − rarity-adjusted
-// expected; status = under / within / over the band.
-const { slope, intercept, tol: TOL, rmse, expectedFor } = budgetModel(cards);
+// ── Cost budget window: the FROZEN declared budget line (§B1 — sim-data/
+// balance-budget.v2.json, the current version; v1 kept as history), the SAME windows the suggestions/gates pipeline judges
+// with — never fitted on the pool being displayed (a mispriced pool must not move
+// its own goalposts). Rarity is a declared offset applied once inside expectedFor;
+// tolerance is per card type. Δ = power − expected; status = under/within/over.
+const budget = loadBudgetModel();
 for (const c of cards) {
-  const exp = expectedFor(c.cost, c.rarity);
+  const exp = budget.expectedFor(c.cost, c.rarity, c.type);
+  const tol = budget.tolFor(c.type);
   c.budgetExpected = round(exp);
-  c.budgetLo = round(exp - TOL);
-  c.budgetHi = round(exp + TOL);
+  c.budgetLo = round(exp - tol);
+  c.budgetHi = round(exp + tol);
   c.budgetDelta = round(c.power - exp);
-  c.budgetStatus = c.power > exp + TOL ? 'over' : c.power < exp - TOL ? 'under' : 'within';
+  c.budgetStatus = c.power > exp + tol ? 'over' : c.power < exp - tol ? 'under' : 'within';
 }
 const maxCost = Math.max(...cards.map((c) => c.cost));
 const budgetCounts = { over: 0, within: 0, under: 0 };
@@ -140,7 +146,61 @@ const budgetByFaction = {};
 for (const f of FACTIONS) budgetByFaction[f] = groupStats(cards.filter((c) => c.faction === f));
 const budgetByRarity = {};
 for (const r of RARITY_ORDER) budgetByRarity[r] = groupStats(cards.filter((c) => c.rarity === r));
-const budgetMeta = { slope, intercept, tol: TOL, rmse: round(rmse), maxCost, rarityBonus: RARITY_BONUS, rarityOrder: RARITY_ORDER, counts: budgetCounts, byFaction: budgetByFaction, byRarity: budgetByRarity };
+const budgetMeta = { version: budget.version, characters: budget.characters, spellsEquip: budget.spellsEquip, tolMax: Math.max(budget.characters.tol, budget.spellsEquip.tol), maxCost, rarityBonus: RARITY_BONUS, rarityOrder: RARITY_ORDER, counts: budgetCounts, byFaction: budgetByFaction, byRarity: budgetByRarity };
+
+// ── Rebalance before/after — the re-tuned pool (budget patch + LP30 + the 15
+// surgical re-tune edits), compared to baseline against the SAME budget window. ──
+const R4_DELTAS = { Radiant: { hp: -1 }, Verdant: { atk: -1 }, Onyx: { hp: 1 }, Sapphire: { hp: 1 } };
+const R4_COUNT = { Radiant: 5, Verdant: 4, Onyx: 4, Sapphire: 2 };
+// mode: 'exploratory' — an in-memory before/after view only, never written
+// back as card data; see applyEdits' doc comment.
+const afterRaw = applyFactionDeltas(applyEdits(raw, { mode: 'exploratory', arm: 'all', flattenLp: 30 }).raw, R4_DELTAS, R4_COUNT).raw;
+const after = indexFromRaw(afterRaw);
+const statusVs = (power, cost, rarity, cardType) => {
+  const e = budget.expectedFor(cost, rarity, cardType);
+  const tol = budget.tolFor(cardType);
+  return power > e + tol ? 'over' : power < e - tol ? 'under' : 'within';
+};
+function rebalanceFor(idx, heroes) {
+  const counts = { over: 0, within: 0, under: 0 };
+  const faction = {};
+  for (const f of FACTIONS) {
+    const deck = getDeck(f);
+    const dv = computeDeckValue({ faction: f, mainDeckDefIds: deck.mainDeckDefIds }, heroes.get(f), idx);
+    const cs = [...idx.values()].filter((c) => c.alignment.includes(f));
+    const avgPow = cs.reduce((s, c) => s + computeCardPower(c).power, 0) / (cs.length || 1);
+    faction[f] = { deckValue: round(dv.value), avgPow: round(avgPow) };
+    for (const b of dv.perCard) {
+      const sc = idx.get(b.cardId);
+      counts[statusVs(b.power, totalCost(sc), sc.rarity, sc.cardType)]++;
+    }
+  }
+  return { counts, faction };
+}
+const rebalance = { before: rebalanceFor(index, heroByFaction), after: rebalanceFor(after.index, after.heroByFaction) };
+
+// ── Toolkit signals — what the new local checks see across the full pool. ──────
+const audits = auditPool(index);
+const toolkit = {
+  audit: {
+    ship: audits.filter((a) => a.verdict === 'SHIP').length,
+    sim: audits.filter((a) => a.verdict === 'SIM-NEEDED').length,
+    list: audits.filter((a) => a.verdict === 'SIM-NEEDED').map((a) => ({ name: a.name, faction: a.faction, reasons: a.reasons })),
+  },
+  loops: [...index.values()]
+    .map((sc) => detectCardLoops(sc))
+    .filter((l) => l.level !== 'none')
+    .map((l) => ({ name: l.name, level: l.level, reasons: l.abilities.flatMap((a) => a.reasons) })),
+};
+
+// ── Pilot win-rate impact — measured this session (docs/balance-diagnosis.md §11). ──
+const pilot = {
+  states: [
+    { label: 'legacy pilot', sub: 'patched + LP30, blind discard', wp: { Onyx: 48.4, Radiant: 53.3, Sapphire: 46.8, Verdant: 51.5 }, spread: 6.5 },
+    { label: 'standard pilot', sub: 'reach + exile + value, no re-tune', wp: { Onyx: 40.1, Radiant: 59.6, Sapphire: 44.7, Verdant: 55.6 }, spread: 19.5 },
+    { label: 're-tuned', sub: 'standard pilot + 15 surgical edits', wp: { Onyx: 46.8, Radiant: 48.1, Sapphire: 52.4, Verdant: 52.8 }, spread: 6.0 },
+  ],
+};
 
 const dvVec = FACTIONS.map((f) => decks.find((d) => d.faction === f).value);
 const meta = {
@@ -153,6 +213,9 @@ const meta = {
   pearsonHeur: round(pearson(dvVec, FACTIONS.map((f) => WIN_HEUR[f])).r, 3),
   meanByCost: [...meanByCost].sort((a, b) => a[0] - b[0]).map(([cost, m]) => ({ cost, mean: round(m) })),
   budget: budgetMeta,
+  rebalance,
+  toolkit,
+  pilot,
 };
 
 const data = { meta, cards, decks };
@@ -288,7 +351,7 @@ function dashboardApp() {
     // y = Δ vs the (cost + rarity)-adjusted budget; horizontal ±TOL window at 0.
     const b = D.meta.budget;
     const W = 840, H = 440, m = { l: 56, r: 14, t: 14, b: 42 };
-    let yMax = b.tol + 1;
+    let yMax = b.tolMax + 1;
     for (const p of points) yMax = Math.max(yMax, Math.abs(p.y));
     yMax = Math.ceil(yMax / 2) * 2;
     const mid = (m.t + (H - m.b)) / 2;
@@ -300,7 +363,7 @@ function dashboardApp() {
       g += `<line class="gl" x1="${m.l}" y1="${y.toFixed(1)}" x2="${W - m.r}" y2="${y.toFixed(1)}"/>`;
       g += `<text x="${m.l - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v > 0 ? '+' : ''}${v}</text>`;
     }
-    g += `<rect x="${m.l}" y="${py(b.tol).toFixed(1)}" width="${(W - m.l - m.r).toFixed(1)}" height="${(py(-b.tol) - py(b.tol)).toFixed(1)}" fill="#5fb56f" fill-opacity="0.10"><title>within budget: ±${b.tol}</title></rect>`;
+    g += `<rect x="${m.l}" y="${py(b.tolMax).toFixed(1)}" width="${(W - m.l - m.r).toFixed(1)}" height="${(py(-b.tolMax) - py(b.tolMax)).toFixed(1)}" fill="#5fb56f" fill-opacity="0.10"><title>within budget: ±${b.tolMax} (per-type window; statuses use each type's own tolerance)</title></rect>`;
     g += `<line x1="${m.l}" y1="${py(0).toFixed(1)}" x2="${W - m.r}" y2="${py(0).toFixed(1)}" stroke="#d9b44a" stroke-width="1.5" stroke-dasharray="6 4"/>`;
     for (let i = 0; i <= xMax; i++) g += `<text x="${px(i).toFixed(1)}" y="${H - m.b + 15}" text-anchor="middle">${i}</text>`;
     g += `<text x="${((m.l + W - m.r) / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">total cost (mana+energy)</text>`;
@@ -399,6 +462,7 @@ function dashboardApp() {
       .map((d) => {
         const segs = [
           { name: 'card power', value: d.cardPowerSum, color: fc(d.faction) },
+          { name: 'acceleration', value: d.acceleration, color: '#7fa86b' },
           { name: 'inter-card synergy', value: d.interSynergy, color: '#d9b44a' },
           { name: 'hero synergy', value: d.heroSynergy, color: '#c98b5a' },
         ];
@@ -406,7 +470,7 @@ function dashboardApp() {
         <div class="hero">${esc(d.hero.name)} · ${d.hero.lp} LP · ${d.distinct} distinct / ${d.totalCards} cards</div>
         <div class="big" style="color:${fc(d.faction)}">${f1(d.value)}</div>
         ${stackBar(segs)}
-        <div class="legend"><span><i style="background:${fc(d.faction)}"></i>cards ${f1(d.cardPowerSum)}</span><span><i style="background:#d9b44a"></i>synergy ${f1(d.interSynergy)}</span><span><i style="background:#c98b5a"></i>hero ${f1(d.heroSynergy)}</span></div>
+        <div class="legend"><span><i style="background:${fc(d.faction)}"></i>cards ${f1(d.cardPowerSum)}</span><span><i style="background:#7fa86b"></i>accel ${f1(d.acceleration)}</span><span><i style="background:#d9b44a"></i>synergy ${f1(d.interSynergy)}</span><span><i style="background:#c98b5a"></i>hero ${f1(d.heroSynergy)}</span></div>
         <div class="small muted" style="margin-top:8px">consistency ${f1(d.consistency)} · mean power ${f1(d.stat.mean)} · spread ${f1(d.stat.max - d.stat.min)} · fair win ${d.winFair}%</div></div>`;
       })
       .join('');
@@ -498,7 +562,7 @@ function dashboardApp() {
       y: c.budgetDelta,
       r: 3 + Math.sqrt(c.copies) * 1.4,
       color: SC[c.budgetStatus],
-      label: `${c.name} [${c.rarity}] — cost ${c.cost}, power ${c.power} vs budget ${c.budgetExpected} (±${b.tol}); Δ ${c.budgetDelta > 0 ? '+' : ''}${c.budgetDelta} (${c.budgetStatus})`,
+      label: `${c.name} [${c.rarity}] — cost ${c.cost}, power ${c.power} vs budget ${c.budgetExpected} [${c.budgetLo}–${c.budgetHi}]; Δ ${c.budgetDelta > 0 ? '+' : ''}${c.budgetDelta} (${c.budgetStatus})`,
     }));
     const statusStack = stackBar([
       { name: `under (${cs.under})`, value: cs.under, color: SC.under },
@@ -511,8 +575,8 @@ function dashboardApp() {
     return section(
       'budget',
       'Cost budget & delta',
-      `expected = ${f1(b.intercept)} + ${f1(b.slope)}·cost + rarity (Ethereal +${rb.Ethereal}, Mythic +${rb.Mythic}, Legendary +${rb.Legendary}); window ±${b.tol} (≈ pool RMSE ${b.rmse}) — Δ = power − expected`,
-      `<div class="panel"><h3 class="hdr">Δ vs the rarity-adjusted budget (green band = within ±${b.tol}, dashed = on budget; point size = copies)</h3>${deltaScatter(pts, xMax)}<div class="legend"><span><i style="background:${SC.under}"></i>under budget</span><span><i style="background:${SC.within}"></i>within window</span><span><i style="background:${SC.over}"></i>over budget</span></div></div>
+      `declared budget line v${b.version} (frozen, sim-data/balance-budget.v${(b.version || '').split('.')[0]}.json — never fitted on this pool): characters ${f1(b.characters.intercept)} + ${f1(b.characters.slope)}·cost ±${b.characters.tol}; spells/equip ${f1(b.spellsEquip.intercept)} + ${f1(b.spellsEquip.slope)}·cost ±${b.spellsEquip.tol}; rarity offset (Ethereal +${rb.Ethereal}, Mythic +${rb.Mythic}, Legendary +${rb.Legendary}) — Δ = power − expected`,
+      `<div class="panel"><h3 class="hdr">Δ vs the declared budget (green band = within ±${b.tolMax}, dashed = on budget; point size = copies)</h3>${deltaScatter(pts, xMax)}<div class="legend"><span><i style="background:${SC.under}"></i>under budget</span><span><i style="background:${SC.within}"></i>within window</span><span><i style="background:${SC.over}"></i>over budget</span></div></div>
       <div class="panel" style="margin-top:14px"><h3 class="hdr">Overall — ${cs.under} under · ${cs.within} within · ${cs.over} over</h3>${statusStack}</div>
       <div class="grid two" style="margin-top:14px">
         <div class="panel"><h3 class="hdr">By faction — status mix &amp; mean Δ</h3><div class="bars">${groupBars(b.byFaction, F, fc)}</div></div>
@@ -648,18 +712,107 @@ function dashboardApp() {
   }
 
   // ── Mount ──────────────────────────────────────────────────────────────────
+  function pilot() {
+    const p = D.meta.pilot;
+    const MAXW = 65;
+    const stateRow = (st) =>
+      `<div class="panel"><h3 class="hdr">${esc(st.label)} <span class="muted small">— ${esc(st.sub)}</span> · spread ${f1(st.spread)}</h3>${D.meta.factions
+        .map(
+          (f) =>
+            `<div style="display:flex;align-items:center;gap:10px;margin:5px 0;font-size:12px"><span style="width:72px;color:${fc(f)};font-weight:600">${f}</span><span style="flex:1;height:13px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden"><span style="display:block;height:13px;width:${Math.min(100, (st.wp[f] / MAXW) * 100)}%;background:${fc(f)}"></span></span><span style="width:46px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--mut)">${f1(st.wp[f])}%</span></div>`,
+        )
+        .join('')}</div>`;
+    return section(
+      'pilot',
+      'Pilot win-rate impact',
+      'measured faction win% under three pilots — where the static scores meet simulated outcomes',
+      `<div class="grid">${p.states.map(stateRow).join('')}</div>
+      <div class="panel callout small" style="margin-top:14px">The legacy bot's blind discard masked the imbalance (spread <b>6.5</b>); a faithful pilot (reach + exile + value) exposes the true ~<b>20 pp</b> gap; the 15-edit re-tune closes it to <b>6.0</b>. See docs/balance-diagnosis.md §11.</div>`,
+    );
+  }
+
+  function rebalance() {
+    const rb = D.meta.rebalance;
+    const stack = (c) =>
+      stackBar([
+        { name: `under (${c.under})`, value: c.under, color: SC.under },
+        { name: `within (${c.within})`, value: c.within, color: SC.within },
+        { name: `over (${c.over})`, value: c.over, color: SC.over },
+      ]);
+    const mono = "font-family:'JetBrains Mono',monospace";
+    const dvRow = (cells) =>
+      `<div style="display:flex;align-items:center;gap:12px;margin:4px 0;font-size:12px">${cells}</div>`;
+    const dvRows = D.meta.factions
+      .map((f) => {
+        const b = rb.before.faction[f].deckValue;
+        const a = rb.after.faction[f].deckValue;
+        const d = Math.round((a - b) * 10) / 10;
+        const dc = d > 0 ? SC.over : d < 0 ? SC.under : 'var(--mut)';
+        return dvRow(
+          `<span style="width:88px;color:${fc(f)};font-weight:600">${f}</span><span style="width:56px;text-align:right;${mono};color:var(--mut)">${f1(b)}</span><span style="opacity:.45">→</span><span style="width:56px;text-align:right;${mono};color:var(--ink)">${f1(a)}</span><span style="width:60px;text-align:right;${mono};color:${dc}">${d > 0 ? '+' : ''}${f1(d)}</span>`,
+        );
+      })
+      .join('');
+    const dvHead = dvRow(
+      `<span style="width:88px" class="muted small">faction</span><span style="width:56px;text-align:right" class="muted small">before</span><span style="width:14px"></span><span style="width:56px;text-align:right" class="muted small">after</span><span style="width:60px;text-align:right" class="muted small">Δ</span>`,
+    );
+    return section(
+      'rebalance',
+      'Rebalance before / after',
+      'patch + LP30 + the 15 surgical re-tune edits, scored against the same budget window',
+      `<div class="grid two">
+        <div class="panel"><h3 class="hdr">Budget fit — before · ${rb.before.counts.within} within</h3>${stack(rb.before.counts)}</div>
+        <div class="panel"><h3 class="hdr">Budget fit — after · ${rb.after.counts.within} within</h3>${stack(rb.after.counts)}</div>
+      </div>
+      <div class="panel" style="margin-top:14px"><h3 class="hdr">Starter deck value — before → after (Radiant's ceiling drops hardest)</h3>${dvHead}${dvRows}</div>
+      <div class="panel callout small" style="margin-top:14px">The "after" is the budget patch + LP30 + the <b>15 sim-guided faction edits</b> (the §11d re-tune, spread 6.0). A <b>pure</b> budget-fit — mechanically editing every card onto the tightened ±2.2 line — instead breaks win-rate balance (spread 35–44: budget can't see Verdant's engine, and cost-cutting under-budget spells over-buffs the blind spot). The narrowed window is a diagnostic, not a mandate — see docs/balance-diagnosis.md §11f.</div>`,
+    );
+  }
+
+  function toolkit() {
+    const t = D.meta.toolkit;
+    const auditStack = stackBar([
+      { name: `SHIP (${t.audit.ship})`, value: t.audit.ship, color: SC.within },
+      { name: `SIM-NEEDED (${t.audit.sim})`, value: t.audit.sim, color: SC.over },
+    ]);
+    const ell = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    const simList = t.audit.list
+      .slice(0, 20)
+      .map(
+        (a) =>
+          `<div style="display:flex;gap:12px;margin:3px 0;font-size:12px"><span style="width:158px;flex:none;color:${fc(a.faction)};${ell}" title="${esc(a.name)}">${esc(a.name)}</span><span style="flex:1;color:var(--mut)">${esc(a.reasons.join(' | '))}</span></div>`,
+      )
+      .join('');
+    const loopList = t.loops.length
+      ? t.loops
+          .map(
+            (l) =>
+              `<div style="display:flex;gap:12px;margin:3px 0;font-size:12px"><span style="width:150px;flex:none;${ell}" title="${esc(l.name)}">${esc(l.name)}</span><span style="width:46px;flex:none;font-weight:600;color:${l.level === 'flag' ? SC.over : 'var(--gold)'}">${esc(l.level)}</span><span style="flex:1;color:var(--mut)">${esc(l.reasons.join('; '))}</span></div>`,
+          )
+          .join('')
+      : '<div class="muted small">no loop risk in the pool</div>';
+    return section(
+      'toolkit',
+      'Toolkit signals',
+      'what the new local checks (card audit · loop detector) see across the full 120-card pool — no simulation',
+      `<div class="panel"><h3 class="hdr">Audit verdict — ${t.audit.ship} SHIP · ${t.audit.sim} SIM-NEEDED</h3>${auditStack}<div class="small muted" style="margin-top:6px">A card SHIPs only if it clears budget, synergy cap, loop risk, and novelty; otherwise it carries the specific reason to simulate.</div></div>
+      <div class="panel" style="margin-top:14px"><h3 class="hdr">SIM-NEEDED — why (top 20)</h3>${simList}</div>
+      <div class="panel" style="margin-top:14px"><h3 class="hdr">Loop-risk flags</h3>${loopList}</div>`,
+    );
+  }
+
   function section(id, title, note, body) {
     return `<section id="${id}"><div class="sec-h"><h2>${esc(title)}</h2><span class="note">${esc(note)}</span></div>${body}</section>`;
   }
 
-  const navIds = [['overview', 'Overview'], ['decks', 'Decks'], ['spread', 'Spread'], ['cost', 'Cost'], ['budget', 'Budget'], ['curve', 'Curves'], ['components', 'Drivers'], ['synergy', 'Synergy'], ['table', 'Cards']];
+  const navIds = [['overview', 'Overview'], ['decks', 'Decks'], ['spread', 'Spread'], ['cost', 'Cost'], ['budget', 'Budget'], ['pilot', 'Win-rate'], ['rebalance', 'Rebalance'], ['toolkit', 'Toolkit'], ['curve', 'Curves'], ['components', 'Drivers'], ['synergy', 'Synergy'], ['table', 'Cards']];
   const app = document.getElementById('app');
   app.innerHTML =
     `<header><h1>Aetherion · Starter-Deck Balance Analytics</h1><div class="sub">First-principles card-power & deck-value scores · ${D.meta.nCards} cards · weights are interpretable, never fitted to win rates</div><nav>${navIds
       .map(([i, t]) => `<a href="#${i}">${t}</a>`)
       .join('')}</nav></header><main>` +
     `<div class="callout">The card score is <b>raw intrinsic power</b> (no cost anchoring); this dashboard adds the cost lens. Validation is a <b>diagnostic</b>: deck value correlates with measured win rates at Spearman ρ ${f2(D.meta.spearmanFair)} (fair rollout) / Pearson ${f2(D.meta.pearsonHeur)} (heuristic). The one miss is <b>Verdant</b>, whose strength is emergent ramp/snowball that no static score can see — read it alongside simulation.</div>` +
-    kpis() + deckPanels() + spread() + cost() + budget() + curves() + components() + synergy() + tableSection() +
+    kpis() + deckPanels() + spread() + cost() + budget() + pilot() + rebalance() + toolkit() + curves() + components() + synergy() + tableSection() +
     `</main>`;
 
   // wire smooth-scroll nav

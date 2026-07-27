@@ -49,6 +49,28 @@ describe('synergy', () => {
     expect(pairSynergy([sig('death_trigger', 3, 'Construct')], kael)).toBe(0);
   });
 
+  it('saturates a lone outlet fed by many redundant partners (throughput)', () => {
+    const outlet = {
+      id: 0,
+      name: 'Outlet',
+      copies: 3,
+      provides: [],
+      demands: [dem('wide_to_sacrifice', 2)],
+    };
+    const fodder = (k: number) => ({
+      id: k,
+      name: `F${String(k)}`,
+      copies: 3,
+      provides: [sig('wide_bodies', 2)],
+      demands: [],
+    });
+    const big = 1_000_000; // keep the global cap far away — isolate saturation
+    const two = deckInterSynergy([outlet, fodder(1), fodder(2)], big);
+    const eight = deckInterSynergy([outlet, ...[1, 2, 3, 4, 5, 6, 7, 8].map(fodder)], big);
+    expect(eight.raw).toBeGreaterThan(two.raw); // more fodder still helps a bit
+    expect(eight.raw).toBeLessThan(two.raw * 2); // but 4× the fodder yields under 2× — saturated
+  });
+
   it('caps a runaway pair at PAIR_CAP and globally', () => {
     const a = { id: 1, name: 'A', copies: 3, provides: [sig('tag', 50, 'X')], demands: [] };
     const b = { id: 2, name: 'B', copies: 3, provides: [], demands: [dem('tag_tribal', 50, 'X')] };

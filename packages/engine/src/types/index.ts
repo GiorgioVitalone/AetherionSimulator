@@ -218,6 +218,7 @@ export type {
   EffectContext,
   EffectResult,
 } from './game-state.js';
+export type { Faction, Gameplan } from './gameplan.js';
 
 export {
   ZONE_SLOTS,

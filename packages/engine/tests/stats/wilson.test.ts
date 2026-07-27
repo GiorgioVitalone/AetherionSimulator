@@ -44,4 +44,11 @@ describe('wilsonInterval', () => {
     const z99 = wilsonInterval(50, 100, 2.576);
     expect(z99.halfWidth).toBeGreaterThan(z95.halfWidth);
   });
+
+  it('rejects invalid wins/trials/confidence multipliers', () => {
+    expect(() => wilsonInterval(-1, 10)).toThrow(RangeError);
+    expect(() => wilsonInterval(11, 10)).toThrow(RangeError);
+    expect(() => wilsonInterval(1, -1)).toThrow(RangeError);
+    expect(() => wilsonInterval(1, 10, Number.NaN)).toThrow(RangeError);
+  });
 });

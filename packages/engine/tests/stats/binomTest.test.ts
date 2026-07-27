@@ -44,8 +44,18 @@ describe('twoProportionZ', () => {
     expect(r.pValue).toBeCloseTo(1, 6);
   });
 
-  it('returns a null result when either arm has no trials', () => {
-    expect(twoProportionZ(5, 0, 5, 10)).toEqual({ diff: 0, z: 0, pValue: 1 });
-    expect(twoProportionZ(5, 10, 5, 0)).toEqual({ diff: 0, z: 0, pValue: 1 });
+  it('rejects empty or incoherent trial domains', () => {
+    expect(() => twoProportionZ(0, 0, 5, 10)).toThrow(RangeError);
+    expect(() => twoProportionZ(5, 10, 0, 0)).toThrow(RangeError);
+    expect(() => twoProportionZ(11, 10, 5, 10)).toThrow(RangeError);
+  });
+});
+
+describe('strict binomial domains', () => {
+  it('rejects negative, non-integral, impossible, or non-finite inputs', () => {
+    expect(() => binomTest(-1, 10)).toThrow(RangeError);
+    expect(() => binomTest(11, 10)).toThrow(RangeError);
+    expect(() => binomTest(1.5, 10)).toThrow(RangeError);
+    expect(() => binomTest(1, 10, Number.NaN)).toThrow(RangeError);
   });
 });

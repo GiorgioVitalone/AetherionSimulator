@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "profile": "current-engine-ci-smoke-v1",
+  "budgets": {
+    "auraRecomputesPerSecondMin": 50,
+    "triggerDispatchesPerSecondMin": 50,
+    "simulationMillisecondsPerGameMax": 2000,
+    "observedTraceBytesPerGameMax": 5000000,
+    "studyPlanBuildMillisecondsMax": 2000
+  },
+  "semanticGates": {
+    "observerRunHashEquivalent": true,
+    "observerReplayHashesEquivalent": true,
+    "studyPairingCount": 210
+  }
+}

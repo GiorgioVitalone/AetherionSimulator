@@ -10,43 +10,16 @@
  * plays to its plan.
  *
  * DETERMINISM: the NEUTRAL gameplan's weights are EXACTLY the current hardcoded
- * constants, so a consumer that defaults to NEUTRAL is a byte-identical no-op. The
+ * constants, so a consumer that defaults to NEUTRAL is a semantically invariant no-op. The
  * faction gameplans are only consulted when an explicit `botGameplan` is supplied
  * on the config — absent ⇒ the engine never touches this module.
  *
  * Pure data + a pure selector. No state, no RNG.
  */
 
-/** The four core-set factions that have a tuned gameplan, plus the archetype-
- * neutral fallback whose weights reproduce the current hardcoded behavior. */
-export type Faction = 'Neutral' | 'Onyx' | 'Radiant' | 'Sapphire' | 'Verdant';
+import type { Faction, Gameplan } from '../types/gameplan.js';
 
-/** A bundle of strategic weights the heuristic pilot can read to bias its scoring
- * toward a faction's intended archetype. Each is a MULTIPLIER/WEIGHT on an existing
- * scoring lever; NEUTRAL reproduces the hardcoded constants exactly.
- *
- * - `faceWeight`     — value per point of LP removed from the enemy Hero (the
- *                      hardcoded FACE_WEIGHT, used for combat face swings and the
- *                      enemy-hero `deal_damage` spell branch). Higher = more
- *                      willing to race the Hero.
- * - `removalWeight`  — multiplier on the value of neutralizing an enemy body
- *                      (destroy/sacrifice; the hardcoded `mult = 1`). Higher =
- *                      prizes spot removal more.
- * - `tempoWeight`    — weight on allied stat buffs (`modify_stats`, hardcoded 0.6),
- *                      a proxy for proactive board development / tempo plays.
- * - `gangAggression` — multiplier on the gang planner's key-body value multipliers
- *                      (KEY_DEFENDER_VALUE / KEY_THREAT_VALUE). NEUTRAL = 1. Higher =
- *                      more eager to commit multiple bodies to break a wall.
- * - `closeBias`      — willingness to take the game-closing line over grinding value
- *                      (a scalar later tasks apply to closing-reward scoring).
- *                      NEUTRAL = 1 (no extra bias). */
-export interface Gameplan {
-  readonly faceWeight: number;
-  readonly removalWeight: number;
-  readonly tempoWeight: number;
-  readonly gangAggression: number;
-  readonly closeBias: number;
-}
+export type { Faction, Gameplan } from '../types/gameplan.js';
 
 /** NEUTRAL gameplan — weights EQUAL the current hardcoded constants so a consumer
  * defaulting to NEUTRAL reproduces today's behavior byte-for-byte. Do not change

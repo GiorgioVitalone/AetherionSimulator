@@ -3,12 +3,15 @@
  */
 import type { GameState, PendingChoice, PlayerResponse } from '../types/game-state.js';
 import type { ZoneType } from '../types/common.js';
+import type { TransitionResult } from '../transitions/types.js';
 
 // ── Machine Context ─────────────────────────────────────────────────────────
 
 export interface GameMachineContext {
   readonly gameState: GameState;
   readonly pendingChoice: PendingChoice | null;
+  /** Most recent authoritative command result, observable by harness callers. */
+  readonly lastTransition: TransitionResult | null;
 }
 
 // ── Player Actions ──────────────────────────────────────────────────────────
@@ -23,7 +26,8 @@ export type PlayerAction =
   | ActivateAbilityAction
   | DeclareAttackAction
   | DiscardForEnergyAction
-  | DeclareTransformAction;
+  | DeclareTransformAction
+  | TapReserveAction;
 
 export interface DeployAction {
   readonly type: 'deploy';
@@ -98,12 +102,26 @@ export interface DeclareTransformAction {
   readonly type: 'declare_transform';
 }
 
+/** Exhaust a ready Reserve character for +1 temporary resource of its type
+ * (Rulebook 8 step 4 — a CHOICE; offered only under `config.reserveTapChoice`).
+ * All the character's abilities are disabled until next Upkeep; under
+ * `reserveTapStrain` it also suffers 1 direct damage. */
+export interface TapReserveAction {
+  readonly type: 'tap_reserve';
+  readonly cardInstanceId: string;
+}
+
 // ── Machine Events ──────────────────────────────────────────────────────────
 
 export type GameMachineEvent =
   | { readonly type: 'MULLIGAN_DECISION'; readonly playerId: 0 | 1; readonly keep: boolean }
   | { readonly type: 'PLAYER_ACTION'; readonly action: PlayerAction }
-  | { readonly type: 'PLAYER_RESPONSE'; readonly response: PlayerResponse }
+  | {
+      readonly type: 'PLAYER_RESPONSE';
+      readonly interactionId?: string;
+      readonly playerId?: 0 | 1;
+      readonly response: PlayerResponse;
+    }
   | { readonly type: 'REACTIVE_ACTION'; readonly action: PlayerAction }
   | { readonly type: 'PRIORITY_PASS' }
   | { readonly type: 'END_PHASE' }

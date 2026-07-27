@@ -68,20 +68,20 @@ describe('noOverheal knob (engine)', () => {
   it('OFF (default): HP caps at max AND a CHARACTER_OVERHEALED event fires', () => {
     const { state, src } = stateWith({ terminationMode: 'turn_cap' });
     const res = executeEffect(state, overheal, ctx(src));
-    const c = res.newState.players[0]!.zones.frontline.find(x => x?.instanceId === src);
+    const c = res.newState.players[0]!.zones.frontline.find((x) => x?.instanceId === src);
     expect(c!.currentHp).toBe(3); // capped at baseHp
-    const ev = res.events.find(e => e.type === 'CHARACTER_OVERHEALED');
+    const ev = res.events.find((e) => e.type === 'CHARACTER_OVERHEALED');
     expect(ev && ev.type === 'CHARACTER_OVERHEALED' ? ev.excess : 0).toBe(3);
   });
 
   it('ON: HP still caps at max but the CHARACTER_OVERHEALED event is suppressed', () => {
     const { state, src } = stateWith({ terminationMode: 'turn_cap', noOverheal: true });
     const res = executeEffect(state, overheal, ctx(src));
-    const c = res.newState.players[0]!.zones.frontline.find(x => x?.instanceId === src);
+    const c = res.newState.players[0]!.zones.frontline.find((x) => x?.instanceId === src);
     expect(c!.currentHp).toBe(3); // identical cap
-    expect(res.events.some(e => e.type === 'CHARACTER_OVERHEALED')).toBe(false);
+    expect(res.events.some((e) => e.type === 'CHARACTER_OVERHEALED')).toBe(false);
     // The realized (capped) CHARACTER_HEALED still fires — only the overheal is gone.
-    expect(res.events.some(e => e.type === 'CHARACTER_HEALED')).toBe(true);
+    expect(res.events.some((e) => e.type === 'CHARACTER_HEALED')).toBe(true);
   });
 });
 
@@ -111,7 +111,9 @@ describe('resourceRampBonus knob (engine)', () => {
   });
 
   it('bonus 1: draws 2 resources (1 standard + 1 bonus)', () => {
-    const r = drawResourceCard(stateWith({ terminationMode: 'turn_cap', resourceRampBonus: 1 }, 10));
+    const r = drawResourceCard(
+      stateWith({ terminationMode: 'turn_cap', resourceRampBonus: 1 }, 10),
+    );
     expect(r.state.players[0]!.resourceBank).toHaveLength(2);
     expect(r.state.players[0]!.resourceDeck).toHaveLength(8);
     expect(r.events).toHaveLength(2);
@@ -146,14 +148,17 @@ describe('directHighGroundDeploy knob (engine)', () => {
     });
     return mockGameState({
       phase: 'strategy',
-      players: [mockPlayerState(0, { hand: [handCard], resourceBank: bank(5) }), mockPlayerState(1)],
+      players: [
+        mockPlayerState(0, { hand: [handCard], resourceBank: bank(5) }),
+        mockPlayerState(1),
+      ],
       ...(config ? { config } : {}),
     });
   }
 
   it('OFF (default): a non-Elite character is NOT offered a High Ground slot', () => {
     const acts = computeAvailableActions(stateWith(undefined));
-    const zones = acts.canDeploy[0]!.validSlots.map(g => g.zone);
+    const zones = acts.canDeploy[0]!.validSlots.map((g) => g.zone);
     expect(zones).toContain('frontline');
     expect(zones).toContain('reserve');
     expect(zones).not.toContain('high_ground');
@@ -163,7 +168,7 @@ describe('directHighGroundDeploy knob (engine)', () => {
     const acts = computeAvailableActions(
       stateWith({ terminationMode: 'turn_cap', directHighGroundDeploy: true }),
     );
-    const hg = acts.canDeploy[0]!.validSlots.find(g => g.zone === 'high_ground');
+    const hg = acts.canDeploy[0]!.validSlots.find((g) => g.zone === 'high_ground');
     expect(hg).toBeDefined();
     expect(hg!.surcharge).toBe(0);
   });
@@ -174,8 +179,15 @@ const ready = existsSync(runnerPath);
 const d = ready ? describe : describe.skip;
 
 d('sim-time knobs (pure transforms)', () => {
-  interface MiniHero { currentLp: number; maxLp: number }
-  interface MiniCard { cardType: string; baseAtk: number; currentAtk: number }
+  interface MiniHero {
+    currentLp: number;
+    maxLp: number;
+  }
+  interface MiniCard {
+    cardType: string;
+    baseAtk: number;
+    currentAtk: number;
+  }
   function gs(p0Hero: MiniHero, p1Hero: MiniHero, hand: MiniCard[], deck: MiniCard[]): unknown {
     return {
       players: [
@@ -199,9 +211,15 @@ d('sim-time knobs (pure transforms)', () => {
 
   it('atkBonus adds flat ATK to characters only (base+current); 0/absent ⇒ no-op', async () => {
     const { applyAtkBonus } = (await import(runnerPath)) as {
-      applyAtkBonus: (gs: unknown, b?: number) => { players: { hand: MiniCard[]; mainDeck: MiniCard[] }[] };
+      applyAtkBonus: (
+        gs: unknown,
+        b?: number,
+      ) => { players: { hand: MiniCard[]; mainDeck: MiniCard[] }[] };
     };
-    const hand = [{ cardType: 'C', baseAtk: 1, currentAtk: 1 }, { cardType: 'S', baseAtk: 0, currentAtk: 0 }];
+    const hand = [
+      { cardType: 'C', baseAtk: 1, currentAtk: 1 },
+      { cardType: 'S', baseAtk: 0, currentAtk: 0 },
+    ];
     const deck = [{ cardType: 'C', baseAtk: 3, currentAtk: 3 }];
     const state = gs({ currentLp: 30, maxLp: 30 }, { currentLp: 30, maxLp: 30 }, hand, deck);
     const out = applyAtkBonus(state, 1);
@@ -213,7 +231,10 @@ d('sim-time knobs (pure transforms)', () => {
 
   it('startingCardBonus moves N cards deck→hand per player; 0/absent ⇒ no-op', async () => {
     const { applyStartingCardBonus } = (await import(runnerPath)) as {
-      applyStartingCardBonus: (gs: unknown, b?: number) => { players: { hand: MiniCard[]; mainDeck: MiniCard[] }[] };
+      applyStartingCardBonus: (
+        gs: unknown,
+        b?: number,
+      ) => { players: { hand: MiniCard[]; mainDeck: MiniCard[] }[] };
     };
     const deck = [
       { cardType: 'C', baseAtk: 1, currentAtk: 1 },
@@ -233,7 +254,9 @@ const ds = simReady ? describe : describe.skip;
 
 ds('design knobs: byte-identical no-op + determinism (runSim)', () => {
   it('explicit-default knobs reproduce the locked-base hash; real knobs diverge deterministically', async () => {
-    const { runSim } = (await import(runnerPath)) as { runSim: (c: unknown) => { runHash: string } };
+    const { runSim } = (await import(runnerPath)) as {
+      runSim: (c: unknown) => { runHash: string };
+    };
     // LOCKED BASE adopted for the sweep.
     const base = {
       matchups: 'all-pairs',
@@ -242,14 +265,22 @@ ds('design knobs: byte-identical no-op + determinism (runSim)', () => {
       armBuffsTakeMax: true,
       defenderHighGroundOnly: true,
     } as const;
+    // Yield between the sync sims so one event-loop block stays under vitest's
+    // fixed 60s worker-RPC timeout (fatal unhandled error otherwise).
+    const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
     const off = runSim(base).runHash;
 
     // Explicit-default values collapse to the no-op baseline (not emitted into the hash).
-    expect(runSim({ ...base, atkBonus: 0 }).runHash).toBe(off);
-    expect(runSim({ ...base, startingCardBonus: 0 }).runHash).toBe(off);
-    expect(runSim({ ...base, resourceRampBonus: 0 }).runHash).toBe(off);
-    expect(runSim({ ...base, noOverheal: false }).runHash).toBe(off);
-    expect(runSim({ ...base, directHighGroundDeploy: false }).runHash).toBe(off);
+    for (const o of [
+      { atkBonus: 0 },
+      { startingCardBonus: 0 },
+      { resourceRampBonus: 0 },
+      { noOverheal: false },
+      { directHighGroundDeploy: false },
+    ]) {
+      await tick();
+      expect(runSim({ ...base, ...o }).runHash, JSON.stringify(o)).toBe(off);
+    }
 
     // Real knob values diverge from the baseline, and are deterministic across calls.
     for (const o of [
@@ -260,9 +291,11 @@ ds('design knobs: byte-identical no-op + determinism (runSim)', () => {
       { resourceRampBonus: 1 },
       { directHighGroundDeploy: true },
     ]) {
+      await tick();
       const h = runSim({ ...base, ...o }).runHash;
       expect(h, JSON.stringify(o)).not.toBe(off);
+      await tick();
       expect(runSim({ ...base, ...o }).runHash, JSON.stringify(o)).toBe(h);
     }
-  }, 30000);
+  }, 90000);
 });

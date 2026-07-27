@@ -13,6 +13,7 @@
 import type { CardInstance, PlayerState, HeroState } from '../types/game-state.js';
 import type { Demand, HeroInput, Signal, StaticCard } from '../balance/index.js';
 import {
+  ACCEL_RAMP_TEMPO,
   computeCardPower,
   emitDemands,
   emitSignals,
@@ -24,6 +25,10 @@ import { getAllCards } from '../zones/zone-manager.js';
 // Inter-card synergy is a bounded amplifier, never a dominant term (mirrors the
 // deck-value global cap): the per-deploy board+hero synergy bonus is capped here.
 const SYNERGY_BONUS_CAP = 4;
+// rampPilot: turn by which a ramp deploy no longer buys anything (the Resource Deck
+// is 15 cards, so acceleration stops mattering as it empties — the same horizon the
+// resource_deck_empty_transform termination rule keys on).
+const RAMP_HORIZON_TURN = 16;
 
 interface CardSignals {
   readonly provides: readonly Signal[];
@@ -102,4 +107,16 @@ export function boardHeroSynergy(card: CardInstance, player: PlayerState): numbe
  * synergy. Same units as atk+hp, so it slots into the existing deploy ranking. */
 export function deployValue(card: CardInstance, player: PlayerState): number {
   return intrinsicValue(card) + boardHeroSynergy(card, player);
+}
+
+/** rampPilot (GameConfig.rampPilot): early-game tempo bonus for `ramp` signals the
+ * cost-free intrinsic score values at ~0 — the in-game analogue of computeDeckValue's
+ * `acceleration` term, using the SAME tempo weight, fading linearly to 0 by the
+ * resource-deck horizon. Zero for non-ramp cards and for late-game deploys. */
+export function rampDeployBonus(card: CardInstance, turnNumber: number): number {
+  const phase = Math.max(0, (RAMP_HORIZON_TURN - turnNumber) / RAMP_HORIZON_TURN);
+  if (phase === 0) return 0;
+  let rampWeight = 0;
+  for (const p of signalsOf(card).provides) if (p.kind === 'ramp') rampWeight += p.weight;
+  return rampWeight * ACCEL_RAMP_TEMPO * phase;
 }

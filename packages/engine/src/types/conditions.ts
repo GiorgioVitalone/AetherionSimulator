@@ -9,6 +9,7 @@ export type Condition =
   | StatCompare
   | CardCount
   | ZoneIs
+  | ZoneFull
   | HasTrait
   | CostCheck
   | CardTypeCheck
@@ -45,6 +46,11 @@ export interface CardCount {
 export interface ZoneIs {
   readonly type: 'zone_is';
   readonly zone: ZoneType;
+}
+export interface ZoneFull {
+  readonly type: 'zone_full';
+  readonly zone: ZoneType;
+  readonly side: 'allied' | 'enemy';
 }
 export interface HasTrait {
   readonly type: 'has_trait';
@@ -98,7 +104,8 @@ export interface EventContext {
 export interface TriggeringCardCost {
   readonly type: 'triggering_card_cost';
   readonly comparison: 'less_equal' | 'greater_equal' | 'equal';
-  readonly relativeTo: 'triggering_spell';
+  /** Authored numeric threshold; comparing the triggering spell to itself is invalid. */
+  readonly value: number;
 }
 export interface AndCondition {
   readonly type: 'and';

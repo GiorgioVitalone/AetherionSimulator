@@ -18,6 +18,7 @@ import { updateCardInState } from './state-helpers.js';
 import { executeEffect } from './interpreter.js';
 import { deployToZone, firstOpenSlot } from '../zones/zone-manager.js';
 import { shuffle } from '../setup/rng.js';
+import { registerCardTriggers } from '../events/trigger-registry.js';
 
 const DEPLOY_ZONES: readonly ZoneType[] = ['frontline', 'reserve', 'high_ground'];
 
@@ -27,22 +28,44 @@ function setPlayer(state: GameState, playerId: 0 | 1, player: PlayerState): Game
   return { ...state, players };
 }
 
+/** BUG FIX (config.registerPrintedTriggers): a card entering the battlefield from
+ * a pile registers its printed triggered abilities so dispatch can see them (see
+ * GameConfig.registerPrintedTriggers). Absent/false ⇒ no-op. */
+function maybeRegisterPrintedTriggers(state: GameState, cardInstanceId: string): GameState {
+  return state.config?.registerPrintedTriggers === true
+    ? registerCardTriggers(state, cardInstanceId)
+    : state;
+}
+
 /** Reset a card pulled out of a pile so it enters play/hand with clean runtime state. */
-function freshFromPile(card: CardInstance): CardInstance {
+function freshFromPile(
+  card: CardInstance,
+  summoningSick = true,
+): CardInstance {
   return {
     ...card,
     currentHp: card.baseHp,
     currentAtk: card.baseAtk,
     currentArm: card.baseArm,
     exhausted: false,
-    summoningSick: true,
+    summoningSick,
     movedThisTurn: false,
     attackedThisTurn: false,
+    hasActed: false,
+    freeMovesRemaining: 0,
+    reserveEnergyExhausted: false,
+    transferredThisTurn: false,
+    armMitigatedThisTurn: false,
+    shieldMitigatedThisTurn: false,
+    forcedAttacksThisTurn: 0,
+    armConsumed: false,
     grantedTraits: [],
     modifiers: [],
     statusEffects: [],
     registeredTriggers: [],
+    activeReplacements: [],
     equipment: null,
+    xPaid: 0,
   };
 }
 
@@ -54,7 +77,8 @@ export function executeReturnFromDiscard(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   const events: GameEvent[] = [];
   let currentState = state;
@@ -73,23 +97,36 @@ function returnOne(
   for (let pi = 0; pi < 2; pi++) {
     const playerId = pi as 0 | 1;
     const player = state.players[playerId];
-    const card = player.discardPile.find(c => c.instanceId === targetId);
+    const card = player.discardPile.find((c) => c.instanceId === targetId);
     if (card === undefined) continue;
 
-    const discardPile = player.discardPile.filter(c => c.instanceId !== targetId);
+    const discardPile = player.discardPile.filter((c) => c.instanceId !== targetId);
     if (destination === 'hand') {
-      const next = setPlayer(state, playerId, { ...player, discardPile, hand: [...player.hand, freshFromPile(card)] });
+      const next = setPlayer(state, playerId, {
+        ...player,
+        discardPile,
+        hand: [...player.hand, freshFromPile(card)],
+      });
       events.push({ type: 'CARD_DRAWN', playerId, count: 1 });
       return next;
     }
-    const zone = DEPLOY_ZONES.find(z => firstOpenSlot(player.zones, z) !== -1);
+    const zone = DEPLOY_ZONES.find((z) => firstOpenSlot(player.zones, z) !== -1);
     if (zone === undefined) {
       // No legal slot — leave the card in discard.
       return state;
     }
     const zones = deployToZone(player.zones, freshFromPile(card), zone);
-    events.push({ type: 'CARD_DEPLOYED', cardInstanceId: card.instanceId, zone, playerId });
-    return setPlayer(state, playerId, { ...player, discardPile, zones });
+    events.push({
+      type: 'CARD_DEPLOYED',
+      cardInstanceId: card.instanceId,
+      cardDefId: card.cardDefId,
+      zone,
+      playerId,
+    });
+    return maybeRegisterPrintedTriggers(
+      setPlayer(state, playerId, { ...player, discardPile, zones }),
+      card.instanceId,
+    );
   }
   return state;
 }
@@ -108,20 +145,39 @@ export function executeSearchDeck(
   let currentState = state;
   let working = player;
 
+  let deployedInstanceId: string | undefined;
   if (matches.length > 0) {
     const found = matches[0]!;
-    const remaining = working.mainDeck.filter(c => c.instanceId !== found.instanceId);
+    const remaining = working.mainDeck.filter((c) => c.instanceId !== found.instanceId);
     if (effect.destination === 'hand') {
       working = { ...working, mainDeck: remaining, hand: [...working.hand, found] };
       events.push({ type: 'CARD_DRAWN', playerId, count: 1 });
     } else {
-      const zone = DEPLOY_ZONES.find(z => firstOpenSlot(working.zones, z) !== -1);
+      const zone = DEPLOY_ZONES.find((z) => firstOpenSlot(working.zones, z) !== -1);
       if (zone !== undefined) {
-        working = { ...working, mainDeck: remaining, zones: deployToZone(working.zones, freshFromPile(found), zone) };
-        events.push({ type: 'CARD_DEPLOYED', cardInstanceId: found.instanceId, zone, playerId });
+        working = {
+          ...working,
+          mainDeck: remaining,
+          zones: deployToZone(working.zones, freshFromPile(found), zone),
+        };
+        events.push({
+          type: 'CARD_DEPLOYED',
+          cardInstanceId: found.instanceId,
+          cardDefId: found.cardDefId,
+          zone,
+          playerId,
+        });
+        deployedInstanceId = found.instanceId;
       }
     }
     currentState = setPlayer(currentState, playerId, working);
+    if (deployedInstanceId !== undefined) {
+      currentState = maybeRegisterPrintedTriggers(currentState, deployedInstanceId);
+      // Refresh `working` from the registered state: the final setPlayer below spreads
+      // `working`, so a stale copy would clobber `zones` and silently drop the
+      // registration a tutored-to-battlefield card just received.
+      working = currentState.players[playerId]!;
+    }
 
     if (effect.destination === 'hand' && shouldCastFree(effect, found)) {
       const cast = castFoundForFree(currentState, found, playerId);
@@ -132,7 +188,10 @@ export function executeSearchDeck(
   }
 
   const { result, nextRng } = shuffle(working.mainDeck, currentState.rng);
-  currentState = setPlayer({ ...currentState, rng: nextRng }, playerId, { ...working, mainDeck: result });
+  currentState = setPlayer({ ...currentState, rng: nextRng }, playerId, {
+    ...working,
+    mainDeck: result,
+  });
   return { newState: currentState, events };
 }
 
@@ -153,25 +212,27 @@ function shouldCastFree(
  * (no resource payment) and move it from hand to the discard pile, since spells
  * are discarded after they resolve. Pure: returns the new state + events.
  */
-function castFoundForFree(
-  state: GameState,
-  found: CardInstance,
-  playerId: 0 | 1,
-): EffectResult {
-  const handAfter = state.players[playerId].hand.filter(c => c.instanceId !== found.instanceId);
+function castFoundForFree(state: GameState, found: CardInstance, playerId: 0 | 1): EffectResult {
+  const handAfter = state.players[playerId].hand.filter((c) => c.instanceId !== found.instanceId);
   const movedToDiscard = setPlayer(state, playerId, {
     ...state.players[playerId],
     hand: handAfter,
     discardPile: [...state.players[playerId].discardPile, found],
   });
-  const events: GameEvent[] = [{ type: 'SPELL_CAST', cardInstanceId: found.instanceId, playerId }];
+  const events: GameEvent[] = [
+    { type: 'SPELL_CAST', cardInstanceId: found.instanceId, cardDefId: found.cardDefId, playerId },
+  ];
   let current = movedToDiscard;
-  const castContext: EffectContext = { sourceInstanceId: found.instanceId, controllerId: playerId, triggerDepth: 0 };
+  const castContext: EffectContext = {
+    sourceInstanceId: found.instanceId,
+    controllerId: playerId,
+    triggerDepth: 0,
+  };
   for (const eff of castSpellEffects(found)) {
     let result = executeEffect(current, eff, castContext);
     if (result.pendingChoice !== undefined) {
       const ids = result.pendingChoice.options
-        .map(o => o.instanceId ?? o.id)
+        .map((o) => o.instanceId ?? o.id)
         .filter((x): x is string => typeof x === 'string');
       // Honor the choice's real minimum: an optional target (up_to ⇒ minSelections 0)
       // must be allowed to resolve with NO target chosen, not forced to fire on a body
@@ -207,11 +268,19 @@ export function executeShuffleIntoDeck(
   const source = effect.source === 'discard' ? player.discardPile : player.hand;
   if (source.length === 0) return { newState: state, events: [] };
 
-  const combined = [...player.mainDeck, ...source];
+  // Cards in discard retain last-known battlefield state for recursion and
+  // trigger inspection. Crossing back into the deck is a new-zone reset: a
+  // later draw must not resurrect lethal damage, exhaustion, modifiers, or
+  // once-per-turn markers from the destroyed instance.
+  const combined = [
+    ...player.mainDeck,
+    ...source.map((card) => freshFromPile(card, false)),
+  ];
   const { result, nextRng } = shuffle(combined, state.rng);
-  const cleared = effect.source === 'discard'
-    ? { ...player, discardPile: [], mainDeck: result }
-    : { ...player, hand: [], mainDeck: result };
+  const cleared =
+    effect.source === 'discard'
+      ? { ...player, discardPile: [], mainDeck: result }
+      : { ...player, hand: [], mainDeck: result };
   return { newState: setPlayer({ ...state, rng: nextRng }, playerId, cleared), events: [] };
 }
 
@@ -223,14 +292,15 @@ export function executeCleanse(
   context: EffectContext,
 ): EffectResult {
   const resolved = resolveTargets(state, effect.target, context);
-  if (!resolved.resolved) return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (!resolved.resolved)
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
 
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    currentState = updateCardInState(currentState, targetId, c => ({
+    currentState = updateCardInState(currentState, targetId, (c) => ({
       ...c,
       statusEffects: [],
-      modifiers: c.modifiers.filter(m => !isNegative(m.modifier)),
+      modifiers: c.modifiers.filter((m) => !isNegative(m.modifier)),
     }));
   }
   return { newState: currentState, events: [] };
@@ -249,21 +319,32 @@ export function executeDeployFromDeck(
 ): EffectResult {
   const playerId = context.controllerId;
   const player = state.players[playerId];
-  const characters = player.mainDeck.filter(c => c.cardType === 'C');
+  const characters = player.mainDeck.filter((c) => c.cardType === 'C');
   const referenceCost = resolveReferenceCost(player, effect.filter);
   const matches = applyFilter(characters, effect.filter, context, referenceCost);
   if (matches.length === 0) return { newState: state, events: [] };
 
-  const zone = DEPLOY_ZONES.find(z => firstOpenSlot(player.zones, z) !== -1);
+  const zone = DEPLOY_ZONES.find((z) => firstOpenSlot(player.zones, z) !== -1);
   if (zone === undefined) return { newState: state, events: [] };
 
   const found = matches[0]!;
-  const remaining = player.mainDeck.filter(c => c.instanceId !== found.instanceId);
+  const remaining = player.mainDeck.filter((c) => c.instanceId !== found.instanceId);
   const zones = deployToZone(player.zones, freshFromPile(found), zone);
-  const next = setPlayer(state, playerId, { ...player, mainDeck: remaining, zones });
+  const next = maybeRegisterPrintedTriggers(
+    setPlayer(state, playerId, { ...player, mainDeck: remaining, zones }),
+    found.instanceId,
+  );
   return {
     newState: next,
-    events: [{ type: 'CARD_DEPLOYED', cardInstanceId: found.instanceId, zone, playerId }],
+    events: [
+      {
+        type: 'CARD_DEPLOYED',
+        cardInstanceId: found.instanceId,
+        cardDefId: found.cardDefId,
+        zone,
+        playerId,
+      },
+    ],
   };
 }
 
@@ -309,10 +390,9 @@ export function executeCopyCard(
     isToken: true,
     owner: playerId,
   };
-  const next = setPlayer(
-    { ...state, rng: { ...state.rng, counter: copyId } },
-    playerId,
-    { ...player, hand: [...player.hand, copy] },
-  );
+  const next = setPlayer({ ...state, rng: { ...state.rng, counter: copyId } }, playerId, {
+    ...player,
+    hand: [...player.hand, copy],
+  });
   return { newState: next, events: [{ type: 'CARD_DRAWN', playerId, count: 1 }] };
 }

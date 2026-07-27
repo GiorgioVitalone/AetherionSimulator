@@ -10,7 +10,6 @@ import type {
   EffectContext,
   EffectResult,
   CardInstance,
-  PlayerState,
   ResourceCard,
   RegisteredTrigger,
   ActiveModifier,
@@ -23,8 +22,16 @@ import { evaluateAmount, evaluateDynamicStat } from './amount-evaluator.js';
 import type { StatModifier } from '../types/common.js';
 import { evaluateCondition } from './condition-evaluator.js';
 import { findCard, removeFromZone, deployToZone, getZoneArray } from '../zones/zone-manager.js';
-import { updateCardInState, findCardInState, removeCardFromState } from './state-helpers.js';
-import { isExiledOnDestruction } from './destruction-destination.js';
+import {
+  updateCardInState,
+  findCardInState,
+  removeCardFromState,
+  exileCardFromState,
+} from './state-helpers.js';
+import {
+  detachEquipmentForDiscard,
+  isExiledOnDestruction,
+} from './destruction-destination.js';
 import {
   executeReturnFromDiscard,
   executeSearchDeck,
@@ -35,7 +42,7 @@ import {
 } from './discard-deck-handlers.js';
 import { executeScry } from './scry-handler.js';
 import { executeCounterSpell } from './counter-handler.js';
-import { triggerRateLimits } from '../events/trigger-registry.js';
+import { triggerRateLimits, registerCardTriggers } from '../events/trigger-registry.js';
 import {
   executeReplacement,
   applyDamageReplacements,
@@ -48,6 +55,11 @@ import { executeAttachAsEquipment } from './attach-handler.js';
 import { rngPrepass } from './rng-prepass.js';
 import type { ActiveReplacement } from '../types/game-state.js';
 import type { ZoneType } from '../types/common.js';
+import { hasEffectiveTrait, snapshotCard } from '../selectors/card-semantics.js';
+import { GuardExhaustionError } from '../errors/engine-errors.js';
+import { attemptDraw } from './draw-service.js';
+import { parseHeroTargetId } from '../selectors/hero-identity.js';
+import { expireInactiveSourceDurations } from '../runtime/duration-lifecycle.js';
 
 function unchanged(state: GameState): EffectResult {
   return { newState: state, events: [] };
@@ -70,6 +82,23 @@ export function executeEffect(
   const prepped = rngPrepass(state, effect, context);
   state = prepped.state;
   context = prepped.context;
+  const result = executePreparedEffect(state, effect, context);
+  return result.pendingChoice === undefined
+    ? result
+    : {
+        ...result,
+        pendingChoice: {
+          ...result.pendingChoice,
+          resolutionContext: result.pendingChoice.resolutionContext ?? context,
+        },
+      };
+}
+
+function executePreparedEffect(
+  state: GameState,
+  effect: Effect,
+  context: EffectContext,
+): EffectResult {
   switch (effect.type) {
     case 'deal_damage':
       return executeDealDamage(state, effect, context);
@@ -85,6 +114,8 @@ export function executeEffect(
       return executeDestroy(state, effect, context);
     case 'bounce':
       return executeBounce(state, effect, context);
+    case 'exile':
+      return executeExile(state, effect, context);
     case 'sacrifice':
       return executeSacrifice(state, effect, context);
     case 'gain_resource':
@@ -150,13 +181,14 @@ function executeDealDamage(
   // DIAGNOSTIC ABLATION (default absent ⇒ no-op): config.disableHeroReachBySeat
   // makes the controlling seat unable to reduce the ENEMY Hero's LP via a direct
   // damage effect. Self-targeted hero damage (the controller's own hero) is
-  // unaffected. Default (absent / both false) leaves this path byte-identical.
+  // unaffected. Default (absent / both false) leaves this path semantically invariant.
   const heroReachDisabled =
     currentState.config?.disableHeroReachBySeat?.[context.controllerId] === true;
 
   for (const targetId of resolved.targetIds) {
-    if (targetId.startsWith('hero_')) {
-      const playerId = Number(targetId.split('_')[1]) as 0 | 1;
+    const heroPlayerId = parseHeroTargetId(targetId);
+    if (heroPlayerId !== null) {
+      const playerId = heroPlayerId;
       if (heroReachDisabled && playerId !== context.controllerId) continue;
       const hero = currentState.players[playerId].hero;
       const newLp = Math.max(0, hero.currentLp - amount);
@@ -190,16 +222,27 @@ function executeDealDamage(
         ...c,
         currentHp: c.currentHp - dmg.amount,
       }));
-      // Check destruction (subject to "would be destroyed" replacement).
-      const cardCheck = findCardInState(currentState, targetId);
-      if (cardCheck !== null && cardCheck.currentHp <= 0) {
-        const destruction = destroyOrReplace(currentState, cardCheck, 'effect', context);
-        currentState = destruction.newState;
-        events.push(...destruction.events);
+      // Current rules defer lethal checks until the complete atomic damage batch
+      // has landed. This keeps "All" membership and deaths simultaneous and lets
+      // the shared state-based pipeline own destruction replacements.
+      if (state.config?.stateBasedActions !== true) {
+        const cardCheck = findCardInState(currentState, targetId);
+        if (cardCheck !== null && cardCheck.currentHp <= 0) {
+          const destruction = destroyOrReplace(currentState, cardCheck, 'effect', context);
+          currentState = destruction.newState;
+          events.push(...destruction.events);
+        }
       }
     }
   }
 
+  if (state.config?.stateBasedActions === true) {
+    const stateBased = applyStateBasedDeaths(currentState);
+    return {
+      newState: stateBased.newState,
+      events: [...events, ...stateBased.events],
+    };
+  }
   return { newState: currentState, events };
 }
 
@@ -218,8 +261,10 @@ function destroyOrReplace(
     const destroyed: GameEvent = {
       type: 'CARD_DESTROYED',
       cardInstanceId: card.instanceId,
+      cardDefId: card.cardDefId,
       cause,
       playerId: card.owner,
+      lastKnownCard: snapshotCard(card),
     };
     // A Volatile non-token unit is destroyed (Last Breath still fires) but its body
     // is exiled rather than discarded — emit CARD_EXILED for the destination.
@@ -227,18 +272,36 @@ function destroyOrReplace(
       !card.isToken && isExiledOnDestruction(card)
         ? [
             destroyed,
-            { type: 'CARD_EXILED', cardInstanceId: card.instanceId, playerId: card.owner },
+            {
+              type: 'CARD_EXILED',
+              cardInstanceId: card.instanceId,
+              cardDefId: card.cardDefId,
+              playerId: card.owner,
+            },
           ]
         : [destroyed];
     // The holder's equipment follows it to the discard pile (Rulebook 13). Emit its
     // own CARD_DESTROYED so discard-recursion watchers can see it (mirrors bounce).
     if (card.equipment !== null) {
-      events.push({
-        type: 'CARD_DESTROYED',
-        cardInstanceId: card.equipment.instanceId,
-        cause: 'effect',
-        playerId: card.owner,
-      });
+      events.push(
+        state.config?.authoritativeTransitions === true
+          ? {
+              type: 'EQUIPMENT_DESTROYED',
+              equipmentId: card.equipment.instanceId,
+              holderId: card.instanceId,
+              cardDefId: card.equipment.cardDefId,
+              playerId: card.owner,
+              reason: 'holder_destroyed',
+            }
+          : {
+              type: 'CARD_DESTROYED',
+              cardInstanceId: card.equipment.instanceId,
+              cardDefId: card.equipment.cardDefId,
+              cause: 'effect',
+              playerId: card.owner,
+              lastKnownCard: snapshotCard(card.equipment),
+            },
+      );
     }
     return { newState: removeCardFromState(state, card.instanceId), events };
   }
@@ -285,13 +348,14 @@ function executeHeal(
 
   // EC-005 (config.disableHeroHealing): nullify any heal whose realized target is a
   // HERO; character healing below is untouched. Default OFF ⇒ this branch is skipped
-  // and the heal path is byte-identical to the v10 baseline.
+  // and the heal path is semantically invariant to the canonical default.
   const disableHeroHealing = currentState.config?.disableHeroHealing === true;
   const diag = currentState.config?.diag;
 
   for (const targetId of resolved.targetIds) {
-    if (targetId.startsWith('hero_')) {
-      const playerId = Number(targetId.split('_')[1]) as 0 | 1;
+    const heroPlayerId = parseHeroTargetId(targetId);
+    if (heroPlayerId !== null) {
+      const playerId = heroPlayerId;
       const hero = currentState.players[playerId].hero;
       if (disableHeroHealing) {
         // Tally the LP the rule removed (capped by live headroom), then no-op the heal.
@@ -354,6 +418,8 @@ function combineStatMods(a: StatModifier, b: StatModifier): StatModifier {
 function timedDuration(d: Duration): ActiveModifier['duration'] | null {
   if (d.type === 'until_end_of_turn') return { type: 'until_end_of_turn' };
   if (d.type === 'until_next_upkeep') return { type: 'until_next_upkeep' };
+  if (d.type === 'for_combat') return { type: 'for_combat' };
+  if (d.type === 'while_in_play') return { type: 'while_in_play', sourceId: '' };
   return null;
 }
 
@@ -365,10 +431,15 @@ function executeModifyStats(
   const resolved = resolveTargets(state, effect.target, context);
   if (!resolved.resolved)
     return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (effect.duration.type === 'instant') return unchanged(state);
 
   const events: GameEvent[] = [];
   let currentState = state;
-  const tracked = timedDuration(effect.duration);
+  const rawTracked = timedDuration(effect.duration);
+  const tracked =
+    rawTracked?.type === 'while_in_play'
+      ? { ...rawTracked, sourceId: context.sourceInstanceId }
+      : rawTracked;
 
   // DIAGNOSTIC ABLATION (default absent ⇒ no-op): config.ablateBulwark zeroes the
   // ARM component of any `until_next_upkeep` modify_stats — uniquely Seraphina's
@@ -387,7 +458,12 @@ function executeModifyStats(
     // they are resolved per target rather than from the static `modifier`.
     const dyn =
       effect.dynamicModifier !== undefined
-        ? dynamicModForTarget(currentState, effect.dynamicModifier, targetId, context)
+        ? dynamicModForTarget(
+            state.config?.simultaneousAllEffects === true ? state : currentState,
+            effect.dynamicModifier,
+            targetId,
+            context,
+          )
         : {};
     const total = combineStatMods(effect.modifier, dyn);
     const owner = findCardInState(currentState, targetId)?.owner;
@@ -417,6 +493,13 @@ function executeModifyStats(
     }));
   }
 
+  if (state.config?.stateBasedActions === true) {
+    const stateBased = applyStateBasedDeaths(currentState);
+    return {
+      newState: stateBased.newState,
+      events: [...events, ...stateBased.events],
+    };
+  }
   return { newState: currentState, events };
 }
 
@@ -431,6 +514,114 @@ function dynamicModForTarget(
   return evaluateDynamicStat(state, dynamic, target, context);
 }
 
+/**
+ * Resolve state-based destruction for every body at zero or negative HP.
+ * The candidate set is snapshotted per pass so simultaneous lethal stat
+ * changes are observed before any one removal changes the battlefield.
+ */
+export function applyStateBasedDeaths(
+  state: GameState,
+  cause: 'combat' | 'effect' = 'effect',
+): EffectResult {
+  if (state.config?.stateBasedActions !== true) return unchanged(state);
+  let current = state;
+  const events: GameEvent[] = [];
+  for (let pass = 0; pass < 32; pass++) {
+    const playerOrder = [
+      current.activePlayerIndex,
+      current.activePlayerIndex === 0 ? 1 : 0,
+    ] as const;
+    const dead = playerOrder.flatMap((playerId) =>
+      [
+        ...current.players[playerId].zones.reserve,
+        ...current.players[playerId].zones.frontline,
+        ...current.players[playerId].zones.highGround,
+      ]
+        .filter((card): card is CardInstance => card !== null && card.currentHp <= 0)
+        .sort((a, b) => a.instanceId.localeCompare(b.instanceId)),
+    );
+    if (dead.length === 0) return { newState: current, events };
+
+    // Decide the entire group from one snapshot. Bodies without a replacement
+    // leave play before any replacement's `instead` effects execute, so neither
+    // zone scan order nor an earlier death can rescue/reclassify another member.
+    const doomed = dead.filter((card) => findDestructionReplacement(card) === null);
+    const replaced = dead.filter((card) => findDestructionReplacement(card) !== null);
+    for (const card of doomed) {
+      events.push(
+        ...destructionEvents(
+          card,
+          cause,
+          current.config?.authoritativeTransitions === true,
+        ),
+      );
+    }
+    for (const card of doomed) {
+      current = removeCardFromState(current, card.instanceId);
+    }
+    for (const snapshot of replaced) {
+      const live = findCardInState(current, snapshot.instanceId);
+      if (live === null || live.currentHp > 0) continue;
+      const replacement = findDestructionReplacement(snapshot);
+      if (replacement === null) continue;
+      const result = runDestructionReplacement(current, live, replacement, {
+        sourceInstanceId: 'state_based',
+        controllerId: live.owner,
+        triggerDepth: 0,
+      });
+      current = result.newState;
+      events.push(...result.events);
+    }
+  }
+  throw new GuardExhaustionError('State-based action guard exhausted after 32 passes');
+}
+
+function destructionEvents(
+  card: CardInstance,
+  cause: 'combat' | 'effect' | 'sacrifice',
+  currentRules: boolean,
+): readonly GameEvent[] {
+  const destroyed: GameEvent = {
+    type: 'CARD_DESTROYED',
+    cardInstanceId: card.instanceId,
+    cardDefId: card.cardDefId,
+    cause,
+    playerId: card.owner,
+    lastKnownCard: snapshotCard(card),
+  };
+  const events: GameEvent[] = [destroyed];
+  if (!card.isToken && isExiledOnDestruction(card)) {
+    events.push({
+      type: 'CARD_EXILED',
+      cardInstanceId: card.instanceId,
+      cardDefId: card.cardDefId,
+      playerId: card.owner,
+    });
+  }
+  if (card.equipment !== null) {
+    events.push(
+      currentRules
+        ? {
+            type: 'EQUIPMENT_DESTROYED',
+            equipmentId: card.equipment.instanceId,
+            holderId: card.instanceId,
+            cardDefId: card.equipment.cardDefId,
+            playerId: card.owner,
+            reason: 'holder_destroyed',
+          }
+        : {
+            type: 'CARD_DESTROYED',
+            cardInstanceId: card.equipment.instanceId,
+            cardDefId: card.equipment.cardDefId,
+            cause: 'effect',
+            playerId: card.owner,
+            lastKnownCard: snapshotCard(card.equipment),
+          },
+    );
+  }
+  return events;
+}
+
 function executeDrawCards(
   state: GameState,
   effect: Extract<Effect, { type: 'draw_cards' }>,
@@ -440,24 +631,8 @@ function executeDrawCards(
   const playerIdx =
     effect.player === 'enemy' ? (context.controllerId === 0 ? 1 : 0) : context.controllerId;
 
-  const player = state.players[playerIdx];
-  const drawCount = Math.min(count, player.mainDeck.length);
-  if (drawCount === 0) return unchanged(state);
-
-  const drawn = player.mainDeck.slice(0, drawCount);
-  const remaining = player.mainDeck.slice(drawCount);
-
-  const newPlayers = [...state.players] as [(typeof state.players)[0], (typeof state.players)[1]];
-  newPlayers[playerIdx] = {
-    ...player,
-    hand: [...player.hand, ...drawn],
-    mainDeck: remaining,
-  };
-
-  return {
-    newState: { ...state, players: newPlayers },
-    events: [{ type: 'CARD_DRAWN', playerId: playerIdx, count: drawCount }],
-  };
+  const result = attemptDraw(state, playerIdx, count, 'effect');
+  return { newState: result.state, events: result.events };
 }
 
 function executeDeployToken(
@@ -526,9 +701,16 @@ function executeDeployToken(
     ];
     newPlayers[context.controllerId] = { ...player, zones: newZones };
     currentState = { ...currentState, players: newPlayers };
+    // BUG FIX (config.registerPrintedTriggers): register the token's printed
+    // triggered abilities, if any, the same as every other enter-play path (see
+    // GameConfig.registerPrintedTriggers). Absent/false ⇒ no-op.
+    if (state.config?.registerPrintedTriggers === true) {
+      currentState = registerCardTriggers(currentState, token.instanceId);
+    }
     events.push({
       type: 'CARD_DEPLOYED',
       cardInstanceId: token.instanceId,
+      cardDefId: token.cardDefId,
       zone,
       playerId: context.controllerId,
     });
@@ -572,33 +754,80 @@ function executeBounce(
   for (const targetId of resolved.targetIds) {
     const card = findCardInState(currentState, targetId);
     if (card === null) continue;
-    events.push({ type: 'CARD_BOUNCED', cardInstanceId: targetId, playerId: card.owner });
-    // removeCardFromState sends the holder (and, separately, its detached equipment)
-    // to the discard pile. For a bounce the holder belongs in HAND, not discard, so
-    // pull it back out; the detached equipment stays in discard (Rulebook 13).
-    currentState = removeCardFromState(currentState, targetId);
-    if (!card.isToken) {
-      const ownerState = currentState.players[card.owner];
-      const newPlayers = [...currentState.players] as [
-        (typeof currentState.players)[0],
-        (typeof currentState.players)[1],
-      ];
-      newPlayers[card.owner] = {
-        ...ownerState,
-        discardPile: ownerState.discardPile.filter((c) => c.instanceId !== card.instanceId),
-        hand: [...ownerState.hand, resetCard(card)],
-      };
-      currentState = { ...currentState, players: newPlayers };
-      if (card.equipment !== null) {
-        events.push({
-          type: 'CARD_DESTROYED',
-          cardInstanceId: card.equipment.instanceId,
-          cause: 'effect',
-          playerId: card.owner,
-        });
-      }
+    events.push({
+      type: 'CARD_BOUNCED',
+      cardInstanceId: targetId,
+      cardDefId: card.cardDefId,
+      playerId: card.owner,
+    });
+    // Bounce is not destruction. In particular, Volatile changes only the
+    // destination of a destroyed character; it must not also leave an exile
+    // record when that character is returned to hand.
+    const ownerState = currentState.players[card.owner];
+    const removed = removeFromZone(ownerState.zones, targetId);
+    if (removed.removed === null) continue;
+    const split = detachEquipmentForDiscard(removed.removed);
+    const holder = split?.holder ?? removed.removed;
+    const newPlayers = [...currentState.players] as [
+      (typeof currentState.players)[0],
+      (typeof currentState.players)[1],
+    ];
+    newPlayers[card.owner] = {
+      ...ownerState,
+      zones: removed.zones,
+      ...(holder.isToken
+        ? {}
+        : { hand: [...ownerState.hand, resetCard(holder)] }),
+      ...(split === null
+        ? {}
+        : { discardPile: [...ownerState.discardPile, split.equipment] }),
+    };
+    currentState = expireInactiveSourceDurations({
+      ...currentState,
+      players: newPlayers,
+    });
+    if (card.equipment !== null) {
+      events.push({
+        type: 'CARD_DESTROYED',
+        cardInstanceId: card.equipment.instanceId,
+        cardDefId: card.equipment.cardDefId,
+        cause: 'effect',
+        playerId: card.owner,
+        lastKnownCard: snapshotCard(card.equipment),
+      });
     }
-    // Tokens are removed from game when bounced
+    // Tokens are removed from the game when bounced.
+  }
+  return { newState: currentState, events };
+}
+
+function executeExile(
+  state: GameState,
+  effect: Extract<Effect, { type: 'exile' }>,
+  context: EffectContext,
+): EffectResult {
+  const resolved = resolveTargets(state, effect.target, context);
+  if (!resolved.resolved) {
+    return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  }
+
+  let currentState = state;
+  const events: GameEvent[] = [];
+  for (const targetId of resolved.targetIds) {
+    const card = findCardInState(currentState, targetId);
+    if (card === null) continue;
+    currentState = exileCardFromState(
+      currentState,
+      targetId,
+      'effect',
+      context.sourceInstanceId,
+    );
+    events.push({
+      type: 'CARD_EXILED',
+      cardInstanceId: targetId,
+      cardDefId: card.cardDefId,
+      playerId: card.owner,
+    });
   }
   return { newState: currentState, events };
 }
@@ -617,15 +846,22 @@ function executeSacrifice(
   for (const targetId of resolved.targetIds) {
     const card = findCardInState(currentState, targetId);
     if (card === null) continue;
-    events.push({ type: 'CARD_SACRIFICED', cardInstanceId: targetId });
+    events.push({ type: 'CARD_SACRIFICED', cardInstanceId: targetId, cardDefId: card.cardDefId });
     events.push({
       type: 'CARD_DESTROYED',
       cardInstanceId: targetId,
+      cardDefId: card.cardDefId,
       cause: 'sacrifice',
       playerId: card.owner,
+      lastKnownCard: snapshotCard(card),
     });
     if (!card.isToken && isExiledOnDestruction(card)) {
-      events.push({ type: 'CARD_EXILED', cardInstanceId: targetId, playerId: card.owner });
+      events.push({
+        type: 'CARD_EXILED',
+        cardInstanceId: targetId,
+        cardDefId: card.cardDefId,
+        playerId: card.owner,
+      });
     }
     currentState = removeCardFromState(currentState, targetId);
   }
@@ -711,6 +947,7 @@ function executeGrantTrait(
   const resolved = resolveTargets(state, effect.target, context);
   if (!resolved.resolved)
     return { newState: state, events: [], pendingChoice: resolved.pendingChoice };
+  if (effect.duration.type === 'instant') return unchanged(state);
 
   const duration = grantedTraitDuration(effect.duration, context.sourceInstanceId);
   let currentState = state;
@@ -726,23 +963,21 @@ function executeGrantTrait(
   return { newState: currentState, events: [] };
 }
 
-// Map a grant_trait Duration onto the trait's tracking GrantedDuration (Rulebook 16).
-// until_end_of_turn / until_next_upkeep expire at their boundary (stripped by the
-// state machine). for_combat has no combat-end tick, so it collapses to the nearest
-// expiring boundary, end of turn. while_in_play ties to the granting source so it is
-// removed when that source leaves. permanent/instant persist.
+// Map a grant_trait Duration onto the exact lifecycle scope.
 function grantedTraitDuration(d: Duration, sourceId: string): GrantedDuration {
   switch (d.type) {
     case 'until_end_of_turn':
-    case 'for_combat':
       return { type: 'until_end_of_turn' };
+    case 'for_combat':
+      return { type: 'for_combat' };
     case 'until_next_upkeep':
       return { type: 'until_next_upkeep' };
     case 'while_in_play':
       return { type: 'while_in_play', sourceId };
     case 'permanent':
-    case 'instant':
       return { type: 'permanent' };
+    case 'instant':
+      throw new Error('instant trait grants must not be persisted');
     default: {
       const _exhaustive: never = d;
       return _exhaustive;
@@ -783,6 +1018,9 @@ function grantAbilityToCard(
     trigger: ref.trigger,
     effects: ref.effects,
     condition: ref.condition,
+    oncePerTurn: ref.oncePerTurn,
+    cooldown: ref.cooldown,
+    react: ref.react,
   };
   const abilityIndex = card.abilities.length;
   const registered: RegisteredTrigger = {
@@ -813,17 +1051,40 @@ function executeApplyStatus(
 
   let currentState = state;
   for (const targetId of resolved.targetIds) {
-    currentState = updateCardInState(currentState, targetId, (c) => ({
-      ...c,
-      statusEffects: [
-        ...c.statusEffects,
-        {
-          statusType: effect.status,
-          value: effect.value ?? 1,
-          remainingTurns: effect.durationTurns ?? null,
-        },
-      ],
-    }));
+    currentState = updateCardInState(currentState, targetId, (c) => {
+      const incoming = {
+        statusType: effect.status,
+        value: effect.value ?? 1,
+        remainingTurns: effect.durationTurns ?? null,
+      };
+      const sameType = c.statusEffects.filter(
+        (status) => status.statusType === effect.status && status.sourceAuraId === undefined,
+      );
+      if (sameType.length === 0) {
+        return { ...c, statusEffects: [...c.statusEffects, incoming] };
+      }
+      const merged = sameType.reduce(
+        (best, status) => ({
+          ...best,
+          value: Math.max(best.value, status.value),
+          remainingTurns:
+            best.remainingTurns === null || status.remainingTurns === null
+              ? best.remainingTurns ?? status.remainingTurns
+              : Math.max(best.remainingTurns, status.remainingTurns),
+        }),
+        incoming,
+      );
+      return {
+        ...c,
+        statusEffects: [
+          ...c.statusEffects.filter(
+            (status) =>
+              status.statusType !== effect.status || status.sourceAuraId !== undefined,
+          ),
+          merged,
+        ],
+      };
+    });
   }
   return { newState: currentState, events: [] };
 }
@@ -856,7 +1117,10 @@ function executeDiscard(
       : context.controllerId;
   const player = state.players[targetPlayerId];
   if (player.hand.length === 0) return unchanged(state);
-  if (context.selectedTargets !== undefined) {
+  if (
+    state.config?.explicitEffectChoices === true &&
+    context.selectedTargets !== undefined
+  ) {
     return discardSpecificCards(state, context.selectedTargets);
   }
   return {
@@ -927,7 +1191,12 @@ function discardSpecificCards(state: GameState, cardIds: readonly string[]): Eff
         discardPile: [...player.discardPile, card],
       };
       currentState = { ...currentState, players: newPlayers };
-      events.push({ type: 'CARD_DISCARDED', cardInstanceId: cardId, playerId: pi as 0 | 1 });
+      events.push({
+        type: 'CARD_DISCARDED',
+        cardInstanceId: cardId,
+        cardDefId: card.cardDefId,
+        playerId: pi as 0 | 1,
+      });
       // Recycle X: drawing X on discard-from-hand (Rulebook 16). Inert for every
       // current card (none carries the recycle trait), so this is a no-op default.
       const recycle = recycleDraw(currentState, card, pi as 0 | 1);
@@ -941,26 +1210,13 @@ function discardSpecificCards(state: GameState, cardIds: readonly string[]): Eff
 
 /** Apply a discarded card's Recycle X: its owner draws X from the top of their main
  * deck (capped by deck size). Returns the card's events untouched when it has no
- * recycle trait/value, so existing decks are byte-identical. */
+ * recycle trait/value, so existing decks are semantically invariant. */
 function recycleDraw(state: GameState, card: CardInstance, playerId: 0 | 1): EffectResult {
-  const x = card.traits.includes('recycle') ? (card.recycleValue ?? 1) : 0;
+  const x = hasEffectiveTrait(card, 'recycle') ? (card.recycleValue ?? 1) : 0;
   if (x <= 0) return { newState: state, events: [] };
 
-  const player = state.players[playerId];
-  const count = Math.min(x, player.mainDeck.length);
-  if (count === 0) return { newState: state, events: [] };
-
-  const drawn = player.mainDeck.slice(0, count);
-  const newPlayers = [...state.players] as [PlayerState, PlayerState];
-  newPlayers[playerId] = {
-    ...player,
-    mainDeck: player.mainDeck.slice(count),
-    hand: [...player.hand, ...drawn],
-  };
-  return {
-    newState: { ...state, players: newPlayers },
-    events: [{ type: 'CARD_DRAWN', playerId, count }],
-  };
+  const result = attemptDraw(state, playerId, x, 'recycle');
+  return { newState: result.state, events: result.events };
 }
 
 const MOVE_ADJACENT: Record<ZoneType, readonly ZoneType[]> = {
@@ -1045,12 +1301,23 @@ function executeComposite(
   let currentState = state;
   const allEvents: GameEvent[] = [];
 
-  for (const subEffect of effect.effects) {
+  for (let index = 0; index < effect.effects.length; index++) {
+    const subEffect = effect.effects[index]!;
     const result = executeEffect(currentState, subEffect, context);
     currentState = result.newState;
     allEvents.push(...result.events);
     if (result.pendingChoice !== undefined) {
-      return { newState: currentState, events: allEvents, pendingChoice: result.pendingChoice };
+      return {
+        newState: currentState,
+        events: allEvents,
+        pendingChoice: appendEffectContinuation(
+          result.pendingChoice,
+          subEffect,
+          effect.effects.slice(index + 1),
+          context,
+          index,
+        ),
+      };
     }
   }
 
@@ -1067,12 +1334,23 @@ function executeConditional(
 
   let currentState = state;
   const allEvents: GameEvent[] = [];
-  for (const subEffect of effects) {
+  for (let index = 0; index < effects.length; index++) {
+    const subEffect = effects[index]!;
     const result = executeEffect(currentState, subEffect, context);
     currentState = result.newState;
     allEvents.push(...result.events);
     if (result.pendingChoice !== undefined) {
-      return { newState: currentState, events: allEvents, pendingChoice: result.pendingChoice };
+      return {
+        newState: currentState,
+        events: allEvents,
+        pendingChoice: appendEffectContinuation(
+          result.pendingChoice,
+          subEffect,
+          effects.slice(index + 1),
+          context,
+          index,
+        ),
+      };
     }
   }
 
@@ -1084,6 +1362,40 @@ function executeChooseOne(
   effect: Extract<Effect, { type: 'choose_one' }>,
   context: EffectContext,
 ): EffectResult {
+  if (context.selectedTargets !== undefined) {
+    if (context.selectedTargets.length !== 1) return unchanged(state);
+    const selected = Number(context.selectedTargets[0]);
+    if (!Number.isSafeInteger(selected)) return unchanged(state);
+    const option = effect.options[selected];
+    if (option === undefined) return unchanged(state);
+
+    let currentState = state;
+    const events: GameEvent[] = [];
+    for (let index = 0; index < option.effects.length; index++) {
+      const selectedEffect = option.effects[index]!;
+      const result = executeEffect(currentState, selectedEffect, {
+        ...context,
+        selectedTargets: undefined,
+      });
+      currentState = result.newState;
+      events.push(...result.events);
+      if (result.pendingChoice !== undefined) {
+        return {
+          newState: currentState,
+          events,
+          pendingChoice: appendEffectContinuation(
+            result.pendingChoice,
+            selectedEffect,
+            option.effects.slice(index + 1),
+            { ...context, selectedTargets: undefined },
+            index,
+          ),
+        };
+      }
+      if (currentState.winner !== null) break;
+    }
+    return { newState: currentState, events };
+  }
   return {
     newState: state,
     events: [],
@@ -1098,6 +1410,31 @@ function executeChooseOne(
       maxSelections: 1,
       context: 'Choose one option',
     },
+  };
+}
+
+function appendEffectContinuation(
+  choice: NonNullable<EffectResult['pendingChoice']>,
+  currentEffect: Effect,
+  remainingEffects: readonly Effect[],
+  context: EffectContext,
+  effectIndex: number,
+): NonNullable<EffectResult['pendingChoice']> {
+  const existing = choice.continuation;
+  return {
+    ...choice,
+    continuation:
+      existing === undefined
+        ? {
+            currentEffect,
+            remainingEffects,
+            context: choice.resolutionContext ?? context,
+            effectIndex,
+          }
+        : {
+            ...existing,
+            remainingEffects: [...existing.remainingEffects, ...remainingEffects],
+          },
   };
 }
 

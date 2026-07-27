@@ -1,0 +1,80 @@
+# Engine-vs-Rulebook audit — consolidated findings & adjudication (C2)
+
+Result of the deep audit (5 batches over all Rulebook sections). Ground truth = engine code
+(`packages/engine/src/`). Rulebook = `Documentation/game/Rulebook.md` (AetherionDocs submodule).
+
+**Headline:** the Rulebook is **accurate to the locked `ruleset-v1` ruleset** (all 9 flags on). The
+contradictions are overwhelmingly the engine's **unconfigured defaults** diverging from the book — and
+those defaults are exactly what the locked ruleset overrides. So most findings are "engine is wrong"
+(code ticket), NOT "Rulebook is wrong" (prose patch). 28 deltas total: §3/§5/§6 = 8, §7/§8 = 6,
+§9/§10 = 4, §11/§12/§13 = 5, §14/§16 = 5.
+
+Adjudication rule: fix the **Rulebook prose** only where the book states a rule that is wrong/missing
+and should be corrected in the document; everything where the **engine** diverges from the book's
+(stated, correct) rule goes to a **code ticket** — we do not rewrite the book to describe buggy defaults.
+
+---
+
+## CLASS 1 — Rulebook prose fixes (goes into `rulebook-reconciliation.patch`)
+
+These are genuine document errors/gaps. Each has engine evidence it is implemented or is a stated
+rule the book mis-states/absents. **3 are patched; #1 is deferred to an owner decision (engine ticket).**
+
+1. **§5/§6 Copy limits (Ethereal & Mythic) — book says 2, engine allows 3.** Rulebook L195/L226 (Ethereal
+   2) and L196/L227 (Mythic 2) vs engine `deck-legality.ts:59-61` (3 for any non-Legendary). **RESOLVED —
+   the Rulebook is authoritative (owner, 2026-07-22): Ethereal = 2, Mythic = 2.** The engine's
+   `COPY_LIMIT = 3` for non-Legendary is a **legality bug** → goes on the engine code ticket (Class 2),
+   NOT a prose change. Book stays at 2.
+2. **§3 "Token" listed as a card type — engine has no Token type code.** Book §3 L151-159 lists Token Cards;
+   engine type codes are `C|S|E|H|T|R` with `T` = Transformed (`common.ts:9`), tokens are a boolean
+   `isToken` flag, not a type. **Prose fix (patched):** replace the Token Cards type entry with a Transformed
+   entry + a note that tokens are runtime artifacts. The note PRESERVES the three token rules from the
+   removed section (removed-from-game, cannot-be-targeted-by-discard-pile-effects, anti-loop 3rd-iteration
+   stop) so no live rule is lost.
+3. **§3 "Transformed" card type not enumerated.** Engine has type `'T'` for the transformed Hero side; the
+   book's type list doesn't name it (only "Transformed Side" under Hero). **Prose fix (patched):** list
+   Transformed (folded into the #2 entry).
+4. **First Strike implemented but absent from the book.** Engine implements a full `first_strike` trait
+   (`damage-calculator.ts:57-92`; triangulated by 3 audits) — attacker strikes first, no counter if the
+   defender dies. The book's Traits (L603-612) and keywords never mention it. **Prose fix (patched):** add a
+   First Strike trait definition to §16 (it's implemented; currently dormant — no card grants it yet).
+
+## CLASS 2 — Engine is wrong (→ code ticket, NOT the Rulebook patch)
+
+The book states the (correct) rule; the engine default or implementation
+diverged. Do NOT edit the book for these. The canonical current profile resolves
+the implemented items below; historical behavior remains available only through
+explicit legacy profiles.
+
+- **Unconfigured defaults contradict the book** (resolved in the current profile; legacy defaults remain
+  reproducible): ARM every-hit vs first-instance; reserve-tap strain + choice flag-gated; and the
+  second-player opening card. Current games now apply the extra card in the engine after both mulligans,
+  rather than through a simulation-harness-only compensation path.
+- **Priority / reactions (resolved in the current profile)**: spell, attack,
+  activation, equipment, and movement declarations open response windows;
+  proactive Flash and battlefield/Hero Counter/Flash abilities are legal.
+  Explicit choices pause LIFO resolution, and an “unless its controller pays”
+  clause now spends the resources when accepted instead of treating
+  affordability as a free escape.
+- **Turn/timing contradictions (resolved in the current profile)**: Reserve generation is an explicit
+  optional Upkeep-step-4 window; transformation uses the book's exclusive post-Upkeep start-of-turn
+  window; Ultimate is unavailable on the transform turn; Hero abilities are once per turn; End-Phase
+  sub-steps and start-of-turn triggers follow the Rulebook order. Historical behavior remains isolated
+  in the legacy profile.
+- **Logic bugs (resolved in the current profile)**: Flying bypass is evaluated
+  per Defender; deploy revalidates its destination; X augments its authored
+  resource axis; and the Resource Deck is exactly 12 cards.
+- **Effect-zone targeting (resolved in the current profile)**: authored
+  `target_character.zone` restrictions now constrain the offered target set,
+  including the current cards that explicitly select from Reserve.
+- **Dual-Hero deck construction (resolved in the current profile)**:
+  §6 dual-alignment Heroes declare a primary alignment, accept only
+  Common/Ethereal cards from the secondary alignment, and reject cards outside
+  both alignments. §6 dual-resource Heroes accept cards and Resource Deck cards
+  using either printed resource type; unsupported printed resource requirements
+  fail deck validation.
+
+## Verification note
+Every finding above has a Rulebook line + an engine file:line on file (the 5 audit batches; see
+`.superpowers/sdd/progress.md` for the per-batch records). "Engine-wrong" items are logged here as a
+code-ticket list and are deliberately OUT of the Rulebook patch scope.

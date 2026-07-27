@@ -1,8 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  getValidAttackTargets,
-  isBoardEmpty,
-} from '../../src/zones/targeting.js';
+import { getValidAttackTargets, isBoardEmpty } from '../../src/zones/targeting.js';
 import {
   mockCard,
   mockCardWithTraits,
@@ -46,21 +43,13 @@ describe('Targeting', () => {
   describe('getValidAttackTargets', () => {
     describe('Empty Board Rule', () => {
       it('should allow any attacker to target hero when board empty', () => {
-        const targets = getValidAttackTargets(
-          'frontline',
-          [],
-          emptyZones(),
-        );
+        const targets = getValidAttackTargets('frontline', [], emptyZones());
         expect(targets).toHaveLength(1);
         expect(targets[0]?.type).toBe('hero');
       });
 
       it('should allow reserve attacker to target hero when board empty', () => {
-        const targets = getValidAttackTargets(
-          'reserve',
-          [],
-          emptyZones(),
-        );
+        const targets = getValidAttackTargets('reserve', [], emptyZones());
         expect(targets).toHaveLength(1);
         expect(targets[0]?.type).toBe('hero');
       });
@@ -83,13 +72,9 @@ describe('Targeting', () => {
           frontline: [d1, d2, null],
           highGround: [mockCard(), null],
         });
-        const targets = getValidAttackTargets(
-          'reserve',
-          ['sniper'],
-          zones,
-        );
+        const targets = getValidAttackTargets('reserve', ['sniper'], zones);
         expect(targets).toHaveLength(2);
-        expect(targets.every(t => t.type === 'character')).toBe(true);
+        expect(targets.every((t) => t.type === 'character')).toBe(true);
       });
     });
 
@@ -101,13 +86,9 @@ describe('Targeting', () => {
           frontline: [flCard, null, null],
           highGround: [hgCard, null],
         });
-        const targets = getValidAttackTargets(
-          'frontline',
-          [],
-          zones,
-        );
+        const targets = getValidAttackTargets('frontline', [], zones);
         expect(targets).toHaveLength(2);
-        const ids = targets.map(t => t.instanceId);
+        const ids = targets.map((t) => t.instanceId);
         expect(ids).toContain(flCard.instanceId);
         expect(ids).toContain(hgCard.instanceId);
       });
@@ -116,12 +97,8 @@ describe('Targeting', () => {
         const zones = zonesWithCards({
           frontline: [mockCard(), null, null],
         });
-        const targets = getValidAttackTargets(
-          'frontline',
-          [],
-          zones,
-        );
-        expect(targets.some(t => t.type === 'hero')).toBe(false);
+        const targets = getValidAttackTargets('frontline', [], zones);
+        expect(targets.some((t) => t.type === 'hero')).toBe(false);
       });
     });
 
@@ -133,13 +110,9 @@ describe('Targeting', () => {
           frontline: [flCard, null, null],
           highGround: [hgCard, null],
         });
-        const targets = getValidAttackTargets(
-          'high_ground',
-          [],
-          zones,
-        );
+        const targets = getValidAttackTargets('high_ground', [], zones);
         expect(targets).toHaveLength(3);
-        expect(targets.some(t => t.type === 'hero')).toBe(true);
+        expect(targets.some((t) => t.type === 'hero')).toBe(true);
       });
     });
 
@@ -150,11 +123,7 @@ describe('Targeting', () => {
         const zones = zonesWithCards({
           frontline: [defender, nonDefender, null],
         });
-        const targets = getValidAttackTargets(
-          'frontline',
-          [],
-          zones,
-        );
+        const targets = getValidAttackTargets('frontline', [], zones);
         expect(targets).toHaveLength(1);
         expect(targets[0]?.instanceId).toBe(defender.instanceId);
       });
@@ -165,11 +134,7 @@ describe('Targeting', () => {
         const zones = zonesWithCards({
           frontline: [d1, d2, null],
         });
-        const targets = getValidAttackTargets(
-          'frontline',
-          [],
-          zones,
-        );
+        const targets = getValidAttackTargets('frontline', [], zones);
         expect(targets).toHaveLength(2);
       });
 
@@ -178,11 +143,7 @@ describe('Targeting', () => {
         const zones = zonesWithCards({
           frontline: [defender, null, null],
         });
-        const targets = getValidAttackTargets(
-          'high_ground',
-          [],
-          zones,
-        );
+        const targets = getValidAttackTargets('high_ground', [], zones);
         // Must target defender, no hero option
         expect(targets).toHaveLength(1);
         expect(targets[0]?.instanceId).toBe(defender.instanceId);
@@ -196,14 +157,10 @@ describe('Targeting', () => {
         const zones = zonesWithCards({
           frontline: [defender, nonDefender, null],
         });
-        const targets = getValidAttackTargets(
-          'frontline',
-          ['flying'],
-          zones,
-        );
+        const targets = getValidAttackTargets('frontline', ['flying'], zones);
         // Flying bypasses all defenders (none have Flying/Sniper)
         expect(targets.length).toBeGreaterThan(1);
-        const ids = targets.map(t => t.instanceId);
+        const ids = targets.map((t) => t.instanceId);
         expect(ids).toContain(nonDefender.instanceId);
       });
 
@@ -213,11 +170,7 @@ describe('Targeting', () => {
         const zones = zonesWithCards({
           frontline: [flyingDefender, nonDefender, null],
         });
-        const targets = getValidAttackTargets(
-          'frontline',
-          ['flying'],
-          zones,
-        );
+        const targets = getValidAttackTargets('frontline', ['flying'], zones);
         // Cannot bypass — must target the flying defender
         expect(targets).toHaveLength(1);
         expect(targets[0]?.instanceId).toBe(flyingDefender.instanceId);
@@ -229,13 +182,21 @@ describe('Targeting', () => {
         const zones = zonesWithCards({
           frontline: [sniperDefender, nonDefender, null],
         });
-        const targets = getValidAttackTargets(
-          'frontline',
-          ['flying'],
-          zones,
-        );
+        const targets = getValidAttackTargets('frontline', ['flying'], zones);
         expect(targets).toHaveLength(1);
         expect(targets[0]?.instanceId).toBe(sniperDefender.instanceId);
+      });
+
+      it('mixed case: bypasses a plain Defender but is still forced by a Flying Defender', () => {
+        const flyingDefender = mockCardWithTraits(['defender', 'flying']);
+        const plainDefender = mockCardWithTraits(['defender']);
+        const zones = zonesWithCards({
+          frontline: [flyingDefender, plainDefender, null],
+        });
+        const targets = getValidAttackTargets('frontline', ['flying'], zones);
+        // Only the Flying Defender forces — the plain Defender is bypassed.
+        expect(targets).toHaveLength(1);
+        expect(targets[0]?.instanceId).toBe(flyingDefender.instanceId);
       });
     });
 
@@ -260,7 +221,7 @@ describe('Targeting', () => {
         const targets = getValidAttackTargets('frontline', [], zones, cap1);
         // No forcing: both bodies are legal targets (the capped Defender remains
         // targetable, but is no longer mandatory).
-        const ids = targets.map(t => t.instanceId);
+        const ids = targets.map((t) => t.instanceId);
         expect(ids).toContain(nonDefender.instanceId);
         expect(ids).toContain(cappedDefender.instanceId);
         expect(targets).toHaveLength(2);
@@ -271,7 +232,7 @@ describe('Targeting', () => {
         const zones = zonesWithCards({ frontline: [cappedDefender, null, null] });
         const targets = getValidAttackTargets('high_ground', [], zones, cap1);
         // Wall is down ⇒ hero is now reachable from high ground.
-        expect(targets.some(t => t.type === 'hero')).toBe(true);
+        expect(targets.some((t) => t.type === 'hero')).toBe(true);
       });
 
       it('with one capped and one fresh Defender, only the fresh one forces', () => {
@@ -331,7 +292,7 @@ describe('Targeting', () => {
         });
         // No High Ground Defender ⇒ no forcing; both bodies are free targets.
         const targets = getValidAttackTargets('frontline', [], zones, on);
-        const ids = targets.map(t => t.instanceId);
+        const ids = targets.map((t) => t.instanceId);
         expect(ids).toContain(flDefender.instanceId);
         expect(ids).toContain(flNonDefender.instanceId);
         expect(targets).toHaveLength(2);
@@ -342,7 +303,7 @@ describe('Targeting', () => {
         const zones = zonesWithCards({ frontline: [flDefender, null, null] });
         // Under EC-007 the Frontline Defender does not force ⇒ hero is reachable.
         const targets = getValidAttackTargets('high_ground', [], zones, on);
-        expect(targets.some(t => t.type === 'hero')).toBe(true);
+        expect(targets.some((t) => t.type === 'hero')).toBe(true);
       });
 
       it('OFF (default) keeps Frontline forcing, High Ground Defenders do NOT force', () => {

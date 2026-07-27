@@ -75,6 +75,20 @@ describe('exileDiscardForEnergy — the discarded card is removed from the game'
     const card = mockCard({ cost: { mana: 1, energy: 0, flexible: 0 }, alignment: ['Onyx'] });
     const result = discard(card, { terminationMode: 'turn_cap', exileDiscardForEnergy: true });
     expect(result.state.players[0].discardPile).toHaveLength(0);
+    expect(result.state.players[0].exile).toMatchObject([
+      {
+        instanceId: card.instanceId,
+        ownerPlayerId: 0,
+        cause: 'discard_for_energy',
+        turnNumber: 1,
+      },
+    ]);
+    expect(result.events).toContainEqual({
+      type: 'CARD_EXILED',
+      cardInstanceId: card.instanceId,
+      cardDefId: card.cardDefId,
+      playerId: 0,
+    });
     // Resource grant and hand removal are unchanged — only the destination differs.
     expect(result.state.players[0].hand).toHaveLength(0);
     expect(result.state.players[0].temporaryResources).toEqual([

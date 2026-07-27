@@ -13,11 +13,11 @@ import type {
   ActiveModifier,
   ActiveCostReduction,
   PlayerState,
+  GameEvent,
 } from '../types/game-state.js';
 import type { AuraAbilityDSL } from '../types/ability.js';
 import type { Effect } from '../types/effects.js';
 import type { StatModifier } from '../types/common.js';
-import { getAllCards } from '../zones/zone-manager.js';
 import { resolveTargets } from '../effects/target-resolver.js';
 import { evaluateCondition } from '../effects/condition-evaluator.js';
 import { evaluateDynamicStat } from '../effects/amount-evaluator.js';
@@ -27,6 +27,12 @@ import {
   applyAuraNonStatEffect,
   stripAllAuraNonStat,
 } from './aura-nonstat.js';
+import { applyStateBasedDeaths } from '../effects/interpreter.js';
+import { GuardExhaustionError } from '../errors/engine-errors.js';
+import {
+  buildAuraDerivationState,
+  collectActiveAuraSources,
+} from './aura-derivation.js';
 
 const AURA_PREFIX = 'aura_';
 
@@ -132,8 +138,9 @@ function applyAuraStatEffect(
   effect: Extract<Effect, { type: 'modify_stats' }>,
   context: EffectContext,
   auraIndex: number,
+  evaluationState: GameState,
 ): GameState {
-  const resolved = resolveTargets(state, effect.target, context);
+  const resolved = resolveTargets(evaluationState, effect.target, context);
   if (!resolved.resolved) return state;
   let current = state;
   for (const targetId of resolved.targetIds) {
@@ -141,7 +148,12 @@ function applyAuraStatEffect(
     if (target === null) continue;
     const dyn =
       effect.dynamicModifier !== undefined
-        ? evaluateDynamicStat(state, effect.dynamicModifier, target, context)
+        ? evaluateDynamicStat(
+            evaluationState,
+            effect.dynamicModifier,
+            findCardInState(evaluationState, targetId) ?? target,
+            context,
+          )
         : {};
     const total = combine(effect.modifier, dyn);
     if ((total.atk ?? 0) === 0 && (total.hp ?? 0) === 0 && (total.arm ?? 0) === 0) continue;
@@ -160,32 +172,6 @@ function applyAuraStatEffect(
     }));
   }
   return current;
-}
-
-interface AuraSource {
-  readonly card: CardInstance;
-  readonly controllerId: 0 | 1;
-}
-
-function collectAuraSources(state: GameState): readonly AuraSource[] {
-  const out: AuraSource[] = [];
-  for (let pi = 0; pi < 2; pi++) {
-    const controllerId = pi as 0 | 1;
-    for (const card of getAllCards(state.players[controllerId].zones)) {
-      // A character exhausted for Reserve Energy Generation has ALL abilities —
-      // including passive Auras — disabled until next Upkeep (Rulebook 8 step 4).
-      if (card.reserveEnergyExhausted === true) continue;
-      if (card.abilities.some((a) => a.type === 'aura')) out.push({ card, controllerId });
-      // Attached equipment can carry its own continuous auras (e.g. Steel-Root
-      // Armor's +0/+X HP); the source is the equipment instance so `equipped_character`
-      // resolves to its host and its recorded xPaid feeds x_cost grants.
-      const equip = card.equipment;
-      if (equip !== null && equip.abilities.some((a) => a.type === 'aura')) {
-        out.push({ card: equip, controllerId });
-      }
-    }
-  }
-  return out;
 }
 
 /**
@@ -275,10 +261,11 @@ function applyArmBuffMaxRule(state: GameState): GameState {
  * Recompute all aura-sourced stat modifiers from scratch.
  * Pure: returns a new state with aura modifiers reset and re-applied.
  */
-export function recomputeAuras(state: GameState): GameState {
+function recomputeAuraContributions(state: GameState): GameState {
   const priorUsed = snapshotAuraCostReductionUse(state);
   let current = stripAllAuraNonStat(stripAllAuras(state));
-  for (const { card, controllerId } of collectAuraSources(state)) {
+  const evaluationState = current;
+  for (const { card, controllerId } of collectActiveAuraSources(evaluationState)) {
     const context: EffectContext = {
       sourceInstanceId: card.instanceId,
       controllerId,
@@ -288,21 +275,52 @@ export function recomputeAuras(state: GameState): GameState {
     card.abilities.forEach((ability, index) => {
       if (ability.type !== 'aura') return;
       const aura: AuraAbilityDSL = ability;
-      if (aura.condition !== undefined && !evaluateCondition(current, aura.condition, context)) {
+      if (
+        aura.condition !== undefined &&
+        !evaluateCondition(evaluationState, aura.condition, context)
+      ) {
         return;
       }
       for (const effect of aura.effects) {
         if (effect.type === 'modify_stats') {
-          current = applyAuraStatEffect(current, effect, context, index);
+          current = applyAuraStatEffect(current, effect, context, index, evaluationState);
         } else if (effect.type === 'cost_reduction') {
           current = applyAuraCostReduction(current, effect, context, index, priorUsed);
         } else if (isAuraNonStatEffect(effect)) {
-          current = applyAuraNonStatEffect(current, effect, context, index);
+          current = applyAuraNonStatEffect(current, effect, context, index, evaluationState);
         }
       }
     });
   }
   // EC-001 tail pass — combine ARM buffs by max (and/or instrument co-occurrence).
   // No-op unless config.armBuffsTakeMax is set or a co-occurrence diag is present.
-  return applyArmBuffMaxRule(current);
+  const normalized = applyArmBuffMaxRule(current);
+  return {
+    ...normalized,
+    auraDerivation: buildAuraDerivationState(normalized),
+  };
+}
+
+export function recomputeAurasWithEvents(state: GameState): {
+  readonly state: GameState;
+  readonly events: readonly GameEvent[];
+} {
+  let current = state;
+  const events: GameEvent[] = [];
+  for (let pass = 0; pass < 32; pass++) {
+    const recomputed = recomputeAuraContributions(current);
+    const stateBased = applyStateBasedDeaths(recomputed);
+    events.push(...stateBased.events);
+    if (stateBased.newState === recomputed) {
+      return { state: recomputed, events };
+    }
+    current = stateBased.newState;
+  }
+  throw new GuardExhaustionError(
+    'Aura/state-based stabilization guard exhausted after 32 passes',
+  );
+}
+
+export function recomputeAuras(state: GameState): GameState {
+  return recomputeAurasWithEvents(state).state;
 }

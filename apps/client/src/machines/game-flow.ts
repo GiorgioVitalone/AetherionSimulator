@@ -6,7 +6,7 @@
  * via createActor — no @xstate/react needed.
  *
  * Responsibilities:
- * 1. Bridge game config → engine createGame()
+ * 1. Bridge game config → engine createCurrentGame()
  * 2. Hydrate abilities into the initial state
  * 3. Create and manage the XState actor
  * 4. Map client GameActions to engine machine events
@@ -20,7 +20,8 @@ import type {
 } from '@aetherion-sim/engine';
 import {
   gameMachine,
-  createGame,
+  createCurrentGame,
+  recomputeAuras,
 } from '@aetherion-sim/engine';
 import type { GameAction } from '@/stores/actions';
 import type { RegistryWithAbilities } from '@/features/game-setup/registry-adapter';
@@ -54,10 +55,15 @@ export class GameFlowController {
     const { registry, getAbilities, getHeroAbilities } = registryWithAbilities;
 
     // 1. Create raw game state (abilities are empty [])
-    const rawState = createGame(player1Deck, player2Deck, registry, seed);
+    const rawState = createCurrentGame(player1Deck, player2Deck, registry, seed);
 
     // 2. Hydrate abilities from registry
-    const hydratedState = hydrateAbilities(rawState, getAbilities, getHeroAbilities);
+    // Hydration can introduce active Hero auras after the constructor created
+    // the initial derivation snapshot. Recompute once before exposing the state
+    // so the first authoritative command cannot fail on stale aura metadata.
+    const hydratedState = recomputeAuras(
+      hydrateAbilities(rawState, getAbilities, getHeroAbilities),
+    );
 
     // 3. Create XState actor with hydrated state as input
     this.actor = createActor(gameMachine, {

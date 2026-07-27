@@ -1,0 +1,38 @@
+--- a/game/Rulebook.md
++++ b/game/Rulebook.md
+@@ -9,7 +9,7 @@
+     - [Spell Cards](#spell-cards)
+     - [Equipment Cards](#equipment-cards)
+     - [Resource Cards](#resource-cards)
+-    - [Token Cards](#token-cards)
++    - [Transformed Cards](#transformed-cards)
+     - [Tags](#tags)
+   - [4. Factions and Alignments](#4-factions-and-alignments)
+   - [5. Rarity System](#5-rarity-system)
+@@ -148,15 +148,11 @@
+ 
+ Resource Cards are placed in the **Resource Deck** (12 cards) and drawn to the Resource Bank each turn. They can be **exhausted** (turned sideways) to produce their resource and are refreshed each Upkeep.
+ 
+-### Token Cards
++### Transformed Cards
+ 
+-Temporary characters created by card effects. Tokens follow all normal character rules with these exceptions:
++The side a Hero becomes after using its once-per-game transformation (see *Hero Transformation*). When a Hero transforms, the Transformed card replaces the Hero in play, and its card type is **Transformed** rather than Hero. It uses the stats and abilities printed on the transformed side, keeps all damage from the base side, and grants access to the Hero's Ultimate ability.
+ 
+-* **Removed from the game** — When a token would leave the battlefield for any reason (destroyed, exiled, bounced, returned to hand), it is removed from the game instead of going to the discard pile or hand.
+-* **Cannot be targeted by discard pile effects** — Effects that reference cards in the discard pile cannot target or return tokens.
+-* **Anti-loop clause** — If an effect would create an unbounded mandatory loop involving token creation, the loop stops after the third iteration.
+-
+-Tokens have stats, abilities, and traits as defined by the effect that created them. Unless otherwise specified, tokens have no resource cost.
++> **Note:** Tokens are not a card type. They are runtime artifacts created by other cards' effects — temporary characters that exist only in play. A token is removed from the game when it would leave the battlefield; it cannot be targeted by effects that reference cards in the discard pile; and if an effect would create an unbounded mandatory loop involving token creation, the loop stops after the third iteration.
+ 
+ ### Tags
+ 
+@@ -610,6 +606,7 @@
+ * **Recycle X** — When this card is discarded from your hand, draw X cards.
+ * **Swift** — This character can move one additional zone per turn without being exhausted by the extra move.
+ * **Volatile** — When this character is destroyed, exile it (remove it from the game) instead of placing it in the discard pile.
++* **First Strike** — This character deals its combat damage before the character it is fighting. If the other character is destroyed by that first strike, it deals no combat damage back. If both characters have First Strike, combat is simultaneous as normal.
+ 
+ ### Ability Keywords
+ 

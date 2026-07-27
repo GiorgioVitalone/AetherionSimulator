@@ -1,0 +1,297 @@
+diff --git a/packages/engine/sim-data/aetherion-cards.json b/packages/engine/sim-data/aetherion-cards.json
+index 261d469..b84a5dd 100644
+--- a/packages/engine/sim-data/aetherion-cards.json
++++ b/packages/engine/sim-data/aetherion-cards.json
+@@ -548,7 +548,7 @@
+ ],
+ "cost": {
+ "mana": 0,
+-"energy": 8,
++"energy": 6,
+ "flexible": 0
+ },
+ "stats": {
+@@ -783,7 +783,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 3,
++"mana": 2,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -1029,7 +1029,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 2,
++"mana": 1,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -1164,7 +1164,7 @@
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 3,
++"hp": 2,
+ "atk": 1,
+ "arm": 0
+ },
+@@ -1276,12 +1276,12 @@
+ "Defender"
+ ],
+ "cost": {
+-"mana": 5,
++"mana": 4,
+ "energy": 0,
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 4,
++"hp": 3,
+ "atk": 2,
+ "arm": 0
+ },
+@@ -1682,7 +1682,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 3,
++"mana": 2,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -2205,7 +2205,7 @@
+ "traits": [],
+ "cost": {
+ "mana": 0,
+-"energy": 5,
++"energy": 2,
+ "flexible": 0
+ },
+ "stats": {
+@@ -2523,7 +2523,7 @@
+ },
+ "stats": {
+ "hp": 4,
+-"atk": 3,
++"atk": 4,
+ "arm": 0
+ },
+ "abilities": [
+@@ -3068,7 +3068,7 @@
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 33,
++"hp": 30,
+ "atk": 0,
+ "arm": 0
+ },
+@@ -3589,7 +3589,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 5,
++"mana": 1,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -4059,7 +4059,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 6,
++"mana": 3,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -4744,7 +4744,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 5,
++"mana": 2,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -4924,12 +4924,12 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 5,
++"mana": 4,
+ "energy": 0,
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 5,
++"hp": 4,
+ "atk": 2,
+ "arm": 0
+ },
+@@ -5112,8 +5112,8 @@
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 4,
+-"atk": 2,
++"hp": 2,
++"atk": 3,
+ "arm": 0
+ },
+ "abilities": [
+@@ -5174,8 +5174,8 @@
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 3,
+-"atk": 1,
++"hp": 4,
++"atk": 2,
+ "arm": 0
+ },
+ "abilities": [
+@@ -5459,7 +5459,7 @@
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 3,
++"hp": 2,
+ "atk": 1,
+ "arm": 0
+ },
+@@ -5572,7 +5572,7 @@
+ "traits": [],
+ "cost": {
+ "mana": 0,
+-"energy": 5,
++"energy": 3,
+ "flexible": 0
+ },
+ "stats": null,
+@@ -5862,7 +5862,7 @@
+ "Defender"
+ ],
+ "cost": {
+-"mana": 2,
++"mana": 3,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -5916,7 +5916,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 3,
++"mana": 2,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -5976,7 +5976,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 3,
++"mana": 2,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -6210,7 +6210,7 @@
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 3,
++"hp": 2,
+ "atk": 3,
+ "arm": 0
+ },
+@@ -6271,7 +6271,7 @@
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 4,
++"hp": 3,
+ "atk": 4,
+ "arm": 0
+ },
+@@ -6808,7 +6808,7 @@
+ "traits": [],
+ "cost": {
+ "mana": 0,
+-"energy": 8,
++"energy": 6,
+ "flexible": 0
+ },
+ "stats": {
+@@ -6920,7 +6920,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 4,
++"mana": 3,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -6980,7 +6980,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 5,
++"mana": 2,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -7239,7 +7239,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 5,
++"mana": 3,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -7517,7 +7517,7 @@
+ "traits": [],
+ "cost": {
+ "mana": 0,
+-"energy": 5,
++"energy": 4,
+ "flexible": 0
+ },
+ "stats": null,
+@@ -7952,7 +7952,7 @@
+ ],
+ "traits": [],
+ "cost": {
+-"mana": 5,
++"mana": 2,
+ "energy": 0,
+ "flexible": 0
+ },
+@@ -8303,7 +8303,7 @@
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 25,
++"hp": 30,
+ "atk": 0,
+ "arm": 0
+ },
+@@ -8406,7 +8406,7 @@
+ "flexible": 0
+ },
+ "stats": {
+-"hp": 35,
++"hp": 30,
+ "atk": 0,
+ "arm": 0
+ },
+@@ -8483,4 +8483,4 @@
+ "transformationId": 41,
+ "originalHeroId": null
+ }
+-]
+\ No newline at end of file
++]

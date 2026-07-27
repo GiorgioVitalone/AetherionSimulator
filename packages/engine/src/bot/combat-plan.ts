@@ -25,6 +25,7 @@ import type { PlayerAction } from '../state-machine/types.js';
 import type { Trait } from '../types/common.js';
 import type { AttackOption } from '../actions/available-actions.js';
 import { simulateCombatExchange, asSimBody } from './combat-sim.js';
+import { hasEffectiveTrait } from '../selectors/card-semantics.js';
 
 /** A ready attacker paired with the live valid-target set the engine offers it. */
 interface ReadyAttacker {
@@ -43,7 +44,7 @@ const KEY_THREAT_VALUE = 1.2;
 const BIG_THREAT_POWER = 7;
 
 function hasTrait(card: CardInstance, trait: Trait): boolean {
-  return card.traits.includes(trait) || card.grantedTraits.some(g => g.trait === trait);
+  return hasEffectiveTrait(card, trait);
 }
 
 function power(card: CardInstance): number {
@@ -63,7 +64,7 @@ function hasRegen(card: CardInstance): boolean {
  *
  * `gangAggression` is the active seat's gameplan scalar on the key-body value
  * multipliers (KEY_DEFENDER_VALUE / KEY_THREAT_VALUE). Default 1 (NEUTRAL ⇒
- * hardcoded constants) is a byte-identical no-op; higher = more eager to commit
+ * hardcoded constants) is a semantically invariant no-op; higher = more eager to commit
  * multiple bodies into a wall.
  */
 export function planGangAttack(

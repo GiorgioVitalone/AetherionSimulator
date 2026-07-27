@@ -9,6 +9,7 @@ import type {
   ZoneState,
 } from '../../src/types/game-state.js';
 import type { CardTypeCode, ResourceCost, Trait } from '../../src/types/common.js';
+import { buildAuraDerivationState } from '../../src/runtime/aura-derivation.js';
 
 let instanceCounter = 0;
 
@@ -95,7 +96,7 @@ export function zonesWithCards(placements: {
 export const ZERO_COST: ResourceCost = { mana: 0, energy: 0, flexible: 0 };
 
 export function mockGameState(overrides?: Partial<GameState>): GameState {
-  return {
+  const state: GameState = {
     players: [mockPlayerState(0), mockPlayerState(1)],
     activePlayerIndex: 0,
     turnNumber: 1,
@@ -105,9 +106,17 @@ export function mockGameState(overrides?: Partial<GameState>): GameState {
     log: [],
     winner: null,
     rng: { seed: 42, counter: 0 },
+    eventSequence: 0,
     turnState: { discardedForEnergy: false, firstPlayerFirstTurn: false },
     ...overrides,
   };
+  if (
+    state.config?.authoritativeTransitions === true &&
+    state.auraDerivation === undefined
+  ) {
+    return { ...state, auraDerivation: buildAuraDerivationState(state) };
+  }
+  return state;
 }
 
 export function mockPlayerState(owner: 0 | 1, overrides?: Partial<PlayerState>): PlayerState {
@@ -119,6 +128,7 @@ export function mockPlayerState(owner: 0 | 1, overrides?: Partial<PlayerState>):
     resourceDeck: [],
     resourceBank: [],
     discardPile: [],
+    exile: [],
     temporaryResources: [],
     turnCounters: {
       spellsCast: 0,

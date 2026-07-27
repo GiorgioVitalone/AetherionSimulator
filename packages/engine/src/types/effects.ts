@@ -35,6 +35,7 @@ export type Effect =
   | DestroyEffect
   | SacrificeEffect
   | BounceEffect
+  | ExileEffect
   | DiscardEffect
   | ReturnFromDiscardEffect
   | CounterSpellEffect
@@ -84,8 +85,16 @@ export interface ScryEffect {
   readonly action: ScryAction;
 }
 export type ScryAction =
-  | { readonly type: 'pick_and_remainder'; readonly pickCount: number; readonly pickTo: 'hand'; readonly remainder: 'bottom' | 'discard' | 'shuffle' }
-  | { readonly type: 'distribute'; readonly destinations: readonly ('hand' | 'discard' | 'bottom')[] }
+  | {
+      readonly type: 'pick_and_remainder';
+      readonly pickCount: number;
+      readonly pickTo: 'hand';
+      readonly remainder: 'bottom' | 'discard' | 'shuffle';
+    }
+  | {
+      readonly type: 'distribute';
+      readonly destinations: readonly ('hand' | 'discard' | 'bottom')[];
+    }
   | { readonly type: 'rearrange' };
 export type DeployTokenEffect =
   | {
@@ -112,6 +121,10 @@ export interface SacrificeEffect {
 }
 export interface BounceEffect {
   readonly type: 'bounce';
+  readonly target: TargetExpr;
+}
+export interface ExileEffect {
+  readonly type: 'exile';
   readonly target: TargetExpr;
 }
 export interface DiscardEffect {
@@ -162,6 +175,9 @@ export interface GrantedAbilityRef {
   readonly trigger: Trigger;
   readonly effects: readonly Effect[];
   readonly condition?: Condition;
+  readonly cooldown?: number;
+  readonly oncePerTurn?: boolean;
+  readonly react?: boolean;
 }
 export interface MoveEffect {
   readonly type: 'move';
@@ -175,7 +191,13 @@ export interface ApplyStatusEffect {
   readonly value?: number;
   readonly durationTurns?: number;
 }
-export type StatusType = 'persistent' | 'regeneration' | 'slowed' | 'stunned' | 'hexproof' | 'anti_redirect';
+export type StatusType =
+  | 'persistent'
+  | 'regeneration'
+  | 'slowed'
+  | 'stunned'
+  | 'hexproof'
+  | 'anti_redirect';
 export interface CleanseEffect {
   readonly type: 'cleanse';
   readonly target: TargetExpr;

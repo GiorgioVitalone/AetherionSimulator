@@ -110,6 +110,7 @@ describe('counter_spell', () => {
     const eff = counter({ unlessPay: { mana: 2, energy: 0, flexible: 0 } }) as Extract<Effect, { type: 'counter_spell' }>;
     const r = executeCounterSpell(state, eff, ctx({ selectedTargets: ['s1'] }));
     expect(r.newState.stack).toHaveLength(1);
+    expect(r.newState.players[1].resourceBank.every((resource) => !resource.exhausted)).toBe(true);
   });
 
   it('with unlessPay, counters when the controller cannot afford the cost', () => {

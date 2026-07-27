@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "current-independent-expert-tactics-v1",
+  "status": "awaiting_independent_expert_labels",
+  "rulesProfile": "current",
+  "authorship": {
+    "expertName": null,
+    "expertOrganization": null,
+    "expertQualification": null,
+    "labeledAt": null,
+    "rulesManifestHash": null,
+    "engineBuildHash": null
+  },
+  "claimScope": {
+    "supported": "action agreement and regret against this declared expert corpus",
+    "humanRankEquivalence": "prohibited_without_separate_consented_human_decision_logs"
+  },
+  "humanDecisionLogs": {
+    "status": "not_collected",
+    "consentProtocol": null,
+    "participantPopulation": null,
+    "artifactHash": null
+  },
+  "scenarios": [
+    {
+      "id": "expert-lethal-001",
+      "family": "combat",
+      "prompt": "Find the highest-confidence immediate lethal line.",
+      "stateArtifact": null,
+      "legalActionKeys": [],
+      "expertActionKey": null,
+      "expertValue": null,
+      "rationale": null
+    },
+    {
+      "id": "expert-defense-001",
+      "family": "combat",
+      "prompt": "Choose the line maximizing survival without conceding forced lethal.",
+      "stateArtifact": null,
+      "legalActionKeys": [],
+      "expertActionKey": null,
+      "expertValue": null,
+      "rationale": null
+    },
+    {
+      "id": "expert-resource-001",
+      "family": "resource",
+      "prompt": "Choose payment, reserve strain, or discard-for-energy under opportunity cost.",
+      "stateArtifact": null,
+      "legalActionKeys": [],
+      "expertActionKey": null,
+      "expertValue": null,
+      "rationale": null
+    },
+    {
+      "id": "expert-equipment-001",
+      "family": "equipment",
+      "prompt": "Choose the best available equipment action and target, including replacement, removal, or transfer when legal.",
+      "stateArtifact": null,
+      "legalActionKeys": [],
+      "expertActionKey": null,
+      "expertValue": null,
+      "rationale": null
+    },
+    {
+      "id": "expert-reaction-001",
+      "family": "reaction",
+      "prompt": "Respond to the pending declaration or pass priority.",
+      "stateArtifact": null,
+      "legalActionKeys": [],
+      "expertActionKey": null,
+      "expertValue": null,
+      "rationale": null
+    },
+    {
+      "id": "expert-mode-001",
+      "family": "choice",
+      "prompt": "Choose a gameplay mode, target cardinality, or trigger order from the offered interaction.",
+      "stateArtifact": null,
+      "legalActionKeys": [],
+      "expertActionKey": null,
+      "expertValue": null,
+      "rationale": null
+    },
+    {
+      "id": "expert-transform-001",
+      "family": "transform",
+      "prompt": "Choose whether and when to transform under current timing.",
+      "stateArtifact": null,
+      "legalActionKeys": [],
+      "expertActionKey": null,
+      "expertValue": null,
+      "rationale": null
+    },
+    {
+      "id": "expert-ability-001",
+      "family": "ability",
+      "prompt": "Choose an activated ability, X value, and legal targets.",
+      "stateArtifact": null,
+      "legalActionKeys": [],
+      "expertActionKey": null,
+      "expertValue": null,
+      "rationale": null
+    },
+    {
+      "id": "expert-movement-001",
+      "family": "movement",
+      "prompt": "Choose movement while accounting for reach, board space, and future attacks.",
+      "stateArtifact": null,
+      "legalActionKeys": [],
+      "expertActionKey": null,
+      "expertValue": null,
+      "rationale": null
+    }
+  ]
+}

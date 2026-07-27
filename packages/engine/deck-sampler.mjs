@@ -2,7 +2,7 @@
  * Seeded faction-deck sampler for the balance simulator (WS-C).
  *
  * Produces DIVERSE, LEGAL, DETERMINISTIC decks for a faction: one per archetype
- * template, each a legal 40-card main deck + 15 resource cards. Same seed ⇒
+ * template, each a legal 40-card main deck + 12 resource cards. Same seed ⇒
  * byte-identical output; distinct seeds ⇒ distinct samples. Pure data + a seeded
  * RNG; no Math.random, no Date.
 
@@ -23,11 +23,28 @@ const raw = JSON.parse(readFileSync(CARDS_PATH, 'utf8'));
 const FACTIONS = ['Onyx', 'Radiant', 'Sapphire', 'Verdant'];
 const ENERGY_FACTIONS = new Set(['Verdant']);
 const DECK_SIZE = 40;
-const RESOURCE_DECK_SIZE = 15;
+// sim-data/ruleset-v1.json rules.resourceDeckSize (frozen at 12, not the 15-card
+// physical starter deck size).
+export const RESOURCE_DECK_SIZE = 12;
 
 const factionOf = (c) => (Array.isArray(c.alignment) ? c.alignment[0] : c.alignment);
-const copyLimit = (c) => (c.rarity === 'Legendary' ? 1 : 3);
+const copyLimit = (c) => {
+  if (c.rarity === 'Legendary') return 1;
+  if (c.rarity === 'Ethereal' || c.rarity === 'Mythic') return 2;
+  return 3;
+};
 const resourceTypeFor = (faction) => (ENERGY_FACTIONS.has(faction) ? 'energy' : 'mana');
+const requiredResourceTypesFor = (card) => {
+  const costs = [card.cost, ...(card.abilities ?? []).map((ability) => ability.cost)];
+  const required = [];
+  if (costs.some((cost) => (cost?.mana ?? 0) > 0 || cost?.xMana === true)) {
+    required.push('mana');
+  }
+  if (costs.some((cost) => (cost?.energy ?? 0) > 0 || cost?.xEnergy === true)) {
+    required.push('energy');
+  }
+  return required;
+};
 
 // Resource cards (alignment-neutral): pick by name, mirroring sim-runner.mjs.
 const rCards = raw.filter((c) => c.cardType === 'R');
@@ -42,7 +59,7 @@ const poolByFaction = {};
 for (const f of FACTIONS) {
   poolByFaction[f] = raw.filter(
     (c) => (c.cardType === 'C' || c.cardType === 'S' || c.cardType === 'E') && factionOf(c) === f,
-  );
+  ).sort((left, right) => left.id - right.id);
 }
 
 // ── cardIndex (the CardIndex shape dist/sim/deck-legality.js validates against) ──
@@ -50,7 +67,14 @@ const cardFactsById = new Map();
 const heroFactsById = new Map();
 for (const c of raw) {
   if (c.cardType === 'C' || c.cardType === 'S' || c.cardType === 'E') {
-    cardFactsById.set(c.id, { id: c.id, cardType: c.cardType, faction: factionOf(c), rarity: c.rarity });
+    cardFactsById.set(c.id, {
+      id: c.id,
+      cardType: c.cardType,
+      faction: factionOf(c),
+      alignments: c.alignment,
+      rarity: c.rarity,
+      requiredResourceTypes: requiredResourceTypesFor(c),
+    });
   } else if (c.cardType === 'R') {
     cardFactsById.set(c.id, {
       id: c.id,
@@ -60,7 +84,26 @@ for (const c of raw) {
       resourceType: /energy/i.test(c.name) ? 'energy' : 'mana',
     });
   } else if (c.cardType === 'H') {
-    heroFactsById.set(c.id, { id: c.id, faction: factionOf(c), resourceType: resourceTypeFor(factionOf(c)) });
+    const explicitResourceTypes =
+      Array.isArray(c.resourceTypes) && c.resourceTypes.length > 0
+        ? [...new Set(c.resourceTypes)]
+        : null;
+    const inferredResourceTypes = [
+      ...((c.cost?.mana ?? 0) > 0 ? ['mana'] : []),
+      ...((c.cost?.energy ?? 0) > 0 ? ['energy'] : []),
+    ];
+    const resourceTypes =
+      explicitResourceTypes ??
+      (inferredResourceTypes.length > 0
+        ? inferredResourceTypes
+        : [resourceTypeFor(factionOf(c))]);
+    heroFactsById.set(c.id, {
+      id: c.id,
+      faction: factionOf(c),
+      alignments: c.alignment,
+      resourceType: resourceTypes[0],
+      resourceTypes,
+    });
   }
 }
 

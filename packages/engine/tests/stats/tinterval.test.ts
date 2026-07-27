@@ -3,25 +3,26 @@ import { studentTInterval, tCritical } from '../../src/stats/tinterval.js';
 
 describe('tCritical', () => {
   it('returns known table values for 95%', () => {
-    expect(tCritical(1, 0.95)).toBe(12.706);
-    expect(tCritical(10, 0.95)).toBe(2.228);
-    expect(tCritical(30, 0.95)).toBe(2.042);
+    expect(tCritical(1, 0.95)).toBeCloseTo(12.7062, 3);
+    expect(tCritical(10, 0.95)).toBeCloseTo(2.2281, 3);
+    expect(tCritical(30, 0.95)).toBeCloseTo(2.0423, 3);
   });
 
   it('returns known table values for 90% and 99%', () => {
-    expect(tCritical(1, 0.9)).toBe(6.314);
-    expect(tCritical(1, 0.99)).toBe(63.657);
+    expect(tCritical(1, 0.9)).toBeCloseTo(6.3138, 3);
+    expect(tCritical(1, 0.99)).toBeCloseTo(63.6567, 3);
   });
 
-  it('falls back to the normal critical value for large df', () => {
-    expect(tCritical(1000, 0.95)).toBe(1.96);
-    expect(tCritical(1000, 0.9)).toBe(1.645);
-    expect(tCritical(1000, 0.99)).toBe(2.576);
+  it('uses finite-df Student-t values rather than a normal fallback', () => {
+    expect(tCritical(1000, 0.95)).toBeCloseTo(1.96234, 5);
+    expect(tCritical(1000, 0.9)).toBeCloseTo(1.64638, 5);
+    expect(tCritical(1000, 0.99)).toBeCloseTo(2.58075, 5);
   });
 
-  it('returns Infinity for non-positive df', () => {
-    expect(tCritical(0, 0.95)).toBe(Infinity);
-    expect(tCritical(-3, 0.95)).toBe(Infinity);
+  it('rejects non-positive or non-integral df', () => {
+    expect(() => tCritical(0, 0.95)).toThrow(RangeError);
+    expect(() => tCritical(-3, 0.95)).toThrow(RangeError);
+    expect(() => tCritical(2.5, 0.95)).toThrow(RangeError);
   });
 });
 
@@ -32,10 +33,10 @@ describe('studentTInterval', () => {
     expect(r.stdDev).toBeCloseTo(1.5811388, 5);
     expect(r.stdErr).toBeCloseTo(0.7071068, 5);
     expect(r.df).toBe(4);
-    // t(4, .95) = 2.776 -> halfWidth = 2.776 * 0.70711 = 1.96293
-    expect(r.halfWidth).toBeCloseTo(1.96293, 4);
-    expect(r.lo).toBeCloseTo(1.03707, 4);
-    expect(r.hi).toBeCloseTo(4.96293, 4);
+    // Exact t(4, .95) = 2.776445... (not the old 3-decimal table value).
+    expect(r.halfWidth).toBeCloseTo(1.963243, 5);
+    expect(r.lo).toBeCloseTo(1.036757, 5);
+    expect(r.hi).toBeCloseTo(4.963243, 5);
   });
 
   it('is degenerate (zero width) for a single sample', () => {
@@ -46,10 +47,9 @@ describe('studentTInterval', () => {
     expect(r.halfWidth).toBe(0);
   });
 
-  it('returns zeros for an empty sample', () => {
-    const r = studentTInterval([]);
-    expect(r.mean).toBe(0);
-    expect(r.halfWidth).toBe(0);
+  it('rejects an empty or non-finite sample', () => {
+    expect(() => studentTInterval([])).toThrow(RangeError);
+    expect(() => studentTInterval([1, Number.NaN])).toThrow(RangeError);
   });
 
   it('produces a wider interval at higher confidence', () => {

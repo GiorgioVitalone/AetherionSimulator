@@ -3,13 +3,26 @@
  * Pure, deterministic balance/design tooling — see docs/balance-valuation.md.
  */
 export { abilityContribution, computeCardPower } from './card-power.js';
-export { computeDeckValue, type DeckInput } from './deck-value.js';
+export { computeDeckValue, ACCEL_RAMP_TEMPO, type DeckInput } from './deck-value.js';
 export { effectStaticValue, sumEffects } from './effect-value.js';
+export { effectStaticValueDetailed, sumEffectsDetailed } from './effect-interval.js';
+export {
+  abilityThrottle,
+  detectAbilityLoop,
+  detectCardLoops,
+  isRepeatableTrigger,
+  type AbilityLoopRisk,
+  type CardLoopRisk,
+  type LoopLevel,
+  type LoopRisk,
+} from './loop-detector.js';
+export { assessLoopRisk, LEGAL_MAX_COPIES, type LoopRisk as LoopRiskLevel } from './loop-graph.js';
 export { emitDemands, emitSignals, heroDemands } from './signals.js';
 export { deckInterSynergy, intraSynergy, pairSynergy, type CardSignals } from './synergy.js';
 export { INTERACTION_MATRIX, interactionWeight } from './interaction-matrix.js';
 export { regenerationValue, traitValue } from './trait-scaling.js';
-export { recurrence } from './weights.js';
+export { recurrence, PAIR_CAP, RESOURCE_VALUE_TEMP, LP_VALUE } from './weights.js';
+export { flattenEffects } from './signal-extract.js';
 export type {
   CardIndex,
   CardPowerBreakdown,
@@ -17,9 +30,11 @@ export type {
   Demand,
   DeckValueBreakdown,
   EffectValue,
+  EffectValueDetailed,
   HeroInput,
   HeroTransform,
   InteractionMatrix,
+  PowerFlag,
   ProvideKind,
   Signal,
   StaticCard,

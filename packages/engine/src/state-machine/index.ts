@@ -17,8 +17,11 @@ export {
   drawResourceCard,
   drawMainDeckCard,
   executePlayerAction,
+} from './actions.js';
+export {
   removeTemporaryResources,
   checkHandSize,
   discardCards,
   passTurn,
-} from './actions.js';
+  executeTurnBoundary,
+} from './turn-boundary.js';

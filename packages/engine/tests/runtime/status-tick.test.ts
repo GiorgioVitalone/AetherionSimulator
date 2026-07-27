@@ -8,7 +8,12 @@ import {
 } from '../../src/runtime/status-tick.js';
 import { tickUpkeepStatuses } from '../../src/state-machine/actions.js';
 import { gameMachine } from '../../src/state-machine/game-machine.js';
-import type { ActiveStatus, CardInstance, GameState, ResourceCard } from '../../src/types/game-state.js';
+import type {
+  ActiveStatus,
+  CardInstance,
+  GameState,
+  ResourceCard,
+} from '../../src/types/game-state.js';
 import {
   mockCard,
   mockGameState,
@@ -22,13 +27,24 @@ function withStatuses(statuses: ActiveStatus[], overrides?: Partial<CardInstance
 }
 
 function stateWith(card: CardInstance, playerIndex: 0 | 1 = 0) {
-  const players = playerIndex === 0
-    ? [mockPlayerState(0, { zones: zonesWithCards({ frontline: [card] }) }), mockPlayerState(1)] as const
-    : [mockPlayerState(0), mockPlayerState(1, { zones: zonesWithCards({ frontline: [card] }) })] as const;
+  const players =
+    playerIndex === 0
+      ? ([
+          mockPlayerState(0, { zones: zonesWithCards({ frontline: [card] }) }),
+          mockPlayerState(1),
+        ] as const)
+      : ([
+          mockPlayerState(0),
+          mockPlayerState(1, { zones: zonesWithCards({ frontline: [card] }) }),
+        ] as const);
   return mockGameState({ players: [players[0], players[1]], activePlayerIndex: playerIndex });
 }
 
-function findCard(state: ReturnType<typeof stateWith>, id: string, playerIndex: 0 | 1 = 0): CardInstance | null {
+function findCard(
+  state: ReturnType<typeof stateWith>,
+  id: string,
+  playerIndex: 0 | 1 = 0,
+): CardInstance | null {
   const z = state.players[playerIndex].zones;
   for (const c of [...z.reserve, ...z.frontline, ...z.highGround]) {
     if (c !== null && c.instanceId === id) return c;
@@ -47,8 +63,14 @@ describe('status-tick — Regeneration', () => {
     const r1 = tickStatusEffects(stateWith(card), 0);
     const after1 = findCard(r1.state, card.instanceId)!;
     expect(after1.currentHp).toBe(4);
-    expect(after1.statusEffects).toEqual([{ statusType: 'regeneration', value: 1, remainingTurns: null }]);
-    expect(r1.events).toContainEqual({ type: 'CHARACTER_HEALED', cardInstanceId: card.instanceId, amount: 2 });
+    expect(after1.statusEffects).toEqual([
+      { statusType: 'regeneration', value: 1, remainingTurns: null },
+    ]);
+    expect(r1.events).toContainEqual({
+      type: 'CHARACTER_HEALED',
+      cardInstanceId: card.instanceId,
+      amount: 2,
+    });
   });
 
   it('expires when its value reaches 0', () => {
@@ -82,12 +104,15 @@ describe('status-tick — Persistent', () => {
     });
     const r = tickStatusEffects(stateWith(card), 0);
     expect(findCard(r.state, card.instanceId)).toBeNull();
-    expect(r.events).toContainEqual({
-      type: 'CARD_DESTROYED',
-      cardInstanceId: card.instanceId,
-      cause: 'effect',
-      playerId: 0,
-    });
+    expect(r.events).toContainEqual(
+      expect.objectContaining({
+        type: 'CARD_DESTROYED',
+        cardInstanceId: card.instanceId,
+        cardDefId: card.cardDefId,
+        cause: 'effect',
+        playerId: 0,
+      }),
+    );
   });
 
   it('decrements its value when the character survives', () => {
@@ -106,7 +131,9 @@ describe('status-tick — Stunned (refresh interaction)', () => {
   beforeEach(resetInstanceCounter);
 
   it('isStunned detects a stun status', () => {
-    const card = withStatuses([{ statusType: 'stunned', value: 1, remainingTurns: 1 }], { exhausted: true });
+    const card = withStatuses([{ statusType: 'stunned', value: 1, remainingTurns: 1 }], {
+      exhausted: true,
+    });
     expect(isStunned(card)).toBe(true);
   });
 
@@ -139,10 +166,13 @@ describe('status-tick — aura-sourced statuses are never ticked', () => {
   beforeEach(resetInstanceCounter);
 
   it('leaves a continuous (sourceAuraId) status untouched', () => {
-    const card = withStatuses([
-      { statusType: 'hexproof', value: 1, remainingTurns: null, sourceAuraId: 'aura_x' },
-      { statusType: 'persistent', value: 2, remainingTurns: null, sourceAuraId: 'aura_x' },
-    ], { currentHp: 5, baseHp: 5 });
+    const card = withStatuses(
+      [
+        { statusType: 'hexproof', value: 1, remainingTurns: null, sourceAuraId: 'aura_x' },
+        { statusType: 'persistent', value: 2, remainingTurns: null, sourceAuraId: 'aura_x' },
+      ],
+      { currentHp: 5, baseHp: 5 },
+    );
     const r = tickStatusEffects(stateWith(card), 0);
     const after = findCard(r.state, card.instanceId)!;
     expect(after.currentHp).toBe(5); // aura persistent did not damage
@@ -154,7 +184,7 @@ describe('status-tick — aura-sourced statuses are never ticked', () => {
 describe('tickUpkeepStatuses — only ticks the active player', () => {
   beforeEach(resetInstanceCounter);
 
-  it('does not tick the opponent\'s statuses', () => {
+  it("does not tick the opponent's statuses", () => {
     const enemy = withStatuses([{ statusType: 'persistent', value: 5, remainingTurns: null }], {
       currentHp: 2,
       baseHp: 5,
@@ -197,7 +227,7 @@ function makeUpkeepState(card: CardInstance): GameState {
 describe('Upkeep lifecycle (state machine)', () => {
   beforeEach(resetInstanceCounter);
 
-  it('Regeneration heals during the controller\'s Upkeep', () => {
+  it("Regeneration heals during the controller's Upkeep", () => {
     const card = mockCard({
       owner: 0,
       currentHp: 2,
@@ -209,7 +239,9 @@ describe('Upkeep lifecycle (state machine)', () => {
     actor.start();
     const live = actor.getSnapshot().context.gameState.players[0].zones.frontline[0]!;
     expect(live.currentHp).toBe(4);
-    expect(live.statusEffects).toEqual([{ statusType: 'regeneration', value: 1, remainingTurns: null }]);
+    expect(live.statusEffects).toEqual([
+      { statusType: 'regeneration', value: 1, remainingTurns: null },
+    ]);
   });
 
   it('a Stunned character does NOT refresh, and the stun is consumed', () => {

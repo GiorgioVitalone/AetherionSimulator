@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "oracleId": "aetherion-current-rulebook-scenarios-v1",
+  "status": "awaiting_independent_rules_review",
+  "rulebook": {
+    "path": "Documentation/game/Rulebook.md",
+    "revision": "2026-07-26",
+    "sha256": "42f52afe6dad19f447355fe805233ac3206471d6848aa05b76d1dcbd17730f7c"
+  },
+  "authorship": {
+    "fixtureSource": "manually_declared_json_not_generated_from_engine",
+    "independentAuthor": null,
+    "independentReviewer": null,
+    "approvedAt": null
+  },
+  "scenarios": [
+    {
+      "id": "oracle-attack-empty-board",
+      "family": "combat",
+      "rulebookAnchor": "attack targeting / empty board",
+      "operation": "attack_targets",
+      "input": {
+        "attackerZone": "frontline",
+        "attackerTraits": [],
+        "defenders": []
+      },
+      "expected": ["hero"]
+    },
+    {
+      "id": "oracle-reserve-cannot-attack",
+      "family": "combat",
+      "rulebookAnchor": "Reserve attack restriction",
+      "operation": "attack_targets",
+      "input": {
+        "attackerZone": "reserve",
+        "attackerTraits": [],
+        "defenders": [
+          { "id": "frontline-body", "zone": "frontline", "traits": [] }
+        ]
+      },
+      "expected": []
+    },
+    {
+      "id": "oracle-sniper-reserve-reach",
+      "family": "combat",
+      "rulebookAnchor": "Sniper",
+      "operation": "attack_targets",
+      "input": {
+        "attackerZone": "reserve",
+        "attackerTraits": ["sniper"],
+        "defenders": [
+          { "id": "frontline-body", "zone": "frontline", "traits": [] },
+          { "id": "high-body", "zone": "high_ground", "traits": [] }
+        ]
+      },
+      "expected": ["frontline-body"]
+    },
+    {
+      "id": "oracle-defender-forces",
+      "family": "combat",
+      "rulebookAnchor": "Defender",
+      "operation": "attack_targets",
+      "input": {
+        "attackerZone": "frontline",
+        "attackerTraits": [],
+        "defenders": [
+          { "id": "wall", "zone": "frontline", "traits": ["defender"] },
+          { "id": "other", "zone": "frontline", "traits": [] }
+        ]
+      },
+      "expected": ["wall"]
+    },
+    {
+      "id": "oracle-flying-bypasses-ground-defender",
+      "family": "combat",
+      "rulebookAnchor": "Flying and Defender",
+      "operation": "attack_targets",
+      "input": {
+        "attackerZone": "high_ground",
+        "attackerTraits": ["flying"],
+        "defenders": [
+          { "id": "wall", "zone": "frontline", "traits": ["defender"] },
+          { "id": "other", "zone": "high_ground", "traits": [] }
+        ]
+      },
+      "expected": ["hero", "other", "wall"]
+    },
+    {
+      "id": "oracle-cost-floor",
+      "family": "economy",
+      "rulebookAnchor": "minimum payable cost",
+      "operation": "effective_cost",
+      "input": {
+        "printed": { "mana": 1, "energy": 0, "flexible": 0 },
+        "reduction": 3,
+        "costFloor": true
+      },
+      "expected": { "mana": 1, "energy": 0, "flexible": 0 }
+    },
+    {
+      "id": "oracle-zero-printed-cost-remains-zero",
+      "family": "economy",
+      "rulebookAnchor": "printed zero cost",
+      "operation": "effective_cost",
+      "input": {
+        "printed": { "mana": 0, "energy": 0, "flexible": 0 },
+        "reduction": 3,
+        "costFloor": true
+      },
+      "expected": { "mana": 0, "energy": 0, "flexible": 0 }
+    },
+    {
+      "id": "oracle-effect-draw-empty-deckout",
+      "family": "draw",
+      "rulebookAnchor": "draw from empty main deck",
+      "operation": "empty_draw",
+      "input": { "cause": "effect", "count": 1 },
+      "expected": {
+        "winner": 1,
+        "failedAttempt": 1,
+        "drawnCount": 0,
+        "eventTypes": ["GAME_ENDED"]
+      }
+    },
+    {
+      "id": "oracle-multi-draw-fails-on-second-attempt",
+      "family": "draw",
+      "rulebookAnchor": "multi-card draw attempts",
+      "operation": "one_card_draw_two",
+      "input": { "cause": "effect", "count": 2 },
+      "expected": {
+        "winner": 1,
+        "failedAttempt": 2,
+        "drawnCount": 1,
+        "eventTypes": ["CARD_DRAWN", "GAME_ENDED"]
+      }
+    },
+    {
+      "id": "oracle-effective-traits-union",
+      "family": "continuous_effects",
+      "rulebookAnchor": "printed and granted traits",
+      "operation": "effective_traits",
+      "input": {
+        "printed": ["defender", "flying"],
+        "granted": ["flying", "haste"]
+      },
+      "expected": ["defender", "flying", "haste"]
+    }
+  ]
+}

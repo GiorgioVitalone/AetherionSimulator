@@ -10,11 +10,12 @@ import type {
   ResourceCard,
   RngState,
 } from '../types/game-state.js';
-import type { ResourceCost, CardTypeCode } from '../types/common.js';
+import type { ResourceCost, CardTypeCode, ResourceType } from '../types/common.js';
 import { createEmptyZoneState } from '../zones/zone-manager.js';
 import { createRng, shuffle, randomInt } from './rng.js';
 import { normalizeTraits } from './trait-normalizer.js';
 import { INITIAL_HAND_SIZE, MULLIGAN_HAND_SIZE } from '../types/game-state.js';
+import { CURRENT_GAME_CONFIG } from '../rules/manifest.js';
 
 // ── Card Definition (minimal interface for setup) ─────────────────────────────
 
@@ -27,6 +28,8 @@ export interface CardDefinition {
   readonly traits?: readonly string[];
   readonly tags?: readonly string[];
   readonly alignment?: readonly string[];
+  readonly xCostResource?: ResourceType;
+  readonly resourceType?: 'mana' | 'energy';
 }
 
 export interface HeroDefinition {
@@ -45,6 +48,11 @@ export interface DeckSelection {
 export interface CardDefinitionRegistry {
   readonly getCard: (id: number) => CardDefinition | undefined;
   readonly getHero: (id: number) => HeroDefinition | undefined;
+}
+
+export interface GameSetupOptions {
+  readonly resourceDeckSize?: number;
+  readonly strictResourceTypes?: boolean;
 }
 
 // ── Instance Counter ──────────────────────────────────────────────────────────
@@ -91,6 +99,7 @@ function createCardInstance(def: CardDefinition, owner: 0 | 1): CardInstance {
     isToken: false,
     tags: def.tags ?? [],
     cost: def.cost,
+    ...(def.xCostResource !== undefined ? { xCostResource: def.xCostResource } : {}),
     alignment: def.alignment ?? [],
     owner,
   };
@@ -126,12 +135,13 @@ export function createGame(
   player2: DeckSelection,
   registry: CardDefinitionRegistry,
   seed?: number,
+  setupOptions?: GameSetupOptions,
 ): GameState {
   resetSetupInstanceCounter();
   const rng = createRng(seed ?? Date.now());
 
-  const { player: p1, nextRng: rng1 } = buildPlayerState(player1, registry, 0, rng);
-  const { player: p2, nextRng: rng2 } = buildPlayerState(player2, registry, 1, rng1);
+  const { player: p1, nextRng: rng1 } = buildPlayerState(player1, registry, 0, rng, setupOptions);
+  const { player: p2, nextRng: rng2 } = buildPlayerState(player2, registry, 1, rng1, setupOptions);
 
   // Determine first player randomly
   const { value: firstPlayer, nextRng: rng3 } = randomInt(rng2, 0, 1);
@@ -156,9 +166,55 @@ export function createGame(
     log: [],
     winner: null,
     rng: rng3,
+    eventSequence: 0,
     turnState: {
       discardedForEnergy: false,
       firstPlayerFirstTurn: true,
+    },
+  };
+}
+
+/**
+ * Canonical current-rules constructor.
+ *
+ * `createGame` remains the low-level/legacy-compatible constructor during the
+ * public-API migration. New normal callers must use this constructor so rules
+ * cannot silently fall back to absent configuration.
+ */
+export function createCurrentGame(
+  player1: DeckSelection,
+  player2: DeckSelection,
+  registry: CardDefinitionRegistry,
+  seed?: number,
+): GameState {
+  const state = createGame(player1, player2, registry, seed, {
+    resourceDeckSize: CURRENT_GAME_CONFIG.resourceDeckSize,
+    strictResourceTypes: true,
+  });
+  const choice = state.pendingChoice;
+  if (choice === null || choice.type !== 'mulligan') {
+    return {
+      ...state,
+      config: CURRENT_GAME_CONFIG,
+      auraDerivation: { sourceKeys: [], contributionKeys: [] },
+    };
+  }
+  const interactionId = [
+    'mulligan',
+    state.rng.seed,
+    state.turnNumber,
+    choice.playerId,
+  ].join(':');
+  return {
+    ...state,
+    config: CURRENT_GAME_CONFIG,
+    auraDerivation: { sourceKeys: [], contributionKeys: [] },
+    pendingChoice: {
+      ...choice,
+      interactionId,
+      validationToken: interactionId,
+      visibility: 'controller',
+      optional: false,
     },
   };
 }
@@ -168,6 +224,7 @@ function buildPlayerState(
   registry: CardDefinitionRegistry,
   owner: 0 | 1,
   rng: RngState,
+  setupOptions?: GameSetupOptions,
 ): {
   readonly player: PlayerState;
   readonly nextRng: RngState;
@@ -190,16 +247,35 @@ function buildPlayerState(
 
   // Load resource deck
   const resourceCards = deck.resourceDeckDefIds.map((id) => {
-    // Determine resource type from card definition
     const def = registry.getCard(id);
+    if (def === undefined) {
+      throw new Error(`Resource definition not found: ${String(id)}`);
+    }
+    if (def.cardType !== 'R') {
+      throw new Error(`Definition ${String(id)} is not a Resource card`);
+    }
     const resourceType =
-      def !== undefined && def.cardType === 'R' ? guessResourceType(def) : 'mana';
+      def.resourceType ??
+      (setupOptions?.strictResourceTypes === true
+        ? (() => {
+            throw new Error(
+              `Resource definition ${String(id)} is missing explicit resourceType`,
+            );
+          })()
+        : guessResourceType(def));
     return createResourceCard(resourceType);
   });
 
   // Shuffle both decks
   const { result: shuffledMain, nextRng: rng1 } = shuffle(mainCards, rng);
-  const { result: shuffledResource, nextRng: rng2 } = shuffle(resourceCards, rng1);
+  const { result: shuffledFullResource, nextRng: rng2 } = shuffle(resourceCards, rng1);
+  // §13o rules variant: truncate the Resource Deck AFTER the shuffle (preserves
+  // the deck's resource-type mix in expectation). Absent ⇒ full deck, unchanged.
+  const size = setupOptions?.resourceDeckSize;
+  const shuffledResource =
+    size !== undefined && size > 0 && size < shuffledFullResource.length
+      ? shuffledFullResource.slice(0, size)
+      : shuffledFullResource;
 
   // Draw initial hand (5 cards)
   const handSize = Math.min(INITIAL_HAND_SIZE, shuffledMain.length);
@@ -215,6 +291,7 @@ function buildPlayerState(
       resourceDeck: shuffledResource,
       resourceBank: [],
       discardPile: [],
+      exile: [],
       temporaryResources: [],
       turnCounters: {
         spellsCast: 0,
@@ -284,10 +361,61 @@ function advanceMulligan(state: GameState, completedPlayerId: 0 | 1): GameState 
     };
   }
 
-  // Both players done — transition to upkeep
-  return {
+  // The random setup winner chooses who goes first only after both mulligans.
+  // The current profile exposes that decision; legacy profiles preserve their
+  // historical behavior where the random winner silently becomes first player.
+  if (state.config?.explicitFirstPlayerChoice === true) {
+    const chooser = state.activePlayerIndex;
+    const interactionId = [
+      'choose-first-player',
+      state.rng.seed,
+      state.turnNumber,
+      chooser,
+    ].join(':');
+    return {
+      ...state,
+      pendingChoice: {
+        interactionId,
+        validationToken: interactionId,
+        type: 'choose_first_player',
+        playerId: chooser,
+        options: [
+          { id: 'player_0', label: 'Player 1 goes first' },
+          { id: 'player_1', label: 'Player 2 goes first' },
+        ],
+        minSelections: 1,
+        maxSelections: 1,
+        context: 'Choose which player goes first.',
+        optional: false,
+        visibility: 'public',
+      },
+    };
+  }
+  return chooseFirstPlayer(state, state.activePlayerIndex);
+}
+
+/** Resolve setup's first-player choice and the dependent second-player card. */
+export function chooseFirstPlayer(
+  state: GameState,
+  firstPlayerId: 0 | 1,
+): GameState {
+  const ready: GameState = {
     ...state,
+    activePlayerIndex: firstPlayerId,
     phase: 'upkeep',
     pendingChoice: null,
   };
+  if (state.config?.secondPlayerOpeningCard !== true) return ready;
+
+  const secondPlayerId: 0 | 1 = firstPlayerId === 0 ? 1 : 0;
+  const secondPlayer = ready.players[secondPlayerId];
+  const bonusCard = secondPlayer.mainDeck[0];
+  if (bonusCard === undefined) return ready;
+  const players = [...ready.players] as [PlayerState, PlayerState];
+  players[secondPlayerId] = {
+    ...secondPlayer,
+    hand: [...secondPlayer.hand, bonusCard],
+    mainDeck: secondPlayer.mainDeck.slice(1),
+  };
+  return { ...ready, players };
 }

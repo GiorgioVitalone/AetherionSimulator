@@ -104,14 +104,14 @@ export const MOCK_CARDS: SimCard[] = [
 
   // ── Onyx Resources ─────────────────────────────────────────────────────
   {
-    id: 500, name: 'Onyx Mana Crystal', cardType: 'R', rarity: 'Common',
+    id: 500, name: 'Onyx Mana Crystal', cardType: 'R', resourceType: 'mana', rarity: 'Common',
     alignment: ['Onyx'], cost: { mana: 0, energy: 0, flexible: 0, xMana: false, xEnergy: false },
     stats: null, abilities: [], traits: [], flavorText: null, setCode: 'CORE', transformsInto: null,
   },
 
   // ── Radiant Resources ──────────────────────────────────────────────────
   {
-    id: 501, name: 'Radiant Mana Crystal', cardType: 'R', rarity: 'Common',
+    id: 501, name: 'Radiant Mana Crystal', cardType: 'R', resourceType: 'mana', rarity: 'Common',
     alignment: ['Radiant'], cost: { mana: 0, energy: 0, flexible: 0, xMana: false, xEnergy: false },
     stats: null, abilities: [], traits: [], flavorText: null, setCode: 'CORE', transformsInto: null,
   },

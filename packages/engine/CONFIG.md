@@ -23,6 +23,10 @@ const result = runSim({ matchups: 'all-pairs', gamesPerPairing: 60, seedBase: 12
 | `termination` | `"none"` \| `"tiebreak"` | `"none"` | How `turnCap`-reached games resolve. |
 | `seedBase` | number | `12345` | Root seed. Every game seed = pure fn of (seedBase, pairingIndex, gameIndex). |
 | `decks` | see below | _(auto)_ | EXPLICIT decks: per-faction overrides. Omit for the auto quota-builder. |
+| `apnapAnyOrderFix` | boolean | `false` | RULES FIX — side:`'any'` target resolution returns `[activePlayer, nonActivePlayer]` (APNAP) instead of seat order `[0,1]`. Fixes ~5pp matchup drift from which deck sits in seat 0. |
+| `firstPlayerSkipsFirstResource` | boolean | `false` | CANDIDATE VARIANT (§13r) — alternative to the locked `firstPlayerCompensation: "card"` rule. The first player draws no Resource Card on their first Upkeep only. |
+| `firstPlayerDrawsNormally` | boolean | `false` | CANDIDATE VARIANT (§13r) — disables ONLY the first-player-first-turn Main Deck draw skip; the turn-1 attack restriction is unaffected. |
+| `seatAlternation` | boolean | `false` | MEASUREMENT KNOB — swaps which deck sits in seat 0 on a 4-phase cycle (uncorrelated with `firstPlayer: "alternating"`'s `g%2`), so a matchup's two seat orderings both get measured within one run. `gamesPerPairing` should be a multiple of 4 for exact neutrality. Results stay deck-oriented (not seat-oriented). |
 
 ### `decks` / explicit decks
 
@@ -60,13 +64,47 @@ so heuristic/random runs stay byte-identical to the v10 baseline):
 
 | Field | Type | Default | Meaning |
 |-------|------|---------|---------|
-| `rollouts` | number | `1` | Playouts simulated per candidate (averaged). |
+| `rollouts` | number | `16` | Playouts simulated per candidate (averaged). |
 | `rolloutPlayout` | `"random"` \| `"heuristic"` | `"random"` | Default policy INSIDE a playout. `random` = no archetype prior (primary). |
-| `rolloutDepth` | number | `0` | Turns to simulate forward before scoring the leaf by LP-diff. `0` = roll to game end (truest win/loss signal). |
+| `rolloutDepth` | number | `3`, or `0` when `fairPilot` is set | Turns to simulate forward before scoring the leaf by LP-diff. `0` = roll to game end (truest win/loss signal). |
 | `maxCandidates` | number | `12` | Branching cap (candidates evaluated per decision). |
+| `candidateGen` | `"legacy"` \| `"full"` | `"legacy"` | Which enumerator sources the **candidates scored at each decision point** — see scoping note below. Emitted (and hashed) ONLY when explicitly set to `"full"`. |
+| `candidateKindCaps` | object (action kind → number) | 4 per kind | Explicit per-kind candidate-survivor cap (applied after ordering, before `maxCandidates`). Emitted (and hashed) ONLY when supplied. |
+| `rolloutSeedMode` | `"index"` \| `"actionKey"` | `"index"` | Playout-stream keying. `"index"` seeds each branch by candidate position (historical behavior). `"actionKey"` seeds by the candidate's stable action key, making streams position-independent — required for clean coverage A/Bs, where `candidateGen` legacy vs full must share streams for common candidates. Emitted (and hashed) ONLY when set to `"actionKey"`. |
+| `rolloutInteractions` | boolean | `false` | Outcome-search real priority, mulligan, and explicit-choice candidates as well as proactive actions. This is an opt-in policy dimension used by the current calibration corpus; it is hashed and defaults off to preserve historical rollout behavior. |
+| `playoutBackend` | `"actor"` \| `"snapshot"` | `"actor"` | HASH-EXEMPT, diagnostic. Playout stepping machinery: `"actor"` forks a live XState actor per playout (historical). `"snapshot"` steps purely via `transition()` from one hydrated snapshot per decision, shared across that decision's playouts (spike-verified equivalent, ~1.75× throughput). A harness dimension like `WORKERS` — recorded in the resolved config for provenance but stripped from `runHash`; both backends pin to the SAME hash (`rollout-pin.test.ts`). Emitted only when explicitly set to `"snapshot"`. |
 
 Implemented in `pilot-rollout.mjs` (engine untouched). Determinism preserved: rollout
-seeds derive purely from `(seed, decisionIndex, candidateIndex, rolloutIndex)`.
+seeds derive purely from `(seed, decisionIndex, candidateIndex, rolloutIndex)` —
+or, under `rolloutSeedMode: "actionKey"`, from
+`(seed, decisionIndex, fnv1a(actionKey), rolloutIndex)`. The
+standard measurement panel (`balance-verify.mjs`) pins these per rung: rollout-low
+`rollouts:4 rolloutDepth:2 maxCandidates:5`; rollout-high `rollouts:8 rolloutDepth:3
+maxCandidates:8`; rollout-max `rollouts:12 rolloutDepth:3 maxCandidates:8`.
+
+#### `candidateGen` scoping — two enumerators, only one changes
+
+`pilot-rollout.mjs` has two separate action enumerators: `candidateActions` (the
+CANDIDATES scored at each decision point) and `concreteActions` (moves taken
+INSIDE the random playouts that score those candidates). `candidateGen` affects
+**candidate enumeration only**:
+
+- `"legacy"` — the existing `candidateActions` code path, untouched (byte-identical
+  hashes to every historical run).
+- `"full"` — candidates come from the engine's canonical
+  `enumerateConcretePlayerActions(state, 'full')` (every legal
+  cardInstanceId/zone/target combination per kind, not just the first), then flow
+  through the same downstream pipeline (ordering, `candidateKindCaps`,
+  `maxCandidates`, scoring).
+
+Playout-internal enumeration (`concreteActions`) is **not** touched by this knob in
+either mode — changing both enumerators at once would confound the planned
+legacy-vs-full candidate-generation A/B.
+
+Pruning telemetry: every rollout run also accumulates a hash-exempt
+`candidatePruning` field (`{ raw, retained, prunedByKind }`, summed across all
+decisions in the run) onto the `runSim` result, the same way other read-only
+diagnostics (`dx`, `__diag`) are exposed — never part of `runHash`.
 
 ### `matchups`
 
@@ -79,7 +117,10 @@ Factions: `Onyx`, `Radiant`, `Sapphire`, `Verdant`.
 
 ### `firstPlayerCompensation`
 
-Applied at game start to the **second** player (not active on turn 1):
+Legacy/custom-diagnostic harness option applied at game start to the **second**
+player (not active on turn 1). The canonical `current` profile rejects these
+overrides: its engine setup exposes the Rulebook first-player choice and grants
+the second player's extra card after mulligans.
 
 - `"none"` — engine default, no compensation.
 - `"card"` — second player draws +1 card.

@@ -6,7 +6,7 @@
  */
 import type { Demand, Signal, SynergyBreakdown, SynergyPair } from './types.js';
 import { interactionWeight } from './interaction-matrix.js';
-import { GLOBAL_SYN_FRACTION, PAIR_CAP } from './weights.js';
+import { GLOBAL_SYN_FRACTION, PAIR_CAP, SATURATION_DECAY, SATURATION_FREE } from './weights.js';
 
 const TAG_GATED: ReadonlySet<string> = new Set<Demand['kind']>(['death_of_tag', 'tag_tribal']);
 
@@ -54,14 +54,18 @@ function presence(copies: number): number {
   return Math.min(copies, 3) / 3;
 }
 
-/** Inter-card synergy over DISTINCT cards: bidirectional pair value scaled by
- * presence, per-pair capped, then globally capped to a fraction of card power. */
-export function deckInterSynergy(
-  cards: readonly CardSignals[],
-  cardPowerSum: number,
-): SynergyBreakdown {
-  const pairs: SynergyPair[] = [];
-  let raw = 0;
+/** A bidirectional, presence-scaled, per-pair-capped synergy edge, tagged with the
+ * indices of the two cards it touches (so saturation can find a card's edges). */
+interface SynergyEdge {
+  readonly i: number;
+  readonly j: number;
+  readonly a: string;
+  readonly b: string;
+  readonly value: number;
+}
+
+function synergyEdges(cards: readonly CardSignals[]): SynergyEdge[] {
+  const edges: SynergyEdge[] = [];
   for (let i = 0; i < cards.length; i++) {
     const a = cards[i]!;
     for (let j = i + 1; j < cards.length; j++) {
@@ -70,13 +74,54 @@ export function deckInterSynergy(
         (pairSynergy(a.provides, b.demands) + pairSynergy(b.provides, a.demands)) *
         presence(a.copies) *
         presence(b.copies);
-      const capped = Math.min(both, PAIR_CAP);
-      if (capped > 0) {
-        raw += capped;
-        pairs.push({ a: a.name, b: b.name, value: capped });
-      }
+      const value = Math.min(both, PAIR_CAP);
+      if (value > 0) edges.push({ i, j, a: a.name, b: b.name, value });
     }
   }
+  return edges;
+}
+
+/** A card's first SATURATION_FREE edges count fully; its k-th extra edge decays. */
+function edgeFactor(rank: number): number {
+  return rank < SATURATION_FREE ? 1 : SATURATION_DECAY ** (rank - SATURATION_FREE + 1);
+}
+
+/** Diminishing returns on a card's redundant synergies: walking edges strongest
+ * first, each card spends a free quota then decays. An edge keeps the smaller of
+ * its two endpoints' factors (the more-saturated card gates it), so a hub fed by
+ * many partners (a lone sac outlet, one shield for the board) stops scaling
+ * linearly while a coherent few-partner package is untouched. Returns a multiplier
+ * per edge, parallel to `edges`. */
+function saturate(edges: readonly SynergyEdge[]): number[] {
+  const used = new Map<number, number>();
+  const order = edges.map((_, k) => k).sort((x, y) => edges[y]!.value - edges[x]!.value || x - y);
+  const mult = new Array<number>(edges.length).fill(0);
+  for (const k of order) {
+    const { i, j } = edges[k]!;
+    const ri = used.get(i) ?? 0;
+    const rj = used.get(j) ?? 0;
+    mult[k] = Math.min(edgeFactor(ri), edgeFactor(rj));
+    used.set(i, ri + 1);
+    used.set(j, rj + 1);
+  }
+  return mult;
+}
+
+/** Inter-card synergy over DISTINCT cards: bidirectional pair value scaled by
+ * presence, per-pair capped, per-card saturated (diminishing returns on a card's
+ * redundant combos), then globally capped to a fraction of card power. */
+export function deckInterSynergy(
+  cards: readonly CardSignals[],
+  cardPowerSum: number,
+): SynergyBreakdown {
+  const edges = synergyEdges(cards);
+  const mult = saturate(edges);
+  let raw = 0;
+  const pairs: SynergyPair[] = edges.map((e, k) => {
+    const value = e.value * mult[k]!;
+    raw += value;
+    return { a: e.a, b: e.b, value };
+  });
   const capped = Math.min(raw, GLOBAL_SYN_FRACTION * cardPowerSum);
   const topPairs = [...pairs]
     .sort((x, y) => y.value - x.value || x.a.localeCompare(y.a) || x.b.localeCompare(y.b))

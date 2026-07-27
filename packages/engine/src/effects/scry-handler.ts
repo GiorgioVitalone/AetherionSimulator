@@ -43,8 +43,43 @@ export function executeScry(
     case 'distribute':
       return applyDistribute(state, playerId, player, looked, rest, action);
     case 'rearrange':
-      // Auto-policy: keep the looked cards on top in their current order.
-      return { newState: state, events: [] };
+      if (context.selectedTargets === undefined) {
+        return {
+          newState: state,
+          events: [],
+          pendingChoice: {
+            type: 'rearrange_cards',
+            playerId,
+            options: looked.map((card) => ({
+              id: card.instanceId,
+              instanceId: card.instanceId,
+              label: card.name,
+            })),
+            minSelections: looked.length,
+            maxSelections: looked.length,
+            context: `Rearrange the top ${String(looked.length)} card(s)`,
+          },
+        };
+      }
+      {
+        const byId = new Map(looked.map((card) => [card.instanceId, card]));
+        const ordered = context.selectedTargets
+          .map((instanceId) => byId.get(instanceId))
+          .filter((card): card is CardInstance => card !== undefined);
+        if (
+          ordered.length !== looked.length ||
+          new Set(ordered.map((card) => card.instanceId)).size !== looked.length
+        ) {
+          return { newState: state, events: [] };
+        }
+        return {
+          newState: setPlayer(state, playerId, {
+            ...player,
+            mainDeck: [...ordered, ...rest],
+          }),
+          events: [],
+        };
+      }
   }
 }
 

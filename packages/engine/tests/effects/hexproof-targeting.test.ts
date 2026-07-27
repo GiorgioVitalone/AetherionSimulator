@@ -79,4 +79,34 @@ describe('hexproof — opponent targeting exclusion', () => {
     if (!result.resolved) throw new Error('expected resolved');
     expect(result.targetIds).toEqual([enemyPlain.instanceId]);
   });
+
+  it('includes Hexproof in All effects under current rules', () => {
+    const hexproof = mockCard({
+      instanceId: 'hexproof',
+      owner: 1,
+      statusEffects: [{ statusType: 'hexproof', value: 1, remainingTurns: null }],
+    });
+    const ordinary = mockCard({ instanceId: 'ordinary', owner: 1 });
+    const state = mockGameState({
+      config: {
+        terminationMode: 'resource_deck_empty_transform',
+        simultaneousAllEffects: true,
+      },
+      players: [
+        mockPlayerState(0),
+        mockPlayerState(1, {
+          zones: zonesWithCards({ frontline: [hexproof, ordinary, null] }),
+        }),
+      ],
+    });
+    const result = resolveTargets(
+      state,
+      { type: 'all_characters', side: 'enemy' },
+      { sourceInstanceId: 'src', controllerId: 0, triggerDepth: 0 },
+    );
+    expect(result).toEqual({
+      resolved: true,
+      targetIds: ['hexproof', 'ordinary'],
+    });
+  });
 });

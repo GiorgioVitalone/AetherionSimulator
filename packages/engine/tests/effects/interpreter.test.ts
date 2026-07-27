@@ -186,6 +186,46 @@ describe('Effect Interpreter', () => {
       expect(buffed.currentAtk).toBe(3);
       expect(buffed.currentHp).toBe(5);
     });
+
+    it('destroys a body reduced to zero HP by a stat modifier', () => {
+      const card = mockCard({
+        instanceId: 'doomed',
+        currentHp: 2,
+        baseHp: 2,
+        owner: 1,
+      });
+      const state = mockGameState({
+        config: {
+          terminationMode: 'resource_deck_empty_transform',
+          stateBasedActions: true,
+        },
+        players: [
+          mockPlayerState(0),
+          mockPlayerState(1, {
+            zones: {
+              reserve: [null, null],
+              frontline: [card, null, null],
+              highGround: [null, null],
+            },
+          }),
+        ],
+      });
+      const result = executeEffect(
+        state,
+        {
+          type: 'modify_stats',
+          modifier: { hp: -3 },
+          target: { type: 'target_character', side: 'enemy' },
+          duration: { type: 'until_end_of_turn' },
+        },
+        { ...ctx('src', 0), selectedTargets: ['doomed'] },
+      );
+      expect(result.newState.players[1].zones.frontline[0]).toBeNull();
+      expect(result.newState.players[1].discardPile.map((c) => c.instanceId)).toContain(
+        'doomed',
+      );
+      expect(result.events.map((event) => event.type)).toContain('CARD_DESTROYED');
+    });
   });
 
   describe('draw_cards', () => {
@@ -212,6 +252,56 @@ describe('Effect Interpreter', () => {
       const result = executeEffect(state, effect, ctx('src', 0));
       expect(result.newState.players[0]!.hand).toHaveLength(2);
       expect(result.newState.players[0]!.mainDeck).toHaveLength(1);
+    });
+
+    it('loses on an effect draw from an empty deck under current rules', () => {
+      const state = mockGameState({
+        config: {
+          terminationMode: 'resource_deck_empty_transform',
+          effectDrawDeckout: true,
+        },
+        players: [
+          mockPlayerState(0, { mainDeck: [], hand: [] }),
+          mockPlayerState(1),
+        ],
+      });
+      const result = executeEffect(
+        state,
+        {
+          type: 'draw_cards',
+          count: { type: 'fixed', value: 1 },
+          player: 'allied',
+        },
+        ctx('src', 0),
+      );
+      expect(result.newState.winner).toBe(1);
+    });
+
+    it('draws available cards then loses when a multi-draw cannot complete', () => {
+      const lastCard = mockCard({ instanceId: 'last-card' });
+      const state = mockGameState({
+        config: {
+          terminationMode: 'resource_deck_empty_transform',
+          effectDrawDeckout: true,
+        },
+        players: [
+          mockPlayerState(0, { mainDeck: [lastCard], hand: [] }),
+          mockPlayerState(1),
+        ],
+      });
+      const result = executeEffect(
+        state,
+        {
+          type: 'draw_cards',
+          count: { type: 'fixed', value: 2 },
+          player: 'allied',
+        },
+        ctx('src', 0),
+      );
+      expect(result.newState.players[0].hand.map((card) => card.instanceId)).toEqual([
+        'last-card',
+      ]);
+      expect(result.newState.winner).toBe(1);
     });
   });
 
@@ -308,6 +398,39 @@ describe('Effect Interpreter', () => {
       // Card should be in hand but NOT in discard
       expect(result.newState.players[1]!.hand).toHaveLength(1);
       expect(result.newState.players[1]!.discardPile).toHaveLength(0);
+    });
+
+    it('returns a Volatile character to hand without creating an exile record', () => {
+      const card = mockCard({
+        owner: 1,
+        isToken: false,
+        grantedTraits: [{
+          trait: 'volatile',
+          sourceInstanceId: 'source',
+          duration: { type: 'permanent' },
+        }],
+      });
+      const zones = deployToZone(emptyZones(), card, 'frontline');
+      const state = mockGameState({
+        players: [
+          mockPlayerState(0),
+          mockPlayerState(1, { zones }),
+        ],
+      });
+
+      const result = executeEffect(
+        state,
+        {
+          type: 'bounce',
+          target: { type: 'all_characters', side: 'enemy' },
+        },
+        ctx('src', 0),
+      );
+
+      expect(result.newState.players[1]!.zones.frontline[0]).toBeNull();
+      expect(result.newState.players[1]!.hand).toHaveLength(1);
+      expect(result.newState.players[1]!.hand[0]!.instanceId).toBe(card.instanceId);
+      expect(result.newState.players[1]!.exile).toHaveLength(0);
     });
 
     it('should send equipment to discard when bouncing equipped card', () => {
@@ -561,6 +684,64 @@ describe('Effect Interpreter', () => {
       expect(result.pendingChoice).toBeDefined();
       expect(result.pendingChoice?.type).toBe('choose_one');
       expect(result.pendingChoice?.options).toHaveLength(2);
+    });
+
+    it('executes exactly the selected branch on re-entry', () => {
+      const state = mockGameState({
+        config: {
+          terminationMode: 'resource_deck_empty_transform',
+          explicitEffectChoices: true,
+        },
+      });
+      const effect: Effect = {
+        type: 'choose_one',
+        options: [
+          {
+            label: 'Damage',
+            effects: [
+              {
+                type: 'deal_damage',
+                amount: { type: 'fixed', value: 3 },
+                target: { type: 'owner_hero' },
+              },
+            ],
+          },
+          {
+            label: 'Heal',
+            effects: [
+              {
+                type: 'heal',
+                amount: { type: 'fixed', value: 2 },
+                target: { type: 'owner_hero' },
+              },
+            ],
+          },
+        ],
+      };
+
+      const damaged = executeEffect(state, effect, {
+        ...ctx('src', 0),
+        selectedTargets: ['0'],
+      });
+      expect(damaged.pendingChoice).toBeUndefined();
+      expect(damaged.newState.players[0].hero.currentLp).toBe(22);
+
+      const healedStart = {
+        ...state,
+        players: [
+          {
+            ...state.players[0],
+            hero: { ...state.players[0].hero, currentLp: 20 },
+          },
+          state.players[1],
+        ],
+      } as typeof state;
+      const healed = executeEffect(healedStart, effect, {
+        ...ctx('src', 0),
+        selectedTargets: ['1'],
+      });
+      expect(healed.pendingChoice).toBeUndefined();
+      expect(healed.newState.players[0].hero.currentLp).toBe(22);
     });
   });
 });

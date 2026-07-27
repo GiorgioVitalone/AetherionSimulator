@@ -6,6 +6,7 @@
  * intra-card synergy multiplier is applied separately (see card-power.ts).
  */
 import type { Trait } from '../types/common.js';
+import { CARD_TO_HAND, W_ARM } from './weights.js';
 import type { CardStats } from './types.js';
 
 export interface TraitParams {
@@ -25,7 +26,12 @@ export function traitValue(trait: Trait, stats: CardStats | null, params: TraitP
   const power = s.atk + s.hp;
   switch (trait) {
     case 'defender':
-      return 0.6 * (s.hp + s.arm); // wall premium scales with blocking mass
+      // §S2: blocking mass in the SAME per-point units as statBase (W_HP=1 per
+      // HP, W_ARM per ARM) — was a flat hp+arm (1:1), implicitly pricing ARM's
+      // contribution to blocking mass at a rate independent of what W_ARM says
+      // everywhere else (and, before §S2, at a rate that assumed ARM absorbs
+      // every gang-hit rather than only the first each turn).
+      return 0.6 * (s.hp + W_ARM * s.arm); // wall premium scales with blocking mass
     case 'flying':
       return 0.5 * s.atk; // evasive reach scales with ATK
     case 'first_strike':
@@ -37,7 +43,10 @@ export function traitValue(trait: Trait, stats: CardStats | null, params: TraitP
     case 'swift':
       return 0.4; // one free non-exhausting move/turn
     case 'recycle':
-      return 0.6 * (params.recycleValue ?? 1); // draw N on discard (½ draw weight)
+      // §S1: derived from the shared acquisition primitive — ½ CARD_TO_HAND per
+      // recycled card, matching this comment's own long-standing claim (was a
+      // hardcoded 0.6, which was NOT half of the draw anchor).
+      return 0.5 * CARD_TO_HAND * (params.recycleValue ?? 1);
     case 'stealth':
       return 0.25 * power; // dodges removal a window, ∝ body
     case 'elite':

@@ -17,7 +17,16 @@ const round = (x, n = 1) => {
 
 const sug = computeSuggestions();
 const { model } = sug;
-const { tol, slope, intercept, expectedFor } = model;
+// §R4 fix: loadBudgetModel's REAL shape is per-cardType — {characters, spellsEquip}
+// (each with its own slope/intercept/tol), plus expectedFor(cost, rarity, cardType)
+// and tolFor(cardType). There is no root-level tol/slope/intercept (the previous
+// destructure silently pulled `undefined` for all three, rendering "model:{}" /
+// "±undefined"). The frozen line (currently sim-data/balance-budget.v2.json)
+// shares tolerance=1.5 across both populations — chartTol below takes the max of
+// the two so the visual band stays correct even if that ever diverges; each
+// row's own status/delta always uses its OWN cardType's tolFor/expectedFor.
+const { expectedFor, tolFor } = model;
+const chartTol = Math.max(model.characters.tol, model.spellsEquip.tol);
 const outlierMap = new Map();
 for (const c of [...sug.over, ...sug.under]) outlierMap.set(c.id, c);
 
@@ -25,8 +34,9 @@ const { index, heroByFaction } = loadBalanceData();
 const afterIndex = new Map(index);
 for (const [id, c] of outlierMap) afterIndex.set(id, c.after.static);
 
-const statusOf = (power, cost, rarity) => {
-  const e = expectedFor(cost, rarity);
+const statusOf = (power, cost, rarity, cardType) => {
+  const e = expectedFor(cost, rarity, cardType);
+  const tol = tolFor(cardType);
   return power > e + tol ? 'over' : power < e - tol ? 'under' : 'within';
 };
 
@@ -51,10 +61,10 @@ const rows = sug.cards.map((c) => {
     afterPower,
     beforeCost,
     afterCost,
-    beforeStatus: statusOf(beforePower, beforeCost, c.rarity),
-    afterStatus: statusOf(afterPower, afterCost, c.rarity),
-    beforeDelta: round(beforePower - expectedFor(beforeCost, c.rarity), 2),
-    afterDelta: round(afterPower - expectedFor(afterCost, c.rarity), 2),
+    beforeStatus: statusOf(beforePower, beforeCost, c.rarity, c.cardType),
+    afterStatus: statusOf(afterPower, afterCost, c.rarity, c.cardType),
+    beforeDelta: round(beforePower - expectedFor(beforeCost, c.rarity, c.cardType), 2),
+    afterDelta: round(afterPower - expectedFor(afterCost, c.rarity, c.cardType), 2),
   };
 });
 
@@ -83,9 +93,13 @@ const countStatus = (key) => {
 };
 
 const data = {
-  model: { tol, slope, intercept },
+  model: {
+    tol: chartTol,
+    characters: { slope: model.characters.slope, intercept: model.characters.intercept, tol: model.characters.tol },
+    spellsEquip: { slope: model.spellsEquip.slope, intercept: model.spellsEquip.intercept, tol: model.spellsEquip.tol },
+  },
   maxCost: Math.max(...rows.map((r) => Math.max(r.beforeCost, r.afterCost))) + 1,
-  yMax: Math.ceil(Math.max(...rows.flatMap((r) => [Math.abs(r.beforeDelta), Math.abs(r.afterDelta), tol + 1])) / 2) * 2,
+  yMax: Math.ceil(Math.max(...rows.flatMap((r) => [Math.abs(r.beforeDelta), Math.abs(r.afterDelta), chartTol + 1])) / 2) * 2,
   before: summarize(rows.map((r) => r.beforePower)),
   after: summarize(rows.map((r) => r.afterPower)),
   statusBefore: countStatus('beforeStatus'),

@@ -32,7 +32,7 @@ function ctx(sourceId: string, controllerId: 0 | 1 = 0): EffectContext {
 const healHero: Effect = {
   type: 'heal',
   amount: { type: 'fixed', value: 5 },
-  target: { type: 'hero', side: 'ally' },
+  target: { type: 'hero', side: 'allied' },
 };
 const healCharacter: Effect = {
   type: 'heal',

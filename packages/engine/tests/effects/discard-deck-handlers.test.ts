@@ -167,7 +167,22 @@ describe('Discard / Deck effect handlers', () => {
 
   describe('shuffle_into_deck', () => {
     it('moves discard pile into the deck and empties discard', () => {
-      const d1 = mockCard({ owner: 0, name: 'D1' });
+      const d1 = mockCard({
+        owner: 0,
+        name: 'D1',
+        baseHp: 5,
+        currentHp: -2,
+        exhausted: true,
+        attackedThisTurn: true,
+        modifiers: [
+          {
+            id: 'stale',
+            sourceInstanceId: 'old-source',
+            modifier: { hp: -2 },
+            duration: { type: 'permanent' },
+          },
+        ],
+      });
       const d2 = mockCard({ owner: 0, name: 'D2' });
       const state = mockGameState({
         players: [
@@ -180,6 +195,13 @@ describe('Discard / Deck effect handlers', () => {
       expect(result.newState.players[0]!.discardPile).toHaveLength(0);
       expect(result.newState.players[0]!.mainDeck).toHaveLength(3);
       expect(result.newState.rng.counter).toBeGreaterThan(state.rng.counter);
+      const recycled = result.newState.players[0]!.mainDeck.find(
+        (card) => card.name === 'D1',
+      )!;
+      expect(recycled.currentHp).toBe(5);
+      expect(recycled.exhausted).toBe(false);
+      expect(recycled.attackedThisTurn).toBe(false);
+      expect(recycled.modifiers).toHaveLength(0);
     });
   });
 

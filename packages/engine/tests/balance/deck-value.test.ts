@@ -43,6 +43,35 @@ describe('computeDeckValue', () => {
     expect(a.perCard.length).toBe(2);
   });
 
+  it('acceleration needs BOTH cheap enablers and a finisher (the min gate)', () => {
+    const free = { cost: { mana: 0, energy: 0, flexible: 0 }, alignment: ['Verdant'] };
+    const mid = { cost: { mana: 3, energy: 0, flexible: 0 }, alignment: ['Verdant'] };
+    const top = { cost: { mana: 5, energy: 0, flexible: 0 }, alignment: ['Verdant'] };
+    const enabler = body(1, 'Seedling', 0, 2, 0, free);
+    const finisher = body(2, 'Titan', 5, 5, 0, top);
+    const midA = body(1, 'MidA', 0, 2, 0, mid);
+    const midB = body(2, 'MidB', 5, 5, 0, mid);
+    const ids = [1, 1, 1, 2, 2];
+    const snowball = computeDeckValue(
+      { faction: 'Verdant', mainDeckDefIds: ids },
+      HERO,
+      index([enabler, finisher]),
+    );
+    const flat = computeDeckValue(
+      { faction: 'Verdant', mainDeckDefIds: ids },
+      HERO,
+      index([midA, midB]),
+    );
+    const onlyCheap = computeDeckValue(
+      { faction: 'Verdant', mainDeckDefIds: ids },
+      HERO,
+      index([enabler, midB]), // cheap enabler, no finisher (midB is cost 3)
+    );
+    expect(snowball.acceleration).toBeGreaterThan(0);
+    expect(flat.acceleration).toBe(0); // no cheap, no finisher
+    expect(onlyCheap.acceleration).toBe(0); // tempo present but nothing to deploy
+  });
+
   it('rewards matching tribal tags over mismatched ones (inter-card synergy)', () => {
     const deck: DeckInput = { faction: 'Verdant', mainDeckDefIds: [1, 1, 1, 2, 2, 2, 3, 3, 3] };
     const matched = index([

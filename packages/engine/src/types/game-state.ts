@@ -16,7 +16,7 @@ import type {
 import type { Condition } from './conditions.js';
 import type { Effect, ReplacedEvent, CostReductionFilter, ScheduledTiming } from './effects.js';
 import type { Trigger } from './triggers.js';
-import type { Gameplan } from '../bot/gameplan.js';
+import type { Gameplan } from './gameplan.js';
 
 // ── Top-level Game State ─────────────────────────────────────────────────────
 
@@ -34,6 +34,17 @@ export interface GameState {
   readonly log: readonly GameEvent[];
   readonly winner: 0 | 1 | 'draw' | null;
   readonly rng: RngState;
+  /** State-owned monotonic event sequence used by current-rules envelopes. */
+  readonly eventSequence?: number;
+  /**
+   * Explicit identity of the currently stabilized continuous-effect graph.
+   * Current transitions rebuild this record with aura contributions; invariant
+   * validation rejects stale metadata or direct derived-state mutation.
+   */
+  readonly auraDerivation?: {
+    readonly sourceKeys: readonly string[];
+    readonly contributionKeys: readonly string[];
+  };
   readonly turnState: TurnState;
   /** Effects queued to fire at a future phase boundary (e.g. end_of_turn,
    * next_turn_start, next_upkeep). Processed by the turn machine at the matching
@@ -67,16 +78,16 @@ export interface GameConfig {
    * consulted. Tests the "increase damage / faster kills" hypothesis. Rounded with
    * Math.round (engine's standard rounding, matching lpScale). SCOPE: combat damage
    * only; direct/effect `deal_damage` (non-combat) is NOT scaled. Absent/1 ⇒ a
-   * byte-identical no-op (the scale path is skipped entirely when 1). */
+   * semantically invariant no-op (the scale path is skipped entirely when 1). */
   readonly damageScale?: number;
   /** DESIGN-SWEEP KNOB (default absent ⇒ engine-default 3 Frontline slots).
    * Number of Frontline slots per player. Tests "add a Frontline zone" (4) and
    * tighter boards (2). Capacity is carried by the physical zone-array length; the
-   * sim-runner resizes the arrays to match. Absent ⇒ 3 (byte-identical no-op). */
+   * sim-runner resizes the arrays to match. Absent ⇒ 3 (semantically invariant no-op). */
   readonly frontlineSlots?: number;
   /** DESIGN-SWEEP KNOB (default absent ⇒ engine-default 2 High Ground slots).
    * Number of High Ground slots per player. Tests "add a High Ground zone" (3).
-   * See frontlineSlots. Absent ⇒ 2 (byte-identical no-op). */
+   * See frontlineSlots. Absent ⇒ 2 (semantically invariant no-op). */
   readonly highGroundSlots?: number;
   /** DIAGNOSTIC ABLATION ONLY (default absent ⇒ no-op). When true, the combat
    * pipeline ignores every `on_would_take_damage` reduction replacement (the -1
@@ -143,7 +154,7 @@ export interface GameConfig {
    * healing (any non-`hero_` target) is left fully intact. Isolates the
    * hero-longevity lever (Seraphina's transform heal, Angelic Strike, etc.).
    * Resolution path only; ATK/HP/ARM and all non-heal effects unaffected. Gated so
-   * the default (toggle OFF) path is byte-identical to the v10 baseline. */
+   * the default (toggle OFF) path is semantically invariant to the canonical default. */
   readonly disableHeroHealing?: boolean;
   /** RULE VARIANT — EC-004 (default absent/unlimited ⇒ engine-default forcing).
    * A numeric cap on how many attackers a single Frontline Defender can FORCE onto
@@ -154,7 +165,7 @@ export interface GameConfig {
    * counter (`CardInstance.forcedAttacksThisTurn`), reset at the turn boundary
    * (passTurn). A non-forcing (capped-out) Defender remains a LEGAL freely-chosen
    * target — the cap only removes its forcing pressure, not its targetability.
-   * Absent / <= 0 ⇒ unlimited (current behavior, byte-identical no-op). Flying
+   * Absent / <= 0 ⇒ unlimited (current behavior, semantically invariant no-op). Flying
    * bypass, Sniper, zone matrix, and Empty Board rules are unchanged. */
   readonly defenderForceCap?: number;
   /** RULE VARIANT — EC-007 (default absent/false ⇒ engine-default Frontline
@@ -167,7 +178,7 @@ export interface GameConfig {
    * creating a wall-vs-reach tradeoff. Flying bypass, Sniper, the zone reach
    * matrix, EC-004's per-Defender force cap, and the Empty Board rule are
    * unchanged — only the zone a forcing Defender must occupy flips. Absent/false
-   * ⇒ byte-identical to the v10 Frontline-forcing baseline. */
+   * ⇒ semantically invariant to the v10 Frontline-forcing baseline. */
   readonly defenderHighGroundOnly?: boolean;
   /** RULE VARIANT — TEST A (default absent/false ⇒ engine-default per-instance ARM).
    * When true, ARM reduces only the FIRST combat-damage instance a body EVER takes
@@ -181,7 +192,7 @@ export interface GameConfig {
    * ARM and is unaffected. ATK/HP unaffected. MUTUALLY EXCLUSIVE with
    * `armChargeAbsorb` (both replace the normal applyArm; if both somehow set,
    * armChargeAbsorb takes precedence). Engine-default (toggle OFF) never reads or
-   * writes `armConsumed` ⇒ byte-identical no-op. */
+   * writes `armConsumed` ⇒ semantically invariant no-op. */
   readonly armOneTimeAbsolute?: boolean;
   /** RULE VARIANT — TEST B (default absent/false ⇒ engine-default per-instance ARM).
    * When true, ARM is a CHARGE counter. Each time a body takes a combat-damage
@@ -197,7 +208,7 @@ export interface GameConfig {
    * (charges→0), third hit deals full damage. ARM is consulted ONLY in the combat
    * path; non-combat `deal_damage` is unaffected. ATK/HP unaffected. MUTUALLY
    * EXCLUSIVE with `armOneTimeAbsolute` (takes precedence if both set).
-   * Engine-default (toggle OFF) never reads or writes `armCharges` ⇒ byte-identical
+   * Engine-default (toggle OFF) never reads or writes `armCharges` ⇒ semantically invariant
    * no-op. */
   readonly armChargeAbsorb?: boolean;
   /** DIAGNOSTIC ABLATION ONLY — "hero reach" isolation (default absent ⇒ no-op).
@@ -211,37 +222,37 @@ export interface GameConfig {
    * so with this ON the seat can only win by deckout/tiebreak, never by lethal.
    * Self-/own-hero LP changes are unaffected. Resolved from the public sim-runner
    * spec `disableFactionHeroReach: { faction }` (faction → seat). Absent / both
-   * false ⇒ byte-identical to the v10 baseline. */
+   * false ⇒ semantically invariant to the canonical default. */
   readonly disableHeroReachBySeat?: readonly [boolean, boolean];
   /** DESIGN-SWEEP KNOB (default absent/false ⇒ engine-default healing). When true,
    * healing may not push a character above its max (the CHARACTER_OVERHEALED event
    * is suppressed so `on_overheal` triggers never fire) — overheal yields no payoff.
    * The HP/LP cap itself already holds in the engine default (heal is clamped to
    * headroom), so the only behavioral change is removing the overheal signal. Absent/
-   * false ⇒ byte-identical no-op (the suppression branch is never entered). */
+   * false ⇒ semantically invariant no-op (the suppression branch is never entered). */
   readonly noOverheal?: boolean;
   /** DESIGN-SWEEP KNOB (default absent/0 ⇒ engine-default ramp of 1 resource/turn).
    * Each Upkeep, the active player draws N EXTRA Resource cards into the Resource Bank
    * (on top of the standard 1), modeling a faster ramp. Reads off the live Resource
-   * Deck — never draws past it. Absent / <= 0 ⇒ exactly 1 draw (byte-identical no-op). */
+   * Deck — never draws past it. Absent / <= 0 ⇒ exactly 1 draw (semantically invariant no-op). */
   readonly resourceRampBonus?: number;
   /** DESIGN-SWEEP KNOB (default absent/false ⇒ engine-default deploy zones). When
    * true, ANY character may deploy directly to High Ground at NO surcharge (bypassing
    * the move-from-Frontline requirement), not just Elite. Only the OFFERED deploy
    * slots change (available-actions); the deploy executor already accepts a
    * high_ground target. Absent/false ⇒ only Elite is offered High Ground (with its +2
-   * surcharge) ⇒ byte-identical no-op. */
+   * surcharge) ⇒ semantically invariant no-op. */
   readonly directHighGroundDeploy?: boolean;
   /** DIAGNOSTIC INSTRUMENTATION ONLY (default absent ⇒ no-op). A mutable
    * side-channel accumulator the combat/replacement pipeline writes measured
    * tallies into when present. NOT part of the hashed run identity. Touched only
-   * when present, so an absent `diag` leaves resolution byte-identical. */
+   * when present, so an absent `diag` leaves resolution semantically invariant. */
   readonly diag?: DiagCounters;
   /** WS-A T-A5 PILOT DE-BIAS KNOB (default absent ⇒ engine-default heuristic
    * constants). Per-seat strategic gameplans the heuristic pilot reads to bias its
    * scoring toward each faction's archetype (see src/bot/gameplan.ts). Indexed by
    * SEAT (0/1). Absent ⇒ the pilot uses its hardcoded constants (equivalently the
-   * NEUTRAL gameplan), a byte-identical no-op; the engine's resolution path never
+   * NEUTRAL gameplan), a semantically invariant no-op; the engine's resolution path never
    * consults this field, so it cannot affect any runHash. */
   readonly botGameplan?: Record<0 | 1, Gameplan>;
   /** FAIR-PILOT KNOB (default absent/false ⇒ engine-default heuristic constants &
@@ -250,7 +261,7 @@ export interface GameConfig {
    * effects, the reactive + mulligan policy is card-advantage / curve aware, and the
    * rollout pilot rolls to game end and counters high-threat spells. Read ONLY by the
    * bot (src/bot/*) and the rollout pilot; the engine's resolution path never consults
-   * it, so it cannot affect any runHash on its own. Absent/false ⇒ byte-identical
+   * it, so it cannot affect any runHash on its own. Absent/false ⇒ semantically invariant
    * no-op (the v-current hash). */
   readonly fairPilot?: boolean;
   /** BOT-POLICY KNOB (default absent/false ⇒ engine-default blind last-resort
@@ -259,7 +270,7 @@ export interface GameConfig {
    * one resource, pitches a single matching-type card to pay for it, and only when
    * the play's value exceeds the pitched card's value plus a tempo margin. Read ONLY
    * by the bot (src/bot/*); the engine's resolution path never consults it, so it
-   * cannot affect any runHash on its own. Absent/false ⇒ byte-identical no-op. */
+   * cannot affect any runHash on its own. Absent/false ⇒ semantically invariant no-op. */
   readonly reachDiscard?: boolean;
   /** RULE VARIANT (default absent/false ⇒ engine-default: discarded card goes to the
    * discard pile). When true, a card spent via `discard_for_energy` is EXILED (removed
@@ -267,7 +278,7 @@ export interface GameConfig {
    * graveyard fuel for reanimation (Onyx's Grave Digger / Morgath / Necrotic Revival /
    * Kaelthar). The +1 temporary resource and the CARD_DISCARDED event are unchanged —
    * only the card's destination differs. Read by the discard executor only. Absent/
-   * false ⇒ byte-identical no-op. */
+   * false ⇒ semantically invariant no-op. */
   readonly exileDiscardForEnergy?: boolean;
   /** BOT-POLICY KNOB (default absent/false ⇒ engine-default atk+hp valuation). When
    * true, the heuristic pilot consults the first-principles card-power / synergy
@@ -276,8 +287,280 @@ export interface GameConfig {
    * synergy, on the same scale as atk+hp) plus a bounded board/hero inter-card synergy
    * bonus, so it plays the cards that actually combo with its board and hero. Read
    * ONLY by the bot (src/bot/*); the engine's resolution path never consults it, so it
-   * cannot affect any runHash on its own. Absent/false ⇒ byte-identical no-op. */
+   * cannot affect any runHash on its own. Absent/false ⇒ semantically invariant no-op. */
   readonly valuePilot?: boolean;
+  /** BOT-POLICY KNOB (default absent/false ⇒ no change; only meaningful on top of
+   * `valuePilot`). The per-card power score is cost-free, so ramp enablers score ~0
+   * and the value pilot structurally under-deploys the ramp archetype (the same
+   * blindness computeDeckValue's `acceleration` term fixes at the DECK level). When
+   * true, the deploy ranking adds an early-game tempo bonus for `ramp` signals
+   * (weight × ACCEL_RAMP_TEMPO, fading linearly to 0 by the resource-deck horizon),
+   * so the pilot actually starts the ramp plan it was dealt. Read ONLY by the bot
+   * (src/bot/*); the engine's resolution path never consults it, so it cannot affect
+   * any runHash on its own. Absent/false ⇒ semantically invariant no-op. */
+  readonly rampPilot?: boolean;
+  /** RULE GUARD (default absent/false ⇒ engine-default: cost reductions floor at
+   * zero). When true, stacked cost reductions can never take a card below an
+   * effective TOTAL cost of 1 unless its printed cost is already 0 — the
+   * engine-wide "(minimum 1)" Lyria's Supreme Intellect already prints, applied
+   * to every discount. Exists because an unfloored discount × a cheap self-copy
+   * spell produced a 0-cost infinite loop (§12c: budget-cut Arcane Echoes ×
+   * Wizard's Robe — 7,990 casts in one game, step-cap abort). Read by
+   * effectiveCost only. Absent/false ⇒ semantically invariant no-op. */
+  readonly costFloor?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: Reserve
+   * Energy Generation happens AUTOMATICALLY at Upkeep for every eligible ready
+   * Reserve character). Rulebook 8 step 4 says the active player MAY exhaust
+   * them — it is a choice. When true, the automatic generation is replaced by
+   * an explicit action window during Upkeep step 4: the player chooses each tap,
+   * then ends the window. Authoritative profiles enforce that window;
+   * non-authoritative profiles retain the historical Strategy surface for
+   * replay compatibility. Absent/false ⇒ semantically invariant no-op. */
+  readonly reserveTapChoice?: boolean;
+  /** RULES CHANGE UNDER MEASUREMENT (§13m; default absent/false ⇒ tapping is
+   * free). When true, generating Reserve Energy STRAINS the character: it takes
+   * 1 direct damage (no ARM mitigation, no damage triggers — wear, not an
+   * attack), and a character with 1 HP left is too weak to generate at all.
+   * Exists because the free tap annuity is the measured source of Verdant's
+   * structural income surplus (§13l): this converts free income into income
+   * paid for in board material. Applies to both the automatic path and the
+   * `tap_reserve` action. Absent/false ⇒ semantically invariant no-op. */
+  readonly reserveTapStrain?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy five-card opening hand
+   * for both players). When true, after both mulligan decisions are complete,
+   * the player going second draws one additional Main Deck card. This is setup
+   * compensation from Rulebook §7, not a simulation-only balance knob. */
+  readonly secondPlayerOpeningCard?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ the random setup winner is
+   * silently made first player). When true, the random winner receives an
+   * explicit post-mulligan choice of which player goes first, per Rulebook §7. */
+  readonly explicitFirstPlayerChoice?: boolean;
+  /** RULES CHANGE UNDER MEASUREMENT (§13o; default absent ⇒ deck-construction
+   * default: the full 15-card Resource Deck). When set, each player's Resource
+   * Deck is truncated to this many cards AFTER the setup shuffle (preserving the
+   * deck's resource-type mix in expectation). Smaller decks cap total permanent
+   * income and empty sooner — under `terminationMode:
+   * resource_deck_empty_transform` that opens the transform gate earlier.
+   * Read at game setup only. Absent ⇒ semantically invariant no-op. */
+  readonly resourceDeckSize?: number;
+  /** RULE ABLATION PROBE (default absent/false ⇒ engine-default: any player may,
+   * once per turn, discard a hand card for +1 temporary resource MATCHING the
+   * card's type — Mana if Magic-aligned, Energy if Tech-aligned, per Rulebook 11;
+   * the action's name understates it). When true, the `discard_for_energy` action
+   * is never offered. Exists to MEASURE the rule's contribution to faction
+   * balance. Measured (§12a, 20k games/arm): a universal surprise-tempo valve —
+   * props reach/aggro finishers (Onyx +2.9 pp, Radiant +1.3), suppresses the
+   * long-game counter deck (Sapphire −4.0), null on Verdant (−0.3). Diagnostic,
+   * not a proposed rules change. Absent/false ⇒ semantically invariant no-op. */
+  readonly disableDiscardForEnergy?: boolean;
+  /** RULES-ACCURACY FIX — §13q (default absent/false ⇒ legacy engine behavior:
+   * side:'any' target resolution returns players in SEAT order [0, 1] regardless
+   * of who is active). When true, side:'any' returns [activePlayer, nonActivePlayer]
+   * instead, matching the Rulebook's APNAP intent ("Active Player's triggers
+   * first" — see trigger-matcher.ts) already enforced downstream for per-event
+   * trigger ordering. Without this, a symmetric AoE effect (side:'any') emits its
+   * CARD_DESTROYED/DAMAGE_DEALT events seat-0-first no matter which player is
+   * active, and the downstream per-event trigger sort can't undo cross-card
+   * emission order — measured to shift a matchup's win rate ~5pp purely from
+   * which deck sits in seat 0. Only the player ORDER changes (same two players,
+   * same cards); no other resolution behavior is affected. Absent/false ⇒
+   * semantically invariant no-op. */
+  readonly apnapAnyOrderFix?: boolean;
+  /** CANDIDATE RULE VARIANT UNDER EVALUATION (§13r; default absent/false ⇒ no
+   * change: the locked `firstPlayerCompensation: 'card'` rule stands). Alternative
+   * to that rule: when true, the FIRST PLAYER does not draw a Resource Card
+   * during their FIRST Upkeep (the game's very first turn only) — everything
+   * else about that Upkeep is unchanged. Under `resourceDeckSize` +
+   * `terminationMode: 'resource_deck_empty_transform'` this also delays that
+   * player's Resource Deck emptying by one turn (intended, not special-cased).
+   * Mutually exclusive with `firstPlayerCompensation` at the harness level —
+   * they are competing compensation levers under measurement, not stackable.
+   * Absent/false ⇒ semantically invariant no-op. */
+  readonly firstPlayerSkipsFirstResource?: boolean;
+  /** CANDIDATE RULE VARIANT UNDER EVALUATION (§13r; default absent/false ⇒ no
+   * change: the engine-default first-player-first-turn Main Deck draw skip
+   * stays in force). When true, DISABLES ONLY that draw skip — the first
+   * player draws a card on their first turn like any other turn. The
+   * companion "first player cannot declare attacks on turn 1" restriction
+   * (available-actions.ts, combat-resolver.ts) is untouched and still applies;
+   * this flag narrows `turnState.firstPlayerFirstTurn`'s effect to that
+   * restriction alone. Absent/false ⇒ semantically invariant no-op. */
+  readonly firstPlayerDrawsNormally?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: End-Phase
+   * resolves Resolve End-of-Turn Effects BEFORE Remove Temporary Resources / Hand
+   * Size Limit). When true, reorders the End-Phase sub-steps to match the
+   * Rulebook: Remove Temporary Resources → Hand Size Limit → Resolve
+   * End-of-Turn Effects (game-machine.ts endPhase/passTurn). Absent/false ⇒
+   * semantically invariant no-op. */
+  readonly endPhaseOrderFix?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior:
+   * start-of-turn scheduled triggers, 'next_turn_start'/'next_upkeep', fire
+   * during Upkeep BEFORE Reserve Energy Generation). When true, fires those
+   * triggers AFTER Reserve Energy Generation instead, matching the Rulebook's
+   * step order (step 5 after step 4). Absent/false ⇒ semantically invariant no-op. */
+  readonly startOfTurnTriggerAfterReserve?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior:
+   * transformation is only declarable during the Strategy Phase). When true,
+   * replaces that timing with an exclusive start-of-turn transform window —
+   * after Reserve Energy Generation, before Strategy — during which the active
+   * player may declare a transform (or end the window). All transform conditions
+   * (LP <= 10 / resource-deck-empty / deficit / printed trigger) are
+   * unchanged. Absent/false ⇒
+   * semantically invariant no-op. */
+  readonly transformAtStartOfTurn?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy engine behavior: Hero
+   * activated abilities (Trigger/Counter/Flash/Ultimate) are repeatable within
+   * a turn unless the individual ability's DSL sets its own oncePerTurn flag).
+   * When true, adds a blanket once-per-turn lockout to every Hero activated
+   * ability, regardless of any per-ability DSL flag. Character activated
+   * abilities are unaffected. Absent/false ⇒ semantically invariant no-op. */
+  readonly heroAbilitiesOncePerTurn?: boolean;
+  /** BUG FIX (default absent/false ⇒ legacy engine behavior: a card's PRINTED
+   * triggered abilities — on_destroy (Last Breath), on_ally_destroyed,
+   * on_turn_end, on_spell_cast, on_deal_lethal_damage, on_block, on_sacrifice,
+   * on_stat_modified, on_gain_resource, on_turn_start, on_counter, on_flash,
+   * on_ally_deployed — are NEVER registered onto `registeredTriggers`, so the
+   * dispatch runtime can never see or fire them; only on_cast/on_deploy work,
+   * since those fire inline from the cast/deploy code paths. When true, a
+   * card's printed triggered abilities are registered via
+   * `registerCardTriggers` the moment it enters play (deploy, deploy_from_deck,
+   * return_from_discard, deploy_token) and the base Hero's printed abilities
+   * are registered at game setup, exactly like Hero transform already does.
+   * Absent/false ⇒ semantically invariant no-op. */
+  readonly registerPrintedTriggers?: boolean;
+  /** BUG FIX (default absent/false ⇒ legacy engine behavior: an attached
+   * equipment's OWN printed triggers — e.g. on_turn_start, on_turn_end,
+   * on_ally_deployed, on_spell_cast, on_gain_resource, on_equipment_attached —
+   * never fire. `getAllRegisteredTriggers` only scans each player's Hero and
+   * the three zone arrays; attached equipment lives at `card.equipment` on its
+   * holder, not in a zone slot of its own, so it is never in the trigger pool,
+   * and it never gets `registerCardTriggers`-style registration at attach time
+   * in the first place (attach is not one of registerPrintedTriggers' "enters
+   * play" moments). This is distinct from an equipment's `aura -> grant_ability
+   * -> equipped_character` effect, which already works because the GRANTED
+   * trigger registers onto the holder (a zone slot). When true: (a)
+   * `executeAttachEquipment` registers the equipment's printed triggered
+   * abilities onto the equipment card instance at the moment it attaches,
+   * mirroring `registerPrintedTriggers`'s enter-play registration; (b) an
+   * on_equipment_attached printed trigger on the equipment itself fires inline
+   * at that same moment (same treatment as on_deploy — see registerPrintedTriggers'
+   * doc — since the dispatch trigger pool is snapshotted before the attach
+   * resolves and on_equipment_attached's matcher keys on the HOLDER's instance
+   * id, not the equipment's); (c) `getAllRegisteredTriggers` also contributes
+   * each occupied zone slot's `equipment.registeredTriggers` to the pool, so an
+   * equipment's other printed triggers (on_turn_start, on_turn_end, etc.) can
+   * fire on later events. A holder exhausted for Reserve Energy Generation
+   * suppresses its equipment's triggers too, same as it suppresses the holder's
+   * own (Rulebook 8 step 4: ALL abilities disabled). Detaching (remove/replace/
+   * transfer) naturally drops an equipment out of the pool the instant it is no
+   * longer any zone slot's `equipment` — no separate unregister step needed.
+   * Absent/false ⇒ semantically invariant no-op. */
+  readonly equipmentTriggers?: boolean;
+  /** NEW ABILITY CATEGORY (default absent/false ⇒ legacy engine behavior: the
+   * [React] wrapper flag on a TriggeredAbilityDSL / RegisteredTrigger is inert).
+   * When true, dispatch enforces [React]'s two properties: (a) a proc exhausts the
+   * source card, (b) the ability cannot proc while its source is already exhausted.
+   * No [React] on Heroes (HeroState has no `exhausted` field). Absent/false ⇒
+   * semantically invariant no-op. */
+  readonly reactAbilities?: boolean;
+  /** BOT TEMPO FIX — `draw_cards` is scored as a flat 1.2/card with no awareness of
+   * hand state, so a draw-heavy deck spends its turns drawing into a hand it can
+   * never deploy (observed: 25% of actions on spells, 3.5x the field, while
+   * deploying least and hoarding 8 cards behind a 2-body board). Under this flag a
+   * draw is scaled DOWN by hand glut and UP when nothing in hand is affordable
+   * ("a dead hand needs a draw"). Bot-only — not a game rule.
+   * Absent/false ⇒ semantically invariant no-op. */
+  readonly dynamicDrawValue?: boolean;
+  /** BUG FIX (default absent/false ⇒ legacy engine behavior: `collectAuraSources`
+   * only scans battlefield cards — Reserve/Frontline/High Ground zone slots and
+   * their attached equipment — so a Hero/Transformed-Hero `aura` ability is NEVER
+   * collected and never runs, even though HeroState carries `abilities` like any
+   * other card). When true, each player's Hero is also scanned as an aura source
+   * (addressed by the existing `hero_<cardDefId>` pseudo-id convention — see
+   * trigger-registry.ts's buildHeroTriggers). No exhaustion/Reserve-tap guard is
+   * applied (unlike `card.reserveEnergyExhausted`): a Hero can never be exhausted
+   * or Reserve-tapped, so there is nothing analogous to gate on. Absent/false ⇒
+   * semantically invariant no-op (collectAuraSources' hero branch never runs). */
+  readonly heroAuras?: boolean;
+  /** BOT TEMPO FIX — the heuristic bot activates abilities (step 3) BEFORE it
+   * deploys (step 4), and picks the cheapest available ability with no
+   * assessment of what the mana could buy instead. A cheap, short-cooldown
+   * ability therefore drains the mana that would have developed the board and
+   * games stall to the turn cap (observed: heuristic close-out 98% → 64.7% after
+   * adding a 2-mana cooldown-1 hero ability). Under this flag a PAID ability is
+   * deferred while an affordable deploy remains; free abilities are unaffected.
+   * Bot-only — does not change game rules. Absent/false ⇒ semantically invariant no-op. */
+  readonly activateAfterDeploy?: boolean;
+  /** ENGINE CODE TICKET — Tier 3, part 1 (default absent/false ⇒ legacy engine
+   * behavior: a Flash-tagged spell is only proactively castable in the
+   * Strategy Phase, exactly like any other spell). Rulebook: Flash "can be
+   * activated at any time." When true, widens the ACTIVE player's proactive
+   * cast surface for Flash-tagged hand spells (only — non-Flash spells stay
+   * Strategy-only) to also include the Action Phase. Resolves through the
+   * existing cast path (executeCastSpell → openWindowOrResolve), so a Flash
+   * cast that finds the opponent holding no legal response still resolves
+   * inline. The Action-Phase priority window this can open is wired in the
+   * game machine (action → priorityWindow → action) — added alongside
+   * responseWindowsOnAllActions (Tier 4); before that wiring an Action-Phase
+   * window was unresolvable by an XState-driven caller. Widening the
+   * opponent's-turn / non-active-player cast surface remains out of scope.
+   * Absent/false ⇒ semantically invariant no-op. */
+  readonly flashAtWill?: boolean;
+  /** ENGINE CODE TICKET — Tier 3, part 2 (default absent/false ⇒ legacy engine
+   * behavior: `computeReactiveActions` only scans the responder's HAND for
+   * Counter/Flash spells). Rulebook: Counter/Flash are not restricted to
+   * spells — a battlefield Character or the Hero may carry an on_counter/
+   * on_flash ability. When true, `computeReactiveActions` also scans the
+   * responder's battlefield zones and Hero for such abilities (ready,
+   * non-summoning-sick sources only), and a board reaction is executed
+   * ACTIVATE-style — its own trigger.cost (default free) is paid and the
+   * source is exhausted, but it stays on the battlefield (never discarded,
+   * unlike a hand spell). Absent/false ⇒ semantically invariant no-op. */
+  readonly boardReactions?: boolean;
+  /** ENGINE CODE TICKET — Tier 4 (default absent/false ⇒ legacy engine behavior:
+   * a reactive priority window (Rulebook 14) opens ONLY on spell casts). When
+   * true, response windows also open on declare_attack, activate_ability
+   * (Trigger/Ultimate), attach_equipment, and move: the base action is pushed
+   * onto the stack and its resolution is DEFERRED until the window closes
+   * (both players pass), exactly like a cast. Attack and move resolutions
+   * (combat damage steps, zone moves) cannot be expressed as Effect[] — their
+   * StackItems carry the declaration (attacker/target, mover/destination) and
+   * `resolveStack` re-invokes `resolveCombat` / `moveCard` at resolution time;
+   * a reaction that invalidates the declaration fizzles it. Under this flag a
+   * Counter may also target ANY enemy stack item (not only spells), so the new
+   * windows are answerable. The game machine's `action` phase gains a
+   * windowOpen → priorityWindow transition (returning to `action` when the
+   * window closes), which also resolves the flashAtWill known limitation of an
+   * unresolvable Action-Phase window. Absent/false ⇒ semantically invariant no-op: the
+   * four handlers gate at the top and run their untouched direct-resolution path. */
+  readonly responseWindowsOnAllActions?: boolean;
+  /** CURRENT-RULES FIX: XState routes commands through the typed authoritative
+   * transition boundary. Absent/false preserves legacy direct execution. */
+  readonly authoritativeTransitions?: boolean;
+  /** CURRENT-RULES FIX: effect choices consume the submitted option and execute
+   * exactly that continuation. Absent/false preserves historical profiles. */
+  readonly explicitEffectChoices?: boolean;
+  /** CURRENT-RULES FIX: pending interactions live in observable GameState.
+   * Absent/false preserves legacy machine-context-only hand-limit behavior. */
+  readonly observableInteractions?: boolean;
+  /** CURRENT-RULES FIX: reset all turn-scoped counters at each turn boundary
+   * and count every accepted activation. */
+  readonly scopedTurnResets?: boolean;
+  /** CURRENT-RULES FIX: TURN_END and TURN_START flow through ordinary trigger
+   * dispatch rather than being appended as inert log entries. */
+  readonly dispatchTurnBoundaryTriggers?: boolean;
+  /** CURRENT-RULES FIX: every attempted effect/Recycle draw from an empty Main
+   * Deck immediately loses, including partial multi-card draws. */
+  readonly effectDrawDeckout?: boolean;
+  /** CURRENT-RULES FIX: destroy zero/negative-HP characters after every atomic
+   * transition, including stat changes, modifier expiry, and aura loss. */
+  readonly stateBasedActions?: boolean;
+  /** CURRENT-RULES FIX: All/zone-wide effects snapshot the full affected set,
+   * bypass target-only protection, and defer state-based deaths until the batch. */
+  readonly simultaneousAllEffects?: boolean;
+  /** CURRENT-RULES FIX: declarations commit costs/exhaustion before priority,
+   * while physical equipment/zone/effect resolution waits for the stack. */
+  readonly transactionalDeclarations?: boolean;
 }
 
 /** Mutable diagnostic accumulator (see GameConfig.diag). Written by the engine
@@ -367,12 +650,23 @@ export interface PlayerState {
   readonly resourceDeck: readonly ResourceCard[];
   readonly resourceBank: readonly ResourceCard[];
   readonly discardPile: readonly CardInstance[];
+  /** Durable audit ledger for cards removed from ordinary zones. */
+  readonly exile: readonly ExileRecord[];
   readonly temporaryResources: readonly TemporaryResource[];
   readonly turnCounters: TurnCounters;
   /** Active cost discounts for matching plays this turn, registered by a
    * `cost_reduction` effect and consulted by the cost system. Cleared at end of
    * turn (like temporaryResources). Optional: absent means none. */
   readonly costReductions?: readonly ActiveCostReduction[];
+}
+
+export interface ExileRecord {
+  readonly instanceId: string;
+  readonly card: CardInstance;
+  readonly ownerPlayerId: 0 | 1;
+  readonly cause: 'discard_for_energy' | 'effect' | 'volatile' | 'replacement';
+  readonly turnNumber: number;
+  readonly sourceInstanceId?: string;
 }
 
 /** A cost discount currently active for a player. `usedThisTurn` enforces
@@ -453,6 +747,9 @@ export interface CardInstance {
    * no active replacements. */
   readonly activeReplacements?: readonly ActiveReplacement[];
   readonly equipment: CardInstance | null;
+  /** Present only while this instance is attached as equipment. The holder also
+   * points back through `equipment`, forming a checked bidirectional relation. */
+  readonly holderInstanceId?: string;
   /** Attach-eligibility constraint authored on an Equipment card (Rulebook 13): the
    * equipment may only attach to a character matching the given resource type
    * (Magic/Tech) and/or carrying the given Tag. Absent ≡ no restriction. */
@@ -465,7 +762,7 @@ export interface CardInstance {
    * applied to a combat-damage instance this turn. While set, further combat
    * instances this turn bypass its ARM (it has spent its first-instance charge).
    * Reset for ALL bodies at the turn boundary (passTurn). Absent ≡ charge intact.
-   * Engine-default (toggle OFF) never reads or writes it ⇒ byte-identical no-op. */
+   * Engine-default (toggle OFF) never reads or writes it ⇒ semantically invariant no-op. */
   readonly armMitigatedThisTurn?: boolean;
   /** EC-003 (config.shieldFirstInstanceOnly): set once this body's −1 "would take
    * damage" shield (an on_would_take_damage reduction replacement) has blunted a
@@ -473,7 +770,7 @@ export interface CardInstance {
    * bypass the shield (charge spent). Reset for ALL bodies at the turn boundary
    * (passTurn), surviving aura recompute (which re-registers the replacement but
    * never touches this flag). Absent ≡ charge intact. Engine-default (toggle OFF)
-   * never reads or writes it ⇒ byte-identical no-op. Independent of the
+   * never reads or writes it ⇒ semantically invariant no-op. Independent of the
    * recompute-volatile `ActiveReplacement.usedThisTurn`/`oncePerTurn`. */
   readonly shieldMitigatedThisTurn?: boolean;
   /** EC-004 (config.defenderForceCap): count of attacks FORCED onto this Defender
@@ -481,18 +778,18 @@ export interface CardInstance {
    * was forcing at declaration time). Once it reaches the cap the Defender stops
    * forcing for the rest of the turn (attackers flow around). Reset for ALL bodies
    * at the turn boundary (passTurn). Absent ≡ 0 (no attacks forced yet).
-   * Engine-default (cap unset/<=0) never reads or writes it ⇒ byte-identical no-op. */
+   * Engine-default (cap unset/<=0) never reads or writes it ⇒ semantically invariant no-op. */
   readonly forcedAttacksThisTurn?: number;
   /** TEST A (config.armOneTimeAbsolute): set once this body's ARM has reduced the
    * FIRST combat instance it ever takes. While set, ARM gives no reduction ever
    * again for this body. NEVER reset (passTurn leaves it untouched). Absent ≡ charge
-   * intact. Engine-default never reads or writes it ⇒ byte-identical no-op. */
+   * intact. Engine-default never reads or writes it ⇒ semantically invariant no-op. */
   readonly armConsumed?: boolean;
   /** TEST B (config.armChargeAbsorb): remaining ARM charges. Each absorbed combat
    * instance fully negates damage and decrements this by 1. Initialized lazily from
    * `currentArm` and topped up when a fresh ARM buff raises `currentArm` above it.
    * NEVER reset at the turn boundary. Absent ≡ not yet initialized (use currentArm).
-   * Engine-default never reads or writes it ⇒ byte-identical no-op. */
+   * Engine-default never reads or writes it ⇒ semantically invariant no-op. */
   readonly armCharges?: number;
   /** TEST B (config.armChargeAbsorb): the `currentArm` value at the last charge
    * sync. A fresh ARM buff is detected as `currentArm` rising above this; the delta
@@ -503,6 +800,8 @@ export interface CardInstance {
   readonly isToken: boolean;
   readonly tags: readonly string[];
   readonly cost: ResourceCost;
+  /** Resource channel for an authored variable cost. Absent means non-X. */
+  readonly xCostResource?: ResourceType;
   readonly alignment: readonly string[];
   readonly owner: 0 | 1;
   /** Variable cost (X) paid when this card was played — e.g. the Energy spent on
@@ -527,6 +826,7 @@ export interface GrantedTrait {
 
 export type GrantedDuration =
   | { readonly type: 'permanent' }
+  | { readonly type: 'for_combat' }
   | { readonly type: 'until_end_of_turn' }
   | { readonly type: 'until_next_upkeep' }
   | { readonly type: 'while_in_play'; readonly sourceId: string };
@@ -646,25 +946,55 @@ export interface RegisteredTrigger {
    * the owner's turns (Rulebook: Cooldown N). Enforced by dispatch via the trigger's
    * fire-markers in the log. Absent / 0 ≡ no cooldown. */
   readonly cooldown?: number;
+  /** [React] wrapper: this triggered ability exhausts its source card when it procs,
+   * and cannot proc while its source is already exhausted. Enforced by dispatch
+   * (config.reactAbilities). Absent ≡ not a [React] ability. */
+  readonly react?: boolean;
 }
 
 // ── PendingChoice (engine pauses for player input) ───────────────────────────
 
 export interface PendingChoice {
+  /** Stable token for stale/forged response rejection in current rules. */
+  readonly interactionId?: string;
   readonly type: PendingChoiceType;
   readonly playerId: 0 | 1;
   readonly options: readonly ChoiceOption[];
   readonly minSelections: number;
   readonly maxSelections: number;
   readonly context: string;
+  readonly sourceInstanceId?: string;
+  readonly effectPath?: readonly number[];
+  readonly optional?: boolean;
+  readonly visibility?: 'controller' | 'public';
+  /** State-bound token callers must echo through the public transition command. */
+  readonly validationToken?: string;
+  /** Serializable interpreter continuation. Present for effect-origin choices. */
+  readonly continuation?: EffectContinuation;
+  /** Prepared context captured when the prompt was created. This preserves any
+   * deterministic RNG pre-pass values while the effect is paused. */
+  readonly resolutionContext?: EffectContext;
+  /** Remaining trigger work suspended behind an effect-origin interaction. */
+  readonly dispatchContinuation?: TriggerDispatchContinuation;
+  /** Stack item whose effect sequence is suspended behind this interaction.
+   * The remaining lower stack stays in GameState.stack; after the choice finishes,
+   * this item receives its resolution disposition and LIFO resolution resumes. */
+  readonly stackResolutionContinuation?: StackResolutionContinuation;
+  /** Pending APNAP owner-order selection for a simultaneous trigger group. */
+  readonly triggerOrderContinuation?: TriggerOrderContinuation;
+  readonly turnBoundaryContinuation?: TurnBoundaryContinuation;
 }
 
 export type PendingChoiceType =
   | 'mulligan'
+  | 'choose_first_player'
+  | 'pay_counter_tax'
   | 'select_targets'
   | 'reserve_exhaust'
   | 'discard_to_hand_limit'
   | 'choose_one'
+  | 'choose_trigger_order'
+  | 'rearrange_cards'
   | 'choose_zone_slot'
   | 'choose_discard';
 
@@ -684,27 +1014,44 @@ export interface PlayerResponse {
 
 export interface StackItem {
   readonly id: string;
-  readonly type: 'spell' | 'ability' | 'attack';
+  /** 'spell' is pushed by casts; 'ability'/'attack'/'equip'/'move' are pushed
+   * only under config.responseWindowsOnAllActions (Tier 4) — 'attack'/'move'
+   * carry a DECLARATION (attacker+target / mover+destination in
+   * sourceInstanceId+targets, effects empty) that resolveStack re-invokes
+   * through resolveCombat / moveCard at resolution time. */
+  readonly type: 'spell' | 'ability' | 'attack' | 'equip' | 'transfer' | 'move';
   readonly sourceInstanceId: string;
+  /** DIAGNOSTIC: the source's card def id, carried through to the SPELL_CAST
+   * event emitted on resolution. See CardDeployedEvent.cardDefId. Optional
+   * for non-spell stack items, which never emit SPELL_CAST. */
+  readonly sourceCardDefId?: number;
   readonly controllerId: 0 | 1;
   readonly effects: readonly Effect[];
   readonly targets: readonly string[];
   /** Variable cost (X) paid when this item was put on the stack — threaded to its
    * effects as `context.xPaid` when the item resolves. Absent means none. */
   readonly xPaid?: number;
+  /** Physical card committed at declaration but not yet placed at resolution. */
+  readonly declaredCard?: CardInstance;
+}
+
+export interface StackResolutionContinuation {
+  readonly item: StackItem;
 }
 
 // ── PendingPriority (open reactive response window) ───────────────────────────
 // Rulebook Section 14: a windowable action opens a response window in which the
 // non-active player (then the active player) may add Counter/Flash links to the
-// chain, resolving LIFO once both pass. Minimal-faithful slice: spell casts only.
+// chain, resolving LIFO once both pass. Spell casts open 'cast' windows; under
+// config.responseWindowsOnAllActions the other base actions open their own
+// window kinds.
 
 export interface PendingPriority {
   readonly type: 'priority';
   /** Who may add a link (or pass) right now. */
   readonly toRespondPlayerId: 0 | 1;
   /** The kind of base action that opened the window. */
-  readonly window: 'cast';
+  readonly window: 'cast' | 'attack' | 'ability' | 'equip' | 'move';
   /** Stack id of the base action that opened this window. */
   readonly baseStackItemId: string;
   /** Number of consecutive passes so far — two closes the window (LIFO resolve). */
@@ -713,8 +1060,31 @@ export interface PendingPriority {
 
 // ── Game Events (emitted during state transitions) ───────────────────────────
 
-export type GameEvent =
-  | CardDeployedEvent
+export interface EventEnvelope {
+  readonly eventId?: string;
+  readonly parentEventId?: string;
+  readonly actionId?: string;
+  readonly transactionId?: string;
+  readonly sequence?: number;
+  readonly turnNumber?: number;
+  readonly phase?: GamePhase;
+  readonly timing?:
+    | 'declaration'
+    | 'resolution'
+    | 'replacement'
+    | 'state_based'
+    | 'turn_boundary'
+    | 'interaction';
+  readonly actorPlayerId?: 0 | 1;
+  readonly controllerPlayerId?: 0 | 1;
+  readonly ownerPlayerId?: 0 | 1;
+  readonly sourceInstanceId?: string;
+  readonly sourceCardDefId?: number;
+  readonly affectedInstanceIds?: readonly string[];
+}
+
+export type GameEvent = EventEnvelope & (
+  CardDeployedEvent
   | CardDestroyedEvent
   | CardBouncedEvent
   | CardExiledEvent
@@ -723,15 +1093,31 @@ export type GameEvent =
   | HeroDamagedEvent
   | HeroHealedEvent
   | SpellCastEvent
+  | SpellDeclaredEvent
+  | SpellResolvedEvent
+  | SpellFizzledEvent
   | SpellCounteredEvent
+  | StackItemDeclaredEvent
+  | StackItemResolvedEvent
+  | StackItemCounteredEvent
+  | StackItemFizzledEvent
   | AbilityActivatedEvent
+  | HeroTransformedEvent
   | CharacterAttackedEvent
   | CardDrawnEvent
   | CardDiscardedEvent
   | ResourceGainedEvent
+  | EquipmentDeclaredEvent
   | EquipmentAttachedEvent
+  | EquipmentDetachedEvent
+  | EquipmentTransferredEvent
+  | EquipmentDiscardedEvent
+  | EquipmentCounteredEvent
+  | EquipmentDestroyedEvent
   | TurnStartEvent
   | TurnEndEvent
+  | GameConcededEvent
+  | GameEndedEvent
   | PhaseChangedEvent
   | StatModifiedEvent
   | LethalDamageDealtEvent
@@ -739,23 +1125,47 @@ export type GameEvent =
   | CharacterOverhealedEvent
   | CardMovedEvent
   | CharacterBlockedEvent
-  | TriggerFiredEvent;
+  | TriggerFiredEvent
+  | ChoiceRequestedEvent
+  | ChoiceSubmittedEvent
+  | ChoiceAcceptedEvent
+  | ChoiceRejectedEvent
+  | ChoiceResolvedEvent
+);
 
 export interface CardDeployedEvent {
   readonly type: 'CARD_DEPLOYED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: the definition id the instance was minted from. Lets Layer-2
+   * balance tooling (balance-deck-panel.mjs) attribute this event to a card
+   * without reconstructing identity from end-of-game zone state (which loses
+   * instances that left every zone, e.g. exiled). Not read by any trigger. */
+  readonly cardDefId: number;
   readonly zone: ZoneType;
   readonly playerId: 0 | 1;
 }
 export interface CardDestroyedEvent {
   readonly type: 'CARD_DESTROYED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   readonly cause: 'combat' | 'effect' | 'sacrifice';
   readonly playerId: 0 | 1;
+  /** Last-known mechanical identity captured before the card leaves play. */
+  readonly lastKnownCard?: CardSnapshot;
+}
+export interface CardSnapshot {
+  readonly instanceId: string;
+  readonly cardDefId: number;
+  readonly cardType: CardTypeCode;
+  readonly traits: readonly Trait[];
+  readonly tags: readonly string[];
 }
 export interface CardBouncedEvent {
   readonly type: 'CARD_BOUNCED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   /** Owner of the bounced card. Lets `on_leaves_battlefield` / ally variants apply
    * their side filter. Optional so existing literals stay valid. */
   readonly playerId?: 0 | 1;
@@ -763,12 +1173,16 @@ export interface CardBouncedEvent {
 export interface CardExiledEvent {
   readonly type: 'CARD_EXILED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   /** Owner of the exiled card. See CardBouncedEvent.playerId. */
   readonly playerId?: 0 | 1;
 }
 export interface CardSacrificedEvent {
   readonly type: 'CARD_SACRIFICED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
 }
 export interface DamageDealtEvent {
   readonly type: 'DAMAGE_DEALT';
@@ -794,17 +1208,86 @@ export interface HeroHealedEvent {
 export interface SpellCastEvent {
   readonly type: 'SPELL_CAST';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. Optional here (unlike the
+   * other DIAGNOSTIC cardDefId fields) because a StackItem's sourceCardDefId
+   * can be absent (see stack-resolver.ts); omitted rather than faked as 0 so
+   * consumers can distinguish "unknown" from a real def id of 0. */
+  readonly cardDefId?: number;
   readonly playerId: 0 | 1;
+}
+export interface SpellDeclaredEvent {
+  readonly type: 'SPELL_DECLARED';
+  readonly stackItemId: string;
+  readonly cardInstanceId: string;
+  readonly cardDefId?: number;
+  readonly playerId: 0 | 1;
+}
+export interface SpellResolvedEvent {
+  readonly type: 'SPELL_RESOLVED';
+  readonly stackItemId: string;
+  readonly cardInstanceId: string;
+  readonly playerId: 0 | 1;
+}
+export interface SpellFizzledEvent {
+  readonly type: 'SPELL_FIZZLED';
+  readonly stackItemId: string;
+  readonly cardInstanceId: string;
+  readonly playerId: 0 | 1;
+  readonly reason: string;
 }
 export interface SpellCounteredEvent {
   readonly type: 'SPELL_COUNTERED';
   readonly cardInstanceId: string;
   readonly playerId: 0 | 1;
 }
+export interface StackItemDeclaredEvent {
+  readonly type: 'STACK_ITEM_DECLARED';
+  readonly stackItemId: string;
+  readonly stackItemType: StackItem['type'];
+  readonly sourceInstanceId: string;
+  readonly controllerPlayerId: 0 | 1;
+  readonly targetIds: readonly string[];
+}
+export interface StackItemResolvedEvent {
+  readonly type: 'STACK_ITEM_RESOLVED';
+  readonly stackItemId: string;
+  readonly stackItemType: StackItem['type'];
+  readonly sourceInstanceId: string;
+  readonly controllerPlayerId: 0 | 1;
+}
+export interface StackItemCounteredEvent {
+  readonly type: 'STACK_ITEM_COUNTERED';
+  readonly stackItemId: string;
+  readonly stackItemType: StackItem['type'];
+  readonly sourceInstanceId: string;
+  readonly controllerPlayerId: 0 | 1;
+}
+export interface StackItemFizzledEvent {
+  readonly type: 'STACK_ITEM_FIZZLED';
+  readonly stackItemId: string;
+  readonly stackItemType: StackItem['type'];
+  readonly sourceInstanceId: string;
+  readonly controllerPlayerId: 0 | 1;
+  readonly reason: string;
+}
 export interface AbilityActivatedEvent {
   readonly type: 'ABILITY_ACTIVATED';
   readonly cardInstanceId: string;
   readonly abilityIndex: number;
+}
+export interface HeroTransformedEvent {
+  readonly type: 'HERO_TRANSFORMED';
+  readonly playerId: 0 | 1;
+  readonly fromCardDefId: number;
+  readonly toCardDefId: number;
+  readonly previousMaxLp: number;
+  readonly newMaxLp: number;
+  readonly maxLpDelta: number;
+  readonly previousCurrentLp: number;
+  readonly newCurrentLp: number;
+  readonly currentLpDelta: number;
+  /** @deprecated Use newCurrentLp. Retained for event-consumer compatibility. */
+  readonly currentLp: number;
 }
 export interface CharacterAttackedEvent {
   readonly type: 'CHARACTER_ATTACKED';
@@ -819,6 +1302,8 @@ export interface CardDrawnEvent {
 export interface CardDiscardedEvent {
   readonly type: 'CARD_DISCARDED';
   readonly cardInstanceId: string;
+  /** DIAGNOSTIC: see CardDeployedEvent.cardDefId. */
+  readonly cardDefId: number;
   readonly playerId: 0 | 1;
 }
 export interface ResourceGainedEvent {
@@ -831,6 +1316,53 @@ export interface EquipmentAttachedEvent {
   readonly type: 'EQUIPMENT_ATTACHED';
   readonly equipmentId: string;
   readonly targetId: string;
+  /** DIAGNOSTIC: definition id + controller of the attached equipment, so
+   * usage telemetry can attribute attaches without state reconstruction
+   * (same pattern as the other card events). Not read by game logic. */
+  readonly cardDefId: number;
+  readonly playerId: 0 | 1;
+}
+export interface EquipmentDeclaredEvent {
+  readonly type: 'EQUIPMENT_DECLARED';
+  readonly equipmentId: string;
+  readonly targetId: string;
+  readonly cardDefId: number;
+  readonly playerId: 0 | 1;
+}
+export interface EquipmentDetachedEvent {
+  readonly type: 'EQUIPMENT_DETACHED';
+  readonly equipmentId: string;
+  readonly holderId: string;
+  readonly playerId: 0 | 1;
+  readonly reason: 'voluntary' | 'replacement' | 'transfer' | 'holder_removed';
+}
+export interface EquipmentTransferredEvent {
+  readonly type: 'EQUIPMENT_TRANSFERRED';
+  readonly equipmentId: string;
+  readonly fromHolderId: string;
+  readonly toHolderId: string;
+  readonly playerId: 0 | 1;
+}
+export interface EquipmentDiscardedEvent {
+  readonly type: 'EQUIPMENT_DISCARDED';
+  readonly equipmentId: string;
+  readonly cardDefId: number;
+  readonly playerId: 0 | 1;
+  readonly reason: 'voluntary' | 'replacement' | 'countered' | 'fizzled' | 'holder_removed';
+}
+export interface EquipmentCounteredEvent {
+  readonly type: 'EQUIPMENT_COUNTERED';
+  readonly equipmentId: string;
+  readonly stackItemId: string;
+  readonly playerId: 0 | 1;
+}
+export interface EquipmentDestroyedEvent {
+  readonly type: 'EQUIPMENT_DESTROYED';
+  readonly equipmentId: string;
+  readonly holderId: string;
+  readonly cardDefId: number;
+  readonly playerId: 0 | 1;
+  readonly reason: 'holder_destroyed' | 'effect';
 }
 export interface TurnStartEvent {
   readonly type: 'TURN_START';
@@ -841,6 +1373,17 @@ export interface TurnEndEvent {
   readonly type: 'TURN_END';
   readonly playerId: 0 | 1;
   readonly turnNumber: number;
+}
+export interface GameConcededEvent {
+  readonly type: 'GAME_CONCEDED';
+  readonly playerId: 0 | 1;
+  readonly winnerPlayerId: 0 | 1;
+}
+export interface GameEndedEvent {
+  readonly type: 'GAME_ENDED';
+  readonly winnerPlayerId: 0 | 1 | 'draw';
+  readonly reason: 'deck_exhaustion' | 'hero_defeat' | 'concession';
+  readonly losingPlayerId?: 0 | 1;
 }
 export interface PhaseChangedEvent {
   readonly type: 'PHASE_CHANGED';
@@ -893,12 +1436,46 @@ export interface TriggerFiredEvent {
   readonly type: 'TRIGGER_FIRED';
   readonly triggerId: string;
 }
+export interface ChoiceRequestedEvent {
+  readonly type: 'CHOICE_REQUESTED';
+  readonly interactionId: string;
+  readonly playerId: 0 | 1;
+  readonly choiceType: PendingChoiceType;
+  readonly sourceInstanceId?: string;
+}
+export interface ChoiceSubmittedEvent {
+  readonly type: 'CHOICE_SUBMITTED';
+  readonly interactionId: string;
+  readonly playerId: 0 | 1;
+  readonly selectedOptionIds: readonly string[];
+}
+export interface ChoiceAcceptedEvent {
+  readonly type: 'CHOICE_ACCEPTED';
+  readonly interactionId: string;
+  readonly playerId: 0 | 1;
+}
+export interface ChoiceRejectedEvent {
+  readonly type: 'CHOICE_REJECTED';
+  readonly interactionId: string;
+  readonly playerId: 0 | 1;
+  readonly reason: string;
+}
+export interface ChoiceResolvedEvent {
+  readonly type: 'CHOICE_RESOLVED';
+  readonly interactionId: string;
+  readonly playerId: 0 | 1;
+}
 
 // ── Turn State (per-turn tracking) ───────────────────────────────────────────
 
 export interface TurnState {
   readonly discardedForEnergy: boolean;
   readonly firstPlayerFirstTurn: boolean;
+  /** Explicit authoritative sub-window inside Upkeep. The public transition
+   * boundary uses this marker to distinguish optional Reserve Energy Generation
+   * (step 4) from the later Hero transformation window. Absent means that no
+   * proactive Upkeep action is currently legal. */
+  readonly upkeepActionWindow?: 'reserve_energy' | 'transform';
   /** Precise gate for `resource_deck_empty_transform`: set at the active player's
    * Upkeep, BEFORE the resource draw, to whether their Resource Deck was already
    * empty (nothing to draw). Recorded ONLY under that termination mode; absent ≡
@@ -931,6 +1508,10 @@ export interface EffectContext {
   readonly controllerId: 0 | 1;
   readonly triggerDepth: number;
   readonly selectedTargets?: readonly string[];
+  /** Option IDs submitted for a non-target effect interaction. Kept separate
+   * from selectedTargets so a choice such as "pay to avoid this Counter" can
+   * retain the declared stack target while consuming the player's answer. */
+  readonly selectedOptionIds?: readonly string[];
   /** Amount of the variable cost (X) paid for the effect's source — e.g. the
    * Energy spent to play an X-cost equipment. Consumed by `x_cost` amount/stat
    * expressions. Absent means no X was paid (evaluates to 0). */
@@ -953,6 +1534,48 @@ export interface EffectContext {
   readonly rolledDice?: number;
 }
 
+export interface EffectContinuation {
+  readonly currentEffect: Effect;
+  readonly remainingEffects: readonly Effect[];
+  readonly context: EffectContext;
+  readonly effectIndex: number;
+}
+
+export interface TriggerDispatchContinuation {
+  readonly depth: number;
+  readonly triggerPool: readonly RegisteredTrigger[];
+  readonly currentEvent: GameEvent;
+  /** Omitted when dispatch was deferred before the current event was scanned. */
+  readonly remainingTriggers?: readonly RegisteredTrigger[];
+  readonly remainingEvents: readonly GameEvent[];
+  /** Trigger-produced events waiting for recursive dispatch after the batch. */
+  readonly producedEvents: readonly GameEvent[];
+}
+
+export interface TriggerOrderContinuation {
+  readonly depth: number;
+  readonly triggerPool: readonly RegisteredTrigger[];
+  readonly currentEvent: GameEvent;
+  readonly remainingEvents: readonly GameEvent[];
+  readonly producedEvents: readonly GameEvent[];
+  /** Groups already ordered (normally the active player’s group). */
+  readonly orderedPrefix: readonly RegisteredTrigger[];
+  readonly groupOwnerPlayerId: 0 | 1;
+  readonly groupTriggers: readonly RegisteredTrigger[];
+  /** The other APNAP group, prompted next when it also has multiple triggers. */
+  readonly remainingGroup: readonly RegisteredTrigger[];
+}
+
+export interface TurnBoundaryContinuation {
+  readonly stage:
+    | 'after_end_expiry'
+    | 'after_hand_limit'
+    | 'after_end_scheduled'
+    | 'after_turn_end'
+    | 'after_turn_start';
+  readonly actionId: string;
+}
+
 // ── Effect Result (returned by all engine operations) ────────────────────────
 
 export interface EffectResult {
@@ -970,7 +1593,7 @@ export const ZONE_SLOTS = {
 } as const;
 
 export const MAX_HAND_SIZE = 8;
-export const RESOURCE_DECK_SIZE = 15;
+export const RESOURCE_DECK_SIZE = 12;
 export const INITIAL_HAND_SIZE = 5;
 export const MULLIGAN_HAND_SIZE = 4;
 export const MAX_TRIGGER_DEPTH = 10;

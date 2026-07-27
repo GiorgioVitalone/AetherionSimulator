@@ -9,8 +9,10 @@ import type {
   ResourceCard,
   CardInstance,
   ActiveCostReduction,
+  GameConfig,
 } from '../types/game-state.js';
 import type { ResourceCost } from '../types/common.js';
+import { hasEffectiveTag } from '../selectors/card-semantics.js';
 
 /** Total available resources (permanent bank + temporary). */
 export function getAvailableResources(player: PlayerState): {
@@ -42,7 +44,7 @@ function reductionMatches(red: ActiveCostReduction, card: CardInstance): boolean
   const f = red.appliesTo;
   if (f.firstPerTurn === true && red.usedThisTurn) return false;
   if (f.cardType !== undefined && f.cardType !== card.cardType) return false;
-  if (f.tag !== undefined && !card.tags.includes(f.tag)) return false;
+  if (f.tag !== undefined && !hasEffectiveTag(card, f.tag)) return false;
   return true;
 }
 
@@ -70,9 +72,24 @@ function discountCost(cost: ResourceCost, reduction: number): ResourceCost {
   return { mana, energy, flexible };
 }
 
-/** The effective cost of playing `card` after the player's active reductions. */
-export function effectiveCost(player: PlayerState, card: CardInstance): ResourceCost {
-  return discountCost(card.cost, totalReduction(player, card));
+/** The effective cost of playing `card` after the player's active reductions.
+ * Under `config.costFloor`, stacked discounts can never take a card below an
+ * effective TOTAL of 1 unless its printed cost is already 0 — the engine-wide
+ * "(minimum 1)" that kills the 0-cost self-copy loop class (§12c Echoes×Robe).
+ * `config` omitted / flag absent ⇒ semantically invariant default behavior. (The bot's
+ * reach-estimate call site passes no config — the engine sites are the
+ * authoritative gate, so a floored play simply never becomes available.) */
+export function effectiveCost(
+  player: PlayerState,
+  card: CardInstance,
+  config?: GameConfig,
+): ResourceCost {
+  let reduction = totalReduction(player, card);
+  if (config?.costFloor === true) {
+    const printed = card.cost.mana + card.cost.energy + card.cost.flexible;
+    if (printed >= 1) reduction = Math.min(reduction, printed - 1);
+  }
+  return discountCost(card.cost, reduction);
 }
 
 /** Mark `firstPerTurn` reductions that matched `card` as used this turn. Pure. */

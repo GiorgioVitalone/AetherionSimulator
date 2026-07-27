@@ -137,9 +137,16 @@ export interface OnCast {
 }
 export interface OnCounter {
   readonly type: 'on_counter';
+  /** BOARD REACTIONS (config.boardReactions — engine.md Tier 3): cost paid to
+   * activate this Counter from the battlefield/Hero (not a hand spell, whose
+   * cost is the card's own printed `cost`). Absent ⇒ free. Ignored for a
+   * hand-spell Counter. */
+  readonly cost?: ResourceCost;
 }
 export interface OnFlash {
   readonly type: 'on_flash';
+  /** See OnCounter.cost. */
+  readonly cost?: ResourceCost;
 }
 export interface OnOverheal {
   readonly type: 'on_overheal';

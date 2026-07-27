@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "provenance": {
+    "date": "2026-07-18",
+    "method": "Theil-Sen (median pairwise slope, median intercept) on a mechanically-curated flag-free, tight-interval card set; frozen thereafter. Re-seeded for v2 with the round-13 scoring (13 rounds of §S3 valuation fixes) — same curation philosophy as v1 (simple, confidently-scored cards only, NOT the judged meta), NOT the full population, to preserve the maintainer's 'no circular goalposts' ruling.",
+    "recalibrationReason": "v1 (2026-07-14, char slope 1.9) predated 13 audit rounds of honest valuation fixes. Re-seeding on the flag-free simple cards with round-13 scoring moves the CHARACTER line only 1.9 -> 2.0 (~5% rarity-adjusted — the simple-card baseline barely changed); the larger drift is in the SPELLS/EQUIPMENT line (slope 0.2 -> 0.5, intercept 2.2 -> 1.4) as spell/equipment valuation matured, plus the leave-one-faction-out stability bound needing to widen to 20% (see stabilityContract). NOTE: an earlier analysis reported a ~16% character drift; that was an artifact of a rarity-offset omission in the stability-test computation (fixed) — the real rarity-adjusted drift is ~5%. Maintainer authorized the v2 re-seed 2026-07-18.",
+    "note": "Rarity offsets are DECLARED from the existing RARITY_BONUS constants in balance-data.mjs, lifted as-is (not re-derived, so rarity is never double-counted through the fitted intercept) — unchanged from v1. Abstract design constants: judge cost-for-power against this frozen line, never against the pool being judged. Bump the version to recalibrate.",
+    "stabilityContract": "leave-one-faction-out: characters slope moves < 22% relative (measured worst 20.0%, drop Radiant, + ~2pp margin mirroring v1's 15%-for-12.6%); spells/equipment line disagrees by < one tolerance across the cost range (measured worst material shift 0.90 < tolerance 1.5). The character bound is RELAXED from v1's 13-15% to ~20%, RATIFIED by the maintainer 2026-07-18 (explicit in-session choice: 'simple cards + wider bound'): v2 keeps v1's flag-free 'simple, confidently-scored' curation (NOT the full population — that would reintroduce the circularity the maintainer rejected), and that confidently-scored set shrank as honest §S3 dynamic-amount flags accumulated (Sapphire down to 4 characters), so a leave-one-faction-out over the smaller, faction-imbalanced set is inherently wider.",
+    "calibratedFrom": [
+      4, 5, 10, 11, 13, 16, 20, 23, 27, 29, 30, 31, 33, 42, 43, 44, 45, 47, 49, 50, 51, 52, 53, 54,
+      55, 58, 60, 61, 62, 64, 69, 72, 77, 79, 80, 81, 83, 84, 85, 86, 87, 90, 91, 93, 100, 101, 104,
+      105, 107, 108, 109, 110, 112, 115, 116, 118, 120, 121, 122, 123, 138, 142, 143
+    ],
+    "supersededCalibrationPoints": [
+      {
+        "id": 142,
+        "supersededOn": "2026-07-27",
+        "reason": "Grovekeeper 3000 was calibrated as an invalid all-zero definition. Its canonical repair is a dynamic +X/+X character, which is ineligible for v2's flag-free calibration population. The frozen line and threshold are unchanged; current ratification requires a separately versioned successor rather than rewriting v2."
+      }
+    ]
+  },
+  "characters": {
+    "slope": 2.0,
+    "intercept": 1.4,
+    "tolerance": 1.5
+  },
+  "spellsEquip": {
+    "slope": 0.5,
+    "intercept": 1.4,
+    "tolerance": 1.5
+  },
+  "rarityOffsets": {
+    "Common": 0,
+    "Ethereal": 0.75,
+    "Mythic": 1.5,
+    "Legendary": 2.5
+  }
+}

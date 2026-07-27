@@ -6,6 +6,7 @@
  */
 import type { CardInstance } from '../types/game-state.js';
 import { cardResourceType } from './card-resource.js';
+import { hasEffectiveTag } from '../selectors/card-semantics.js';
 
 export function meetsEquipRequirement(
   equipment: CardInstance,
@@ -16,7 +17,7 @@ export function meetsEquipRequirement(
   if (req.resourceType !== undefined && cardResourceType(character) !== req.resourceType) {
     return false;
   }
-  if (req.tag !== undefined && !character.tags.includes(req.tag)) {
+  if (req.tag !== undefined && !hasEffectiveTag(character, req.tag)) {
     return false;
   }
   return true;

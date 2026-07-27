@@ -1,0 +1,29 @@
+{
+  "version": "3.0.0",
+  "rules": {
+    "armFirstInstanceOnly": true,
+    "terminationMode": "resource_deck_empty_transform",
+    "costFloor": true,
+    "reserveTapChoice": true,
+    "reserveTapStrain": true,
+    "exileDiscardForEnergy": true,
+    "resourceDeckSize": 12,
+    "firstPlayerCompensation": "card",
+    "apnapAnyOrderFix": true,
+    "endPhaseOrderFix": true,
+    "startOfTurnTriggerAfterReserve": true,
+    "transformAtStartOfTurn": true,
+    "heroAbilitiesOncePerTurn": true,
+    "firstPlayerCompAfterMulligan": true,
+    "flashAtWill": true,
+    "boardReactions": true,
+    "responseWindowsOnAllActions": true,
+    "registerPrintedTriggers": true,
+    "equipmentTriggers": true,
+    "reactAbilities": true,
+    "activateAfterDeploy": true,
+    "heroAuras": true
+  },
+  "amendment": "ruleset-v3 \u2014 supersedes v2 (v1/v2 never mutate). Adds the ability-taxonomy reform: registerPrintedTriggers (BUG FIX: printed event triggers were never registered, so ~29 abilities incl. Last Breath silently never fired), equipmentTriggers (BUG FIX: attached equipment's own triggers were never in the pool), reactAbilities (new [React] category: procs exhaust the source and cannot proc while exhausted), activateAfterDeploy (bot tempo fix: a paid activated ability no longer pre-empts an affordable deploy). Adds heroAuras (BUG FIX: hero/transformed static auras were never applied \u2014 collectAuraSources never included the Hero, so Seraphina Holy Ward, Valkyrie ATK=ARM, Lyria Knowledge Shield and Lyria-T Supreme Intellect were all inert). Authored 2026-07-25. Each flag is byte-identical when OFF so v1/v2 history and replays are preserved.",
+  "base": "ruleset-v2.json"
+}

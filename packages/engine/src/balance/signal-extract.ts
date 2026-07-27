@@ -16,6 +16,10 @@ import type { ProvideKind, WantKind } from './types.js';
 import { AOE_WIDTH } from './weights.js';
 import { isAoE, isEnemyFacing, isEnemyHero, targetSide } from './target-util.js';
 
+function assertNever(x: never): never {
+  throw new Error(`Unhandled effect node: ${JSON.stringify(x)}`);
+}
+
 export interface ProvideSpec {
   readonly kind: ProvideKind;
   readonly weight: number;
@@ -27,35 +31,67 @@ export interface DemandSpec {
   readonly tag?: string;
 }
 
+/** §H4-6 (round-13 fix): the old `default: break` was NOT compile-time
+ * exhaustive — it silently matched every non-container effect type AND any
+ * future container the DSL might add, so a new wrapper effect would compile
+ * clean while never being recursed into (P1's exhaustiveness claim was
+ * false for this function specifically). Every non-container leaf type is
+ * now listed explicitly (mirroring risky-effects.ts's classifyEffect split),
+ * so `default: assertNever(e)` only matches the truly-impossible case —
+ * adding a new Effect variant without triaging it here breaks the build. */
+function recurseIntoContainer(e: Effect): readonly Effect[] {
+  switch (e.type) {
+    case 'composite':
+      return flattenEffects(e.effects);
+    case 'conditional':
+      return e.ifFalse
+        ? [...flattenEffects(e.ifTrue), ...flattenEffects(e.ifFalse)]
+        : flattenEffects(e.ifTrue);
+    case 'choose_one':
+      return e.options.flatMap((o) => flattenEffects(o.effects));
+    case 'replacement':
+      return flattenEffects(e.instead);
+    case 'scheduled':
+      return flattenEffects(e.effects);
+    case 'grant_ability':
+      return flattenEffects(e.ability.effects);
+    case 'deal_damage':
+    case 'heal':
+    case 'modify_stats':
+    case 'draw_cards':
+    case 'scry':
+    case 'deploy_token':
+    case 'destroy':
+    case 'exile':
+    case 'sacrifice':
+    case 'bounce':
+    case 'discard':
+    case 'return_from_discard':
+    case 'counter_spell':
+    case 'gain_resource':
+    case 'cost_reduction':
+    case 'grant_trait':
+    case 'move':
+    case 'apply_status':
+    case 'cleanse':
+    case 'search_deck':
+    case 'shuffle_into_deck':
+    case 'copy_card':
+    case 'deploy_from_deck':
+    case 'attach_as_equipment':
+      return [];
+    default:
+      return assertNever(e);
+  }
+}
+
 /** Flatten wrapper effects (composite/conditional/choose_one/replacement/
  * scheduled/grant_ability) into a single list for scanning. */
 export function flattenEffects(effects: readonly Effect[]): Effect[] {
   const out: Effect[] = [];
   for (const e of effects) {
     out.push(e);
-    switch (e.type) {
-      case 'composite':
-        out.push(...flattenEffects(e.effects));
-        break;
-      case 'conditional':
-        out.push(...flattenEffects(e.ifTrue));
-        if (e.ifFalse) out.push(...flattenEffects(e.ifFalse));
-        break;
-      case 'choose_one':
-        for (const o of e.options) out.push(...flattenEffects(o.effects));
-        break;
-      case 'replacement':
-        out.push(...flattenEffects(e.instead));
-        break;
-      case 'scheduled':
-        out.push(...flattenEffects(e.effects));
-        break;
-      case 'grant_ability':
-        out.push(...flattenEffects(e.ability.effects));
-        break;
-      default:
-        break;
-    }
+    out.push(...recurseIntoContainer(e));
   }
   return out;
 }
@@ -66,6 +102,9 @@ function tokenProvides(e: DeployTokenEffect): ProvideSpec[] {
   const out: ProvideSpec[] = [
     { kind: n >= 2 ? 'wide_bodies' : 'body', weight: Math.max(1, stats) },
   ];
+  // §13 repair: a token parked in Reserve taps for +1 temporary resource each
+  // upkeep (Rulebook 8.4) — deploy-to-Reserve IS ramp, at temp-resource weight.
+  if (e.zone === 'reserve') out.push({ kind: 'ramp', weight: n * 0.75 });
   for (const tag of e.token.tags ?? []) {
     out.push({ kind: 'tag', weight: n, tag });
     out.push({ kind: 'death_trigger', weight: n, tag });
@@ -100,7 +139,20 @@ export function effectProvides(e: Effect): ProvideSpec[] {
     case 'scry':
       return [{ kind: 'card_flow', weight: 2 }];
     case 'gain_resource':
-      return [{ kind: 'ramp', weight: Math.max(1, e.amount) }];
+      // Temporary gains ramp at half weight — burst, not banked acceleration.
+      // §R13-2 (round-15 fix): a `flexible` gain cannot pay any cost today
+      // (cost-checker.ts's getAvailableResources only tallies mana/energy) —
+      // halved to match the scoring discount effect-interval.ts's gain_resource
+      // case now applies to a flexible gain's value.
+      return [
+        {
+          kind: 'ramp',
+          weight:
+            Math.max(1, e.amount) *
+            (e.temporary === true ? 0.5 : 1) *
+            (e.resourceType === 'flexible' ? 0.5 : 1),
+        },
+      ];
     case 'modify_stats':
       return modifyProvides(e);
     case 'grant_trait':

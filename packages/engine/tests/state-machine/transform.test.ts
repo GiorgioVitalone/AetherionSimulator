@@ -6,7 +6,10 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { executePlayerAction } from '../../src/state-machine/actions.js';
+import { refreshCards } from '../../src/state-machine/actions.js';
 import { computeAvailableActions } from '../../src/actions/available-actions.js';
+import { transition } from '../../src/transitions/index.js';
+import { CURRENT_GAME_CONFIG } from '../../src/rules/index.js';
 import {
   mockHero,
   mockGameState,
@@ -19,6 +22,7 @@ import type { DeclareTransformAction } from '../../src/state-machine/types.js';
 
 const ultimate: AbilityDSL = {
   type: 'triggered',
+  abilityKind: 'ultimate',
   trigger: { type: 'activated', cost: { mana: 0, energy: 0, flexible: 0 }, cooldown: 0 },
   effects: [{ type: 'heal', amount: { type: 'fixed', value: 5 }, target: { type: 'owner_hero' } }],
 };
@@ -54,6 +58,21 @@ describe('declare_transform', () => {
     expect(h.abilities).toHaveLength(1);
     expect(h.registeredTriggers).toHaveLength(1); // ultimate registered
     expect(h.registeredTriggers[0]!.ownerPlayerId).toBe(0);
+    expect(result.events).toEqual([
+      {
+        type: 'HERO_TRANSFORMED',
+        playerId: 0,
+        fromCardDefId: 100,
+        toCardDefId: 999,
+        previousMaxLp: 25,
+        newMaxLp: 25,
+        maxLpDelta: 0,
+        previousCurrentLp: 8,
+        newCurrentLp: 8,
+        currentLpDelta: 0,
+        currentLp: 8,
+      },
+    ]);
   });
 
   it('applies lpDelta to maxLp while leaving current damage intact', () => {
@@ -95,14 +114,19 @@ describe('transform eligibility (computeAvailableActions.canTransform)', () => {
   it('is allowed when LP <= 10', () => {
     const state = mockGameState({
       phase: 'strategy',
-      players: [mockPlayerState(0, { hero: mockHero({ currentLp: 10 }) }), mockPlayerState(1)],
+      players: [
+        mockPlayerState(0, {
+          hero: mockHero({ currentLp: 10, transformData: transformData() }),
+        }),
+        mockPlayerState(1),
+      ],
     });
     expect(computeAvailableActions(state).canTransform).toBe(true);
   });
 
   it('is allowed on a 5+ resource deficit with no characters in play', () => {
     const me = mockPlayerState(0, {
-      hero: mockHero({ currentLp: 25 }),
+      hero: mockHero({ currentLp: 25, transformData: transformData() }),
       resourceBank: [],
     });
     const opp = mockPlayerState(1, {
@@ -122,6 +146,85 @@ describe('transform eligibility (computeAvailableActions.canTransform)', () => {
       players: [mockPlayerState(0, { hero: mockHero({ currentLp: 25 }) }), mockPlayerState(1)],
     });
     expect(computeAvailableActions(state).canTransform).toBe(false);
+  });
+
+  it('is disallowed when the Hero has no transformed-side data', () => {
+    const state = mockGameState({
+      phase: 'strategy',
+      players: [
+        mockPlayerState(0, { hero: mockHero({ currentLp: 5 }) }),
+        mockPlayerState(1),
+      ],
+    });
+    expect(computeAvailableActions(state).canTransform).toBe(false);
+  });
+
+  it('offers current-rules transformation only in the start-of-turn window', () => {
+    const hero = mockHero({
+      currentLp: 10,
+      transformData: transformData(),
+    });
+    const strategy = mockGameState({
+      phase: 'strategy',
+      config: CURRENT_GAME_CONFIG,
+      players: [mockPlayerState(0, { hero }), mockPlayerState(1)],
+    });
+    const startOfTurn = {
+      ...strategy,
+      phase: 'upkeep' as const,
+      turnState: {
+        ...strategy.turnState,
+        upkeepActionWindow: 'transform' as const,
+      },
+    };
+
+    expect(computeAvailableActions(strategy).canTransform).toBe(false);
+    expect(computeAvailableActions(startOfTurn).canTransform).toBe(true);
+
+    const rejected = transition(strategy, {
+      type: 'player_action',
+      action: DO_TRANSFORM,
+    });
+    expect(rejected.status).toBe('rejected');
+    if (rejected.status !== 'rejected') throw new Error('expected phase rejection');
+    expect(rejected.violations[0]?.code).toBe('phase');
+
+    const resolved = transition(startOfTurn, {
+      type: 'player_action',
+      action: DO_TRANSFORM,
+    });
+    expect(resolved.status).toBe('resolved');
+    expect(resolved.state.players[0].hero.transformed).toBe(true);
+  });
+
+  it('rejects a fabricated current-rules transform and preserves the exact state', () => {
+    const state = mockGameState({
+      phase: 'upkeep',
+      config: CURRENT_GAME_CONFIG,
+      turnState: {
+        discardedForEnergy: false,
+        firstPlayerFirstTurn: false,
+        upkeepActionWindow: 'transform',
+      },
+      players: [
+        mockPlayerState(0, {
+          hero: mockHero({
+            currentLp: 25,
+            transformData: transformData(),
+          }),
+        }),
+        mockPlayerState(1),
+      ],
+    });
+    const result = transition(state, {
+      type: 'player_action',
+      action: DO_TRANSFORM,
+    });
+    expect(result.status).toBe('rejected');
+    if (result.status !== 'rejected') throw new Error('expected transform rejection');
+    expect(result.violations[0]?.code).toBe('transformation');
+    expect(result.state).toBe(state);
+    expect(executePlayerAction(state, DO_TRANSFORM)).toEqual({ state, events: [] });
   });
 });
 
@@ -151,5 +254,54 @@ describe('hero activated abilities are usable in the Strategy Phase', () => {
     });
     // Heal 5: 18 -> 23 (under maxLp 25, no cap).
     expect(result.state.players[0].hero.currentLp).toBe(23);
+  });
+
+  it('forbids an Ultimate on the transform turn at both public and executor boundaries', () => {
+    const hero = mockHero({
+      cardDefId: 999,
+      currentLp: 18,
+      maxLp: 25,
+      transformed: true,
+      transformedThisTurn: true,
+      abilities: [ultimate],
+    });
+    const state = mockGameState({
+      phase: 'action',
+      config: CURRENT_GAME_CONFIG,
+      players: [mockPlayerState(0, { hero }), mockPlayerState(1)],
+    });
+    const action = {
+      type: 'activate_ability' as const,
+      cardInstanceId: 'hero_999',
+      abilityIndex: 0,
+    };
+    expect(computeAvailableActions(state).canActivateAbility).toEqual([]);
+    const result = transition(state, { type: 'player_action', action });
+    expect(result.status).toBe('rejected');
+    expect(executePlayerAction(state, action)).toEqual({ state, events: [] });
+  });
+
+  it('clears the transform-turn restriction at the transforming player’s next upkeep', () => {
+    const hero = mockHero({
+      cardDefId: 999,
+      transformed: true,
+      transformedThisTurn: true,
+      abilities: [ultimate],
+    });
+    const state = mockGameState({
+      phase: 'upkeep',
+      config: CURRENT_GAME_CONFIG,
+      players: [mockPlayerState(0, { hero }), mockPlayerState(1)],
+    });
+    const refreshed = refreshCards(state);
+    expect(refreshed.players[0].hero.transformedThisTurn).toBe(false);
+    expect(
+      computeAvailableActions({ ...refreshed, phase: 'strategy' }).canActivateAbility,
+    ).toEqual([
+      expect.objectContaining({
+        cardInstanceId: 'hero_999',
+        abilityIndex: 0,
+      }),
+    ]);
   });
 });

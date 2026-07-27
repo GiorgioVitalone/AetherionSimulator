@@ -16,13 +16,16 @@ import { getAllCards, hasOpenSlot } from '../zones/zone-manager.js';
 import { getAvailableResources, effectiveCost } from '../actions/cost-checker.js';
 import { cardResourceType } from '../actions/card-resource.js';
 import { reachAffordTypes } from './reach-discard.js';
-import { deployValue, intrinsicValue } from './value-pilot.js';
+import { deployValue, intrinsicValue, rampDeployBonus } from './value-pilot.js';
 import { calculateHeroDamage } from '../combat/damage-calculator.js';
-import { scoreSpell } from './spell-eval.js';
+import { scoreEffects, scoreSpell } from './spell-eval.js';
 import { chooseSpellTargets } from './target-select.js';
 import { planGangAttack } from './combat-plan.js';
 import { simulateCombatExchange, asSimBody } from './combat-sim.js';
 import { gameplanFor, type Gameplan } from './gameplan.js';
+import { hasEffectiveTrait } from '../selectors/card-semantics.js';
+import { resumeAbilityEffects } from '../effects/effect-runner.js';
+import { resumeStackAfterChoice } from '../effects/stack-resolver.js';
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -35,6 +38,17 @@ export function chooseAction(state: GameState): PlayerAction | null {
   const acts = computeAvailableActions(state);
   const player = state.players[state.activePlayerIndex];
 
+  // Current rules expose two serialized non-phase windows around the Upkeep
+  // boundary. They are real player decisions, so the normal pilot must act in
+  // them rather than blindly sending END_PHASE:
+  //   1. optional Reserve Energy Generation (Upkeep step 4);
+  //   2. optional Hero transformation (after Upkeep, before Strategy).
+  if (state.phase === 'upkeep') {
+    if (acts.canTransform && player.hero.transformData !== undefined) {
+      return { type: 'declare_transform' };
+    }
+    return chooseTapReserve(player, acts);
+  }
   if (state.phase === 'strategy') {
     return chooseStrategyAction(state, player, acts);
   }
@@ -50,6 +64,7 @@ const COUNTER_THRESHOLD = 3;
 // Under fair pilot, a lower bar so the bot answers a mid removal / value engine the
 // legacy gate let resolve (control mirror: card advantage matters).
 const COUNTER_THRESHOLD_FAIR = 2;
+const FLASH_THRESHOLD = 0.25;
 // Per-card weight for the fair card-advantage threat term (an enemy draw is a real
 // threat to a control responder even with no removal/face on the spell).
 const CARD_ADV_THREAT = 0.5;
@@ -58,10 +73,11 @@ const CARD_ADV_THREAT = 0.5;
  * Reactive policy during an open priority window (Rulebook 14). Returns a
  * cast_spell action for the responder, or null to pass. Pure / deterministic.
  *
- * Counter the newest enemy spell on the stack when it scores high enough from the
- * responder's perspective; among held counters pick the cheapest (tie-break by
- * instanceId). Flash is held in the cast window (its value is in attack/move
- * windows, deferred). Default is to pass — reactive cards are scarce.
+ * Counter an enemy spell when it scores high enough, or use a genuine Flash
+ * effect when its own tactical value justifies spending it. Non-spell
+ * declarations still open Flash windows, but the current counter cards all
+ * carry a `target_spell` effect and therefore cannot legally negate attacks,
+ * abilities, equipment, transfers, or movement.
  */
 export function chooseReactiveAction(state: GameState): PlayerAction | null {
   const pp = state.pendingPriority;
@@ -70,26 +86,142 @@ export function chooseReactiveAction(state: GameState): PlayerAction | null {
   const enemyId = responderId === 0 ? 1 : 0;
 
   const fair = isFairPilot(state.config);
-  const enemySpell = fair
+  const options = computeReactiveActions(state, responderId);
+  const enemyItem = fair
     ? highestThreatEnemySpell(state, enemyId, responderId)
     : newestEnemySpell(state, enemyId);
-  if (enemySpell === null) return null;
   const threshold = fair ? COUNTER_THRESHOLD_FAIR : COUNTER_THRESHOLD;
-  if (spellThreat(state, enemySpell, responderId, fair) < threshold) return null;
-
-  const counters = computeReactiveActions(state, responderId)
+  const threat =
+    enemyItem === null ? -Infinity : spellThreat(state, enemyItem, responderId, fair);
+  const counters = options
     .filter((o) => o.kind === 'counter')
     .sort(
       (a, b) =>
         costTotal(a.cost) - costTotal(b.cost) || a.cardInstanceId.localeCompare(b.cardInstanceId),
     );
-  const pick = counters[0];
-  if (pick === undefined) return null;
-  return {
-    type: 'cast_spell',
-    cardInstanceId: pick.cardInstanceId,
-    selectedTargetIds: [enemySpell.id],
-  };
+  const pick = threat >= threshold ? counters[0] : undefined;
+  if (pick?.source === 'board') {
+    // Board reactions carry no selectedTargetIds in PlayerAction; the engine
+    // therefore binds them to the newest enemy spell. Evaluate that exact item,
+    // not an older high-threat item this activation cannot actually name.
+    const boardTarget = newestEnemySpell(state, enemyId);
+    if (
+      boardTarget !== null &&
+      spellThreat(state, boardTarget, responderId, fair) >= threshold
+    )
+      return {
+        type: 'activate_ability',
+        cardInstanceId: pick.cardInstanceId,
+        abilityIndex: pick.abilityIndex!,
+        ...(pick.xValues?.at(-1) !== undefined &&
+        pick.xValues.at(-1)! > 0
+          ? { xValue: pick.xValues.at(-1)! }
+          : {}),
+      };
+  }
+  if (pick !== undefined && enemyItem !== null) {
+    const xValue = pick.xValues?.at(-1);
+    return {
+      type: 'cast_spell',
+      cardInstanceId: pick.cardInstanceId,
+      selectedTargetIds: [enemyItem.id],
+      ...(xValue !== undefined && xValue > 0 ? { xValue } : {}),
+    };
+  }
+  return chooseFlashReaction(state, responderId, enemyId, options, fair);
+}
+
+function chooseFlashReaction(
+  state: GameState,
+  responderId: 0 | 1,
+  enemyId: 0 | 1,
+  options: ReturnType<typeof computeReactiveActions>,
+  fair: boolean,
+): PlayerAction | null {
+  const enemyItem = highestThreatEnemyItem(
+    state,
+    enemyId,
+    responderId,
+    fair,
+  );
+  if (
+    enemyItem === null ||
+    stackItemThreat(state, enemyItem, responderId, fair) <= 0
+  ) {
+    return null;
+  }
+  const player = state.players[responderId];
+  const opponent = state.players[enemyId];
+  const ranked = options
+    .filter((option) => option.kind === 'flash')
+    .map((option) => {
+      const xValue = option.xValues?.at(-1) ?? 0;
+      if (option.source === 'board') {
+        const source =
+          option.cardInstanceId === `hero_${String(player.hero.cardDefId)}`
+            ? player.hero
+            : findOwnedBattlefieldCard(
+                state,
+                responderId,
+                option.cardInstanceId,
+              );
+        const ability = source?.abilities[option.abilityIndex ?? -1];
+        const effects =
+          ability !== undefined &&
+          (ability.type === 'triggered' || ability.type === 'aura')
+            ? ability.effects
+            : [];
+        return {
+          action: {
+            type: 'activate_ability',
+            cardInstanceId: option.cardInstanceId,
+            abilityIndex: option.abilityIndex!,
+            ...(xValue > 0 ? { xValue } : {}),
+          } satisfies PlayerAction,
+          utility:
+            scoreEffects(
+              player,
+              opponent,
+              effects,
+              xValue,
+              gameplanFor('Neutral'),
+              fair,
+            ).value -
+            costTotal(option.cost) * 0.25,
+          id: option.cardInstanceId,
+        };
+      }
+      const card = handCard(player, option.cardInstanceId);
+      if (card === null) return null;
+      const selectedTargetIds = chooseSpellTargets(player, opponent, card);
+      return {
+        action: {
+          type: 'cast_spell',
+          cardInstanceId: option.cardInstanceId,
+          ...(xValue > 0 ? { xValue } : {}),
+          ...(selectedTargetIds === undefined ? {} : { selectedTargetIds }),
+        } satisfies PlayerAction,
+        utility:
+          scoreSpell(
+            player,
+            opponent,
+            card,
+            xValue,
+            gameplanFor('Neutral'),
+            fair,
+          ).value -
+          costTotal(option.cost) * 0.25,
+        id: option.cardInstanceId,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    .sort(
+      (a, b) =>
+        b.utility - a.utility || a.id.localeCompare(b.id),
+    );
+  return ranked[0] !== undefined && ranked[0].utility >= FLASH_THRESHOLD
+    ? ranked[0].action
+    : null;
 }
 
 function newestEnemySpell(state: GameState, enemyId: 0 | 1): GameState['stack'][number] | null {
@@ -176,6 +308,241 @@ function highestThreatEnemySpell(
   return best;
 }
 
+/** Threat model for every declaration that can open a response window. It
+ * scores declared consequences rather than treating the mere presence of a
+ * window as a reason to spend a Flash card. */
+function stackItemThreat(
+  state: GameState,
+  item: GameState['stack'][number],
+  responderId: 0 | 1,
+  fair: boolean,
+): number {
+  if (item.type === 'spell') return spellThreat(state, item, responderId, fair);
+
+  const caster = state.players[item.controllerId];
+  const responder = state.players[responderId];
+  const effectValue =
+    scoreEffects(
+      caster,
+      responder,
+      item.effects,
+      item.xPaid ?? 0,
+      gameplanFor('Neutral'),
+      true,
+    ).value + faceDamageThreat(item.effects, item.xPaid ?? 0);
+
+  switch (item.type) {
+    case 'ability':
+      return effectValue;
+    case 'attack':
+      return attackThreat(state, item, responderId);
+    case 'equip': {
+      const equipment =
+        item.declaredCard ??
+        findOwnedCard(state, item.controllerId, item.sourceInstanceId);
+      return (
+        effectValue +
+        (equipment === null ? 0 : intrinsicValue(equipment) * 0.35)
+      );
+    }
+    case 'transfer':
+      return transferThreat(state, item);
+    case 'move':
+      return moveThreat(state, item);
+  }
+}
+
+function faceDamageThreat(effects: readonly Effect[], xPaid: number): number {
+  let total = 0;
+  for (const effect of effects) {
+    if (
+      effect.type === 'deal_damage' &&
+      effect.target.type === 'hero' &&
+      effect.target.side === 'enemy'
+    ) {
+      switch (effect.amount.type) {
+        case 'fixed':
+          total += effect.amount.value;
+          break;
+        case 'x_cost':
+          total += xPaid;
+          break;
+        case 'dice':
+          total += effect.amount.count * ((effect.amount.sides + 1) / 2);
+          break;
+        case 'count':
+          total += Math.min(effect.amount.max ?? 2, 2);
+          break;
+        case 'event_value':
+          total += 2;
+          break;
+      }
+    } else if (effect.type === 'composite') {
+      total += faceDamageThreat(effect.effects, xPaid);
+    } else if (effect.type === 'conditional') {
+      total += Math.max(
+        faceDamageThreat(effect.ifTrue, xPaid),
+        faceDamageThreat(effect.ifFalse ?? [], xPaid),
+      );
+    } else if (effect.type === 'choose_one') {
+      total += Math.max(
+        0,
+        ...effect.options.map((option) =>
+          faceDamageThreat(option.effects, xPaid),
+        ),
+      );
+    }
+  }
+  return total;
+}
+
+function highestThreatEnemyItem(
+  state: GameState,
+  enemyId: 0 | 1,
+  responderId: 0 | 1,
+  fair: boolean,
+): GameState['stack'][number] | null {
+  let best: GameState['stack'][number] | null = null;
+  let bestThreat = -Infinity;
+  for (const item of state.stack) {
+    if (item.controllerId !== enemyId) continue;
+    const threat = stackItemThreat(state, item, responderId, fair);
+    if (
+      threat > bestThreat ||
+      (threat === bestThreat &&
+        best !== null &&
+        item.id.localeCompare(best.id) < 0)
+    ) {
+      best = item;
+      bestThreat = threat;
+    }
+  }
+  return best;
+}
+
+function attackThreat(
+  state: GameState,
+  item: GameState['stack'][number],
+  responderId: 0 | 1,
+): number {
+  const attacker = findOwnedBattlefieldCard(
+    state,
+    item.controllerId,
+    item.sourceInstanceId,
+  );
+  if (attacker === null) return 0;
+  const targetId = item.targets[0];
+  if (targetId === undefined) return 0;
+
+  if (targetId === 'hero' || targetId.startsWith('hero_')) {
+    const hero = state.players[responderId].hero;
+    const damage = calculateHeroDamage(
+      attacker.currentAtk,
+      hero.currentArm,
+      state.config?.damageScale ?? 1,
+    );
+    return damage >= hero.currentLp ? 1_000 + damage : damage * 1.5;
+  }
+
+  const target = findOwnedBattlefieldCard(state, responderId, targetId);
+  if (target === null) return 0;
+  const damage = Math.max(0, attacker.currentAtk - target.currentArm);
+  return damage >= target.currentHp
+    ? intrinsicValue(target)
+    : Math.min(damage, target.currentHp);
+}
+
+function transferThreat(
+  state: GameState,
+  item: GameState['stack'][number],
+): number {
+  const equipment = findOwnedEquipment(
+    state,
+    item.controllerId,
+    item.sourceInstanceId,
+  );
+  const from =
+    item.targets[0] === undefined
+      ? null
+      : findOwnedBattlefieldCard(
+          state,
+          item.controllerId,
+          item.targets[0],
+        );
+  const to =
+    item.targets[1] === undefined
+      ? null
+      : findOwnedBattlefieldCard(
+          state,
+          item.controllerId,
+          item.targets[1],
+        );
+  if (equipment === null || to === null) return 0;
+  const tacticalUpgrade =
+    Math.max(0, to.currentAtk - (from?.currentAtk ?? 0)) * 0.5;
+  return intrinsicValue(equipment) * 0.25 + tacticalUpgrade;
+}
+
+function moveThreat(
+  state: GameState,
+  item: GameState['stack'][number],
+): number {
+  const mover = findOwnedBattlefieldCard(
+    state,
+    item.controllerId,
+    item.sourceInstanceId,
+  );
+  const destination = item.targets[0];
+  if (mover === null || destination === undefined) return 0;
+  if (destination === 'high_ground') {
+    return Math.max(0.5, mover.currentAtk * 0.5);
+  }
+  if (
+    destination === 'frontline' &&
+    hasEffectiveTrait(mover, 'defender')
+  ) {
+    return 1 + Math.max(0, mover.currentHp + mover.currentArm) * 0.25;
+  }
+  return 0.5;
+}
+
+function findOwnedBattlefieldCard(
+  state: GameState,
+  owner: 0 | 1,
+  instanceId: string,
+): CardInstance | null {
+  return (
+    getAllCards(state.players[owner].zones).find(
+      (card) => card.instanceId === instanceId,
+    ) ?? null
+  );
+}
+
+function findOwnedEquipment(
+  state: GameState,
+  owner: 0 | 1,
+  instanceId: string,
+): CardInstance | null {
+  for (const card of getAllCards(state.players[owner].zones)) {
+    if (card.equipment?.instanceId === instanceId) return card.equipment;
+  }
+  return null;
+}
+
+function findOwnedCard(
+  state: GameState,
+  owner: 0 | 1,
+  instanceId: string,
+): CardInstance | null {
+  const player = state.players[owner];
+  return (
+    findOwnedBattlefieldCard(state, owner, instanceId) ??
+    player.hand.find((card) => card.instanceId === instanceId) ??
+    player.discardPile.find((card) => card.instanceId === instanceId) ??
+    null
+  );
+}
+
 /**
  * Pick option ids in response to a PendingChoice. For mulligan, the caller should
  * use `shouldKeepHand`. For everything else, take the minimum required, preferring
@@ -185,6 +552,11 @@ export function chooseChoiceResponse(state: GameState): readonly string[] {
   const pc = state.pendingChoice;
   if (pc === null) return [];
   const player = state.players[pc.playerId];
+  if (pc.type === 'choose_first_player') {
+    // Baseline policy: the random winner elects to play first. The engine still
+    // exposes both legal choices so stronger/search policies may choose second.
+    return [`player_${String(pc.playerId)}`];
+  }
   if (pc.type === 'discard_to_hand_limit' || pc.type === 'choose_discard') {
     return lowestValueHandIds(
       player,
@@ -192,8 +564,92 @@ export function chooseChoiceResponse(state: GameState): readonly string[] {
       pc.minSelections,
     );
   }
-  const ids = pc.options.map((o) => o.instanceId ?? o.id);
+  if (pc.type === 'choose_trigger_order') {
+    return pc.options
+      .map((option) => option.id)
+      .sort((a, b) => a.localeCompare(b));
+  }
+  if (pc.continuation !== undefined) {
+    const candidates = enumerateChoiceCandidates(pc);
+    let best: { ids: readonly string[]; value: number; key: string } | null = null;
+    for (const ids of candidates) {
+      const resumed = resumeAbilityEffects(state, pc, ids);
+      const projected =
+        resumed.state.pendingChoice === null &&
+        pc.stackResolutionContinuation !== undefined
+          ? resumeStackAfterChoice(
+              resumed.state,
+              pc.stackResolutionContinuation.item,
+            ).state
+          : resumed.state;
+      const value = choiceStateValue(projected, pc.playerId);
+      const key = ids.join('\u0000');
+      if (
+        best === null ||
+        value > best.value ||
+        (value === best.value && key.localeCompare(best.key) < 0)
+      ) {
+        best = { ids, value, key };
+      }
+    }
+    if (best !== null) return best.ids;
+  }
+  // Responses always submit the authoritative option ID. `instanceId` is
+  // display metadata and may intentionally differ (trigger-order options use
+  // trigger IDs while displaying their source card).
+  const ids = pc.options.map((o) => o.id).sort((a, b) => a.localeCompare(b));
   return ids.slice(0, Math.max(pc.minSelections, 0));
+}
+
+function enumerateChoiceCandidates(
+  choice: NonNullable<GameState['pendingChoice']>,
+): readonly (readonly string[])[] {
+  const ids = choice.options
+    .map((option) => option.id)
+    .sort((a, b) => a.localeCompare(b));
+  const min = Math.max(0, choice.minSelections);
+  const max = Math.min(ids.length, choice.maxSelections);
+  const candidates: string[][] = [];
+  const build = (start: number, remaining: number, selected: string[]): void => {
+    if (remaining === 0) {
+      candidates.push([...selected]);
+      return;
+    }
+    for (let index = start; index <= ids.length - remaining; index++) {
+      selected.push(ids[index]!);
+      build(index + 1, remaining - 1, selected);
+      selected.pop();
+    }
+  };
+  for (let count = min; count <= max; count++) build(0, count, []);
+  return candidates;
+}
+
+function choiceStateValue(state: GameState, playerId: 0 | 1): number {
+  if (state.winner === playerId) return 1_000_000;
+  if (state.winner !== null && state.winner !== 'draw') return -1_000_000;
+  const opponentId: 0 | 1 = playerId === 0 ? 1 : 0;
+  const score = (id: 0 | 1): number => {
+    const player = state.players[id];
+    const board = getAllCards(player.zones).reduce(
+      (sum, card) =>
+        sum +
+        Math.max(0, card.currentAtk) +
+        Math.max(0, card.currentHp) +
+        0.5 * Math.max(0, card.currentArm),
+      0,
+    );
+    const readyResources = player.resourceBank.filter(
+      (resource) => !resource.exhausted,
+    ).length;
+    return (
+      5 * player.hero.currentLp +
+      board +
+      0.75 * player.hand.length +
+      0.25 * readyResources
+    );
+  };
+  return score(playerId) - score(opponentId);
 }
 
 /** Mulligan policy: keep a hand that has at least one affordable early play. */
@@ -230,6 +686,26 @@ function chooseStrategyAction(
     return { type: 'declare_transform' };
   }
 
+  // 1b. Reserve Energy Generation as a CHOICE (config.reserveTapChoice): tap
+  //     vanilla Reserve bodies before planning spends so the banked resources
+  //     widen every option below. Bodies with abilities or attached equipment
+  //     are spared — tapping disables ALL their abilities (and their
+  //     equipment's auras) until next Upkeep, which is the rule's real price.
+  const tap = chooseTapReserve(player, acts);
+  if (tap !== null) return tap;
+
+  // 1c. Remove harmful equipment or transfer a useful piece from a weak holder
+  //     to a materially stronger legal holder. These are ordinary Strategy
+  //     actions in current rules and must be reachable by the policy.
+  const equipmentMaintenance = chooseEquipmentMaintenance(
+    player,
+    opponent,
+    acts,
+    gameplanForSeat(state.config, state.activePlayerIndex),
+    isFairPilot(state.config),
+  );
+  if (equipmentMaintenance !== null) return equipmentMaintenance;
+
   // 2. Proactive removal first: clear the opponent's biggest live threat before
   //    committing our own tempo (control sequencing on our priority window).
   if (best !== null && best.score.isRemoval && biggestEnemyThreat(opponent) >= REMOVAL_THREAT) {
@@ -239,13 +715,30 @@ function chooseStrategyAction(
   // 3. Activate beneficial hero/character abilities (free or cheap value).
   const activate = chooseActivate(state, acts);
   if (activate !== null) return activate;
+  // (see chooseActivate: under config.activateAfterDeploy a PAID ability is
+  //  deferred while an affordable deploy is still on the table.)
 
   // 4. Deploy the strongest affordable creature to the best zone.
-  const deploy = chooseDeploy(player, acts, state.config?.valuePilot === true);
+  const deploy = chooseDeploy(
+    player,
+    opponent,
+    acts,
+    state.config?.valuePilot === true,
+    state.config?.rampPilot === true,
+    state.turnNumber,
+    gameplanForSeat(state.config, state.activePlayerIndex),
+    isFairPilot(state.config),
+  );
   if (deploy !== null) return deploy;
 
   // 5. Equip the best creature on board.
-  const equip = chooseEquip(player, acts);
+  const equip = chooseEquip(
+    player,
+    opponent,
+    acts,
+    gameplanForSeat(state.config, state.activePlayerIndex),
+    isFairPilot(state.config),
+  );
   if (equip !== null) return equip;
 
   // 6. Cast a value/tempo spell (or removal vs a smaller threat) when worthwhile.
@@ -269,6 +762,7 @@ function chooseStrategyAction(
 
 // Minimum scored value for a non-removal spell to be worth a card+resources.
 const SPELL_THRESHOLD = 1;
+
 // Only fire proactive removal when the opponent fields a body of real size.
 const REMOVAL_THREAT = 4;
 
@@ -291,7 +785,14 @@ function bestSpell(
     .map((opt) => {
       const card = handCard(player, opt.cardInstanceId);
       if (card === null) return null;
-      const xValue = chooseXValue(player, card);
+      const xValue = chooseXValue(
+        card,
+        opt.xValues,
+        player,
+        opponent,
+        gameplan,
+        valueMode,
+      );
       const score = scoreSpell(player, opponent, card, xValue, gameplan, valueMode);
       const selectedTargetIds = chooseSpellTargets(player, opponent, card);
       const action: PlayerAction = {
@@ -314,6 +815,114 @@ function biggestEnemyThreat(opponent: PlayerState): number {
     .reduce((m, c) => Math.max(m, c.currentAtk + c.currentHp), 0);
 }
 
+function chooseTapReserve(
+  player: PlayerState,
+  acts: ReturnType<typeof computeAvailableActions>,
+): PlayerAction | null {
+  for (const id of acts.canTapReserve) {
+    const card = player.zones.reserve.find((c) => c !== null && c.instanceId === id);
+    if (card == null) continue;
+    if (card.abilities.length > 0 || card.equipment !== null) continue;
+    return { type: 'tap_reserve', cardInstanceId: id };
+  }
+  return null;
+}
+
+function cardEffects(card: CardInstance): readonly Effect[] {
+  return card.abilities.flatMap((ability) =>
+    ability.type === 'triggered' || ability.type === 'aura'
+      ? ability.effects
+      : [],
+  );
+}
+
+function harmfulEquipmentPenalty(effects: readonly Effect[]): number {
+  let penalty = 0;
+  for (const effect of effects) {
+    if (effect.type === 'modify_stats') {
+      penalty += Math.min(
+        0,
+        (effect.modifier.atk ?? 0) +
+          (effect.modifier.hp ?? 0) +
+          (effect.modifier.arm ?? 0),
+      );
+    } else if (effect.type === 'deal_damage' && effect.target.type === 'equipped_character') {
+      penalty -= effect.amount.type === 'fixed' ? effect.amount.value : 1;
+    } else if (effect.type === 'composite' || effect.type === 'scheduled') {
+      penalty += harmfulEquipmentPenalty(effect.effects);
+    } else if (effect.type === 'conditional') {
+      penalty += Math.min(
+        harmfulEquipmentPenalty(effect.ifTrue),
+        harmfulEquipmentPenalty(effect.ifFalse ?? []),
+      );
+    }
+  }
+  return penalty;
+}
+
+function chooseEquipmentMaintenance(
+  player: PlayerState,
+  opponent: PlayerState,
+  acts: ReturnType<typeof computeAvailableActions>,
+  gameplan: Gameplan,
+  valueMode: boolean,
+): PlayerAction | null {
+  const removals = acts.canRemoveEquipment
+    .map((option) => {
+      const holder = findOwnCard(player, option.holderInstanceId);
+      const equipment = holder?.equipment ?? null;
+      if (equipment === null) return null;
+      const value = scoreEffects(
+        player,
+        opponent,
+        cardEffects(equipment),
+        equipment.xPaid ?? 0,
+        gameplan,
+        valueMode,
+      ).value + harmfulEquipmentPenalty(cardEffects(equipment));
+      return { option, value };
+    })
+    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
+    .filter((candidate) => candidate.value < 0)
+    .sort(
+      (a, b) =>
+        a.value - b.value ||
+        a.option.equipmentInstanceId.localeCompare(b.option.equipmentInstanceId),
+    );
+  const harmful = removals[0];
+  if (harmful !== undefined) {
+    return {
+      type: 'remove_equipment',
+      equipmentInstanceId: harmful.option.equipmentInstanceId,
+    };
+  }
+
+  const transfers = acts.canTransferEquipment.flatMap((option) => {
+    const holder = findOwnCard(player, option.holderInstanceId);
+    if (holder === null || holder.equipment === null) return [];
+    return option.validTargets.map((targetId) => {
+      const target = findOwnCard(player, targetId);
+      if (target === null) return null;
+      const tacticalGain = power(target) - power(holder) - costTotal(option.cost);
+      return { option, target, tacticalGain };
+    }).filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
+  }).filter((candidate) => candidate.tacticalGain > 0)
+    .sort(
+      (a, b) =>
+        b.tacticalGain - a.tacticalGain ||
+        a.option.equipmentInstanceId.localeCompare(b.option.equipmentInstanceId) ||
+        a.target.instanceId.localeCompare(b.target.instanceId),
+    );
+  const transfer = transfers[0];
+  return transfer === undefined
+    ? null
+    : {
+        type: 'transfer_equipment',
+        equipmentInstanceId: transfer.option.equipmentInstanceId,
+        targetInstanceId: transfer.target.instanceId,
+      };
+}
+
 function chooseActivate(
   state: GameState,
   acts: ReturnType<typeof computeAvailableActions>,
@@ -333,28 +942,107 @@ function chooseActivate(
     thisTurn.some(
       (e) => e.type === 'ABILITY_ACTIVATED' && e.cardInstanceId === id && e.abilityIndex === idx,
     );
-  // Prefer the cheapest activatable ability; xValue 0 (no X paid) keeps it safe.
+  const player = state.players[state.activePlayerIndex];
+  const opponent = state.players[state.activePlayerIndex === 0 ? 1 : 0];
+  const gameplan = gameplanForSeat(state.config, state.activePlayerIndex);
+  const valueMode = isFairPilot(state.config);
+  const abilityFor = (
+    cardInstanceId: string,
+    abilityIndex: number,
+  ) => {
+    const card = findOwnCard(player, cardInstanceId);
+    const abilities =
+      card ??
+      (cardInstanceId === `hero_${String(player.hero.cardDefId)}`
+        ? player.hero
+        : null);
+    return abilities?.abilities[abilityIndex];
+  };
   const sorted = [...acts.canActivateAbility]
     .filter((a) => !usedThisTurn(a.cardInstanceId, a.abilityIndex))
-    .sort((a, b) => costTotal(a.cost) - costTotal(b.cost));
+    .map((option) => {
+      const ability = abilityFor(option.cardInstanceId, option.abilityIndex);
+      const effects =
+        ability !== undefined &&
+        (ability.type === 'triggered' || ability.type === 'aura')
+          ? ability.effects
+          : [];
+      const xValue = chooseBestXValue(
+        option.xValues,
+        (x) =>
+          scoreEffects(
+            player,
+            opponent,
+            effects,
+            x,
+            gameplan,
+            valueMode,
+          ).value,
+      );
+      return {
+        option,
+        xValue,
+        utility:
+          scoreEffects(
+            player,
+            opponent,
+            effects,
+            xValue,
+            gameplan,
+            valueMode,
+          ).value -
+          costTotal(option.cost) * 0.25 -
+          xValue * X_RESOURCE_OPPORTUNITY_COST,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.utility - a.utility ||
+        costTotal(a.option.cost) - costTotal(b.option.cost) ||
+        a.option.cardInstanceId.localeCompare(b.option.cardInstanceId) ||
+        a.option.abilityIndex - b.option.abilityIndex,
+    );
   const best = sorted[0];
   if (best === undefined) return null;
+  // TEMPO FIX (config.activateAfterDeploy): this step runs BEFORE chooseDeploy, and
+  // picks the cheapest ability with no assessment of what the mana could buy instead.
+  // A cheap, short-cooldown ability (e.g. a 2-mana scry available almost every turn)
+  // therefore drains the mana that would have developed the board, and games stall to
+  // the turn cap. Free abilities are pure value and stay unconditional; a PAID ability
+  // now waits until no affordable deploy remains. acts.canDeploy only ever contains
+  // affordable deploys, so this is a direct "is the mana better spent on board?" test.
+  // Absent/false ⇒ semantically invariant no-op.
+  if (
+    state.config?.activateAfterDeploy === true &&
+    costTotal(best.option.cost) > 0
+  ) {
+    if (acts.canDeploy.length > 0) return null;
+  }
   return {
     type: 'activate_ability',
-    cardInstanceId: best.cardInstanceId,
-    abilityIndex: best.abilityIndex,
+    cardInstanceId: best.option.cardInstanceId,
+    abilityIndex: best.option.abilityIndex,
+    ...(best.xValue > 0 ? { xValue: best.xValue } : {}),
   };
 }
 
 function chooseDeploy(
   player: PlayerState,
+  opponent: PlayerState,
   acts: ReturnType<typeof computeAvailableActions>,
   valuePilot: boolean,
+  rampPilot: boolean,
+  turnNumber: number,
+  gameplan: Gameplan,
+  valueMode: boolean,
 ): PlayerAction | null {
   // Strongest first. Default: highest (atk + hp). Under valuePilot: first-principles
-  // card power + board/hero synergy. Tie-break: cheaper first so we curve out.
+  // card power + board/hero synergy; under rampPilot additionally an early-game ramp
+  // tempo bonus (the cost-free score's ramp blind spot). Tie-break: cheaper first so
+  // we curve out.
   const rank = valuePilot
-    ? (card: CardInstance): number => deployValue(card, player)
+    ? (card: CardInstance): number =>
+        deployValue(card, player) + (rampPilot ? rampDeployBonus(card, turnNumber) : 0)
     : (card: CardInstance): number => power(card);
   const ranked = [...acts.canDeploy]
     .map((opt) => ({ opt, card: handCard(player, opt.cardInstanceId) }))
@@ -365,7 +1053,14 @@ function chooseDeploy(
   if (choice === undefined) return null;
 
   const { zone, slotIndex } = pickDeploySlot(choice.opt.validSlots, choice.card);
-  const xValue = chooseXValue(player, choice.card);
+  const xValue = chooseXValue(
+    choice.card,
+    choice.opt.xValues,
+    player,
+    opponent,
+    gameplan,
+    valueMode,
+  );
   return {
     type: 'deploy',
     cardInstanceId: choice.opt.cardInstanceId,
@@ -389,7 +1084,10 @@ function pickDeploySlot(
 
 function chooseEquip(
   player: PlayerState,
+  opponent: PlayerState,
   acts: ReturnType<typeof computeAvailableActions>,
+  gameplan: Gameplan,
+  valueMode: boolean,
 ): PlayerAction | null {
   const opt = acts.canAttachEquipment[0];
   if (opt === undefined) return null;
@@ -400,7 +1098,17 @@ function chooseEquip(
     .sort((a, b) => power(b) - power(a))[0];
   if (target === undefined) return null;
   const equipCard = handCard(player, opt.cardInstanceId);
-  const xValue = equipCard !== null ? chooseXValue(player, equipCard) : 0;
+  const xValue =
+    equipCard !== null
+      ? chooseXValue(
+          equipCard,
+          opt.xValues,
+          player,
+          opponent,
+          gameplan,
+          valueMode,
+        )
+      : 0;
   return {
     type: 'attach_equipment',
     cardInstanceId: opt.cardInstanceId,
@@ -410,10 +1118,7 @@ function chooseEquip(
 }
 
 function cardHasTrait(card: CardInstance, trait: string): boolean {
-  return (
-    card.traits.includes(trait as never) ||
-    card.grantedTraits.some((g) => g.trait === (trait as never))
-  );
+  return hasEffectiveTrait(card, trait as never);
 }
 
 // How many open High Ground slots the player has (HG holds 2). Used by the EC-007
@@ -592,7 +1297,7 @@ function cardValue(
   if (card.cardType === 'S') {
     return Math.max(
       0,
-      scoreSpell(player, opponent, card, chooseXValue(player, card), gameplan, fair).value,
+      scoreSpell(player, opponent, card, chooseXValue(card), gameplan, fair).value,
     );
   }
   return card.cardType === 'E' ? EQUIP_VALUE : 1;
@@ -611,6 +1316,24 @@ function chooseCombatAction(
 ): PlayerAction | null {
   const opponent = state.players[state.activePlayerIndex === 0 ? 1 : 0];
   const faceWeight = faceWeightFor(state.config, state.activePlayerIndex);
+  const flash = bestSpell(
+    player,
+    opponent,
+    acts,
+    gameplanForSeat(state.config, state.activePlayerIndex),
+    isFairPilot(state.config),
+  );
+
+  // Flash spells are legal proactively in the Action phase. Use worthwhile
+  // removal before combat changes its targets, and use other positive-value
+  // Flash effects before choosing an attack.
+  if (
+    flash !== null &&
+    ((flash.score.isRemoval && biggestEnemyThreat(opponent) >= REMOVAL_THREAT) ||
+      flash.score.value >= SPELL_THRESHOLD)
+  ) {
+    return flash.action;
+  }
 
   // Score every legal attack across all ready bodies, then take the single
   // best net-positive one. No target is forced: a body that can only make a
@@ -678,21 +1401,26 @@ function bestHeroAttack(
 }
 
 // The active seat's gameplan, falling back to NEUTRAL when no per-seat gameplan is
-// supplied on the config. Absent botGameplan ⇒ NEUTRAL ⇒ byte-identical no-op
+// supplied on the config. Absent botGameplan ⇒ NEUTRAL ⇒ semantically invariant no-op
 // (preserves the v10 runHash), since NEUTRAL's weights equal the hardcoded constants.
 // True when the per-game fair-pilot mode is enabled (control/value-aware scoring +
-// reactive/mulligan policy + rollout fairness). Absent ⇒ false ⇒ legacy behavior.
+// reactive/mulligan policy + rollout fairness). Absent ⇒ false ⇒ default behavior.
 function isFairPilot(config: GameConfig | undefined): boolean {
   return config?.fairPilot === true;
 }
 
 function gameplanForSeat(config: GameConfig | undefined, seat: 0 | 1): Gameplan {
-  return config?.botGameplan?.[seat] ?? gameplanFor('Neutral');
+  const base = config?.botGameplan?.[seat] ?? gameplanFor('Neutral');
+  // Single injection point for config.dynamicDrawValue: every scoreSpell call threads
+  // its gameplan from here, so scoreEffect's draw_cards case can scale by hand glut /
+  // dead-hand desperation without changing any signature. Absent/false returns `base`
+  // unchanged ⇒ semantically invariant.
+  return config?.dynamicDrawValue === true ? { ...base, dynamicDraw: true } : base;
 }
 
 // Face damage value per point of LP removed: the active seat's gameplan faceWeight,
 // falling back to the NEUTRAL gameplan (1.5) when no per-seat gameplan is supplied.
-// Absent botGameplan ⇒ NEUTRAL ⇒ byte-identical no-op (preserves the v10 runHash).
+// Absent botGameplan ⇒ NEUTRAL ⇒ semantically invariant no-op (preserves the v10 runHash).
 function faceWeightFor(config: GameConfig | undefined, seat: 0 | 1): number {
   return config?.botGameplan?.[seat].faceWeight ?? gameplanFor('Neutral').faceWeight;
 }
@@ -756,17 +1484,53 @@ function costTotal(cost: { mana: number; energy: number; flexible: number }): nu
   return cost.mana + cost.energy + cost.flexible;
 }
 
-// Spend leftover resources on X-cost cards (those declaring xMana/xEnergy via
-// cost) — here we only pay X when the card's printed cost is fully covered and we
-// still have spare; capped small to keep tempo. Detection: a card whose base cost
-// is 0 across the board is treated as a potential X sink.
-function chooseXValue(player: PlayerState, card: CardInstance): number {
-  const isXCard = card.tags.includes('x_cost') || card.name.toLowerCase().includes(' x');
-  if (!isXCard) return 0;
-  const avail = getAvailableResources(player);
-  const base = card.cost.mana + card.cost.energy + card.cost.flexible;
-  const spare = avail.mana + avail.energy - base;
-  return Math.max(0, Math.min(3, spare));
+const X_RESOURCE_OPPORTUNITY_COST = 0.75;
+
+function chooseBestXValue(
+  legalValues: readonly number[] | undefined,
+  grossUtility: (xValue: number) => number,
+): number {
+  const values = legalValues ?? [0];
+  let best = values[0] ?? 0;
+  let bestUtility =
+    grossUtility(best) - best * X_RESOURCE_OPPORTUNITY_COST;
+  for (const value of values.slice(1)) {
+    const utility =
+      grossUtility(value) - value * X_RESOURCE_OPPORTUNITY_COST;
+    if (utility > bestUtility || (utility === bestUtility && value < best)) {
+      best = value;
+      bestUtility = utility;
+    }
+  }
+  return best;
+}
+
+// Choose among every legal X value by the card's authored effect utility minus
+// the opportunity cost of consuming another typed resource. Non-scaling cards
+// therefore choose X=0; meaningful X effects can justify the full legal spend.
+function chooseXValue(
+  card: CardInstance,
+  legalValues?: readonly number[],
+  player?: PlayerState,
+  opponent?: PlayerState,
+  gameplan: Gameplan = gameplanFor('Neutral'),
+  valueMode: boolean = false,
+): number {
+  if (card.xCostResource === undefined || legalValues === undefined) return 0;
+  if (player === undefined || opponent === undefined) return legalValues[0] ?? 0;
+  const effects = cardEffects(card);
+  return chooseBestXValue(
+    legalValues,
+    (xValue) =>
+      scoreEffects(
+        player,
+        opponent,
+        effects,
+        xValue,
+        gameplan,
+        valueMode,
+      ).value,
+  );
 }
 
 function lowestValueHandIds(

@@ -151,11 +151,11 @@ describe('Wave 7 — DSL stub resolution', () => {
 
   describe('triggering_card_cost Condition', () => {
     it('is true when a triggering card cost is threaded', () => {
-      const cond: Condition = { type: 'triggering_card_cost', comparison: 'less_equal', relativeTo: 'triggering_spell' };
+      const cond: Condition = { type: 'triggering_card_cost', comparison: 'less_equal', value: 3 };
       expect(evaluateCondition(mockGameState(), cond, ctx('x', 0, { triggeringCardCost: 3 }))).toBe(true);
     });
     it('is false when no triggering card is known', () => {
-      const cond: Condition = { type: 'triggering_card_cost', comparison: 'less_equal', relativeTo: 'triggering_spell' };
+      const cond: Condition = { type: 'triggering_card_cost', comparison: 'less_equal', value: 3 };
       expect(evaluateCondition(mockGameState(), cond, ctx('x', 0))).toBe(false);
     });
   });
@@ -266,7 +266,7 @@ describe('Wave 7 — DSL stub resolution', () => {
         type: 'triggered',
         trigger: { type: 'on_spell_cast', side: 'allied' },
         effects: [{ type: 'draw_cards', count: { type: 'fixed', value: 1 }, player: 'allied' }],
-        condition: { type: 'triggering_card_cost', comparison: 'less_equal', relativeTo: 'triggering_spell' },
+        condition: { type: 'triggering_card_cost', comparison: 'less_equal', value: 3 },
       };
       const lyria = mockCard({ owner: 0, name: 'Lyria', abilities: [drawOnSpell] });
       const spell = mockCard({ owner: 0, cardType: 'S', cost: { mana: 3, energy: 0, flexible: 0 } });

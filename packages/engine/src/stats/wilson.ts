@@ -22,7 +22,20 @@ export interface WilsonResult {
  * and mid = 0.5 (maximally uncertain).
  */
 export function wilsonInterval(w: number, n: number, z = 1.96): WilsonResult {
-  if (n <= 0) {
+  if (
+    !Number.isSafeInteger(n) ||
+    n < 0 ||
+    !Number.isSafeInteger(w) ||
+    w < 0 ||
+    w > n ||
+    !Number.isFinite(z) ||
+    z <= 0
+  ) {
+    throw new RangeError(
+      'Wilson inputs require integer 0 <= wins <= trials and a finite positive z',
+    );
+  }
+  if (n === 0) {
     return { lo: 0, hi: 1, mid: 0.5, halfWidth: 0.5 };
   }
   const phat = w / n;

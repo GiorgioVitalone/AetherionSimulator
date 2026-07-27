@@ -1,9 +1,15 @@
-export { computeAvailableActions } from './available-actions.js';
+export {
+  canTransform,
+  computeAvailableActions,
+  legalXValues,
+} from './available-actions.js';
 export type {
   AvailableActions,
   DeployOption,
   CastSpellOption,
   EquipOption,
+  RemoveEquipmentOption,
+  TransferEquipmentOption,
   MoveOption,
   ActivateOption,
   AttackOption,
@@ -17,3 +23,5 @@ export {
   effectiveCost,
   consumeReductions,
 } from './cost-checker.js';
+export { enumerateConcretePlayerActions, keyOfPlayerAction } from './enumerate-actions.js';
+export type { CandidateGenMode } from './enumerate-actions.js';

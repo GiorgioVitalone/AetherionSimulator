@@ -1,5 +1,31 @@
 # Aetherion TCG — Game Simulator Roadmap
 
+## Current implementation status — 2026-07-26
+
+The engine is implemented and undergoing semantic remediation. The canonical
+correctness profile is the diagnostic candidate declared by
+[`packages/engine/sim-data/ruleset-current.json`](../packages/engine/sim-data/ruleset-current.json);
+historical profiles are replay-only. Current architecture, DSL, effect, and
+rules contracts are maintained in:
+
+- [Simulation Engine Architecture](architecture.md)
+- [Effect DSL Specification](dsl-spec.md)
+- [Card Effect System](card-effect-system.md)
+- [Current Game Rules Summary](game-rules-summary.md)
+- [Remediation Plan](simulation-engine-remediation-plan-2026-07-26.md)
+
+Implemented gates include authoritative transitions, explicit continuations,
+typed event/LKI dispatch, simultaneous state-based processing, aura derivation
+invariants, full-game replay/provenance, semantic card validation, separated
+current/legacy test oracles, changed-code coverage, and performance budgets.
+The release remains diagnostic until the independent rules, verification,
+quantitative, and release approvals required by the remediation plan are
+recorded.
+
+The remainder of this file is the original build roadmap. It is retained as
+historical planning context; status claims below are not the current
+certification record.
+
 ## Executive Summary
 
 This document lays out the full plan for building an interactive, browser-based game simulator for Aetherion TCG. The simulator will automate the complete game loop — turn phases, resource management, zone-based movement, combat resolution, and ability execution — so two human players can test games with rules enforcement handled by the engine.

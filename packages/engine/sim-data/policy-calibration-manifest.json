@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "calibrationId": "current-heuristic-vs-rollout-v1",
+  "status": "diagnostic",
+  "corpus": {
+    "source": "runtime_current_tactical_positions",
+    "labelSource": "rollout_outcome_estimates_not_human_truth",
+    "minimumDecisions": 8,
+    "requiredFamilies": [
+      "combat",
+      "development",
+      "resource",
+      "equipment",
+      "ability",
+      "movement",
+      "reaction",
+      "choice",
+      "transform"
+    ]
+  },
+  "policies": {
+    "student": "heuristic",
+    "reference": "rollout",
+    "candidateGeneration": "full"
+  },
+  "uncertainty": {
+    "agreement": "wilson_95",
+    "regret": "cluster_bootstrap_percentile_95",
+    "policySensitivity": "paired_cluster_bootstrap_percentile_95"
+  },
+  "engineGate": {
+    "profile": "current",
+    "requiredRulesArtifactStatus": "ratified",
+    "requiredStudyArtifactStatus": "ratified",
+    "rulesManifestBinding": "runtime_required",
+    "engineBuildBinding": "runtime_required",
+    "completeActionGeneration": "required"
+  },
+  "claimScope": {
+    "decisionAgreement": "heuristic_vs_rollout_diagnostic",
+    "humanSkillEquivalence": "prohibited_without_independent_expert_labels_and_human_logs"
+  }
+}

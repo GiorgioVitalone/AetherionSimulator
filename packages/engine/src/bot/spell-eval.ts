@@ -44,6 +44,21 @@ export function scoreSpell(
   return sumEffects(caster, opponent, spellEffects(card.abilities), xPaid, gameplan, valueMode);
 }
 
+/** Score an already-declared effect list. Stack items for activated abilities and
+ * equipment carry their authoritative effects directly rather than a card in hand,
+ * so reactive policy uses this entry point to compare every responseable action on
+ * the same value scale as a spell. */
+export function scoreEffects(
+  caster: PlayerState,
+  opponent: PlayerState,
+  effects: readonly Effect[],
+  xPaid: number,
+  gameplan: Gameplan = NEUTRAL,
+  valueMode: boolean = false,
+): SpellScore {
+  return sumEffects(caster, opponent, effects, xPaid, gameplan, valueMode);
+}
+
 /** Sum the expected value of a list of effects (the shared recursion point used by
  * scoreSpell and the wrapper-effect cases). isRemoval propagates if ANY sub-effect
  * neutralizes an enemy body. */
@@ -84,6 +99,7 @@ function scoreEffect(
 ): SpellScore {
   switch (effect.type) {
     case 'destroy':
+    case 'exile':
     case 'sacrifice':
     case 'bounce': {
       if (!isEnemyTarget(effect.target)) {
@@ -113,12 +129,14 @@ function scoreEffect(
       return { value, isRemoval: true };
     }
     case 'deal_damage': {
+      if (isEnemyHero(effect.target)) {
+        return {
+          value: amount(effect.amount, xPaid) * gameplan.faceWeight,
+          isRemoval: false,
+        };
+      }
       if (!isEnemyTarget(effect.target)) {
-        // Face damage (enemy hero) is steady value toward the win, weighted by how
-        // hard this seat races the Hero (A6 `faceWeight`; NEUTRAL = 1.5 ⇒ no-op).
-        return isEnemyHero(effect.target)
-          ? { value: amount(effect.amount, xPaid) * gameplan.faceWeight, isRemoval: false }
-          : ZERO;
+        return ZERO;
       }
       const victims = enemyTargets(opponent, effect.target);
       if (victims.length === 0) return ZERO;
@@ -138,9 +156,18 @@ function scoreEffect(
       return { value, isRemoval: victims.some((v) => dmg >= spellTargetHp(v)) };
     }
     case 'modify_stats': {
-      if (isEnemyTarget(effect.target)) return ZERO; // debuffs handled as chip via dmg path
       const gain =
         (effect.modifier.atk ?? 0) + (effect.modifier.hp ?? 0) + (effect.modifier.arm ?? 0);
+      if (isEnemyTarget(effect.target)) {
+        const bodies = enemyTargets(opponent, effect.target).length;
+        return {
+          value:
+            Math.max(0, -gain) *
+            Math.max(1, bodies) *
+            gameplan.tempoWeight,
+          isRemoval: false,
+        };
+      }
       const bodies = countAlliedBodies(caster, effect.target);
       // Allied buffs are proactive board development; weight by the seat's tempo
       // appetite (A6 `tempoWeight`; NEUTRAL = 0.6 ⇒ no-op).
@@ -149,10 +176,30 @@ function scoreEffect(
         isRemoval: false,
       };
     }
-    case 'draw_cards':
-      return effect.player === 'enemy'
-        ? ZERO
-        : { value: amount(effect.count, xPaid) * 1.2, isRemoval: false };
+    case 'draw_cards': {
+      if (effect.player === 'enemy') return ZERO;
+      const drawn = amount(effect.count, xPaid) * 1.2;
+      // DYNAMIC DRAW VALUE (config.dynamicDrawValue). A flat per-card score makes a
+      // draw-heavy deck spend its turns drawing into a hand it can never deploy —
+      // observed: one faction spent 25% of all actions casting spells (3.5x the field)
+      // while deploying least, hoarding 8 cards behind a 2-body board. Two corrections:
+      //   glut        — each card is worth less the more we already hold (a card you
+      //                 cannot cast this game is worth nothing).
+      //   desperation — but when NOTHING in hand is affordable, drawing is the only
+      //                 way out of a dead hand, so it is worth more than normal.
+      // Absent/false ⇒ the flat legacy score, semantically invariant.
+      if (gameplan.dynamicDraw !== true) return { value: drawn, isRemoval: false };
+      const held = caster.hand.length;
+      const glut = Math.max(0.25, 1 - Math.max(0, held - 3) * 0.15);
+      const avail =
+        caster.resourceBank.filter((r) => !r.exhausted).length +
+        caster.temporaryResources.reduce((s, t) => s + t.amount, 0);
+      const playable = caster.hand.filter(
+        (c) => c.cost.mana + c.cost.energy + c.cost.flexible <= avail,
+      ).length;
+      const desperation = playable === 0 ? 2 : 1;
+      return { value: drawn * glut * desperation, isRemoval: false };
+    }
     case 'heal': {
       // Healing matters more when our Hero is low; only count allied heals.
       if (isEnemyTarget(effect.target)) return ZERO;
@@ -178,7 +225,7 @@ function scoreEffect(
       // payoff (the bigger upgraded creature). Worth a solid mid-body of tempo.
       return { value: 4, isRemoval: false };
     // ── Value / recursion / wrapper effects ──────────────────────────────────
-    // Legacy (!valueMode): all flat-1 (unmodeled), byte-identical to before. Under
+    // Legacy (!valueMode): all flat-1 (unmodeled), semantically invariant to before. Under
     // valueMode the bot SEES these, so control/value/recursion decks get piloted
     // instead of played as chaff.
     case 'composite':
@@ -343,7 +390,7 @@ function power(card: CardInstance): number {
  *   - its HP is the wall that BLOCKS our face damage / soaks our attacks — prized
  *     in proportion to how hard this seat is trying to close (`closeBias`).
  * Each channel is normalized by the NEUTRAL weight so that at the NEUTRAL gameplan
- * this returns exactly atk + hp = power(card): a byte-identical no-op (v10 hash).
+ * this returns exactly atk + hp = power(card): a semantically invariant no-op (v10 hash).
  */
 function bodyValue(card: CardInstance, gameplan: Gameplan): number {
   const offense = card.currentAtk * (gameplan.faceWeight / NEUTRAL.faceWeight);

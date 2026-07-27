@@ -5,6 +5,7 @@
 import type { CardInstance, ZoneState, GameConfig } from '../types/game-state.js';
 import type { Trait, ZoneType } from '../types/common.js';
 import { getCardsInZone } from './zone-manager.js';
+import { hasEffectiveTrait } from '../selectors/card-semantics.js';
 
 // ── Attack Target ────────────────────────────────────────────────────────────
 
@@ -28,8 +29,7 @@ function hasTrait(traits: readonly Trait[], trait: Trait): boolean {
 }
 
 function cardHasTrait(card: CardInstance, trait: Trait): boolean {
-  return hasTrait(card.traits, trait) ||
-    card.grantedTraits.some(g => g.trait === trait);
+  return hasEffectiveTrait(card, trait);
 }
 
 // ── Board State Queries ──────────────────────────────────────────────────────
@@ -40,14 +40,11 @@ export function isBoardEmpty(zones: ZoneState): boolean {
   return frontline.length === 0 && highGround.length === 0;
 }
 
-function getForcingDefenders(
-  zones: ZoneState,
-  highGroundOnly: boolean,
-): readonly CardInstance[] {
+function getForcingDefenders(zones: ZoneState, highGroundOnly: boolean): readonly CardInstance[] {
   // EC-007 (highGroundOnly): a Defender forces only from High Ground; otherwise
   // (engine default) it forces only from the Frontline.
   const zone: ZoneType = highGroundOnly ? 'high_ground' : 'frontline';
-  return getCardsInZone(zones, zone).filter(c => cardHasTrait(c, 'defender'));
+  return getCardsInZone(zones, zone).filter((c) => cardHasTrait(c, 'defender'));
 }
 
 // ── Core Targeting ───────────────────────────────────────────────────────────
@@ -66,9 +63,7 @@ export function getValidAttackTargets(
 ): readonly AttackTarget[] {
   // DIAGNOSTIC ABLATION (default absent ⇒ no-op): config.ablateFlying treats the
   // Flying trait as absent (so it grants no Defender bypass / evasive reach).
-  const isFlying = config?.ablateFlying === true
-    ? false
-    : hasTrait(attackerTraits, 'flying');
+  const isFlying = config?.ablateFlying === true ? false : hasTrait(attackerTraits, 'flying');
   const isSniper = hasTrait(attackerTraits, 'sniper');
 
   // DIAGNOSTIC ABLATION (default absent ⇒ no-op): config.disableHeroReachBySeat
@@ -87,9 +82,7 @@ export function getValidAttackTargets(
   // Reserve: cannot attack unless Sniper (targets enemy Frontline only)
   if (attackerZone === 'reserve') {
     if (!isSniper) return [];
-    return getCardsInZone(defenderZones, 'frontline').map(c =>
-      characterTarget(c.instanceId),
-    );
+    return getCardsInZone(defenderZones, 'frontline').map((c) => characterTarget(c.instanceId));
   }
 
   // Determine reachable zones based on attacker position
@@ -97,9 +90,7 @@ export function getValidAttackTargets(
   const canTargetHero = attackerZone === 'high_ground' && !heroReachDisabled;
 
   // Collect all characters in reachable zones
-  const reachableCharacters = reachableZones.flatMap(zone =>
-    getCardsInZone(defenderZones, zone),
-  );
+  const reachableCharacters = reachableZones.flatMap((zone) => getCardsInZone(defenderZones, zone));
 
   // Apply Defender priority
   return applyDefenderPriority(
@@ -128,7 +119,7 @@ export function activeForcingDefenders(
   // of the Frontline. Default false ⇒ Frontline (engine default).
   const defenders = getForcingDefenders(zones, highGroundOnly);
   if (cap === undefined || cap <= 0) return defenders;
-  return defenders.filter(d => (d.forcedAttacksThisTurn ?? 0) < cap);
+  return defenders.filter((d) => (d.forcedAttacksThisTurn ?? 0) < cap);
 }
 
 function getReachableZones(attackerZone: ZoneType): readonly ZoneType[] {
@@ -157,22 +148,20 @@ function applyDefenderPriority(
   const defenders = ablateForcing
     ? []
     : activeForcingDefenders(defenderZones, forceCap, highGroundOnly);
-  const hasActiveDefenders = defenders.length > 0;
 
-  // Flying bypasses Defenders unless Defender also has Flying or Sniper
-  const defendersBypassable = attackerIsFlying
-    ? defenders.every(d => !cardHasTrait(d, 'flying') && !cardHasTrait(d, 'sniper'))
-    : false;
+  // Flying bypasses each Defender unless that Defender also has Flying or
+  // Sniper — bypass is per-Defender, not all-or-nothing.
+  const forcingDefenders = attackerIsFlying
+    ? defenders.filter((d) => cardHasTrait(d, 'flying') || cardHasTrait(d, 'sniper'))
+    : defenders;
 
-  if (hasActiveDefenders && !defendersBypassable) {
-    // Must target a Defender in Frontline
-    return defenders.map(d => characterTarget(d.instanceId));
+  if (forcingDefenders.length > 0) {
+    // Must target a still-forcing Defender
+    return forcingDefenders.map((d) => characterTarget(d.instanceId));
   }
 
   // No Defender restriction — all reachable characters + hero if applicable
-  const targets: AttackTarget[] = reachableCharacters.map(c =>
-    characterTarget(c.instanceId),
-  );
+  const targets: AttackTarget[] = reachableCharacters.map((c) => characterTarget(c.instanceId));
   if (canTargetHero) {
     targets.push(heroTarget());
   }

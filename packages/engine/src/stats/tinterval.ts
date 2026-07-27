@@ -1,8 +1,9 @@
 /**
  * Student-t confidence interval for the mean of a small sample, plus a
- * zero-dependency table of two-sided t critical values. Used for the
- * multi-seed mean ± CI where the number of seeds is small (S ≈ 12).
+ * zero-dependency inverse Student-t calculation. Used for the multi-seed mean
+ * interval where the number of independent experimental clusters is small.
  */
+import { lnGamma } from './normal.js';
 
 /** A two-sided confidence interval on a sample mean. */
 export interface TIntervalResult {
@@ -25,47 +26,28 @@ export interface TIntervalResult {
 /** Supported two-sided confidence levels for the critical-value table. */
 export type ConfidenceLevel = 0.9 | 0.95 | 0.99;
 
-// Two-sided Student-t critical values. Rows are degrees of freedom 1..30;
-// the `inf` row (df >= 31) uses the normal approximation. Columns are the
-// supported confidence levels. Values from standard statistical tables.
-const T_TABLE: Readonly<Record<ConfidenceLevel, readonly number[]>> = {
-  0.9: [
-    6.314, 2.92, 2.353, 2.132, 2.015, 1.943, 1.895, 1.86, 1.833, 1.812, 1.796,
-    1.782, 1.771, 1.761, 1.753, 1.746, 1.74, 1.734, 1.729, 1.725, 1.721, 1.717,
-    1.714, 1.711, 1.708, 1.706, 1.703, 1.701, 1.699, 1.697,
-  ],
-  0.95: [
-    12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228,
-    2.201, 2.179, 2.16, 2.145, 2.131, 2.12, 2.11, 2.101, 2.093, 2.086, 2.08,
-    2.074, 2.069, 2.064, 2.06, 2.056, 2.052, 2.048, 2.045, 2.042,
-  ],
-  0.99: [
-    63.657, 9.925, 5.841, 4.604, 4.032, 3.707, 3.499, 3.355, 3.25, 3.169,
-    3.106, 3.055, 3.012, 2.977, 2.947, 2.921, 2.898, 2.878, 2.861, 2.845,
-    2.831, 2.819, 2.807, 2.797, 2.787, 2.779, 2.771, 2.763, 2.756, 2.75,
-  ],
-};
-
-// Normal-approximation critical values used when df >= 31.
-const Z_INF: Readonly<Record<ConfidenceLevel, number>> = {
-  0.9: 1.645,
-  0.95: 1.96,
-  0.99: 2.576,
-};
-
 /**
  * Two-sided Student-t critical value for `df` degrees of freedom at the given
- * confidence level. For df <= 0 returns Infinity (no information); for
- * df >= 31 falls back to the normal critical value.
+ * confidence level. Values are inverted from the exact Student-t CDF for every
+ * finite df; there is no df>30 normal-approximation discontinuity.
  */
 export function tCritical(df: number, conf: ConfidenceLevel): number {
-  if (df <= 0) return Infinity;
-  const row = T_TABLE[conf];
-  if (df <= row.length) {
-    const v = row[df - 1];
-    return v ?? Z_INF[conf];
+  if (!Number.isSafeInteger(df) || df <= 0) {
+    throw new RangeError('df must be a positive safe integer');
   }
-  return Z_INF[conf];
+  if (![0.9, 0.95, 0.99].includes(conf as number)) {
+    throw new RangeError('Unsupported confidence level');
+  }
+  const target = (1 + conf) / 2;
+  let lo = 0;
+  let hi = 1;
+  while (studentTCdf(hi, df) < target) hi *= 2;
+  for (let iteration = 0; iteration < 100; iteration++) {
+    const mid = (lo + hi) / 2;
+    if (studentTCdf(mid, df) < target) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 /**
@@ -78,8 +60,11 @@ export function studentTInterval(
   conf: ConfidenceLevel = 0.95,
 ): TIntervalResult {
   const n = samples.length;
+  if (samples.some((sample) => !Number.isFinite(sample))) {
+    throw new RangeError('samples must contain only finite values');
+  }
   if (n === 0) {
-    return zeroResult(0, 0);
+    throw new RangeError('at least one sample is required');
   }
   const mean = samples.reduce((a, b) => a + b, 0) / n;
   if (n === 1) {
@@ -100,6 +85,63 @@ export function studentTInterval(
     stdErr,
     df,
   };
+}
+
+function studentTCdf(t: number, df: number): number {
+  if (t === 0) return 0.5;
+  const x = df / (df + t * t);
+  const tail = 0.5 * regularizedBeta(x, df / 2, 0.5);
+  return t > 0 ? 1 - tail : tail;
+}
+
+function regularizedBeta(x: number, a: number, b: number): number {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const logBt =
+    lnGamma(a + b) -
+    lnGamma(a) -
+    lnGamma(b) +
+    a * Math.log(x) +
+    b * Math.log1p(-x);
+  const bt = Math.exp(logBt);
+  if (x < (a + 1) / (a + b + 2)) {
+    return (bt * betaFraction(x, a, b)) / a;
+  }
+  return 1 - (bt * betaFraction(1 - x, b, a)) / b;
+}
+
+function betaFraction(x: number, a: number, b: number): number {
+  const maxIterations = 300;
+  const epsilon = 3e-14;
+  const tiny = 1e-300;
+  const qab = a + b;
+  const qap = a + 1;
+  const qam = a - 1;
+  let c = 1;
+  let d = 1 - (qab * x) / qap;
+  if (Math.abs(d) < tiny) d = tiny;
+  d = 1 / d;
+  let h = d;
+  for (let m = 1; m <= maxIterations; m++) {
+    const m2 = 2 * m;
+    let aa = (m * (b - m) * x) / ((qam + m2) * (a + m2));
+    d = 1 + aa * d;
+    if (Math.abs(d) < tiny) d = tiny;
+    c = 1 + aa / c;
+    if (Math.abs(c) < tiny) c = tiny;
+    d = 1 / d;
+    h *= d * c;
+    aa = (-(a + m) * (qab + m) * x) / ((a + m2) * (qap + m2));
+    d = 1 + aa * d;
+    if (Math.abs(d) < tiny) d = tiny;
+    c = 1 + aa / c;
+    if (Math.abs(c) < tiny) c = tiny;
+    d = 1 / d;
+    const delta = d * c;
+    h *= delta;
+    if (Math.abs(delta - 1) < epsilon) break;
+  }
+  return h;
 }
 
 function zeroResult(mean: number, df: number): TIntervalResult {
