@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import {
   evaluateRatification,
+  validateExternalReviewCompletion,
   validateExternalReviewManifest,
 } from './dist/sim/ratification.js';
 import { auditFindingLedger } from './audit-findings.mjs';
@@ -15,6 +16,7 @@ import {
   computeEngineBuildHash,
   computeHarnessBuildHash,
 } from './sim-runner.mjs';
+import { REQUIRED_GATE_COMMANDS } from './ratification-commands.mjs';
 
 const readJson = (path) =>
   JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -32,25 +34,7 @@ const decisions = readFileSync(
 const semanticPaths = Object.values(review.evidenceSources);
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const REQUIRED_GATE_IDS = Array.from({ length: 12 }, (_, index) => `G${String(index)}`);
-export const REQUIRED_GATE_COMMANDS = Object.freeze({
-  root_build: 'pnpm build',
-  root_lint: 'pnpm lint',
-  engine_all_tests: 'pnpm --filter @aetherion-sim/engine test',
-  engine_current_coverage:
-    'pnpm --filter @aetherion-sim/engine test:coverage',
-  engine_changed_coverage:
-    'pnpm --filter @aetherion-sim/engine coverage:changed',
-  card_semantic_validator:
-    'pnpm --filter @aetherion-sim/engine validate',
-  finding_audit:
-    'pnpm --filter @aetherion-sim/engine audit:findings:closed',
-  performance_budgets:
-    'pnpm --filter @aetherion-sim/engine benchmark:verify',
-  policy_calibration:
-    'pnpm --filter @aetherion-sim/engine calibrate:policy',
-  certification_campaigns:
-    'pnpm --filter @aetherion-sim/engine certify:campaigns:full',
-});
+export { REQUIRED_GATE_COMMANDS };
 const REQUIRED_COMMAND_IDS = Object.keys(REQUIRED_GATE_COMMANDS);
 
 function git(args) {
@@ -80,9 +64,16 @@ function hashEvidenceSource(path) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-export function currentRatificationStatus({ fullGateEvidence = null } = {}) {
+export function currentRatificationStatus({
+  fullGateEvidence = null,
+  externalReview = null,
+} = {}) {
   const audit = auditFindingLedger();
   const candidateCommit = git(['rev-parse', 'HEAD']);
+  const completedReview =
+    externalReview === null
+      ? review
+      : validateExternalReviewCompletion(externalReview, review);
   const unresolvedRulesDecisions =
     decisions.match(/\|\s*Provisional[^|]*\|/gu)?.length ?? 0;
   const contentHashes = {
@@ -96,7 +87,7 @@ export function currentRatificationStatus({ fullGateEvidence = null } = {}) {
     harnessBuild: computeHarnessBuildHash(),
     botImplementation: computeBotImplementationHash(),
     documentationCommit: canonicalHash(git(['rev-parse', 'HEAD:Documentation'])),
-    externalReviewManifest: canonicalHash(review),
+    externalReviewRequirements: canonicalHash(review),
   };
   const fullGateEvidenceHash =
     fullGateEvidence === null
@@ -130,8 +121,16 @@ export function currentRatificationStatus({ fullGateEvidence = null } = {}) {
     contentHashes,
     findingCounts: audit.counts,
     criticalSummaryCounts: audit.criticalSummaryCounts,
+    externalReview: {
+      source:
+        externalReview === null
+          ? 'tracked_requirements'
+          : 'detached_completion',
+      requirementsHash: contentHashes.externalReviewRequirements,
+      status: completedReview.status,
+    },
     evidence,
-    gate: evaluateRatification(review, evidence),
+    gate: evaluateRatification(completedReview, evidence),
   };
 }
 
@@ -199,7 +198,20 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
             'utf8',
           ),
         );
-  const report = currentRatificationStatus({ fullGateEvidence });
+  const externalReviewIndex = process.argv.indexOf('--external-review');
+  const externalReview =
+    externalReviewIndex < 0
+      ? null
+      : JSON.parse(
+          readFileSync(
+            resolve(process.cwd(), process.argv[externalReviewIndex + 1]),
+            'utf8',
+          ),
+        );
+  const report = currentRatificationStatus({
+    fullGateEvidence,
+    externalReview,
+  });
   console.log(JSON.stringify(report, null, 2));
   if (
     process.argv.includes('--require-approved') &&

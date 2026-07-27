@@ -23,6 +23,7 @@
     "certify:campaigns:smoke": "node certification-campaigns.mjs --smoke",
     "certify:campaigns:full": "node certification-campaigns.mjs --full",
     "ratification:status": "node ratification-status.mjs",
+    "ratification:evidence": "node ratification-evidence.mjs",
     "ratification:require-approved": "node ratification-status.mjs --require-approved",
     "lint": "eslint src/",
     "validate": "node validate-cards.mjs",

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   evaluateRatification,
+  validateExternalReviewCompletion,
   validateExternalReviewManifest,
   type ExternalApproval,
   type ExternalReviewRole,
@@ -99,6 +100,56 @@ describe('external ratification gate', () => {
       independentPolicyExpert: 'policy-expert',
     });
     expect(result).toEqual({ releaseEligible: true, reasons: [] });
+  });
+
+  it('accepts approvals only as a detached completion of the tracked review contract', () => {
+    const candidateCommit = 'a'.repeat(40);
+    const approvals = Object.fromEntries(
+      roles.map((role, index) => [
+        role,
+        {
+          reviewer: `reviewer-${String(index)}`,
+          organization: `organization-${String(index)}`,
+          approvedAt: '2026-07-27T00:00:00.000Z',
+          candidateCommit,
+          evidenceHash: 'b'.repeat(64),
+          attestation: manifest.attestationText,
+        } satisfies ExternalApproval,
+      ]),
+    ) as Record<ExternalReviewRole, ExternalApproval>;
+    const completion = {
+      ...manifest,
+      status: 'approved' as const,
+      requiredApprovals: approvals,
+    };
+
+    expect(validateExternalReviewCompletion(completion, manifest)).toEqual(
+      completion,
+    );
+    expect(() =>
+      validateExternalReviewCompletion(
+        {
+          ...completion,
+          evidenceSources: {
+            ...completion.evidenceSources,
+            cardPool: 'different-pool.json',
+          },
+        },
+        manifest,
+      ),
+    ).toThrow(/does not match the tracked review requirements/);
+    expect(() =>
+      validateExternalReviewCompletion(
+        {
+          ...completion,
+          requiredApprovals: {
+            ...completion.requiredApprovals,
+            rulesOwner: null,
+          },
+        },
+        manifest,
+      ),
+    ).toThrow(/rulesOwner is missing or malformed/);
   });
 
   it('accepts only complete G0-G11 command evidence bound to the exact candidate content', () => {

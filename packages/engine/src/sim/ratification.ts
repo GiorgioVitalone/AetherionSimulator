@@ -35,6 +35,38 @@ export interface ExternalReviewManifest {
   readonly evidenceSources: Readonly<Record<string, string>>;
 }
 
+/**
+ * The tracked manifest is the immutable review contract for a candidate. A
+ * completed copy is deliberately supplied out-of-tree: committing approvals
+ * into the candidate would change the commit and evidence hash they attest to.
+ */
+export function validateExternalReviewCompletion(
+  input: unknown,
+  requirements: ExternalReviewManifest,
+): ExternalReviewManifest {
+  const completion = validateExternalReviewManifest(input);
+  if (completion.status !== 'approved') {
+    throw new TypeError('external review completion must be approved');
+  }
+  if (
+    canonicalJson(reviewScope(completion)) !==
+    canonicalJson(reviewScope(requirements))
+  ) {
+    throw new TypeError(
+      'external review completion does not match the tracked review requirements',
+    );
+  }
+  for (const role of REVIEW_ROLES) {
+    const approval = completion.requiredApprovals[role];
+    if (approval === null || !isApprovalRecord(approval)) {
+      throw new TypeError(
+        `external review completion approval ${role} is missing or malformed`,
+      );
+    }
+  }
+  return completion;
+}
+
 export interface RatificationEvidenceState {
   readonly cleanCheckout: boolean;
   readonly allSemanticInputsTracked: boolean;
@@ -253,4 +285,47 @@ function objectValue(
     throw new TypeError(`${path} must be an object`);
   }
   return value as Readonly<Record<string, unknown>>;
+}
+
+function reviewScope(manifest: ExternalReviewManifest): unknown {
+  return {
+    schemaVersion: manifest.schemaVersion,
+    candidateId: manifest.candidateId,
+    findings: manifest.findings,
+    requiredChecks: manifest.requiredChecks,
+    attestationText: manifest.attestationText,
+    evidenceSources: manifest.evidenceSources,
+  };
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const record = value as Readonly<Record<string, unknown>>;
+    return `{${Object.keys(record)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalJson(record[key])}`,
+      )
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function isApprovalRecord(value: unknown): value is ExternalApproval {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const approval = value as Readonly<Record<string, unknown>>;
+  return (
+    typeof approval.reviewer === 'string' &&
+    typeof approval.organization === 'string' &&
+    typeof approval.approvedAt === 'string' &&
+    typeof approval.candidateCommit === 'string' &&
+    typeof approval.evidenceHash === 'string' &&
+    typeof approval.attestation === 'string'
+  );
 }

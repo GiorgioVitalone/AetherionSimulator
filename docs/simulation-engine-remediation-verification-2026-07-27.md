@@ -143,5 +143,26 @@ pnpm --filter @aetherion-sim/engine audit:findings:report
 ```
 
 Release closure additionally requires the six attributable approvals declared
-in `packages/engine/sim-data/external-review-manifest.json`. Local implementation
-evidence cannot substitute for those approvals.
+in `packages/engine/sim-data/external-review-manifest.json`. That tracked file is
+the immutable review contract and remains in `awaiting_external_review` state.
+From the final clean candidate, the Release owner first writes G0–G11 evidence
+and retained command logs outside the checkout:
+
+```sh
+pnpm --filter @aetherion-sim/engine ratification:evidence -- \
+  --output /path/to/full-gate-evidence.json
+```
+
+A completed review copy is then supplied out-of-tree with:
+
+```sh
+pnpm --filter @aetherion-sim/engine ratification:require-approved -- \
+  --gate-evidence /path/to/full-gate-evidence.json \
+  --external-review /path/to/completed-external-review.json
+```
+
+The detached completion must match the tracked finding/check/evidence scope
+exactly, and every approval must bind the frozen candidate commit and the full
+gate-evidence hash. Keeping the signatures detached avoids the impossible cycle
+where committing an approval changes the commit and evidence hash being
+approved. Local implementation evidence cannot substitute for those approvals.
