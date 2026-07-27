@@ -427,6 +427,11 @@ export function chooseChoiceResponse(state: GameState): readonly string[] {
   const pc = state.pendingChoice;
   if (pc === null) return [];
   const player = state.players[pc.playerId];
+  if (pc.type === 'choose_first_player') {
+    // Baseline policy: the random winner elects to play first. The engine still
+    // exposes both legal choices so stronger/search policies may choose second.
+    return [`player_${String(pc.playerId)}`];
+  }
   if (pc.type === 'discard_to_hand_limit' || pc.type === 'choose_discard') {
     return lowestValueHandIds(
       player,

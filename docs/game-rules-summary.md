@@ -5,13 +5,14 @@ This is an engine-facing quick reference. The complete source is
 machine settings are in
 [`ruleset-current.json`](../packages/engine/sim-data/ruleset-current.json).
 
-Status: **diagnostic candidate**, semantic version `4.0.0-diagnostic.3`.
+Status: **diagnostic candidate**, semantic version `4.0.0-diagnostic.4`.
 External rules ratification is still required before decision-grade balance
 claims.
 
 ## Setup
 
 - Each player has a Hero, main deck, and 12-card resource deck.
+- After mulligans, the player going second draws one additional Main Deck card.
 - The selected first player skips their first main-deck draw and cannot attack
   on their first turn.
 - Mulligans and first-player selection are explicit interactions.

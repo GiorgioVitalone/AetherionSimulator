@@ -279,9 +279,25 @@ describe('authoritative transition boundary', () => {
       playerId: 1,
       keep: true,
     });
-    expect(second.status).toBe('resolved');
-    expect(second.state.phase).toBe('upkeep');
-    expect(second.state.pendingChoice).toBeNull();
+    expect(second.status).toBe('pending');
+    expect(second.state.pendingChoice).toMatchObject({
+      type: 'choose_first_player',
+      playerId: second.state.activePlayerIndex,
+      interactionId: expect.any(String),
+      validationToken: expect.any(String),
+    });
+    const firstPlayerChoice = second.state.pendingChoice!;
+    const selectedFirstPlayer = `player_${String(firstPlayerChoice.playerId)}`;
+    const selected = transition(second.state, {
+      type: 'choice_response',
+      interactionId: firstPlayerChoice.interactionId!,
+      playerId: firstPlayerChoice.playerId,
+      response: { selectedOptionIds: [selectedFirstPlayer] },
+    });
+    expect(selected.status).toBe('resolved');
+    expect(selected.state.phase).toBe('upkeep');
+    expect(selected.state.pendingChoice).toBeNull();
+    expect(selected.state.activePlayerIndex).toBe(firstPlayerChoice.playerId);
   });
 
   it('rejects a stale mulligan and preserves the exact state object', () => {

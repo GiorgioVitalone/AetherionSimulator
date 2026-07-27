@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "profileId": "current",
-  "semanticVersion": "4.0.0-diagnostic.3",
+  "semanticVersion": "4.0.0-diagnostic.4",
   "status": "diagnostic",
   "rulebook": {
     "path": "Documentation/game/Rulebook.md",
@@ -17,7 +17,7 @@
     "setup": {
       "resourceDeckSize": 12,
       "firstPlayerSelection": "random_winner_chooses",
-      "firstPlayerInitialCompensation": "none",
+      "secondPlayerOpeningCard": "after_mulligans",
       "firstPlayerMainDeckDraw": "skip",
       "firstPlayerAttack": "forbidden"
     },
@@ -72,6 +72,8 @@
     "costFloor": true,
     "reserveTapChoice": true,
     "reserveTapStrain": true,
+    "secondPlayerOpeningCard": true,
+    "explicitFirstPlayerChoice": true,
     "exileDiscardForEnergy": true,
     "resourceDeckSize": 12,
     "apnapAnyOrderFix": true,

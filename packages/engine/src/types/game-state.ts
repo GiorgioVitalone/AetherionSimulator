@@ -326,6 +326,15 @@ export interface GameConfig {
    * paid for in board material. Applies to both the automatic path and the
    * `tap_reserve` action. Absent/false ⇒ semantically invariant no-op. */
   readonly reserveTapStrain?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ legacy five-card opening hand
+   * for both players). When true, after both mulligan decisions are complete,
+   * the player going second draws one additional Main Deck card. This is setup
+   * compensation from Rulebook §7, not a simulation-only balance knob. */
+  readonly secondPlayerOpeningCard?: boolean;
+  /** RULES-ACCURACY FIX (default absent/false ⇒ the random setup winner is
+   * silently made first player). When true, the random winner receives an
+   * explicit post-mulligan choice of which player goes first, per Rulebook §7. */
+  readonly explicitFirstPlayerChoice?: boolean;
   /** RULES CHANGE UNDER MEASUREMENT (§13o; default absent ⇒ deck-construction
    * default: the full 15-card Resource Deck). When set, each player's Resource
    * Deck is truncated to this many cards AFTER the setup shuffle (preserving the
@@ -974,6 +983,7 @@ export interface PendingChoice {
 
 export type PendingChoiceType =
   | 'mulligan'
+  | 'choose_first_player'
   | 'select_targets'
   | 'reserve_exhaust'
   | 'discard_to_hand_limit'

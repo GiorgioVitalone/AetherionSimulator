@@ -26,6 +26,7 @@ const d = ready ? describe : describe.skip;
 
 // Small, fast config — a single non-mirror pairing, few games.
 const baseConfig = {
+  rulesProfile: 'custom-diagnostic' as const,
   matchups: ['Onyx', 'Radiant'] as string[],
   gamesPerPairing: 6,
   turnCap: 60,

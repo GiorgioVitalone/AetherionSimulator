@@ -21,7 +21,7 @@ import {
 import { stabilizeStateBased } from '../runtime/state-based-stabilizer.js';
 import { recomputeAurasWithEvents } from '../runtime/aura-recompute.js';
 import { stampGameEvents } from '../runtime/event-envelope.js';
-import { applyMulligan } from '../setup/game-setup.js';
+import { applyMulligan, chooseFirstPlayer } from '../setup/game-setup.js';
 import { validateGameStateInvariants } from '../invariants/game-state-invariants.js';
 import { closeTerminalStack } from '../effects/stack-resolver.js';
 
@@ -519,6 +519,14 @@ function transitionUnchecked(state: GameState, command: EngineCommand): Transiti
             ? resumeTriggerOrderPipeline(state, choice, selected)
             : choice.continuation !== undefined
             ? resumeChoicePipeline(state, choice, selected)
+            : choice.type === 'choose_first_player'
+              ? {
+                  state: chooseFirstPlayer(
+                    state,
+                    selected[0] === 'player_0' ? 0 : 1,
+                  ),
+                  events: [],
+                }
             : choice.type === 'discard_to_hand_limit'
               ? choice.turnBoundaryContinuation === undefined
                 ? {

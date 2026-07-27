@@ -1336,6 +1336,9 @@ function playGame(fA, fB, seed, config, deckA, deckB, gameIndex) {
       ...(config.transactionalDeclarations ? { transactionalDeclarations: true } : {}),
       // BOT TEMPO FIX (see game-state.ts's GameConfig.activateAfterDeploy).
       ...(config.activateAfterDeploy ? { activateAfterDeploy: true } : {}),
+      // Never hand-copy the current profile: stamp the complete canonical
+      // manifest last so newly added rules cannot disappear in this adapter.
+      ...(config.rulesProfile === 'current' ? CURRENT_GAME_CONFIG : {}),
       ...(diag ? { diag } : {}),
     },
   };
@@ -2249,6 +2252,19 @@ function resolveConfig(config = {}) {
         );
       }
     }
+    if (
+      Object.hasOwn(config, 'firstPlayerCompensation') &&
+      config.firstPlayerCompensation !== 'none'
+    ) {
+      throw new Error(
+        'Current rules setting firstPlayerCompensation is locked by the canonical engine setup',
+      );
+    }
+    if (config.firstPlayerCompAfterMulligan === true) {
+      throw new Error(
+        'Current rules setting firstPlayerCompAfterMulligan is locked by the canonical engine setup',
+      );
+    }
   }
   if (requestedConfig.studyPopulation === true) {
     if (!USING_COMMITTED_CARD_POOL) {
@@ -2706,6 +2722,10 @@ function resolveConfig(config = {}) {
     // infrastructure terminal class fail the run after exact reasons have been
     // collected, and is excluded from behavioral hashing below.
     ...(config.certification ? { certification: true } : {}),
+    // The resolved current profile is the manifest's full singleton setting.
+    // Keeping this final prevents an adapter default from silently deleting or
+    // overriding a current rule.
+    ...(rulesProfile === 'current' ? CURRENT_GAME_CONFIG : {}),
   };
 }
 

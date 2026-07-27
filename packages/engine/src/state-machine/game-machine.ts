@@ -604,6 +604,9 @@ export const gameMachine = setup({
             actions: 'applyMulliganDecision',
           },
         ],
+        PLAYER_RESPONSE: {
+          actions: 'applyChoiceResponse',
+        },
       },
       always: {
         target: 'playing',

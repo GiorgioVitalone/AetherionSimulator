@@ -361,10 +361,61 @@ function advanceMulligan(state: GameState, completedPlayerId: 0 | 1): GameState 
     };
   }
 
-  // Both players done — transition to upkeep
-  return {
+  // The random setup winner chooses who goes first only after both mulligans.
+  // The current profile exposes that decision; legacy profiles preserve their
+  // historical behavior where the random winner silently becomes first player.
+  if (state.config?.explicitFirstPlayerChoice === true) {
+    const chooser = state.activePlayerIndex;
+    const interactionId = [
+      'choose-first-player',
+      state.rng.seed,
+      state.turnNumber,
+      chooser,
+    ].join(':');
+    return {
+      ...state,
+      pendingChoice: {
+        interactionId,
+        validationToken: interactionId,
+        type: 'choose_first_player',
+        playerId: chooser,
+        options: [
+          { id: 'player_0', label: 'Player 1 goes first' },
+          { id: 'player_1', label: 'Player 2 goes first' },
+        ],
+        minSelections: 1,
+        maxSelections: 1,
+        context: 'Choose which player goes first.',
+        optional: false,
+        visibility: 'public',
+      },
+    };
+  }
+  return chooseFirstPlayer(state, state.activePlayerIndex);
+}
+
+/** Resolve setup's first-player choice and the dependent second-player card. */
+export function chooseFirstPlayer(
+  state: GameState,
+  firstPlayerId: 0 | 1,
+): GameState {
+  const ready: GameState = {
     ...state,
+    activePlayerIndex: firstPlayerId,
     phase: 'upkeep',
     pendingChoice: null,
   };
+  if (state.config?.secondPlayerOpeningCard !== true) return ready;
+
+  const secondPlayerId: 0 | 1 = firstPlayerId === 0 ? 1 : 0;
+  const secondPlayer = ready.players[secondPlayerId];
+  const bonusCard = secondPlayer.mainDeck[0];
+  if (bonusCard === undefined) return ready;
+  const players = [...ready.players] as [PlayerState, PlayerState];
+  players[secondPlayerId] = {
+    ...secondPlayer,
+    hand: [...secondPlayer.hand, bonusCard],
+    mainDeck: secondPlayer.mainDeck.slice(1),
+  };
+  return { ...ready, players };
 }

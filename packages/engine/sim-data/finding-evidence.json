@@ -229,8 +229,16 @@
     "RULE-14": {
       "status": "evidence-green",
       "workPackage": "WP-00",
-      "tests": ["packages/engine/tests/rules/manifest.test.ts"],
-      "implementationChanges": ["packages/engine/src/rules/manifest.ts"]
+      "tests": [
+        "packages/engine/tests/rules/manifest.test.ts",
+        "packages/engine/tests/setup/game-setup.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/rules/manifest.ts",
+        "packages/engine/src/setup/game-setup.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
     },
     "ARCH-02": {
       "status": "evidence-green",
@@ -262,8 +270,14 @@
     "ARCH-05": {
       "status": "evidence-green",
       "workPackage": "WP-00",
-      "tests": ["packages/engine/tests/rules/manifest.test.ts"],
-      "implementationChanges": ["packages/engine/src/rules/manifest.ts"]
+      "tests": [
+        "packages/engine/tests/rules/manifest.test.ts",
+        "packages/engine/tests/sim/current-simulation-contract.test.ts"
+      ],
+      "implementationChanges": [
+        "packages/engine/src/rules/manifest.ts",
+        "packages/engine/sim-runner.mjs"
+      ]
     },
     "LEGAL-01": {
       "status": "evidence-green",

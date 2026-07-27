@@ -45,10 +45,10 @@ The book states the (correct) rule; the engine default or implementation diverge
 for these. The locked `ruleset-v1` already overrides most via flags — the fix is code-level (defaults,
 missing features, or bugs), tracked separately.
 
-- **Unconfigured defaults contradict the book** (locked ruleset overrides each): ARM every-hit vs
-  first-instance (book right; `armFirstInstanceOnly` fixes; damage-calculator.ts header comment states the
-  wrong default); reserve-tap strain + choice flag-gated (book always-on); second-player +1 comp is
-  harness-only, defaults off, and dealt **before** mulligans not after (book: after).
+- **Unconfigured defaults contradict the book** (resolved in the current profile; legacy defaults remain
+  reproducible): ARM every-hit vs first-instance; reserve-tap strain + choice flag-gated; and the
+  second-player opening card. Current games now apply the extra card in the engine after both mulligans,
+  rather than through a simulation-harness-only compensation path.
 - **Priority / reactions under-implemented** (book promises more than engine does): response windows open
   ONLY on spell casts (book: also attack/activate/equip/move); Flash unusable "at any time" (only inside
   an open spell window); Counter/Flash limited to spell cards in hand (book: any ability keyword).

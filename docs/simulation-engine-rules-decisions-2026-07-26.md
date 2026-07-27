@@ -32,7 +32,7 @@ implementation slice can pass its gate.
 | RD-18 | Token fallback | A missing token definition is a semantic data error; no generic substitute token is permitted in current rules | Fail-closed data policy; printed identity and tags are observable; approved by Giorgio Vitalone on 2026-07-26 | DSL/data owner | Ratified | WP-09, WP-12 |
 | RD-19 | Card-text corrections | Text/DSL mismatches require an explicit exception record or corrected DSL; silent parser fallback is forbidden | Card data is executable rules content; approved by Giorgio Vitalone on 2026-07-26 | DSL/data owner | Ratified | WP-12 |
 | RD-20 | Resource deck exhaustion | Empty Resource Deck skips the draw and is one transformation predicate; it does not itself lose the game | Rulebook §§8, 16 | Rules owner | Ratified | WP-04, WP-11 |
-| RD-21 | First-player rules | Random winner chooses first player; first player skips the first Main Deck draw and cannot attack; no compensatory card is granted | Rulebook §§7–8 | Rules owner | Ratified | WP-00, WP-13 |
+| RD-21 | First-player rules | Random winner chooses first player; after mulligans the second player draws one additional Main Deck card; the first player skips the first Main Deck draw and cannot attack | Rulebook §§7–8 | Rules owner | Ratified | WP-00, WP-13 |
 | RD-22 | Reserve Energy timing | The active player may exhaust zero or more eligible Reserve characters only during Upkeep step 4; each chosen character generates one typed resource and takes one strain damage before start-of-turn triggers | Rulebook §§8–9 | Rules owner | Ratified | WP-02, WP-04, WP-11 |
 
 ## Approval mechanics

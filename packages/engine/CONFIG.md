@@ -117,7 +117,10 @@ Factions: `Onyx`, `Radiant`, `Sapphire`, `Verdant`.
 
 ### `firstPlayerCompensation`
 
-Applied at game start to the **second** player (not active on turn 1):
+Legacy/custom-diagnostic harness option applied at game start to the **second**
+player (not active on turn 1). The canonical `current` profile rejects these
+overrides: its engine setup exposes the Rulebook first-player choice and grants
+the second player's extra card after mulligans.
 
 - `"none"` — engine default, no compensation.
 - `"card"` — second player draws +1 card.

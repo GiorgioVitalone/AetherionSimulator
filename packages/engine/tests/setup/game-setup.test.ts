@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   createGame,
   applyMulligan,
+  chooseFirstPlayer,
   resetSetupInstanceCounter,
 } from '../../src/setup/game-setup.js';
 import type {
@@ -281,6 +282,35 @@ describe('Game Setup', () => {
       state = applyMulligan(state, 1, true);
       expect(state.phase).toBe('upkeep');
       expect(state.pendingChoice).toBeNull();
+    });
+
+    it('exposes first-player selection, then grants the second-player opening card', () => {
+      const registry = createTestRegistry();
+      let state = createGame(
+        { heroDefId: 200, mainDeckDefIds: mainDeckIds, resourceDeckDefIds: resourceDeckIds },
+        { heroDefId: 201, mainDeckDefIds: mainDeckIds, resourceDeckDefIds: resourceDeckIds },
+        registry,
+        42,
+      );
+      state = {
+        ...state,
+        config: {
+          explicitFirstPlayerChoice: true,
+          secondPlayerOpeningCard: true,
+        },
+      };
+      const chooserId = state.activePlayerIndex;
+      const firstPlayerId = chooserId === 0 ? 1 : 0;
+      const secondPlayerId = firstPlayerId === 0 ? 1 : 0;
+
+      state = applyMulligan(state, 0, true);
+      state = applyMulligan(state, 1, true);
+      expect(state.pendingChoice?.type).toBe('choose_first_player');
+      expect(state.pendingChoice?.playerId).toBe(chooserId);
+      state = chooseFirstPlayer(state, firstPlayerId);
+
+      expect(state.players[firstPlayerId].hand).toHaveLength(5);
+      expect(state.players[secondPlayerId].hand).toHaveLength(6);
     });
   });
 });

@@ -14,8 +14,8 @@ the required external approvals are absent.
 
 | Gate evidence | Result |
 |---|---|
-| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,374 tests passed, 1 skipped |
-| Current coverage | statements 90.62%, branches 84.61%, functions 95.10%, lines 90.62% |
+| Current correctness suite with coverage | 160 files passed, 1 fixture skipped; 1,375 tests passed, 1 skipped |
+| Current coverage | statements 90.62%, branches 84.60%, functions 95.11%, lines 90.62% |
 | Changed-code coverage | passed for 5 changed engine source files |
 | Legacy compatibility suite | 11 files and 60 tests passed |
 | Client integration | typecheck, lint, 9 tests, and production Vite build passed |
@@ -23,7 +23,7 @@ the required external approvals are absent.
 | Engine / client / UI lint | package-scoped lint passed |
 | Card semantic validator | 0 errors, 0 warnings |
 | Performance and semantic-equivalence budgets | passed |
-| Policy calibration | 549 scored decisions; all 9 required families; 0 infrastructure failures |
+| Policy calibration | 602 scored decisions; all 9 required families; 0 infrastructure failures |
 | Finding structural audit | all 167 findings and C-01–C-12 match the source review and plan |
 
 The package-manager wrapper in this environment still fails before root Turbo
@@ -37,13 +37,13 @@ with the exact required `pnpm` commands recorded by `ratification-status.mjs`.
 |---|---:|
 | Valid gameplay games | 10,080 / 10,080 |
 | Infrastructure failures | 0 |
-| Attempted / declared actions | 1,075,293 / 1,075,293 |
-| Resolved / explicitly fizzled | 1,075,292 / 1 |
+| Attempted / declared actions | 1,111,833 / 1,111,833 |
+| Resolved / explicitly fizzled | 1,111,832 / 1 |
 | Rejected / failed / pending | 0 / 0 / 0 |
 | Fresh-process replay checks | 100 / 100 |
 | Unique replay trace hashes | 100 |
-| Campaign run hash | `ed4066d3a7f95157` |
-| Replay sample hash | `cf9e5f6221ccd16b2167c6fb4f5bf225331fc9efb14f1c2fecf277ad1fdc446f` |
+| Campaign run hash | `f683198daed169ea` |
+| Replay sample hash | `4e612c7a8810c66d03692c760adae7455351a5904711126d92242d8cf87fcf72` |
 
 The first follow-up campaign exposed 283 invariant failures: bounce reused a
 destruction-only destination helper, so a Volatile character could be both
@@ -56,7 +56,7 @@ failures.
 
 The diagnostic heuristic-versus-rollout corpus contains:
 
-- 549 scored runtime decisions;
+- 602 scored runtime decisions;
 - ability, choice, combat, development, equipment, movement, reaction,
   resource, and transform families;
 - explicit outcome search for proactive actions, priority responses, mulligans,
@@ -80,6 +80,15 @@ implemented and tested, but the pool contains no harmful equipment for the
 heuristic to remove; zero selections are therefore not evidence of an
 unreachable action class. These are reachability diagnostics, not balance
 estimates.
+
+The current setup path is now engine-owned rather than harness-emulated. After
+both mulligans, the random winner receives an explicit choice of which player
+goes first; once chosen, the other player draws the Rulebook's additional
+opening card. The simulator stamps the complete canonical manifest into live
+game state instead of manually copying selected flags. This also removed a
+primary-study override that had silently disabled the empty-Resource-Deck
+transformation predicate. The final full campaign above runs with both setup
+rules and the canonical transformation predicate active.
 
 ## Closure status
 

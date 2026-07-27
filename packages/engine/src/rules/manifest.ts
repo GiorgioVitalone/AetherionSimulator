@@ -22,7 +22,7 @@ export interface RulesManifest {
     readonly setup: {
       readonly resourceDeckSize: number;
       readonly firstPlayerSelection: 'random_winner_chooses';
-      readonly firstPlayerInitialCompensation: 'none';
+      readonly secondPlayerOpeningCard: 'after_mulligans';
       readonly firstPlayerMainDeckDraw: 'skip';
       readonly firstPlayerAttack: 'forbidden';
     };
@@ -113,6 +113,8 @@ const ENGINE_CONFIG_KEYS = [
   'costFloor',
   'reserveTapChoice',
   'reserveTapStrain',
+  'secondPlayerOpeningCard',
+  'explicitFirstPlayerChoice',
   'exileDiscardForEnergy',
   'resourceDeckSize',
   'apnapAnyOrderFix',
@@ -248,7 +250,7 @@ export function validateRulesManifest(value: unknown): RulesManifest {
     {
       resourceDeckSize: 12,
       firstPlayerSelection: 'random_winner_chooses',
-      firstPlayerInitialCompensation: 'none',
+      secondPlayerOpeningCard: 'after_mulligans',
       firstPlayerMainDeckDraw: 'skip',
       firstPlayerAttack: 'forbidden',
     },
